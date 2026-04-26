@@ -4,5 +4,11 @@ CARGO_WORKSPACE_DIR = { value = "", relative = true }
 LLAMA_CPP_TAG = "b8665"
 # CUDA 13.0 requires C++17
 NVCC_PREPEND_FLAGS = "-std=c++17"
+# Reduce parallelism to prevent OOM during CUDA kernel compilation
+RAYON_NUM_THREADS = "1"
 # override nvidia-smi compute capability
 CUDA_COMPUTE_CAP = "75"
+# Visual Studio C++ compiler path for nvcc
+NVCC_CCBIN = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64"
+# Suppress CCCL preprocessor warning
+CCCL_IGNORE_MSVC_TRADITIONAL_PREPROCESSOR_WARNING = "1"

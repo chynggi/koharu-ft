@@ -19,6 +19,10 @@ type PreferencesState = {
   setCodexImagePrompt: (prompt?: string) => void
   codexImageModel?: string
   setCodexImageModel: (model?: string) => void
+  temperature?: number
+  setTemperature: (temp?: number) => void
+  maxTokens?: number
+  setMaxTokens: (tokens?: number) => void
   shortcuts: {
     select: string
     block: string
@@ -71,6 +75,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       setCustomSystemPrompt: (prompt) => set({ customSystemPrompt: prompt }),
       setCodexImagePrompt: (prompt) => set({ codexImagePrompt: prompt }),
       setCodexImageModel: (model) => set({ codexImageModel: model }),
+      setTemperature: (temp) => set({ temperature: temp }),
+      setMaxTokens: (tokens) => set({ maxTokens: tokens }),
       setShortcuts: (shortcuts) =>
         set((state) => ({
           shortcuts: {
@@ -88,7 +94,7 @@ export const usePreferencesStore = create<PreferencesState>()(
     }),
     {
       name: 'koharu-config',
-      version: 6,
+      version: 7,
       migrate: (persisted: any, version: number) => {
         if (version < 2 && persisted) {
           delete persisted.localLlm
@@ -128,6 +134,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         customSystemPrompt: state.customSystemPrompt,
         codexImagePrompt: state.codexImagePrompt,
         codexImageModel: state.codexImageModel,
+        temperature: state.temperature,
+        maxTokens: state.maxTokens,
         shortcuts: state.shortcuts,
       }),
     },

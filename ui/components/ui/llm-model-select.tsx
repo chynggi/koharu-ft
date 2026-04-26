@@ -54,7 +54,10 @@ export function LlmModelSelect({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return options
+    // "uncensored" / "nsfw" as quick-filter terms
+    const isUncensoredQuery = q === 'uncensored' || q === 'nsfw'
     return options.filter(({ model, provider }) => {
+      if (isUncensoredQuery) return !!(model as any).uncensored
       const fields = [
         model.name,
         model.target.modelId,
@@ -197,6 +200,7 @@ function TriggerLabel({
   return (
     <span className='flex min-w-0 items-center gap-1.5' title={model.name}>
       {provider && <ProviderBadge label={providerBadgeLabel(provider)} />}
+      {(model as any).uncensored && <UncensoredBadge />}
       <span className='truncate'>{shortModelName(model.name)}</span>
     </span>
   )
@@ -228,7 +232,13 @@ function ModelRow({
       onClick={onClick}
     >
       {provider && <ProviderBadge label={providerBadgeLabel(provider)} />}
+      {(model as any).uncensored && <UncensoredBadge />}
       <span className='truncate'>{shortModelName(model.name)}</span>
+      {(model as any).estimatedVram && (
+        <span className='ml-auto shrink-0 text-[9px] tabular-nums text-muted-foreground/60'>
+          {(model as any).estimatedVram}
+        </span>
+      )}
       {selected && (
         <CheckIcon className='absolute top-1/2 right-2 size-3 -translate-y-1/2 text-primary' />
       )}
@@ -240,6 +250,14 @@ function ProviderBadge({ label }: { label: string }) {
   return (
     <span className='shrink-0 rounded-sm border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] leading-none font-semibold tracking-wide text-primary uppercase'>
       {label}
+    </span>
+  )
+}
+
+function UncensoredBadge() {
+  return (
+    <span className='shrink-0 rounded-sm border border-rose-500/30 bg-rose-500/10 px-1 py-0.5 text-[9px] leading-none font-semibold tracking-wide text-rose-400 uppercase'>
+      NSFW
     </span>
   )
 }

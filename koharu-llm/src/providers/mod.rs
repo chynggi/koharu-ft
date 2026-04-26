@@ -143,6 +143,11 @@ const MT_MODELS: &[ProviderModelDescriptor] = &[ProviderModelDescriptor {
     name: "Machine Translation",
 }];
 
+const UNCENSORED_CHAT_MODELS: &[ProviderModelDescriptor] = &[ProviderModelDescriptor {
+    id: "uncensored-v2",
+    name: "Uncensored V2",
+}];
+
 const PROVIDERS: &[ProviderDescriptor] = &[
     ProviderDescriptor {
         id: "openai",
@@ -217,6 +222,15 @@ const PROVIDERS: &[ProviderDescriptor] = &[
         supported_languages: ProviderSupportedLanguages::All,
         models: ProviderCatalogModels::Dynamic(discover_openai_compatible_models),
         build: build_openai_compatible_provider,
+    },
+    ProviderDescriptor {
+        id: "uncensored-chat",
+        name: "Uncensored Chat",
+        requires_api_key: true,
+        requires_base_url: false,
+        supported_languages: ProviderSupportedLanguages::All,
+        models: ProviderCatalogModels::Static(UNCENSORED_CHAT_MODELS),
+        build: build_uncensored_chat_provider,
     },
 ];
 
@@ -334,6 +348,18 @@ fn build_openai_compatible_provider(
         http_client: Arc::clone(&config.http_client),
         base_url: required_base_url(&config, "openai-compatible")?,
         api_key: config.api_key,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens,
+    }))
+}
+
+fn build_uncensored_chat_provider(
+    config: ProviderConfig,
+) -> anyhow::Result<Box<dyn AnyProvider>> {
+    Ok(Box::new(openai_compatible::OpenAiCompatibleProvider {
+        http_client: Arc::clone(&config.http_client),
+        base_url: "https://uncensored.chat/api".to_string(),
+        api_key: Some(required_api_key(&config, "uncensored-chat")?),
         temperature: config.temperature,
         max_tokens: config.max_tokens,
     }))

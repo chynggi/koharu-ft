@@ -73,6 +73,9 @@ pub struct LlmGenerationOptions {
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
     pub custom_system_prompt: Option<String>,
+    /// GPU layer offload count (0 = CPU only, higher = more GPU layers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n_gpu_layers: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
@@ -104,6 +107,12 @@ pub struct LlmCatalogModel {
     pub target: LlmTarget,
     pub name: String,
     pub languages: Vec<String>,
+    /// Whether this is an uncensored/NSFW-capable model variant.
+    #[serde(default)]
+    pub uncensored: bool,
+    /// Estimated VRAM/RAM usage (e.g. "~4.5 GB").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_vram: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -176,6 +185,19 @@ pub struct EngineCatalog {
 // Config
 // ---------------------------------------------------------------------------
 
+/// Quality preset for the translation pipeline.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityPreset {
+    /// Fast mode: lighter models, lower quality, less VRAM
+    Fast,
+    /// Balanced mode: good quality with moderate resource usage (default)
+    #[default]
+    Balanced,
+    /// Best mode: highest quality, full models, more VRAM
+    Best,
+}
+
 /// Sparse patch for `koharu_app::AppConfig`. Missing fields mean "leave
 /// as-is". The `providers` field, if present, replaces the whole provider
 /// list — we do not merge by id because ordering is meaningful.
@@ -188,6 +210,8 @@ pub struct ConfigPatch {
     pub http: Option<HttpConfigPatch>,
     #[serde(default)]
     pub pipeline: Option<PipelineConfigPatch>,
+    #[serde(default)]
+    pub quality_preset: Option<QualityPreset>,
     /// If present, replaces the entire list. Api_key values of `"[REDACTED]"`
     /// are interpreted as "leave the existing secret alone".
     #[serde(default)]

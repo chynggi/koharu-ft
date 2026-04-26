@@ -313,6 +313,8 @@ fn local_catalog_models() -> Vec<LlmCatalogModel> {
             target: local_target(model),
             name: model.to_string(),
             languages: language_tags(&model.languages()),
+            uncensored: model.is_uncensored(),
+            estimated_vram: model.estimated_vram().map(|s| s.to_string()),
         })
         .collect()
 }
@@ -365,6 +367,8 @@ async fn provider_catalog(
                                         target: provider_target(descriptor.id, &m.id),
                                         name: m.name,
                                         languages: descriptor.supported_languages.tags(),
+                                        uncensored: false,
+                                        estimated_vram: None,
                                     })
                                     .collect(),
                             ),
@@ -407,6 +411,8 @@ fn static_provider_models(descriptor: &ProviderDescriptor) -> Vec<LlmCatalogMode
                 target: provider_target(descriptor.id, m.id),
                 name: m.name.to_string(),
                 languages: descriptor.supported_languages.tags(),
+                uncensored: false,
+                estimated_vram: None,
             })
             .collect(),
         ProviderCatalogModels::Dynamic(_) => Vec::new(),

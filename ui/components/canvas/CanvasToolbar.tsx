@@ -244,6 +244,10 @@ function LlmStatusPopover() {
   const selectedTarget = useEditorUiStore((s) => s.selectedTarget)
   const customSystemPrompt = usePreferencesStore((s) => s.customSystemPrompt)
   const setCustomSystemPrompt = usePreferencesStore((s) => s.setCustomSystemPrompt)
+  const llmTemperature = usePreferencesStore((s) => s.temperature)
+  const setLlmTemperature = usePreferencesStore((s) => s.setTemperature)
+  const llmMaxTokens = usePreferencesStore((s) => s.maxTokens)
+  const setLlmMaxTokens = usePreferencesStore((s) => s.setMaxTokens)
   const llmSelectedLanguage = useEditorUiStore((s) => s.selectedLanguage)
 
   const selectedModel = useMemo(
@@ -278,7 +282,11 @@ function LlmStatusPopover() {
       if (selectedIsLoaded) {
         await deleteCurrentLlm()
       } else {
-        await putCurrentLlm({ target })
+        const prefs = usePreferencesStore.getState()
+        const options: any = {}
+        if (prefs.temperature != null) options.temperature = prefs.temperature
+        if (prefs.maxTokens != null) options.maxTokens = prefs.maxTokens
+        await putCurrentLlm({ target, options: Object.keys(options).length > 0 ? options : undefined })
       }
     } catch (e) {
       useEditorUiStore.getState().showError(String(e))
@@ -406,6 +414,56 @@ function LlmStatusPopover() {
                 </SelectContent>
               </Select>
             ) : null}
+            <div className='flex items-center gap-2'>
+              <span className='w-16 shrink-0 text-[10px] text-muted-foreground'>
+                {t('llm.temperature')}
+              </span>
+              <input
+                type='range'
+                min='0'
+                max='2'
+                step='0.1'
+                value={llmTemperature ?? 0.1}
+                onChange={(e) => setLlmTemperature(parseFloat(e.target.value) || undefined)}
+                className='h-4 flex-1 accent-primary'
+              />
+              <span className='w-7 text-right text-[10px] tabular-nums text-muted-foreground'>
+                {(llmTemperature ?? 0.1).toFixed(1)}
+              </span>
+            </div>
+            <div className='flex items-center gap-2'>
+              <span className='w-16 shrink-0 text-[10px] text-muted-foreground'>
+                {t('llm.maxTokens')}
+              </span>
+              <input
+                type='number'
+                min={16}
+                max={4096}
+                step={16}
+                value={llmMaxTokens ?? 1000}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  setLlmMaxTokens(isNaN(v) ? undefined : v)
+                }}
+                className='h-6 flex-1 rounded border border-input bg-transparent px-1.5 text-[10px] outline-none focus-visible:border-primary/60'
+              />
+            </div>
+            <div className='flex items-center gap-2'>
+              <span className='w-16 shrink-0 text-[10px] text-muted-foreground'>
+                GPU Layers
+              </span>
+              <input
+                type='range'
+                min='0'
+                max='100'
+                step='5'
+                value={100}
+                className='h-4 flex-1 accent-primary'
+              />
+              <span className='w-6 text-right text-[10px] tabular-nums text-muted-foreground'>
+                All
+              </span>
+            </div>
             <Textarea
               data-testid='llm-system-prompt'
               value={customSystemPrompt ?? ''}

@@ -6,6 +6,8 @@ use koharu_runtime::{SecretStore, default_app_data_root};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
 
+use koharu_core::protocol::QualityPreset;
+
 use crate::pipeline::{Artifact, Registry};
 
 const CONFIG_FILE: &str = "config.toml";
@@ -61,6 +63,8 @@ pub struct AppConfig {
     pub data: DataConfig,
     pub http: HttpConfig,
     pub pipeline: PipelineConfig,
+    #[serde(default)]
+    pub quality_preset: QualityPreset,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -236,6 +240,9 @@ pub fn apply_patch(config: &mut AppConfig, patch: koharu_core::ConfigPatch) {
             config.pipeline.renderer = v;
         }
     }
+    if let Some(preset) = patch.quality_preset {
+        config.quality_preset = preset;
+    }
     if let Some(providers) = patch.providers {
         let mut new_providers = Vec::with_capacity(providers.len());
         for p in providers {
@@ -384,7 +391,7 @@ fn provider_api_key_secret_key(provider_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use koharu_core::{ConfigPatch, PipelineConfigPatch};
+    use koharu_core::{ConfigPatch, PipelineConfigPatch, QualityPreset};
 
     #[test]
     fn old_config_without_providers_still_loads() {

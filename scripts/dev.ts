@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readdir, access } from 'node:fs/promises'
 import { exec as execCallback, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import * as readline from 'node:readline/promises'
 
 const exec = promisify(execCallback)
 
@@ -43,16 +44,40 @@ async function setupCuda() {
   const cudaRoot = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA'
   const versions = await readdir(cudaRoot).catch(() => [])
 
+  if (versions.length === 0) {
+    throw new Error(
+      'NVCC not found. Please install the CUDA Toolkit from https://developer.nvidia.com/cuda-downloads',
+    )
+  }
+
   sortVersionsDesc(versions)
 
-  for (const version of versions) {
-    if (version.startsWith('v')) {
-      const binPath = path.join(cudaRoot, version, 'bin')
-      if (await pathExists(binPath)) {
-        process.env.PATH = `${binPath}${path.delimiter}${process.env.PATH}`
-        process.env.CUDA_PATH = path.join(cudaRoot, version)
-        return
-      }
+  let selectedVersion = versions[0]
+  if (versions.length > 1) {
+    console.log('\\nMultiple CUDA toolkits detected:')
+    for (let i = 0; i < versions.length; i++) {
+      console.log(`  ${i + 1}. ${versions[i]}`)
+    }
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    })
+    const answer = await rl.question(`Select CUDA version (default: 1): `)
+    rl.close()
+
+    const index = parseInt(answer.trim(), 10) - 1
+    if (!isNaN(index) && index >= 0 && index < versions.length) {
+      selectedVersion = versions[index]
+    }
+    console.log(`Using CUDA Toolkit version: ${selectedVersion}\\n`)
+  }
+
+  if (selectedVersion.startsWith('v')) {
+    const binPath = path.join(cudaRoot, selectedVersion, 'bin')
+    if (await pathExists(binPath)) {
+      process.env.PATH = `${binPath}${path.delimiter}${process.env.PATH}`
+      process.env.CUDA_PATH = path.join(cudaRoot, selectedVersion)
+      return
     }
   }
 
@@ -95,15 +120,8 @@ async function setupCl() {
 
 async function dev() {
   if (os.type() === 'Windows_NT') {
-    // First, try to check if nvcc is available
-    await checkNvcc()
-      // If not found, try to set up CUDA paths
-      .catch(async () => {
-        await setupCuda()
-        // Check again after setup
-        await checkNvcc()
-      })
-
+    await setupCuda().catch(console.error)
+    
     // Setup cl.exe path
     await setupCl()
   }
