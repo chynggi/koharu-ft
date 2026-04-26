@@ -1,3 +1,79 @@
+## [0.52.0](https://github.com/mayocream/koharu/compare/0.51.0..0.52.0) - 2026-04-26
+
+### 🐛 Bug Fixes
+
+- *(llm)* Update Gemma 4 model IDs with hyphens ([#581](https://github.com/mayocream/koharu/issues/581)) - ([9f3eb17](https://github.com/mayocream/koharu/commit/9f3eb17ce8ade1e5f409d8ef526b64c33218ba9a))
+- ZLUDA compatibility issues ([#582](https://github.com/mayocream/koharu/issues/582)) - ([e9fa6cd](https://github.com/mayocream/koharu/commit/e9fa6cdb4daf3acb76ae58b4e42409e268ee8ed6))
+
+
+## [0.51.0](https://github.com/mayocream/koharu/compare/0.50.2..0.51.0) - 2026-04-26
+
+### ⛰️  Features
+
+- Gemma models to gemini models ([#578](https://github.com/mayocream/koharu/issues/578)) - ([fa7b9b7](https://github.com/mayocream/koharu/commit/fa7b9b7603d142cffc8f0e540f7eb26b6791fb92))
+
+### 🐛 Bug Fixes
+
+- Prefer 4000 port - ([a214dcf](https://github.com/mayocream/koharu/commit/a214dcfa89208aa7e3dc4bcb64286daf21c8dfd8))
+
+
+## [0.50.2](https://github.com/mayocream/koharu/compare/0.50.1..0.50.2) - 2026-04-26
+
+### ⚡ Performance
+
+- Prefer bf16 - ([7f6f616](https://github.com/mayocream/koharu/commit/7f6f616fdb76c415cab97ca9122e85a887be09e9))
+
+
+## [0.50.1](https://github.com/mayocream/koharu/compare/0.50.0..0.50.1) - 2026-04-26
+
+### 🐛 Bug Fixes
+
+- Include cudnn in zluda - ([33c0aff](https://github.com/mayocream/koharu/commit/33c0affbda03e8d9e79a18e23cc05f2d2dc48fe8))
+- Do not uppercase translation - ([1afef77](https://github.com/mayocream/koharu/commit/1afef7742589212f49608f6f3574169172af25e1))
+
+### 📚 Documentation
+
+- Winget - ([8f9f0eb](https://github.com/mayocream/koharu/commit/8f9f0eb1ca3a3ebf8e75c825ec8d3ac1073486c4))
+
+### ⚙️ Miscellaneous Tasks
+
+- Update ko_KR/translation.json ([#573](https://github.com/mayocream/koharu/issues/573)) - ([60a2be4](https://github.com/mayocream/koharu/commit/60a2be40843d8463bfa9746d83d92de8ec506158))
+
+## New Contributors ❤️
+
+* @Rerica0302 made their first contribution in [#573](https://github.com/mayocream/koharu/pull/573)
+
+## [0.50.0](https://github.com/mayocream/koharu/compare/0.49.0..0.50.0) - 2026-04-25
+
+### ⛰️  Features
+
+- Collapsible Navigator ([#571](https://github.com/mayocream/koharu/issues/571)) - ([8c925f0](https://github.com/mayocream/koharu/commit/8c925f0cd5c860e318d5615dfb07206e00a8718d))
+
+### 🐛 Bug Fixes
+
+- *(ui)* Open updater release-note links externally ([#565](https://github.com/mayocream/koharu/issues/565)) - ([5f309a7](https://github.com/mayocream/koharu/commit/5f309a79364b350762e082dbdbe694bfedb47fb3))
+- [**breaking**] Require CUDA compute cap 8.0 - ([4a71a64](https://github.com/mayocream/koharu/commit/4a71a64a401bdda55591c00acfcc4f3b034d1bcd))
+- Implement universal locale-aware uppercase conversion for all no… ([#572](https://github.com/mayocream/koharu/issues/572)) - ([973e2d4](https://github.com/mayocream/koharu/commit/973e2d465d90c900b3d4cfff35cab4553a8105b1))
+- Implement universal locale-aware uppercase conversion using ICU ([#567](https://github.com/mayocream/koharu/issues/567)) - ([ca4cf81](https://github.com/mayocream/koharu/commit/ca4cf81724d0ae61722fa9b5afbe7ad00c743848))
+
+### 📚 Documentation
+
+- Add codex - ([8b90145](https://github.com/mayocream/koharu/commit/8b90145260cb1a2ba16ace48db38e6f8ece45425))
+
+### ⚡ Performance
+
+- FLUX.2 improvements - ([a66436f](https://github.com/mayocream/koharu/commit/a66436f75668389742f25e89a3349e6841659789))
+
+### ⚙️ Miscellaneous Tasks
+
+- Add Winget Releaser workflow ([#570](https://github.com/mayocream/koharu/issues/570)) - ([e4529ed](https://github.com/mayocream/koharu/commit/e4529edba9aad4f2a16029eb23591edf33dad1a0))
+
+## New Contributors ❤️
+
+* @edsporfekt made their first contribution in [#572](https://github.com/mayocream/koharu/pull/572)
+* @sitiom made their first contribution in [#570](https://github.com/mayocream/koharu/pull/570)
+* @dragoon4890 made their first contribution in [#565](https://github.com/mayocream/koharu/pull/565)
+
 ## [0.49.0](https://github.com/mayocream/koharu/compare/0.48.0..0.49.0) - 2026-04-25
 
 ### ⛰️  Features

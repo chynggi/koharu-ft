@@ -1,7 +1,5 @@
 use harfrust::{Direction, Script, Tag};
-use icu::properties::{CodePointMapData, props::Script as IcuScript};
-use icu_casemap::CaseMapper;
-use icu_locale::LanguageIdentifier;
+use icu_properties::{CodePointMapData, props::Script as IcuScript};
 use unicode_bidi::BidiInfo;
 
 use crate::layout::WritingMode;
@@ -30,29 +28,6 @@ pub fn writing_mode_for_block(block: &RenderBlock) -> WritingMode {
                 WritingMode::Horizontal
             }
         }
-    }
-}
-
-pub fn is_latin_only(text: &str) -> bool {
-    let script_map = CodePointMapData::<IcuScript>::new();
-    text.chars().all(|c| {
-        matches!(
-            script_map.get(c),
-            IcuScript::Latin | IcuScript::Common | IcuScript::Inherited
-        )
-    })
-}
-
-pub fn normalize_translation_for_layout(text: &str, language: Option<&str>) -> String {
-    if is_latin_only(text) {
-        let mapper = CaseMapper::new();
-        let lang_id: LanguageIdentifier = language
-            .and_then(|l| l.parse().ok())
-            .unwrap_or_else(|| "und".parse().unwrap());
-
-        mapper.uppercase_to_string(text, &lang_id).to_string()
-    } else {
-        text.to_string()
     }
 }
 
@@ -240,34 +215,7 @@ mod tests {
     use crate::layout::WritingMode;
     use crate::types::RenderBlock;
 
-    use super::{
-        font_families_for_text, is_latin_only, normalize_translation_for_layout,
-        shaping_direction_for_text, writing_mode_for_block,
-    };
-
-    #[test]
-    fn latin_detection_is_reasonable() {
-        assert!(is_latin_only("hello!?"));
-        assert!(!is_latin_only("こんにちは"));
-    }
-
-    #[test]
-    fn normalize_uppercases_latin_only() {
-        assert_eq!(normalize_translation_for_layout("hello!", None), "HELLO!");
-        assert_eq!(normalize_translation_for_layout("中文", None), "中文");
-    }
-
-    #[test]
-    fn normalize_handles_turkish_i() {
-        assert_eq!(
-            normalize_translation_for_layout("kimse", Some("tr")),
-            "KİMSE"
-        );
-        assert_eq!(
-            normalize_translation_for_layout("dolaşıyordu", Some("tr")),
-            "DOLAŞIYORDU"
-        );
-    }
+    use super::{font_families_for_text, shaping_direction_for_text, writing_mode_for_block};
 
     #[test]
     fn font_family_selection_returns_candidates() {

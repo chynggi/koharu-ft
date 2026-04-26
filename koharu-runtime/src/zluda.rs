@@ -1,12 +1,12 @@
 #[cfg(target_os = "windows")]
 const RELEASE_BASE_URL: &str = "https://github.com/vosen/ZLUDA/releases/download";
 #[cfg(any(target_os = "windows", test))]
-const RELEASE_TAG: &str = "v6-preview.64";
+const RELEASE_TAG: &str = "v6-preview.65";
 #[cfg(any(target_os = "windows", test))]
-const ZLUDA_ASSET_NAME: &str = "zluda-windows-8251f1e.zip";
+const ZLUDA_ASSET_NAME: &str = "zluda-windows-5c75a54.zip";
 #[cfg(any(target_os = "windows", test))]
 // Bump this when extraction behavior changes but the upstream asset name stays the same.
-const ZLUDA_EXTRACT_REVISION: u32 = 3;
+const ZLUDA_EXTRACT_REVISION: u32 = 4;
 #[cfg(any(target_os = "windows", test))]
 const ZLUDA_DLLS: &[&str] = &[
     "nvcudart_hybrid64.dll",
@@ -14,11 +14,27 @@ const ZLUDA_DLLS: &[&str] = &[
     "cublasLt64_13.dll",
     "cublas64_13.dll",
     "cufft64_12.dll",
+    "cudnn64_9.dll",
 ];
+
+#[cfg(any(target_os = "windows", test))]
+static ZLUDA_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn zluda_active() -> bool {
+    #[cfg(any(target_os = "windows", test))]
+    {
+        ZLUDA_ACTIVE.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    #[cfg(not(any(target_os = "windows", test)))]
+    {
+        false
+    }
+}
 
 #[cfg(target_os = "windows")]
 mod platform {
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::Ordering;
 
     use anyhow::{Context, Result, anyhow};
 
@@ -27,7 +43,9 @@ mod platform {
     use crate::install::InstallState;
     use crate::loader::{add_runtime_search_path, preload_library};
 
-    use super::{RELEASE_BASE_URL, RELEASE_TAG, ZLUDA_ASSET_NAME, ZLUDA_DLLS, source_id};
+    use super::{
+        RELEASE_BASE_URL, RELEASE_TAG, ZLUDA_ACTIVE, ZLUDA_ASSET_NAME, ZLUDA_DLLS, source_id,
+    };
 
     const HIP_ROOT_CANDIDATES: &[&str] = &[
         r"C:\hip_sdk",
@@ -79,6 +97,7 @@ mod platform {
             preload_library(&install_dir.join(dll))?;
         }
 
+        ZLUDA_ACTIVE.store(true, Ordering::SeqCst);
         tracing::info!("Experimental ZLUDA {RELEASE_TAG} support enabled");
         Ok(())
     }
@@ -184,6 +203,7 @@ mod tests {
         assert!(ZLUDA_DLLS.contains(&"cublas64_13.dll"));
         assert!(ZLUDA_DLLS.contains(&"cublasLt64_13.dll"));
         assert!(ZLUDA_DLLS.contains(&"cufft64_12.dll"));
+        assert!(ZLUDA_DLLS.contains(&"cudnn64_9.dll"));
     }
 
     #[test]
@@ -200,13 +220,18 @@ mod tests {
             .iter()
             .position(|dll| *dll == "cufft64_12.dll")
             .unwrap();
+        let cudnn_index = ZLUDA_DLLS
+            .iter()
+            .position(|dll| *dll == "cudnn64_9.dll")
+            .unwrap();
         assert!(nvcuda_index < cublas_index);
         assert!(nvcuda_index < cufft_index);
+        assert!(nvcuda_index < cudnn_index);
     }
 
     #[test]
     fn runtime_extract_list_matches_preload_list() {
-        assert_eq!(ZLUDA_DLLS.len(), 5);
+        assert_eq!(ZLUDA_DLLS.len(), 6);
         assert!(ZLUDA_DLLS.iter().all(|dll| dll.ends_with(".dll")));
     }
 }

@@ -140,7 +140,7 @@ Koharu bundles CUDA Toolkit 13.0. The required DLLs are extracted to the applica
 
 #### Supported NVIDIA GPUs
 
-Koharu supports NVIDIA GPUs with compute capability 7.5 or higher.
+Koharu supports NVIDIA GPUs with compute capability 8.0 or higher.
 
 For GPU compatibility references, see [CUDA GPU Compute Capability](https://developer.nvidia.com/cuda-gpus).
 
@@ -285,6 +285,14 @@ You can download the latest release of Koharu from the [releases page](https://g
 We provide prebuilt binaries for Windows, macOS, and Linux. For the standard install flow, see [Install Koharu](https://koharu.rs/how-to/install-koharu/). If something goes wrong, see [Troubleshooting](https://koharu.rs/how-to/troubleshooting/).
 
 Koharu can run offline with local models once the required runtimes, models, and fonts are already present on disk.
+
+### WinGet
+
+On Windows, you can install Koharu with [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):
+
+```bash
+winget install koharu
+```
 
 ### Docker
 
