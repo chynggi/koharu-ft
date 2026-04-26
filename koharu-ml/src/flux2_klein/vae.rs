@@ -1,7 +1,8 @@
-use candle_core::{D, Module, Result, Tensor};
-use candle_nn::{Conv2d, Conv2dConfig, GroupNorm, VarBuilder, conv2d, group_norm};
+use candle_core::{D, Module, Result, Tensor, conv::CudnnFwdAlgo};
+use candle_nn::{Conv2d, Conv2dConfig, GroupNorm, VarBuilder, group_norm};
 
 use super::latents::{patchify_latents, unpatchify_latents};
+use crate::ops::conv2d;
 
 #[derive(Debug, Clone)]
 pub struct Flux2VaeConfig {
@@ -30,6 +31,15 @@ impl Default for Flux2VaeConfig {
     }
 }
 
+fn vae_conv_config(padding: usize, stride: usize) -> Conv2dConfig {
+    Conv2dConfig {
+        padding,
+        stride,
+        cudnn_fwd_algo: Some(CudnnFwdAlgo::ImplicitGemm),
+        ..Default::default()
+    }
+}
+
 fn scaled_dot_product_attention(q: &Tensor, k: &Tensor, v: &Tensor) -> Result<Tensor> {
     let dim = q.dim(D::Minus1)?;
     let scale = 1.0 / (dim as f64).sqrt();
@@ -45,7 +55,11 @@ fn scaled_dot_product_attention(q: &Tensor, k: &Tensor, v: &Tensor) -> Result<Te
         let len = chunk_size.min(seq_len - start);
         let q_chunk = q.narrow(2, start, len)?;
         let attn_weights = (q_chunk.matmul(&k_t)? * scale)?;
-        chunks.push(candle_nn::ops::softmax_last_dim(&attn_weights)?.matmul(&v)?);
+        let attn_dtype = attn_weights.dtype();
+        let attn_weights =
+            candle_nn::ops::softmax_last_dim(&attn_weights.to_dtype(candle_core::DType::F32)?)?
+                .to_dtype(attn_dtype)?;
+        chunks.push(attn_weights.matmul(&v)?);
     }
     Tensor::cat(&chunks, 2)
 }
@@ -113,10 +127,7 @@ impl ResnetBlock2D {
         num_groups: usize,
         vb: VarBuilder,
     ) -> Result<Self> {
-        let conv_cfg = Conv2dConfig {
-            padding: 1,
-            ..Default::default()
-        };
+        let conv_cfg = vae_conv_config(1, 1);
         let norm1 = group_norm(num_groups, in_channels, 1e-6, vb.pp("norm1"))?;
         let conv1 = conv2d(in_channels, out_channels, 3, conv_cfg, vb.pp("conv1"))?;
         let norm2 = group_norm(num_groups, out_channels, 1e-6, vb.pp("norm2"))?;
@@ -126,7 +137,7 @@ impl ResnetBlock2D {
                 in_channels,
                 out_channels,
                 1,
-                Default::default(),
+                vae_conv_config(0, 1),
                 vb.pp("conv_shortcut"),
             )?)
         } else {
@@ -165,11 +176,7 @@ struct Downsample2D {
 
 impl Downsample2D {
     fn new(channels: usize, vb: VarBuilder) -> Result<Self> {
-        let conv_cfg = Conv2dConfig {
-            stride: 2,
-            padding: 0,
-            ..Default::default()
-        };
+        let conv_cfg = vae_conv_config(0, 2);
         let conv = conv2d(channels, channels, 3, conv_cfg, vb.pp("conv"))?;
         Ok(Self { conv })
     }
@@ -243,10 +250,7 @@ struct Upsample2D {
 
 impl Upsample2D {
     fn new(channels: usize, vb: VarBuilder) -> Result<Self> {
-        let conv_cfg = Conv2dConfig {
-            padding: 1,
-            ..Default::default()
-        };
+        let conv_cfg = vae_conv_config(1, 1);
         let conv = conv2d(channels, channels, 3, conv_cfg, vb.pp("conv"))?;
         Ok(Self { conv })
     }
@@ -342,10 +346,7 @@ struct Encoder {
 
 impl Encoder {
     fn new(cfg: &Flux2VaeConfig, vb: VarBuilder) -> Result<Self> {
-        let conv_cfg = Conv2dConfig {
-            padding: 1,
-            ..Default::default()
-        };
+        let conv_cfg = vae_conv_config(1, 1);
         let conv_in = conv2d(
             cfg.in_channels,
             cfg.block_out_channels[0],
@@ -419,10 +420,7 @@ struct Decoder {
 
 impl Decoder {
     fn new(cfg: &Flux2VaeConfig, vb: VarBuilder) -> Result<Self> {
-        let conv_cfg = Conv2dConfig {
-            padding: 1,
-            ..Default::default()
-        };
+        let conv_cfg = vae_conv_config(1, 1);
         let mid_channels = *cfg.decoder_block_out_channels.last().unwrap();
         let conv_in = conv2d(
             cfg.latent_channels,
@@ -512,14 +510,14 @@ impl Flux2Vae {
             2 * cfg.latent_channels,
             2 * cfg.latent_channels,
             1,
-            Default::default(),
+            vae_conv_config(0, 1),
             vb.pp("quant_conv"),
         )?;
         let post_quant_conv = conv2d(
             cfg.latent_channels,
             cfg.latent_channels,
             1,
-            Default::default(),
+            vae_conv_config(0, 1),
             vb.pp("post_quant_conv"),
         )?;
         let bn_running_mean = vb.get(4 * cfg.latent_channels, "bn.running_mean")?;

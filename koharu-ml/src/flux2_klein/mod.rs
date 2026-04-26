@@ -147,16 +147,18 @@ impl Flux2Klein {
             );
         }
         let prompt_embedder = Flux2PromptEmbedder::new(&model_device);
-        let vae =
-            loading::load_mmaped_safetensors_path(&paths.vae_safetensors, &model_device, |vb| {
-                Flux2Vae::new(vb)
-            })
-            .with_context(|| {
-                format!(
-                    "failed to load Flux2 VAE from {}",
-                    paths.vae_safetensors.display()
-                )
-            })?;
+        let vae = loading::load_mmaped_safetensors_path_with_dtype(
+            &paths.vae_safetensors,
+            &model_device,
+            vae_dtype(&model_device),
+            |vb| Flux2Vae::new(vb),
+        )
+        .with_context(|| {
+            format!(
+                "failed to load Flux2 VAE from {}",
+                paths.vae_safetensors.display()
+            )
+        })?;
 
         Ok(Self {
             transformer,
@@ -191,6 +193,7 @@ impl Flux2Klein {
             return Ok(image.clone());
         }
 
+        let _cuda_cleanup = CudaTemporaryMemoryCleanup::new(&self.device);
         let (latents, packed_h, packed_w, size) = {
             let (rgb, size) = prepare_rgb_image(image, options.max_pixels);
             let image_latents = self.encode_image_latents(&rgb)?;
@@ -226,6 +229,7 @@ impl Flux2Klein {
                 )?;
             }
             let condition_latents = condition_latents.to_dtype(transformer_dtype)?;
+            let img_ids = Tensor::cat(&[latent_ids, condition_ids], 1)?;
 
             let mut scheduler =
                 FlowMatchScheduler::new(options.num_inference_steps, packed_h * packed_w);
@@ -236,6 +240,9 @@ impl Flux2Klein {
             let initial_timestep = timesteps[start_index];
             let mut latents =
                 pack_latents(&scheduler.scale_noise(&image_latents, initial_timestep, &noise)?)?;
+            drop(image_latents_packed);
+            drop(image_latents);
+            drop(noise);
 
             for step_idx in start_index..timesteps.len() {
                 let timestep = Tensor::from_vec(
@@ -250,7 +257,6 @@ impl Flux2Klein {
                     ],
                     1,
                 )?;
-                let img_ids = Tensor::cat(&[latent_ids.clone(), condition_ids.clone()], 1)?;
                 let noise_pred = self.transformer.forward(
                     &latent_model_input,
                     &img_ids,
@@ -258,10 +264,15 @@ impl Flux2Klein {
                     &text_ids,
                     &timestep,
                 )?;
+                drop(latent_model_input);
+                drop(timestep);
                 let noise_pred = noise_pred
                     .narrow(1, 0, latents.dim(1)?)?
                     .to_dtype(DType::F32)?;
-                latents = scheduler.step(&noise_pred, &latents)?;
+                let next_latents = scheduler.step(&noise_pred, &latents)?;
+                drop(noise_pred);
+                let previous_latents = std::mem::replace(&mut latents, next_latents);
+                drop(previous_latents);
             }
 
             (latents, packed_h, packed_w, size)
@@ -322,6 +333,7 @@ impl Flux2Klein {
         reference_image: Option<&DynamicImage>,
         options: &Flux2InpaintOptions,
     ) -> Result<DynamicImage> {
+        let _cuda_cleanup = CudaTemporaryMemoryCleanup::new(&self.device);
         let (latents, packed_h, packed_w, size) = {
             let (rgb, size) = prepare_rgb_image(image, options.max_pixels);
             let resized_mask = expand_mask(
@@ -362,6 +374,7 @@ impl Flux2Klein {
                 )?;
             }
             let condition_latents = condition_latents.to_dtype(transformer_dtype)?;
+            let img_ids = Tensor::cat(&[latent_ids, condition_ids], 1)?;
 
             let mut scheduler =
                 FlowMatchScheduler::new(options.num_inference_steps, packed_h * packed_w);
@@ -373,6 +386,8 @@ impl Flux2Klein {
             let initial_timestep = timesteps[start_index];
             let mut latents =
                 pack_latents(&scheduler.scale_noise(&image_latents, initial_timestep, &noise)?)?;
+            let keep_mask = ((&latent_mask * -1.0)? + 1.0)?;
+            drop(noise);
 
             for step_idx in start_index..timesteps.len() {
                 let timestep = Tensor::from_vec(
@@ -387,7 +402,6 @@ impl Flux2Klein {
                     ],
                     1,
                 )?;
-                let img_ids = Tensor::cat(&[latent_ids.clone(), condition_ids.clone()], 1)?;
                 let noise_pred = self.transformer.forward(
                     &latent_model_input,
                     &img_ids,
@@ -395,10 +409,15 @@ impl Flux2Klein {
                     &text_ids,
                     &timestep,
                 )?;
+                drop(latent_model_input);
+                drop(timestep);
                 let noise_pred = noise_pred
                     .narrow(1, 0, latents.dim(1)?)?
                     .to_dtype(DType::F32)?;
-                latents = scheduler.step(&noise_pred, &latents)?;
+                let next_latents = scheduler.step(&noise_pred, &latents)?;
+                drop(noise_pred);
+                let previous_latents = std::mem::replace(&mut latents, next_latents);
+                drop(previous_latents);
 
                 let init_latents = if step_idx + 1 < timesteps.len() {
                     scheduler.scale_noise(
@@ -409,9 +428,11 @@ impl Flux2Klein {
                 } else {
                     image_latents_packed.clone()
                 };
-                let keep_mask = ((&latent_mask * -1.0)? + 1.0)?;
-                latents = (keep_mask.broadcast_mul(&init_latents)?
+                let masked_latents = (keep_mask.broadcast_mul(&init_latents)?
                     + latent_mask.broadcast_mul(&latents)?)?;
+                drop(init_latents);
+                let previous_latents = std::mem::replace(&mut latents, masked_latents);
+                drop(previous_latents);
             }
 
             (latents, packed_h, packed_w, size)
@@ -435,7 +456,8 @@ impl Flux2Klein {
     }
 
     fn encode_image_latents(&self, image: &RgbImage) -> Result<Tensor> {
-        let image_tensor = image_to_tensor(image, &self.device)?;
+        let image_tensor =
+            image_to_tensor(image, &self.device)?.to_dtype(vae_dtype(&self.device))?;
         let latents = self.vae.encode_patchified_normalized(&image_tensor)?;
         drop(image_tensor);
         Ok(latents.to_dtype(DType::F32)?)
@@ -447,7 +469,8 @@ impl Flux2Klein {
         packed_h: usize,
         packed_w: usize,
     ) -> Result<RgbImage> {
-        let patchified = unpack_latents(&packed_latents, packed_h, packed_w)?;
+        let patchified = unpack_latents(&packed_latents, packed_h, packed_w)?
+            .to_dtype(vae_dtype(&self.device))?;
         drop(packed_latents);
         let decoded = self.vae.decode_patchified_normalized(&patchified)?;
         drop(patchified);
@@ -457,8 +480,59 @@ impl Flux2Klein {
     }
 }
 
-fn transformer_dtype(_device: &Device) -> DType {
+struct CudaTemporaryMemoryCleanup<'a> {
+    device: &'a Device,
+}
+
+impl<'a> CudaTemporaryMemoryCleanup<'a> {
+    fn new(device: &'a Device) -> Self {
+        Self { device }
+    }
+}
+
+impl Drop for CudaTemporaryMemoryCleanup<'_> {
+    fn drop(&mut self) {
+        let _ = release_cuda_temporary_memory(self.device);
+    }
+}
+
+fn transformer_dtype(device: &Device) -> DType {
+    if device.is_cuda() {
+        return DType::BF16;
+    }
+
     DType::F32
+}
+
+fn vae_dtype(device: &Device) -> DType {
+    if device.is_cuda() {
+        return DType::BF16;
+    }
+
+    DType::F32
+}
+
+fn release_cuda_temporary_memory(device: &Device) -> Result<()> {
+    device.synchronize()?;
+
+    #[cfg(feature = "cuda")]
+    if let Ok(cuda_device) = device.as_cuda_device() {
+        let stream = cuda_device.cuda_stream();
+        let context = stream.context();
+        if context.has_async_alloc() {
+            context.bind_to_thread()?;
+            let pool = unsafe {
+                candle_core::cuda::cudarc::driver::result::device::get_mem_pool(
+                    context.cu_device(),
+                )?
+            };
+            unsafe {
+                candle_core::cuda::cudarc::driver::result::mem_pool::trim_to(pool, 0)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn inpaint_crop_bounds(
