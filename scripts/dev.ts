@@ -121,7 +121,7 @@ async function setupCl() {
 async function dev() {
   if (os.type() === 'Windows_NT') {
     await setupCuda().catch(console.error)
-    
+
     // Setup cl.exe path
     await setupCl()
   }
