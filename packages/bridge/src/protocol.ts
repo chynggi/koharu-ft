@@ -2,9 +2,18 @@
 // Tauri IPC bridge; keeps the same `commands` shape and types so callers
 // need zero changes beyond the transport underneath.
 
-const API_BASE_URL =
-	(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-		?.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8787/api/v1";
+const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+	?.env;
+const API_BASE_URL = env?.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8787/api/v1";
+// Required only when koharu-rpc is bound to a non-loopback host (see
+// KOHARU_API_TOKEN in crates/koharu/src/main.rs); harmless to leave unset
+// for local loopback use.
+const API_TOKEN = env?.NEXT_PUBLIC_API_TOKEN;
+
+function authHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+	if (!API_TOKEN) return headers;
+	return { ...headers, authorization: `Bearer ${API_TOKEN}` };
+}
 
 async function errorMessage(response: Response): Promise<string> {
 	try {
@@ -16,7 +25,10 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`${API_BASE_URL}${path}`, init);
+	const response = await fetch(`${API_BASE_URL}${path}`, {
+		...init,
+		headers: authHeaders(init?.headers as Record<string, string> | undefined),
+	});
 	if (!response.ok) throw new Error(await errorMessage(response));
 	const text = await response.text();
 	return (text ? JSON.parse(text) : null) as T;
@@ -47,7 +59,7 @@ function del<T>(path: string): Promise<T> {
 }
 
 async function bytes(path: string): Promise<ArrayBuffer> {
-	const response = await fetch(`${API_BASE_URL}${path}`);
+	const response = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders() });
 	if (!response.ok) throw new Error(await errorMessage(response));
 	return response.arrayBuffer();
 }
@@ -76,18 +88,20 @@ async function readSse<T>(response: Response, onEvent: (event: T) => void): Prom
 export const commands = {
 	getAgentStatus: () => get<AgentStatus>("/agent/status"),
 	loginAgent: (onEvent: (event: LoginEvent) => void) =>
-		fetch(`${API_BASE_URL}/agent/login`, { method: "POST" }).then(async (response) => {
-			if (!response.ok) throw new Error(await errorMessage(response));
-			await readSse<LoginEvent>(response, onEvent);
-			return get<AgentStatus>("/agent/status");
-		}),
+		fetch(`${API_BASE_URL}/agent/login`, { method: "POST", headers: authHeaders() }).then(
+			async (response) => {
+				if (!response.ok) throw new Error(await errorMessage(response));
+				await readSse<LoginEvent>(response, onEvent);
+				return get<AgentStatus>("/agent/status");
+			},
+		),
 	logoutAgent: () => post<AgentStatus>("/agent/logout"),
 	saveAgentConfig: (config: Config) => put<Config>("/agent/config", config),
 	runAgent: (prompt: string, onEvent: (event: Event) => void) =>
 		new Promise<RunId>((resolve, reject) => {
 			fetch(`${API_BASE_URL}/agent/run`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: authHeaders({ "content-type": "application/json" }),
 				body: JSON.stringify({ prompt }),
 			})
 				.then(async (response) => {
@@ -226,7 +240,10 @@ export function openEventStream(handlers: {
 	onResource: (value: ModelResources) => void;
 	onProject: (value: ProjectInfo | null) => void;
 }): EventSource {
-	const source = new EventSource(`${API_BASE_URL}/events`);
+	const eventsUrl = API_TOKEN
+		? `${API_BASE_URL}/events?token=${encodeURIComponent(API_TOKEN)}`
+		: `${API_BASE_URL}/events`;
+	const source = new EventSource(eventsUrl);
 	source.onmessage = (message) => {
 		const envelope = JSON.parse(message.data) as { type: string; data: unknown };
 		switch (envelope.type) {

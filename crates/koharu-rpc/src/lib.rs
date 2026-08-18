@@ -18,14 +18,27 @@ use tauri::{AppHandle, Cef};
 pub type AppState = AppHandle<Cef>;
 
 /// Serve the API (and, if `static_dir` is given, the exported frontend) on
-/// `127.0.0.1:port`. Binds the listener synchronously so the port is
+/// `{host}:{port}`. Binds the listener synchronously so the port is
 /// guaranteed to be accepting connections by the time this call returns,
 /// then drives the server on a spawned task until the process exits.
-pub fn serve(app: AppHandle<Cef>, port: u16, static_dir: Option<PathBuf>) {
-    let listener = match std::net::TcpListener::bind(("127.0.0.1", port)) {
+///
+/// `api_token`, when set, requires every `/api/v1/*` request to present it
+/// as `Authorization: Bearer <token>` or a `?token=<token>` query parameter
+/// (the latter exists because browsers' `EventSource` cannot set headers).
+/// Leave it `None` only for loopback-bound, single-user local use — binding
+/// to a non-loopback `host` without a token exposes the API, including
+/// provider secrets handled by the config routes, to anyone who can reach it.
+pub fn serve(
+    app: AppHandle<Cef>,
+    host: &str,
+    port: u16,
+    static_dir: Option<PathBuf>,
+    api_token: Option<String>,
+) {
+    let listener = match std::net::TcpListener::bind((host, port)) {
         Ok(listener) => listener,
         Err(error) => {
-            tracing::error!(%error, port, "failed to bind the Koharu API server");
+            tracing::error!(%error, host, port, "failed to bind the Koharu API server");
             return;
         }
     };
@@ -40,9 +53,11 @@ pub fn serve(app: AppHandle<Cef>, port: u16, static_dir: Option<PathBuf>) {
             return;
         }
     };
-    tracing::info!("Koharu API listening on http://127.0.0.1:{port}");
+    tracing::info!("Koharu API listening on http://{host}:{port}");
     tokio::spawn(async move {
-        if let Err(error) = axum::serve(listener, api::router(app, static_dir)).await {
+        if let Err(error) =
+            axum::serve(listener, api::router(app, static_dir, api_token)).await
+        {
             tracing::error!(%error, "the Koharu API server stopped");
         }
     });

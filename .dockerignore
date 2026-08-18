@@ -1,0 +1,11 @@
+target/
+.git/
+node_modules/
+**/node_modules/
+packages/*/out/
+packages/*/.next/
+packages/*/dist/
+vendor/tauri-runtime-cef/target/
+.vscode/
+*.log
+rpc-pid.txt

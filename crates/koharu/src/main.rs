@@ -44,7 +44,22 @@ async fn main() {
     let static_dir = std::env::var("KOHARU_STATIC_DIR").ok().map(std::path::PathBuf::from).unwrap_or_else(|| {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/koharu/out")
     });
-    koharu_app::extend_setup(move |handle| koharu_rpc::serve(handle, port, Some(static_dir)));
+    // Defaults to loopback-only, matching the desktop window's own connection.
+    // Set KOHARU_RPC_HOST=0.0.0.0 (e.g. inside a container) to accept remote
+    // connections; KOHARU_API_TOKEN is then required by the server for every
+    // /api/v1/* request (see koharu_rpc::api::require_token) to avoid exposing
+    // provider secrets and project data with no authentication.
+    let host = std::env::var("KOHARU_RPC_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let api_token = std::env::var("KOHARU_API_TOKEN").ok();
+    if host != "127.0.0.1" && api_token.is_none() {
+        panic!(
+            "KOHARU_RPC_HOST is set to a non-loopback address ({host}) but KOHARU_API_TOKEN is \
+             unset; refusing to expose the API without authentication"
+        );
+    }
+    koharu_app::extend_setup(move |handle| {
+        koharu_rpc::serve(handle, &host, port, Some(static_dir), api_token)
+    });
     let frontend_url: tauri::Url = format!("http://127.0.0.1:{port}/")
         .parse()
         .expect("the generated frontend URL is always valid");
