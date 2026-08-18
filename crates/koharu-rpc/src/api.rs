@@ -1,44 +1,32 @@
-//! Axum router assembly + OpenAPI descriptor.
-//!
-//! Each domain registers its routes; this module stitches them into one
-//! `OpenApiRouter<ApiState>` + the OpenAPI doc for static export.
+use std::path::PathBuf;
 
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
-use utoipa_axum::router::OpenApiRouter;
+use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::trace::TraceLayer;
 
 use crate::AppState;
 use crate::routes;
-use crate::{binary, events};
 
-const MAX_BODY_SIZE: usize = 1024 * 1024 * 1024;
+pub fn router(app: AppState, static_dir: Option<PathBuf>) -> Router {
+    let mut router = Router::new().nest("/api/v1", routes::router());
 
-/// State threaded through every `State<ApiState>` extractor.
-pub type ApiState = AppState;
+    if let Some(dir) = static_dir {
+        if dir.is_dir() {
+            let index = dir.join("index.html");
+            let serve_dir = ServeDir::new(&dir).not_found_service(ServeFile::new(index));
+            router = router.fallback_service(serve_dir);
+        } else {
+            tracing::warn!(
+                path = %dir.display(),
+                "static frontend directory does not exist; serving the API only"
+            );
+        }
+    }
 
-/// Build the router + OpenAPI doc. Called by the bin and by `router()`.
-pub fn api() -> (Router<ApiState>, utoipa::openapi::OpenApi) {
-    OpenApiRouter::default()
-        .merge(routes::history::router())
-        .merge(routes::pages::router())
-        .merge(routes::projects::router())
-        .merge(routes::config::router())
-        .merge(routes::meta::router())
-        .merge(routes::fonts::router())
-        .merge(routes::llm::router())
-        .merge(routes::pipelines::router())
-        .merge(routes::downloads::router())
-        .merge(routes::operations::router())
-        .merge(events::router())
-        .merge(binary::router())
-        .split_for_parts()
+    router
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive())
+        .with_state(app)
 }
 
-/// Ready-to-serve router. `app` becomes shared state. All routes live under
-/// `/api/v1` so the UI can reach them through a single proxy prefix.
-pub fn router(app: ApiState) -> Router {
-    let (inner, _) = api();
-    Router::new()
-        .nest("/api/v1", inner.with_state(app))
-        .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
-}

@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Cef, Manager as _};
 
 use crate::commands::{
-    ChannelExt as _,
     canvas::{CanvasChannel, Point},
     editing::{GeometryUpdate, TypographyUpdate},
     output,
@@ -111,7 +110,7 @@ impl KoharuHost {
         let desktop = self.handle.state::<Desktop>();
         desktop.synchronize(&commit.snapshot, page, &commit).await?;
         let canvas = desktop.canvas_state();
-        self.handle.state::<CanvasChannel>().channel.publish(canvas);
+        self.handle.state::<CanvasChannel>().publish(canvas);
         Ok(())
     }
 

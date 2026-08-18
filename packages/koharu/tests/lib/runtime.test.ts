@@ -6,23 +6,13 @@ import Providers from '@/app/providers'
 import { call } from '@/lib/backend'
 import { useProject } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
+import * as protocol from '@koharu/bridge/protocol'
 import {
   commands,
   type Preferences,
   type ProjectInfo,
   type StartupState,
 } from '@koharu/bridge/protocol'
-
-vi.mock('@tauri-apps/api/core', () => ({
-  Channel: class<T> {
-    onmessage: (payload: T) => void
-
-    constructor(handler: (payload: T) => void) {
-      this.onmessage = handler
-    }
-  },
-  invoke: vi.fn(),
-}))
 
 const preferences: Preferences = {
   pipeline: {
@@ -75,13 +65,22 @@ const startupState = (): StartupState => ({
   },
 })
 
+function mockEventStream() {
+  const stream = { close: vi.fn() }
+  const binding = vi
+    .spyOn(protocol, 'openEventStream')
+    .mockImplementation(() => stream as unknown as EventSource)
+  return binding
+}
+
 async function start() {
   const pending = deferred<StartupState>()
   const binding = vi.spyOn(commands, 'subscribe').mockReturnValue(pending.promise)
+  const streamBinding = mockEventStream()
   const view = render(createElement(Providers, null, createElement('div')))
   pending.resolve(startupState())
   await waitFor(() => expect(useKoharuStore.getState().preferences).toBe(preferences))
-  return { binding, dispose: view.unmount }
+  return { binding, streamBinding, dispose: view.unmount }
 }
 
 function ProjectProbe() {
@@ -93,11 +92,12 @@ function ProjectProbe() {
   )
 }
 
-describe('Tauri runtime', () => {
+describe('HTTP runtime', () => {
   it('keeps the project unresolved until its backend query returns', async () => {
     const projectPending = deferred<ProjectInfo | null>()
     vi.spyOn(commands, 'getProject').mockReturnValue(projectPending.promise)
     vi.spyOn(commands, 'subscribe').mockResolvedValue(startupState())
+    mockEventStream()
     const view = render(createElement(Providers, null, createElement(ProjectProbe)))
 
     expect(await screen.findByText('Loading')).toBeInTheDocument()
@@ -106,16 +106,17 @@ describe('Tauri runtime', () => {
     view.unmount()
   })
 
-  it('keeps one live job channel through Strict Mode effect replay', async () => {
+  it('subscribes once and keeps a live event stream through Strict Mode effect replay', async () => {
     const binding = vi.spyOn(commands, 'subscribe').mockResolvedValue(startupState())
+    const streamBinding = mockEventStream()
     const view = render(
       createElement(StrictMode, null, createElement(Providers, null, createElement('div'))),
     )
 
     await waitFor(() => expect(binding).toHaveBeenCalledTimes(1))
-    const [, jobChannel] = binding.mock.calls[0]
+    const handlers = streamBinding.mock.calls.at(-1)![0]
     act(() => {
-      jobChannel.onmessage({
+      handlers.onJob({
         id: 'job',
         state: 'running',
         completed: 0,
@@ -144,12 +145,12 @@ describe('Tauri runtime', () => {
     expect(open).toHaveBeenCalledWith('Volume 1')
   })
 
-  it('applies independent channel updates directly to the store', async () => {
+  it('applies independent stream updates directly to the store', async () => {
     useKoharuStore.setState({ downloads: {}, resources: null })
-    const { binding, dispose } = await start()
-    const [, , downloadChannel, resourcesChannel] = binding.mock.calls[0]
+    const { streamBinding, dispose } = await start()
+    const handlers = streamBinding.mock.calls.at(-1)![0]
 
-    downloadChannel.onmessage({
+    handlers.onDownload({
       id: 7,
       state: 'running',
       name: 'model.bin',
@@ -157,7 +158,7 @@ describe('Tauri runtime', () => {
       total: 100,
       error: null,
     })
-    resourcesChannel.onmessage({
+    handlers.onResource({
       process_memory: 1024,
       system_memory: 8192,
       process_cpu: 5,
@@ -175,12 +176,13 @@ describe('Tauri runtime', () => {
 
   it('refreshes project queries when an autonomous job commits work', async () => {
     vi.spyOn(commands, 'getProject').mockResolvedValueOnce(null).mockResolvedValue(project)
-    const binding = vi.spyOn(commands, 'subscribe').mockResolvedValue(startupState())
+    vi.spyOn(commands, 'subscribe').mockResolvedValue(startupState())
+    const streamBinding = mockEventStream()
     const view = render(createElement(Providers, null, createElement(ProjectProbe)))
     expect(await screen.findByText('Closed')).toBeInTheDocument()
 
-    const [, jobChannel] = binding.mock.calls[0]
-    jobChannel.onmessage({
+    const handlers = streamBinding.mock.calls.at(-1)![0]
+    handlers.onJob({
       id: 'job',
       state: 'running',
       completed: 1,

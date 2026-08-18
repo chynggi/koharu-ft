@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result};
+﻿use anyhow::{Context as _, Result};
 use koharu_desktop::{CanvasState, Desktop};
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, PageDraft};
 use parking_lot::Mutex;
@@ -40,7 +40,7 @@ pub enum PageImportSource {
     Folder,
 }
 
-pub(crate) struct Initialization {
+pub struct Initialization {
     ready: tokio::sync::watch::Sender<bool>,
 }
 
@@ -52,7 +52,7 @@ impl Default for Initialization {
 }
 
 impl Initialization {
-    pub(crate) fn ready(&self) {
+    pub fn ready(&self) {
         self.ready.send_replace(true);
     }
 
@@ -82,8 +82,8 @@ pub struct Download {
 }
 
 #[derive(Default)]
-pub(crate) struct DownloadChannel {
-    pub(crate) channel: Mutex<Option<Channel<Download>>>,
+pub struct DownloadChannel {
+    pub channel: Mutex<Option<Channel<Download>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Type)]
@@ -105,13 +105,31 @@ pub struct ModelResources {
 }
 
 #[derive(Default)]
-pub(crate) struct ResourceChannel {
-    pub(crate) channel: Mutex<Option<Channel<ModelResources>>>,
+pub struct ResourceChannel {
+    pub channel: Mutex<Option<Channel<ModelResources>>>,
 }
 
-#[derive(Default)]
-pub(crate) struct ProjectChannel {
-    pub(crate) channel: Mutex<Option<Channel<Option<ProjectInfo>>>>,
+pub struct ProjectChannel {
+    pub channel: Mutex<Option<Channel<Option<ProjectInfo>>>>,
+    /// Independent broadcast tap for HTTP (SSE) subscribers, alongside the
+    /// single-slot Tauri IPC channel above.
+    pub broadcast: tokio::sync::broadcast::Sender<Option<ProjectInfo>>,
+}
+
+impl Default for ProjectChannel {
+    fn default() -> Self {
+        Self {
+            channel: Mutex::new(None),
+            broadcast: tokio::sync::broadcast::channel(64).0,
+        }
+    }
+}
+
+impl ProjectChannel {
+    pub fn publish(&self, value: Option<ProjectInfo>) {
+        let _ = self.broadcast.send(value.clone());
+        self.channel.publish(value);
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Type)]
@@ -148,7 +166,7 @@ impl From<koharu_pipeline::ResourceSnapshot> for ModelResources {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn subscribe(
+pub async fn subscribe(
     handle: AppHandle<Cef>,
     on_canvas: Channel<CanvasState>,
     on_job: Channel<Job>,
@@ -202,14 +220,14 @@ async fn replace_project(handle: &AppHandle<Cef>, opened: Project) -> Result<()>
     desktop.show_page(&snapshot, page).await?;
     let canvas = desktop.canvas_state();
     drop(previous);
-    handle.state::<CanvasChannel>().channel.publish(canvas);
-    handle.state::<ProjectChannel>().channel.publish(Some(info));
+    handle.state::<CanvasChannel>().publish(canvas);
+    handle.state::<ProjectChannel>().publish(Some(info));
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_project(
+pub async fn get_project(
     project: State<'_, CurrentProject>,
 ) -> std::result::Result<Option<ProjectInfo>, Error> {
     Ok(project.project.lock().await.as_ref().map(Project::info))
@@ -217,7 +235,7 @@ pub(crate) async fn get_project(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_pages(
+pub async fn get_pages(
     project: State<'_, CurrentProject>,
 ) -> std::result::Result<Vec<PageSummary>, Error> {
     let snapshot = project
@@ -232,7 +250,7 @@ pub(crate) async fn get_pages(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_page(
+pub async fn get_page(
     project: State<'_, CurrentProject>,
 ) -> std::result::Result<Option<Page>, Error> {
     let current = {
@@ -249,7 +267,7 @@ pub(crate) async fn get_page(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn list_projects(
+pub async fn list_projects(
     library: State<'_, ProjectLibrary>,
 ) -> std::result::Result<Vec<ProjectSummary>, Error> {
     Ok(library.list()?)
@@ -257,7 +275,7 @@ pub(crate) async fn list_projects(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn create_project(
+pub async fn create_project(
     name: String,
     handle: AppHandle<Cef>,
 ) -> std::result::Result<(), Error> {
@@ -269,7 +287,7 @@ pub(crate) async fn create_project(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn open_project(
+pub async fn open_project(
     name: String,
     handle: AppHandle<Cef>,
 ) -> std::result::Result<(), Error> {
@@ -281,14 +299,14 @@ pub(crate) async fn open_project(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn close_project(handle: AppHandle<Cef>) -> std::result::Result<(), Error> {
+pub async fn close_project(handle: AppHandle<Cef>) -> std::result::Result<(), Error> {
     close_current_project(&handle).await?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn delete_project(
+pub async fn delete_project(
     name: String,
     handle: AppHandle<Cef>,
 ) -> std::result::Result<(), Error> {
@@ -326,14 +344,14 @@ async fn close_current_project(handle: &AppHandle<Cef>) -> Result<()> {
     desktop.clear().await;
     let result = desktop.canvas_state();
     drop(previous);
-    handle.state::<CanvasChannel>().channel.publish(result);
-    handle.state::<ProjectChannel>().channel.publish(None);
+    handle.state::<CanvasChannel>().publish(result);
+    handle.state::<ProjectChannel>().publish(None);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn import_pages(
+pub async fn import_pages(
     source: PageImportSource,
     window: WebviewWindow<Cef>,
     desktop: State<'_, Desktop>,
@@ -425,13 +443,13 @@ pub(crate) async fn import_pages(
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
     let canvas = desktop.canvas_state();
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn select_page(
+pub async fn select_page(
     desktop: State<'_, Desktop>,
     page: koharu_scene::EntityId,
     project: State<'_, CurrentProject>,
@@ -448,7 +466,7 @@ pub(crate) async fn select_page(
     };
     if desktop.show_page(&snapshot, Some(page)).await? {
         let canvas = desktop.canvas_state();
-        canvas_channel.channel.publish(canvas);
+        canvas_channel.publish(canvas);
     }
     Ok(PageSelection {
         project: project_info,

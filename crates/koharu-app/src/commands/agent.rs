@@ -1,4 +1,4 @@
-mod host;
+﻿mod host;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -21,7 +21,7 @@ pub struct AgentStatus {
     pub running: Option<RunId>,
 }
 
-pub(crate) struct AgentState {
+pub struct AgentState {
     agent: Arc<Agent<KoharuHost>>,
     runs: Mutex<HashMap<RunId, Control>>,
     login: Mutex<Option<Control>>,
@@ -29,7 +29,7 @@ pub(crate) struct AgentState {
 }
 
 impl AgentState {
-    pub(crate) fn new(handle: AppHandle<Cef>) -> Result<Self> {
+    pub fn new(handle: AppHandle<Cef>) -> Result<Self> {
         Ok(Self {
             agent: Arc::new(Agent::new(Codex::new()?, KoharuHost::new(handle))?),
             runs: Mutex::new(HashMap::new()),
@@ -53,7 +53,7 @@ impl AgentState {
         })
     }
 
-    pub(crate) async fn reset(&self) {
+    pub async fn reset(&self) {
         if let Some(login) = self.login.lock().as_ref() {
             login.cancel();
         }
@@ -70,7 +70,7 @@ impl AgentState {
         self.agent.clear().await;
     }
 
-    pub(crate) fn cancel_all(&self) {
+    pub fn cancel_all(&self) {
         if let Some(login) = self.login.lock().take() {
             login.cancel();
         }
@@ -82,7 +82,7 @@ impl AgentState {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_agent_status(
+pub async fn get_agent_status(
     state: State<'_, AgentState>,
 ) -> std::result::Result<AgentStatus, Error> {
     Ok(state.status().await?)
@@ -90,7 +90,7 @@ pub(crate) async fn get_agent_status(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn login_agent(
+pub async fn login_agent(
     state: State<'_, AgentState>,
     on_event: Channel<LoginEvent>,
 ) -> std::result::Result<AgentStatus, Error> {
@@ -124,7 +124,7 @@ pub(crate) async fn login_agent(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn logout_agent(
+pub async fn logout_agent(
     state: State<'_, AgentState>,
 ) -> std::result::Result<AgentStatus, Error> {
     state.reset().await;
@@ -134,7 +134,7 @@ pub(crate) async fn logout_agent(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn save_agent_config(
+pub async fn save_agent_config(
     config: Config,
     state: State<'_, AgentState>,
 ) -> std::result::Result<Config, Error> {
@@ -143,7 +143,7 @@ pub(crate) async fn save_agent_config(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn run_agent(
+pub async fn run_agent(
     prompt: String,
     on_event: Channel<Event>,
     handle: AppHandle<Cef>,
@@ -187,7 +187,7 @@ pub(crate) async fn run_agent(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn cancel_agent(
+pub async fn cancel_agent(
     run: RunId,
     state: State<'_, AgentState>,
 ) -> std::result::Result<(), Error> {

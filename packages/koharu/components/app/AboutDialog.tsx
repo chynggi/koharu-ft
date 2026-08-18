@@ -1,10 +1,10 @@
 'use client'
 
-import { getVersion } from '@tauri-apps/api/app'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { commands } from '@koharu/bridge/protocol'
 import {
   Dialog,
   DialogContent,
@@ -28,8 +28,9 @@ export function AboutDialog({
   useEffect(() => {
     if (!open || version) return
     let active = true
-    void getVersion()
-      .then((current) => {
+    void commands
+      .getMeta()
+      .then(({ version: current }) => {
         if (active) setVersion(current)
       })
       .catch(() => {

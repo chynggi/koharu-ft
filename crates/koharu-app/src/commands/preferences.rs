@@ -1,4 +1,4 @@
-use std::fmt;
+﻿use std::fmt;
 
 use anyhow::Result;
 use koharu_pipeline::PipelineConfig;
@@ -19,7 +19,7 @@ pub struct Preferences {
 }
 
 impl Preferences {
-    pub(crate) fn load() -> Result<Self> {
+    pub fn load() -> Result<Self> {
         let pipeline = PipelineConfig::load()?;
         let providers = ProvidersConfig::load()?;
         let typesetting = TypesettingConfig::load()?;
@@ -150,7 +150,7 @@ pub struct LanguageChoice {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn save_preferences(
+pub async fn save_preferences(
     mut pipeline: PipelineConfig,
     providers: ProviderPreferences,
     typesetting: TypesettingConfig,
@@ -191,12 +191,12 @@ fn remember_pipeline_profiles(config: &mut PipelineConfig) {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_preferences() -> std::result::Result<Preferences, Error> {
+pub async fn get_preferences() -> std::result::Result<Preferences, Error> {
     Ok(Preferences::load()?)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_translation_models() -> std::result::Result<Vec<Model>, Error> {
+pub async fn get_translation_models() -> std::result::Result<Vec<Model>, Error> {
     Ok(koharu_translator::Translator::models().await?)
 }

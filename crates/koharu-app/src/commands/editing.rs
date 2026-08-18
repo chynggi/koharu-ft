@@ -1,4 +1,4 @@
-use anyhow::Context as _;
+﻿use anyhow::Context as _;
 use koharu_desktop::{CanvasState, Desktop};
 use koharu_scene::EntityId;
 use serde::Deserialize;
@@ -6,7 +6,7 @@ use specta::Type;
 use tauri::State;
 
 use super::{
-    ChannelExt as _, Error,
+    Error,
     canvas::{CanvasChannel, Point},
     project::{CurrentProject, Page, Project, Typography},
 };
@@ -33,7 +33,7 @@ pub struct TypographyUpdate {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn rename_page(
+pub async fn rename_page(
     page: EntityId,
     label: String,
     desktop: State<'_, Desktop>,
@@ -48,13 +48,13 @@ pub(crate) async fn rename_page(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn delete_pages(
+pub async fn delete_pages(
     pages: Vec<EntityId>,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -69,13 +69,13 @@ pub(crate) async fn delete_pages(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn move_page(
+pub async fn move_page(
     page: EntityId,
     index: u32,
     desktop: State<'_, Desktop>,
@@ -90,13 +90,13 @@ pub(crate) async fn move_page(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_source_text(
+pub async fn set_source_text(
     layer: EntityId,
     text: String,
     desktop: State<'_, Desktop>,
@@ -111,13 +111,13 @@ pub(crate) async fn set_source_text(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_translation(
+pub async fn set_translation(
     layer: EntityId,
     text: Option<String>,
     desktop: State<'_, Desktop>,
@@ -132,13 +132,13 @@ pub(crate) async fn set_translation(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_typography(
+pub async fn set_typography(
     updates: Vec<TypographyUpdate>,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -152,13 +152,13 @@ pub(crate) async fn set_typography(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_geometry(
+pub async fn set_geometry(
     updates: Vec<GeometryUpdate>,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -172,13 +172,13 @@ pub(crate) async fn set_geometry(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_visibility(
+pub async fn set_visibility(
     layers: Vec<EntityId>,
     visible: Option<bool>,
     opacity: Option<f32>,
@@ -194,13 +194,13 @@ pub(crate) async fn set_visibility(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn delete_layers(
+pub async fn delete_layers(
     layers: Vec<EntityId>,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -214,13 +214,13 @@ pub(crate) async fn delete_layers(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn move_layer(
+pub async fn move_layer(
     layer: EntityId,
     parent: EntityId,
     index: u32,
@@ -240,13 +240,13 @@ pub(crate) async fn move_layer(
     desktop
         .synchronize(&commit.snapshot, Some(page), &commit)
         .await?;
-    canvas_channel.channel.publish(desktop.canvas_state());
+    canvas_channel.publish(desktop.canvas_state());
     Ok(view)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn undo(
+pub async fn undo(
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
     canvas_channel: State<'_, CanvasChannel>,
@@ -259,13 +259,13 @@ pub(crate) async fn undo(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn redo(
+pub async fn redo(
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
     canvas_channel: State<'_, CanvasChannel>,
@@ -278,6 +278,6 @@ pub(crate) async fn redo(
         (commit, project.active_page())
     };
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
-    canvas_channel.channel.publish(canvas);
+    canvas_channel.publish(canvas);
     Ok(())
 }

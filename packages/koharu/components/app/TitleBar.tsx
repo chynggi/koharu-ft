@@ -1,6 +1,5 @@
 'use client'
 
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { FilePlus2, FolderOpen, LoaderCircle, Settings } from 'lucide-react'
 import Image from 'next/image'
 import { useState, type ComponentProps } from 'react'
@@ -234,13 +233,13 @@ export function TitleBar() {
             <MenubarTrigger>{t('menu.help')}</MenubarTrigger>
             <MenubarContent>
               <MenubarItem
-                onClick={() => void openUrl('https://discord.gg/mHvHkxGnUY').catch(() => undefined)}
+                onClick={() => window.open('https://discord.gg/mHvHkxGnUY', '_blank', 'noopener,noreferrer')}
               >
                 {t('menu.discord')}
               </MenubarItem>
               <MenubarItem
                 onClick={() =>
-                  void openUrl('https://github.com/mayocream/koharu').catch(() => undefined)
+                  window.open('https://github.com/mayocream/koharu', '_blank', 'noopener,noreferrer')
                 }
               >
                 {t('menu.github')}

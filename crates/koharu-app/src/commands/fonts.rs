@@ -1,4 +1,4 @@
-use koharu_renderer::{
+﻿use koharu_renderer::{
     FontFamily as RenderFontFamily, FontRange as RenderFontRange, FontSource as RenderFontSource,
     FontStyle as RenderFontStyle,
 };
@@ -51,7 +51,7 @@ pub enum FontSource {
 
 #[derive(Type)]
 #[specta(transparent)]
-pub(crate) struct FontPreviewBytes(#[specta(type = Vec<u8>)] Vec<u8>);
+pub struct FontPreviewBytes(#[specta(type = Vec<u8>)] Vec<u8>);
 
 impl IpcResponse for FontPreviewBytes {
     fn body(self) -> tauri::Result<tauri::ipc::InvokeResponseBody> {
@@ -61,7 +61,7 @@ impl IpcResponse for FontPreviewBytes {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_fonts(
+pub async fn get_fonts(
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<Vec<FontFamily>, Error> {
     Ok(desktop
@@ -122,7 +122,7 @@ impl From<RenderFontRange> for FontRange {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_font_preview(
+pub async fn get_font_preview(
     family_name: String,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<FontPreviewBytes, Error> {

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io::Cursor, path::PathBuf};
+﻿use std::{collections::HashSet, io::Cursor, path::PathBuf};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
@@ -21,7 +21,7 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RasterStrokeMode {
+pub enum RasterStrokeMode {
     Paint,
     Erase,
 }
@@ -170,17 +170,17 @@ pub struct Typography {
     pub writing_mode: Option<koharu_scene::WritingMode>,
 }
 
-pub(crate) struct CurrentProject {
-    pub(crate) project: Mutex<Option<Project>>,
+pub struct CurrentProject {
+    pub project: Mutex<Option<Project>>,
 }
 
 #[derive(Clone)]
-pub(crate) struct ProjectLibrary {
+pub struct ProjectLibrary {
     root: PathBuf,
 }
 
 impl ProjectLibrary {
-    pub(crate) fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let root = dirs::document_dir()
             .context("the Documents directory is unavailable")?
             .join("Koharu");
@@ -189,7 +189,7 @@ impl ProjectLibrary {
         Ok(Self { root })
     }
 
-    pub(crate) fn list(&self) -> Result<Vec<ProjectSummary>> {
+    pub fn list(&self) -> Result<Vec<ProjectSummary>> {
         let mut projects = std::fs::read_dir(&self.root)
             .with_context(|| format!("failed to read {}", self.root.display()))?
             .filter_map(|entry| entry.ok())
@@ -225,17 +225,17 @@ impl ProjectLibrary {
         Ok(projects.into_iter().map(|(_, project)| project).collect())
     }
 
-    pub(crate) async fn create(&self, name: &str) -> Result<Project> {
+    pub async fn create(&self, name: &str) -> Result<Project> {
         let (name, path) = self.resolve(name)?;
         Project::create(name, path).await
     }
 
-    pub(crate) async fn open(&self, name: &str) -> Result<Project> {
+    pub async fn open(&self, name: &str) -> Result<Project> {
         let (name, path) = self.resolve(name)?;
         Project::open(name, path).await
     }
 
-    pub(crate) fn delete(&self, name: &str) -> Result<()> {
+    pub fn delete(&self, name: &str) -> Result<()> {
         let (_, path) = self.resolve(name)?;
         if !path.is_dir() {
             bail!("project {name:?} does not exist");
@@ -250,23 +250,23 @@ impl ProjectLibrary {
     }
 }
 
-pub(crate) struct Project {
-    pub(crate) session: Session,
-    pub(crate) name: String,
-    pub(crate) active_page: Option<EntityId>,
-    pub(crate) undo: Vec<Vec<Revision>>,
-    pub(crate) redo: Vec<Vec<Revision>>,
+pub struct Project {
+    pub session: Session,
+    pub name: String,
+    pub active_page: Option<EntityId>,
+    pub undo: Vec<Vec<Revision>>,
+    pub redo: Vec<Vec<Revision>>,
 }
 
 impl Project {
-    pub(crate) async fn create(name: String, path: PathBuf) -> Result<Self> {
+    pub async fn create(name: String, path: PathBuf) -> Result<Self> {
         let session = Session::create(&path)
             .await
             .with_context(|| format!("failed to create {}", path.display()))?;
         Ok(Self::new(session, name))
     }
 
-    pub(crate) async fn open(name: String, path: PathBuf) -> Result<Self> {
+    pub async fn open(name: String, path: PathBuf) -> Result<Self> {
         let session = Session::open(&path)
             .await
             .with_context(|| format!("failed to open {}", path.display()))?;
@@ -284,25 +284,25 @@ impl Project {
         }
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         self.session.snapshot()
     }
 
-    pub(crate) fn revision(&self) -> Revision {
+    pub fn revision(&self) -> Revision {
         self.snapshot().revision()
     }
 
-    pub(crate) fn active_page(&self) -> Option<EntityId> {
+    pub fn active_page(&self) -> Option<EntityId> {
         self.active_page
     }
 
-    pub(crate) fn select_page(&mut self, page: EntityId) -> Result<()> {
+    pub fn select_page(&mut self, page: EntityId) -> Result<()> {
         self.snapshot().page(page)?;
         self.active_page = Some(page);
         Ok(())
     }
 
-    pub(crate) fn reconcile_page(&mut self) {
+    pub fn reconcile_page(&mut self) {
         let snapshot = self.snapshot();
         if self
             .active_page
@@ -312,7 +312,7 @@ impl Project {
         }
     }
 
-    pub(crate) fn info(&self) -> ProjectInfo {
+    pub fn info(&self) -> ProjectInfo {
         ProjectInfo {
             name: self.name.clone(),
             revision: self.revision(),
@@ -322,7 +322,7 @@ impl Project {
         }
     }
 
-    pub(crate) fn pages(snapshot: &Snapshot) -> Result<Vec<PageSummary>> {
+    pub fn pages(snapshot: &Snapshot) -> Result<Vec<PageSummary>> {
         snapshot
             .pages()
             .map(|page| {
@@ -350,7 +350,7 @@ impl Project {
             .collect()
     }
 
-    pub(crate) async fn rename_page(&mut self, page: EntityId, label: String) -> Result<Commit> {
+    pub async fn rename_page(&mut self, page: EntityId, label: String) -> Result<Commit> {
         let snapshot = self.snapshot();
         let current = snapshot.page(page)?.page()?;
         let patch = snapshot.patch(|edit| {
@@ -359,7 +359,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn delete_pages(&mut self, pages: Vec<EntityId>) -> Result<Commit> {
+    pub async fn delete_pages(&mut self, pages: Vec<EntityId>) -> Result<Commit> {
         let snapshot = self.snapshot();
         let pages = Self::unique_roots(&snapshot, pages)?;
         let patch = snapshot.patch(|edit| {
@@ -371,7 +371,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn move_page(&mut self, page: EntityId, index: usize) -> Result<Commit> {
+    pub async fn move_page(&mut self, page: EntityId, index: usize) -> Result<Commit> {
         let snapshot = self.snapshot();
         let siblings = snapshot.pages().map(|page| page.id()).collect::<Vec<_>>();
         let at = Self::placement(&siblings, page, index);
@@ -379,7 +379,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn add_point_text(
+    pub async fn add_point_text(
         &mut self,
         page: EntityId,
         point: Point,
@@ -405,7 +405,7 @@ impl Project {
         .await
     }
 
-    pub(crate) async fn add_text_box(
+    pub async fn add_text_box(
         &mut self,
         page: EntityId,
         frame: Frame,
@@ -470,7 +470,7 @@ impl Project {
         ))
     }
 
-    pub(crate) async fn set_source_text(
+    pub async fn set_source_text(
         &mut self,
         layer: EntityId,
         text: String,
@@ -494,7 +494,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn set_translation(
+    pub async fn set_translation(
         &mut self,
         layer: EntityId,
         text: Option<String>,
@@ -521,7 +521,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn set_typography(
+    pub async fn set_typography(
         &mut self,
         updates: Vec<TypographyUpdate>,
     ) -> Result<Commit> {
@@ -560,7 +560,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn set_geometry(&mut self, updates: Vec<GeometryUpdate>) -> Result<Commit> {
+    pub async fn set_geometry(&mut self, updates: Vec<GeometryUpdate>) -> Result<Commit> {
         let snapshot = self.snapshot();
         let updates = updates
             .into_iter()
@@ -609,7 +609,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn set_visibility(
+    pub async fn set_visibility(
         &mut self,
         layers: Vec<EntityId>,
         visible: Option<bool>,
@@ -640,7 +640,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn delete_layers(&mut self, layers: Vec<EntityId>) -> Result<Commit> {
+    pub async fn delete_layers(&mut self, layers: Vec<EntityId>) -> Result<Commit> {
         let snapshot = self.snapshot();
         let mut expanded = Vec::new();
         for layer in layers {
@@ -681,7 +681,7 @@ impl Project {
     }
 
     #[tracing::instrument(level = "info", skip_all, fields(layer = %layer, parent = %parent))]
-    pub(crate) async fn move_layer(
+    pub async fn move_layer(
         &mut self,
         layer: EntityId,
         parent: EntityId,
@@ -706,7 +706,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn set_geometries(
+    pub async fn set_geometries(
         &mut self,
         geometries: impl IntoIterator<Item = (EntityId, SceneGeometry)>,
     ) -> Result<Commit> {
@@ -733,7 +733,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub(crate) async fn apply_raster_stroke(
+    pub async fn apply_raster_stroke(
         &mut self,
         page: EntityId,
         layer: Option<EntityId>,
@@ -855,7 +855,7 @@ impl Project {
         ))
     }
 
-    pub(crate) async fn undo(&mut self) -> Result<Commit> {
+    pub async fn undo(&mut self) -> Result<Commit> {
         let revisions = self.undo.pop().ok_or_else(|| anyhow!("nothing to undo"))?;
         let commit = match self.session.undo_many(revisions.iter().copied()).await {
             Ok(commit) => commit,
@@ -868,7 +868,7 @@ impl Project {
         Ok(commit)
     }
 
-    pub(crate) async fn redo(&mut self) -> Result<Commit> {
+    pub async fn redo(&mut self) -> Result<Commit> {
         let revisions = self.redo.pop().ok_or_else(|| anyhow!("nothing to redo"))?;
         let commit = match self.session.undo_many(revisions.iter().copied()).await {
             Ok(commit) => commit,
@@ -881,20 +881,20 @@ impl Project {
         Ok(commit)
     }
 
-    pub(crate) fn record(&mut self, revisions: Vec<Revision>) {
+    pub fn record(&mut self, revisions: Vec<Revision>) {
         if !revisions.is_empty() {
             self.undo.push(revisions);
             self.redo.clear();
         }
     }
 
-    pub(crate) fn record_commit(&mut self, commit: &Commit) {
+    pub fn record_commit(&mut self, commit: &Commit) {
         if commit.changes.to != commit.changes.from {
             self.record(vec![commit.revision]);
         }
     }
 
-    pub(crate) async fn commit_rebased(
+    pub async fn commit_rebased(
         &mut self,
         patch: koharu_scene::Patch,
     ) -> Result<Option<Commit>> {
@@ -921,7 +921,7 @@ impl Project {
         Ok(self.session.commit(patch).await?)
     }
 
-    pub(crate) fn page(snapshot: &Snapshot, page: EntityId) -> Result<Page> {
+    pub fn page(snapshot: &Snapshot, page: EntityId) -> Result<Page> {
         let value = snapshot.page(page)?.page()?;
         let source = Self::asset_id(snapshot, page, "source")?;
         let mut layers = Vec::new();

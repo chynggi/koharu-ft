@@ -51,7 +51,7 @@ pub(crate) async fn initialize(handle: AppHandle<Cef>) -> Result<()> {
     Ok(())
 }
 
-pub fn run(context: tauri::Context<Cef>) -> Result<()> {
+pub fn run(context: tauri::Context<Cef>, frontend_url: tauri::Url) -> Result<()> {
     let builder = tauri::Builder::<Cef>::default()
         .command_line_args::<_, &str>([("--hide-chrome-bubbles", None)]);
     #[cfg(debug_assertions)]
@@ -113,6 +113,10 @@ pub fn run(context: tauri::Context<Cef>) -> Result<()> {
             application.manage(koharu_desktop::Desktop::new()?);
             application.manage(AgentState::new(handle.clone())?);
 
+            for hook in crate::take_setup_hooks() {
+                hook(handle.clone());
+            }
+
             let window_config = application
                 .config()
                 .app
@@ -123,6 +127,9 @@ pub fn run(context: tauri::Context<Cef>) -> Result<()> {
             let window = tauri::WebviewWindowBuilder::from_config(application, window_config)?
                 .build()
                 .context("failed to create the main window")?;
+            window
+                .navigate(frontend_url.clone())
+                .context("failed to load the Koharu HTTP UI")?;
             window.show().context("failed to show the main window")?;
             window
                 .set_focus()

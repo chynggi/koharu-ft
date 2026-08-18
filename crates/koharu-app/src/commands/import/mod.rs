@@ -38,12 +38,14 @@ pub(super) struct EncodedPage {
     pub(super) bytes: Vec<u8>,
 }
 
-pub(super) struct Page {
-    pub(super) name: String,
-    pub(super) bytes: Arc<[u8]>,
-    pub(super) format: ImageFormat,
-    pub(super) width: u32,
-    pub(super) height: u32,
+/// A decoded page ready to be committed as a project page asset.
+#[derive(Debug)]
+pub struct Page {
+    pub name: String,
+    pub bytes: Arc<[u8]>,
+    pub format: ImageFormat,
+    pub width: u32,
+    pub height: u32,
 }
 
 fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
@@ -71,7 +73,8 @@ fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
     })
 }
 
-pub(super) fn import(mut paths: Vec<PathBuf>) -> Result<Vec<Page>> {
+/// Decode image/archive/PDF paths into pages, sorted in reading order.
+pub fn import(mut paths: Vec<PathBuf>) -> Result<Vec<Page>> {
     alphanumeric_sort::sort_slice_by_os_str_key(&mut paths, |path| {
         path.file_name().unwrap_or_else(|| path.as_os_str())
     });

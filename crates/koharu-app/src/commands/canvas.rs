@@ -1,4 +1,4 @@
-use std::sync::Arc;
+﻿use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow, bail};
 use image::{GrayImage, ImageEncoder as _, codecs::png::PngEncoder};
@@ -39,11 +39,11 @@ pub struct LayerCommit {
 
 #[derive(Type)]
 #[specta(transparent)]
-pub(crate) struct CanvasBytes(#[specta(type = Vec<u8>)] Vec<u8>);
+pub struct CanvasBytes(#[specta(type = Vec<u8>)] Vec<u8>);
 
 #[derive(Clone, Copy, Deserialize, Type)]
 #[specta(transparent)]
-pub(crate) struct CanvasGeneration(#[specta(type = f64)] u64);
+pub struct CanvasGeneration(#[specta(type = f64)] u64);
 
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct CanvasPagePreparation {
@@ -57,14 +57,32 @@ impl IpcResponse for CanvasBytes {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct CanvasChannel {
-    pub(crate) channel: Mutex<Option<Channel<CanvasState>>>,
+pub struct CanvasChannel {
+    pub channel: Mutex<Option<Channel<CanvasState>>>,
+    /// Independent broadcast tap for HTTP (SSE) subscribers, alongside the
+    /// single-slot Tauri IPC channel above.
+    pub broadcast: tokio::sync::broadcast::Sender<CanvasState>,
+}
+
+impl Default for CanvasChannel {
+    fn default() -> Self {
+        Self {
+            channel: Mutex::new(None),
+            broadcast: tokio::sync::broadcast::channel(64).0,
+        }
+    }
+}
+
+impl CanvasChannel {
+    pub fn publish(&self, value: CanvasState) {
+        let _ = self.broadcast.send(value.clone());
+        self.channel.publish(value);
+    }
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_canvas_manifest(
+pub async fn get_canvas_manifest(
     generation: CanvasGeneration,
     desktop: State<'_, Desktop>,
 ) -> Result<CanvasBytes, Error> {
@@ -73,7 +91,7 @@ pub(crate) async fn get_canvas_manifest(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_canvas_resource(
+pub async fn get_canvas_resource(
     generation: CanvasGeneration,
     resource: String,
     desktop: State<'_, Desktop>,
@@ -88,7 +106,7 @@ pub(crate) async fn get_canvas_resource(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn prepare_canvas_page(
+pub async fn prepare_canvas_page(
     page: EntityId,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -112,7 +130,7 @@ pub(crate) async fn prepare_canvas_page(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_canvas_page_manifest(
+pub async fn get_canvas_page_manifest(
     page: EntityId,
     revision: Revision,
     desktop: State<'_, Desktop>,
@@ -122,7 +140,7 @@ pub(crate) async fn get_canvas_page_manifest(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_canvas_page_resource(
+pub async fn get_canvas_page_resource(
     page: EntityId,
     revision: Revision,
     resource: String,
@@ -138,7 +156,7 @@ pub(crate) async fn get_canvas_page_resource(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn add_point_text(
+pub async fn add_point_text(
     point: Point,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -155,7 +173,7 @@ pub(crate) async fn add_point_text(
         (commit, project.active_page(), layer)
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
-    canvas_channel.channel.publish(desktop.canvas_state());
+    canvas_channel.publish(desktop.canvas_state());
     Ok(LayerCommit {
         revision: commit.revision,
         layer,
@@ -164,7 +182,7 @@ pub(crate) async fn add_point_text(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn add_text_box(
+pub async fn add_text_box(
     frame: Frame,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
@@ -181,7 +199,7 @@ pub(crate) async fn add_text_box(
         (commit, project.active_page(), layer)
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
-    canvas_channel.channel.publish(desktop.canvas_state());
+    canvas_channel.publish(desktop.canvas_state());
     Ok(LayerCommit {
         revision: commit.revision,
         layer,
@@ -190,7 +208,7 @@ pub(crate) async fn add_text_box(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn commit_paint(
+pub async fn commit_paint(
     expected_revision: Revision,
     layer: Option<EntityId>,
     points: Vec<Point>,
@@ -215,7 +233,7 @@ pub(crate) async fn commit_paint(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn commit_erase(
+pub async fn commit_erase(
     expected_revision: Revision,
     layer: EntityId,
     points: Vec<Point>,
@@ -277,7 +295,7 @@ async fn commit_raster_stroke(
         (commit, project.active_page(), element)
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
-    canvas_channel.channel.publish(desktop.canvas_state());
+    canvas_channel.publish(desktop.canvas_state());
     Ok(LayerCommit {
         revision: commit.revision,
         layer: element,
@@ -286,7 +304,7 @@ async fn commit_raster_stroke(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn commit_transform(
+pub async fn commit_transform(
     expected_revision: Revision,
     elements: Vec<TransformFrame>,
     desktop: State<'_, Desktop>,
@@ -306,13 +324,13 @@ pub(crate) async fn commit_transform(
         (commit, project.active_page())
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
-    canvas_channel.channel.publish(desktop.canvas_state());
+    canvas_channel.publish(desktop.canvas_state());
     Ok(Some(commit.revision))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn commit_inpaint(
+pub async fn commit_inpaint(
     expected_revision: Revision,
     points: Vec<Point>,
     diameter: f32,

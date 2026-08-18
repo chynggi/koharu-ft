@@ -3,7 +3,7 @@ import { act, fireEvent, render as testingRender, screen, waitFor } from '@testi
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from 'next-themes'
 import { StrictMode, type ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TitleBar } from '@/components/app/TitleBar'
 import { WindowControls } from '@/components/app/WindowChrome'
@@ -42,12 +42,8 @@ const nativeWindow = vi.hoisted(() => ({
   onResized: vi.fn(async () => () => undefined),
   toggleMaximize: vi.fn(async () => undefined),
 }))
-const nativeOpenUrl = vi.hoisted(() => vi.fn(async () => undefined))
-const nativeGetVersion = vi.hoisted(() => vi.fn(async () => '0.62.0'))
 
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => nativeWindow }))
-vi.mock('@tauri-apps/api/app', () => ({ getVersion: nativeGetVersion }))
-vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: nativeOpenUrl }))
 
 const emptyCredential = () => ({ configured: false, value: null, clear: false })
 
@@ -196,6 +192,17 @@ function render(ui: ReactNode) {
 }
 
 describe('greenfield editor', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    })
+  })
+
+  afterEach(() => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  })
+
   it('registers one native resize listener in React strict mode', async () => {
     const unlisten = vi.fn()
     nativeWindow.onResized.mockClear()
@@ -248,21 +255,32 @@ describe('greenfield editor', () => {
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
   })
 
-  it('opens community links through the Tauri opener plugin', async () => {
-    nativeOpenUrl.mockClear()
+  it('opens community links in a new tab', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
     const user = userEvent.setup()
     render(<TitleBar />)
 
     await user.click(screen.getByRole('menuitem', { name: 'Help' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Discord' }))
-    expect(nativeOpenUrl).toHaveBeenLastCalledWith('https://discord.gg/mHvHkxGnUY')
+    expect(openSpy).toHaveBeenLastCalledWith(
+      'https://discord.gg/mHvHkxGnUY',
+      '_blank',
+      'noopener,noreferrer',
+    )
 
     await user.click(screen.getByRole('menuitem', { name: 'Help' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'GitHub' }))
-    expect(nativeOpenUrl).toHaveBeenLastCalledWith('https://github.com/mayocream/koharu')
+    expect(openSpy).toHaveBeenLastCalledWith(
+      'https://github.com/mayocream/koharu',
+      '_blank',
+      'noopener,noreferrer',
+    )
   })
 
   it('shows the current version and author in About', async () => {
+    const getMeta = vi
+      .spyOn(commands, 'getMeta')
+      .mockResolvedValue({ name: 'koharu', version: '0.62.0' })
     const user = userEvent.setup()
     render(<TitleBar />)
 
@@ -272,12 +290,12 @@ describe('greenfield editor', () => {
     expect(await screen.findByRole('heading', { name: 'Koharu' })).toBeInTheDocument()
     expect(await screen.findByText('0.62.0')).toBeInTheDocument()
     expect(screen.getByText('Mayo Takanashi')).toBeInTheDocument()
-    expect(nativeGetVersion).toHaveBeenCalledTimes(1)
+    expect(getMeta).toHaveBeenCalledTimes(1)
   })
 
   it('loads page thumbnails into the filmstrip', async () => {
     installProject()
-    const thumbnail = vi.spyOn(commands, 'getThumbnail').mockResolvedValue([1])
+    const thumbnail = vi.spyOn(commands, 'getThumbnail').mockResolvedValue(new Uint8Array([1]).buffer)
     render(<PageRail />)
     await waitFor(() => expect(thumbnail).toHaveBeenCalledWith('page'))
     expect(await screen.findByRole('img', { name: 'Page 1' })).toHaveAttribute(

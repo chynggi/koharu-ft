@@ -18,11 +18,17 @@ export function useMacOS() {
   return macOS
 }
 
+function isEmbedded(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 export function WindowControls() {
   const { t } = useTranslation()
   const [maximized, setMaximized] = useState(false)
+  const embedded = isEmbedded()
 
   useEffect(() => {
+    if (!embedded) return
     const window = getCurrentWindow()
     let disposed = false
     let unlisten: (() => void) | undefined
@@ -43,13 +49,15 @@ export function WindowControls() {
       disposed = true
       if (unlisten) void Promise.resolve(unlisten()).catch(() => undefined)
     }
-  }, [])
+  }, [embedded])
 
   const toggleMaximize = async () => {
     const window = getCurrentWindow()
     await window.toggleMaximize()
     setMaximized(await window.isMaximized())
   }
+
+  if (!embedded) return null
 
   return (
     <div className='flex h-full shrink-0'>

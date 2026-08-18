@@ -26,6 +26,29 @@ async fn main() {
     let _cli = Cli::parse();
     let _guard = sentry::initialize();
     panic::install();
+
+    // HTTP API + static frontend, served from the desktop process; the main
+    // window loads its UI from here. Port defaults to `DEFAULT_RPC_PORT` but
+    // can be overridden with `KOHARU_RPC_PORT`. The static frontend directory
+    // defaults to the workspace's exported `packages/koharu/out` (dev
+    // workflow) but can be overridden with `KOHARU_STATIC_DIR`.
+    // Must match `devUrl` in tauri.conf.json: the CEF window's initial navigation
+    // races the async browser-creation callback (window.navigate() silently no-ops
+    // if called before it), so the config-baked URL is what actually loads when
+    // KOHARU_RPC_PORT isn't overridden.
+    const DEFAULT_RPC_PORT: u16 = 47823;
+    let port = std::env::var("KOHARU_RPC_PORT")
+        .ok()
+        .and_then(|port| port.parse().ok())
+        .unwrap_or(DEFAULT_RPC_PORT);
+    let static_dir = std::env::var("KOHARU_STATIC_DIR").ok().map(std::path::PathBuf::from).unwrap_or_else(|| {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/koharu/out")
+    });
+    koharu_app::extend_setup(move |handle| koharu_rpc::serve(handle, port, Some(static_dir)));
+    let frontend_url: tauri::Url = format!("http://127.0.0.1:{port}/")
+        .parse()
+        .expect("the generated frontend URL is always valid");
+
     let filter = tracing_subscriber::filter::EnvFilter::builder()
         .with_default_directive(tracing::Level::INFO.into())
         .from_env_lossy();
@@ -34,6 +57,6 @@ async fn main() {
         .with(sentry::tracing_layer())
         .with(koharu::tracing::TimingLayer::new())
         .init();
-    tokio::task::block_in_place(|| app::run(tauri::generate_context!()))
+    tokio::task::block_in_place(|| app::run(tauri::generate_context!(), frontend_url))
         .expect("failed to run the desktop application");
 }

@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result};
+﻿use anyhow::{Context as _, Result};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use image::{
     ExtendedColorType, ImageEncoder as _,
@@ -20,7 +20,7 @@ const THUMBNAIL_EDGE: u32 = 128;
 
 #[derive(Type)]
 #[specta(transparent)]
-pub(crate) struct ThumbnailBytes(#[specta(type = Vec<u8>)] Vec<u8>);
+pub struct ThumbnailBytes(#[specta(type = Vec<u8>)] Vec<u8>);
 
 impl IpcResponse for ThumbnailBytes {
     fn body(self) -> tauri::Result<tauri::ipc::InvokeResponseBody> {
@@ -37,8 +37,29 @@ pub enum ExportFormat {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn export_pages(
+pub async fn export_pages(
     window: WebviewWindow<Cef>,
+    pages: Vec<EntityId>,
+    format: ExportFormat,
+    project: State<'_, CurrentProject>,
+    desktop: State<'_, Desktop>,
+) -> std::result::Result<(), Error> {
+    let Some(directory) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .pick_folder()
+        .await
+        .map(|directory| directory.path().to_owned())
+    else {
+        return Ok(());
+    };
+    export_pages_to(directory, pages, format, project, desktop).await
+}
+
+/// Core of [`export_pages`], taking an explicit output directory instead of
+/// showing a native file dialog. Used directly by the HTTP API, which has no
+/// dialog to show.
+pub async fn export_pages_to(
+    directory: std::path::PathBuf,
     pages: Vec<EntityId>,
     format: ExportFormat,
     project: State<'_, CurrentProject>,
@@ -48,14 +69,6 @@ pub(crate) async fn export_pages(
         let project = project.project.lock().await;
         let project = project.as_ref().context("no project is open")?;
         project.snapshot()
-    };
-    let Some(directory) = rfd::AsyncFileDialog::new()
-        .set_parent(&window)
-        .pick_folder()
-        .await
-        .map(|directory| directory.path().to_owned())
-    else {
-        return Ok(());
     };
     let pages = if pages.is_empty() {
         snapshot.pages().map(|page| page.id()).collect()
@@ -153,7 +166,7 @@ pub(crate) async fn export_pages(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_thumbnail(
+pub async fn get_thumbnail(
     page: EntityId,
     project: State<'_, CurrentProject>,
 ) -> std::result::Result<ThumbnailBytes, Error> {
@@ -184,7 +197,7 @@ pub(crate) async fn get_thumbnail(
     Ok(ThumbnailBytes(bytes))
 }
 
-pub(crate) async fn rendered_preview(
+pub async fn rendered_preview(
     renderer: &Renderer,
     rasterizer: Arc<Rasterizer>,
     snapshot: &Snapshot,

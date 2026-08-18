@@ -1,14 +1,28 @@
-//! Per-domain route modules. Each exposes `router()` returning an
-//! `OpenApiRouter<ApiState>` that can be merged into the top-level router in
-//! `api.rs`.
+use axum::Router;
 
+use crate::AppState;
+
+pub mod agent;
+pub mod canvas;
 pub mod config;
-pub mod downloads;
+pub mod events;
 pub mod fonts;
-pub mod history;
-pub mod llm;
+pub mod layers;
 pub mod meta;
 pub mod operations;
 pub mod pages;
-pub mod pipelines;
 pub mod projects;
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .merge(meta::router())
+        .merge(config::router())
+        .merge(projects::router())
+        .merge(pages::router())
+        .merge(operations::router())
+        .merge(fonts::router())
+        .merge(canvas::router())
+        .merge(layers::router())
+        .merge(agent::router())
+        .merge(events::router())
+}

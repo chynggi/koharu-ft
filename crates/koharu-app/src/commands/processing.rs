@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, sync::Arc};
+﻿use std::{collections::HashMap, fmt, sync::Arc};
 
 use anyhow::{Context as _, Result};
 use koharu_pipeline::{Committer, Progress, RunStatus, StageOutput, StopToken};
@@ -59,21 +59,39 @@ pub enum JobState {
 }
 
 #[derive(Default)]
-pub(crate) struct Processing {
-    pub(crate) stops: Mutex<HashMap<JobId, StopToken>>,
-    pub(crate) jobs: Mutex<HashMap<JobId, Job>>,
-    pub(crate) inpainting_mask: Mutex<Option<koharu_pipeline::InpaintingMask>>,
+pub struct Processing {
+    pub stops: Mutex<HashMap<JobId, StopToken>>,
+    pub jobs: Mutex<HashMap<JobId, Job>>,
+    pub inpainting_mask: Mutex<Option<koharu_pipeline::InpaintingMask>>,
 }
 
-#[derive(Default)]
-pub(crate) struct JobChannel {
-    pub(crate) channel: Mutex<Option<Channel<Job>>>,
+pub struct JobChannel {
+    pub channel: Mutex<Option<Channel<Job>>>,
+    /// Independent broadcast tap for HTTP (SSE) subscribers, alongside the
+    /// single-slot Tauri IPC channel above.
+    pub broadcast: tokio::sync::broadcast::Sender<Job>,
+}
+
+impl Default for JobChannel {
+    fn default() -> Self {
+        Self {
+            channel: Mutex::new(None),
+            broadcast: tokio::sync::broadcast::channel(64).0,
+        }
+    }
+}
+
+impl JobChannel {
+    pub fn publish(&self, value: Job) {
+        let _ = self.broadcast.send(value.clone());
+        self.channel.publish(value);
+    }
 }
 
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn process(
+pub async fn process(
     handle: AppHandle<Cef>,
     scope: koharu_pipeline::Scope,
     operation: koharu_pipeline::Operation,
@@ -108,7 +126,7 @@ pub(crate) async fn process(
         error: None,
     };
     processing.jobs.lock().insert(id, job.clone());
-    job_channel.channel.publish(job);
+    job_channel.publish(job);
 
     let pipeline = handle.state::<koharu_pipeline::Pipeline>().inner().clone();
     let task_handle = handle.clone();
@@ -162,7 +180,7 @@ pub(crate) async fn process(
                     })
                 };
                 if let Some(job) = job {
-                    progress_handle.state::<JobChannel>().channel.publish(job);
+                    progress_handle.state::<JobChannel>().publish(job);
                 }
             }
         }));
@@ -189,7 +207,7 @@ pub(crate) async fn process(
                 let desktop = self.handle.state::<Desktop>();
                 desktop.synchronize(&commit.snapshot, page, &commit).await?;
                 let canvas = desktop.canvas_state();
-                self.handle.state::<CanvasChannel>().channel.publish(canvas);
+                self.handle.state::<CanvasChannel>().publish(canvas);
                 Ok(snapshot)
             }
         }
@@ -223,7 +241,7 @@ pub(crate) async fn process(
                 job
             });
         if let Some(job) = job {
-            task_handle.state::<JobChannel>().channel.publish(job);
+            task_handle.state::<JobChannel>().publish(job);
         }
     }));
     Ok(id)
@@ -231,7 +249,7 @@ pub(crate) async fn process(
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn stop_job(
+pub async fn stop_job(
     job: JobId,
     processing: State<'_, Processing>,
 ) -> std::result::Result<(), Error> {

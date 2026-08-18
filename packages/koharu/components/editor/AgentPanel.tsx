@@ -1,6 +1,5 @@
 'use client'
 
-import { Channel } from '@tauri-apps/api/core'
 import { Bot, CircleStop, LogOut, Send, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -254,10 +253,8 @@ export function AgentPanel() {
   async function login() {
     setLoggingIn(true)
     setLoginEvent({ type: 'progress', message: t('agent.signingIn') })
-    const channel = new Channel<LoginEvent>()
-    channel.onmessage = setLoginEvent
     try {
-      setStatus(await call(commands.loginAgent, channel))
+      setStatus(await call(commands.loginAgent, setLoginEvent))
       setLoginEvent(null)
     } finally {
       setLoggingIn(false)
@@ -289,8 +286,7 @@ export function AgentPanel() {
     ])
     setActivity(t('agent.working'))
 
-    const channel = new Channel<Event>()
-    channel.onmessage = (event) => {
+    const onEvent = (event: Event) => {
       switch (event.type) {
         case 'started':
           setRunning(event.run)
@@ -330,7 +326,7 @@ export function AgentPanel() {
       }
     }
     try {
-      const run = await call(commands.runAgent, message, channel)
+      const run = await call(commands.runAgent, message, onEvent)
       if (!settled) setRunning(run)
     } catch (error) {
       settled = true

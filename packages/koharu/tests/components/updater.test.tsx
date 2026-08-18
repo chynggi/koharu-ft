@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Updater } from '@/components/app/Updater'
 
@@ -11,6 +11,17 @@ vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: vi.fn() }))
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: nativeCheck }))
 
 describe('updater', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    })
+  })
+
+  afterEach(() => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  })
+
   it('renders Markdown release notes inside a viewport-bounded scroll area', async () => {
     nativeCheck.mockResolvedValue({
       version: '0.63.0',

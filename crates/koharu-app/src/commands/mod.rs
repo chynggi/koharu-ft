@@ -1,13 +1,13 @@
-pub(crate) mod agent;
-pub(crate) mod canvas;
-pub(crate) mod editing;
-pub(crate) mod fonts;
-pub(crate) mod import;
-pub(crate) mod lifecycle;
-pub(crate) mod output;
-pub(crate) mod preferences;
-pub(crate) mod processing;
-pub(crate) mod project;
+﻿pub mod agent;
+pub mod canvas;
+pub mod editing;
+pub mod fonts;
+pub mod import;
+pub mod lifecycle;
+pub mod output;
+pub mod preferences;
+pub mod processing;
+pub mod project;
 
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -16,7 +16,7 @@ use tauri::ipc::{Channel, IpcResponse};
 
 #[derive(Debug, Type)]
 #[specta(transparent)]
-pub(crate) struct Error(#[specta(type = String)] anyhow::Error);
+pub struct Error(#[specta(type = String)] anyhow::Error);
 
 impl<E> From<E> for Error
 where
@@ -24,6 +24,12 @@ where
 {
     fn from(error: E) -> Self {
         Self(error.into())
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{:#}", self.0)
     }
 }
 
@@ -36,7 +42,7 @@ impl Serialize for Error {
     }
 }
 
-pub(crate) trait ChannelExt<T> {
+pub trait ChannelExt<T> {
     fn publish(&self, value: T);
 }
 
