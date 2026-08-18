@@ -36,6 +36,8 @@ koharu-ml = { path = "crates/koharu-ml" }
 koharu-pipeline = { path = "crates/koharu-pipeline" }
 koharu-translator = { path = "crates/koharu-translator" }
 koharu-psd = { path = "crates/koharu-psd" }
+koharu-core = { path = "crates/koharu-core" }
+koharu-rpc = { path = "crates/koharu-rpc" }
 koharu-renderer = { path = "crates/koharu-renderer" }
 koharu-rasterizer = { path = "crates/koharu-rasterizer", default-features = false }
 koharu-desktop = { path = "crates/koharu-desktop" }
@@ -49,6 +51,22 @@ image = "0.25.10"
 webp = { version = "0.3.1" }
 fast_image_resize = { version = "6.1.0", features = ["image", "rayon"] }
 anyhow = "1.0.104"
+async-stream = "0.3"
+axum = { version = "0.8", features = ["multipart", "ws"] }
+camino = { version = "1.1", features = ["serde1"] }
+chrono = "0.4"
+dashmap = "6.1"
+indexmap = "2.13"
+natord = "1.0.9"
+proptest = "1"
+rmcp = { version = "0.16", features = [
+    "server",
+    "transport-streamable-http-server",
+] }
+tokio-stream = "0.1"
+tower-http = { version = "0.6", features = ["cors"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "indexmap"] }
+utoipa-axum = "0.2"
 async-trait = "0.1.92"
 imageproc = "0.27.0"
 ab_glyph = "0.2.32"
