@@ -30,6 +30,10 @@ export function ResourceMonitor() {
     device?.memory_used != null && device.memory_budget != null
       ? memory(device.memory_used, device.memory_budget)
       : null
+  // Windows reports this process alone, the Linux providers report the whole
+  // device. Say which, rather than labelling both "VRAM in use".
+  const scope =
+    device?.memory_scope == null ? null : t(`resources.memoryScope.${device.memory_scope}`)
 
   return (
     <div className='ml-auto shrink-0'>
@@ -91,7 +95,11 @@ export function ResourceMonitor() {
                 label={device.name}
                 value={gpu ?? '—'}
                 detail={
-                  vram ? t('resources.vramValue', { value: vram }) : t('resources.vramUnavailable')
+                  vram == null
+                    ? t('resources.vramUnavailable')
+                    : scope
+                      ? t('resources.vramScoped', { value: vram, scope })
+                      : t('resources.vramValue', { value: vram })
                 }
               />
             )}

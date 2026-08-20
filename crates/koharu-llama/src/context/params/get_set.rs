@@ -1,8 +1,8 @@
 ﻿use std::num::NonZeroU32;
 
 use super::{
-    KvCacheType, LlamaAttentionType, LlamaContextParams, LlamaContextType, LlamaPoolingType,
-    RopeScalingType,
+    KvCacheType, LlamaAttentionType, LlamaContextParams, LlamaContextType,
+    LlamaFlashAttentionType, LlamaPoolingType, RopeScalingType,
 };
 
 impl LlamaContextParams {
@@ -305,20 +305,26 @@ impl LlamaContextParams {
         LlamaAttentionType::from(self.context_params.attention_type)
     }
 
-    /// Set the flash attention policy using llama.cpp enum
+    /// Set the flash attention policy
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use koharu_llama::context::params::{LlamaContextParams, LlamaFlashAttentionType};
+    /// let params = LlamaContextParams::default()
+    ///     .with_flash_attention_policy(LlamaFlashAttentionType::Enabled);
+    /// assert_eq!(params.flash_attention_policy(), LlamaFlashAttentionType::Enabled);
+    /// ```
     #[must_use]
-    pub fn with_flash_attention_policy(
-        mut self,
-        policy: koharu_llama_sys::llama_flash_attn_type,
-    ) -> Self {
-        self.context_params.flash_attn_type = policy;
+    pub fn with_flash_attention_policy(mut self, policy: LlamaFlashAttentionType) -> Self {
+        self.context_params.flash_attn_type = i32::from(policy);
         self
     }
 
     /// Get the flash attention policy
     #[must_use]
-    pub fn flash_attention_policy(&self) -> koharu_llama_sys::llama_flash_attn_type {
-        self.context_params.flash_attn_type
+    pub fn flash_attention_policy(&self) -> LlamaFlashAttentionType {
+        LlamaFlashAttentionType::from(self.context_params.flash_attn_type)
     }
 
     /// Set the rope frequency base

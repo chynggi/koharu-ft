@@ -78,12 +78,13 @@ impl Stages {
         config: &PipelineConfig,
         translator: koharu_translator::Translator,
         device: &koharu_ml::Device,
+        resources: Arc<crate::resources::ResourceMonitor>,
     ) -> Result<Self> {
         Ok(Self {
             detection: detection::Processor::new(config.detection()?, device.clone()),
             ocr: ocr::Processor::new(config.ocr.clone(), device.clone()),
             translation: translation::Processor::new(config.translation.clone(), translator),
-            inpainting: inpainting::Processor::new(config.inpainting()?, device.clone())?,
+            inpainting: inpainting::Processor::new(config.inpainting()?, device.clone(), resources)?,
         })
     }
 
@@ -150,6 +151,7 @@ mod tests {
             &PipelineConfig::default(),
             translator,
             &koharu_ml::Device::cpu(),
+            crate::resources::ResourceMonitor::new(&koharu_ml::Device::cpu()),
         )
         .unwrap();
 

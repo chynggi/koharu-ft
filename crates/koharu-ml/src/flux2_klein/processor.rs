@@ -6,6 +6,10 @@ use anyhow::{Result, ensure};
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
 use image::{DynamicImage, GrayImage, Luma, RgbImage};
 
+/// The working area every input is shrunk to. FLUX.2 denoises latents, so this
+/// is what decides how much memory one call needs.
+pub const DEFAULT_MAX_PIXELS: u32 = 1024 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Flux2KleinOptions {
     pub height: Option<u32>,
@@ -13,6 +17,7 @@ pub struct Flux2KleinOptions {
     pub num_inference_steps: i32,
     pub seed: i64,
     pub num_images_per_prompt: i32,
+    pub max_pixels: u32,
 }
 
 impl Default for Flux2KleinOptions {
@@ -23,6 +28,7 @@ impl Default for Flux2KleinOptions {
             num_inference_steps: 4,
             seed: -1,
             num_images_per_prompt: 1,
+            max_pixels: DEFAULT_MAX_PIXELS,
         }
     }
 }
@@ -33,6 +39,7 @@ pub struct Flux2KleinInpaintOptions {
     pub strength: f64,
     pub num_inference_steps: usize,
     pub seed: i64,
+    pub max_pixels: u32,
 }
 
 impl Default for Flux2KleinInpaintOptions {
@@ -42,6 +49,7 @@ impl Default for Flux2KleinInpaintOptions {
             strength: 0.8,
             num_inference_steps: 4,
             seed: -1,
+            max_pixels: DEFAULT_MAX_PIXELS,
         }
     }
 }
@@ -49,6 +57,26 @@ impl Default for Flux2KleinInpaintOptions {
 pub(super) struct Flux2ImageProcessor;
 
 impl Flux2ImageProcessor {
+    /// The working area has to leave room for the 16-pixel alignment every
+    /// FLUX.2 input is cropped to.
+    pub(super) fn check_max_pixels(max_pixels: u32) -> Result<()> {
+        ensure!(
+            max_pixels >= 64 * 64,
+            "max_pixels must be at least {} (64x64), got {max_pixels}",
+            64 * 64
+        );
+        Ok(())
+    }
+
+    /// Shrinks an oversized image onto the working area and leaves everything
+    /// that already fits untouched.
+    pub(super) fn fit_to_area(image: &DynamicImage, max_pixels: u32) -> DynamicImage {
+        if u64::from(image.width()) * u64::from(image.height()) <= u64::from(max_pixels) {
+            return image.clone();
+        }
+        Self::_resize_to_target_area(image, max_pixels)
+    }
+
     pub(super) fn check_image_input(image: &DynamicImage) -> Result<()> {
         ensure!(
             image.width() >= 64 && image.height() >= 64,

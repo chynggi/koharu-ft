@@ -335,12 +335,18 @@
   },
   "resources": {
     "cpu": "CPU",
+    "memoryScope": {
+      "device": "this device, all applications",
+      "process": "Koharu only",
+      "system": "this machine, shared memory"
+    },
     "processUtilization": "进程利用率",
     "ram": "RAM",
     "summary": "内存 {{ram}}%，CPU {{cpu}}%",
     "title": "系统资源",
     "tooltip": "内存 {{ramUsed}} / {{ramTotal}} · CPU {{cpu}}%",
     "usedOfTotal": "已使用 {{used}}，共 {{total}}",
+    "vramScoped": "{{value}} VRAM · {{scope}}",
     "vramUnavailable": "不可用",
     "vramValue": "{{value}} 显存"
   },
@@ -378,15 +384,93 @@
       "vision": "视觉",
       "visionDescription": "翻译时将页面图像输入给 LLM。"
     },
+    "llm": {
+      "accelerator": "Accelerator",
+      "acceleratorDescription": "Offload and attention settings passed to llama.cpp.",
+      "activeDevice": "Running on {{device}} ({{backend}}).",
+      "batchSizes": "Batch sizes",
+      "batchThreads": "Batch",
+      "batching": "Batching",
+      "batchingDescription": "Leave a field empty to keep Koharu's automatic value.",
+      "context": "Context",
+      "contextDescription": "Koharu sizes the context from each prompt. These settings bound that.",
+      "contextMode": "Context mode",
+      "contextModeDescription": "Dynamic allocates exactly what a page needs.",
+      "contextModes": {
+        "bounded": "Dynamic with limits",
+        "dynamic": "Dynamic",
+        "fixed": "Fixed"
+      },
+      "contextSize": "Context size",
+      "flashAttention": "Flash attention",
+      "flashAttentionModes": {
+        "auto": "Auto",
+        "off": "Off",
+        "on": "On"
+      },
+      "generationThreads": "Generation",
+      "gpuLayerModes": {
+        "all": "All",
+        "custom": "Custom"
+      },
+      "gpuLayers": "GPU layers",
+      "kvCache": "KV cache type",
+      "kvCacheKey": "Key",
+      "kvCacheValue": "Value",
+      "layers": "Layers",
+      "maxOutputTokens": "Max output tokens",
+      "maxOutputTokensDescription": "Raising this raises KV cache memory on every request.",
+      "maximumContext": "Maximum",
+      "minimumContext": "Minimum",
+      "noGpuOffload": "No accelerator is active, so every layer runs on the CPU.",
+      "threads": "Threads",
+      "tokens": "Tokens"
+    },
     "loading": "正在加载偏好设置…",
+    "models": {
+      "add": "Add a model",
+      "addDescription": "Pick a .gguf file already on this device.",
+      "addLocal": "Add local model",
+      "browseProjector": "Choose a projector file",
+      "description": "Register your own GGUF files and tune how llama.cpp runs them.",
+      "name": "Display name",
+      "none": "No registered models",
+      "noneDescription": "Add a .gguf file to use it as a translation model.",
+      "projector": "Projector",
+      "projectorPlaceholder": "Optional mmproj .gguf for vision",
+      "registered": "Registered models",
+      "registeredDescription": "Files are read in place. Koharu never modifies a .gguf.",
+      "remove": "Remove {{model}}",
+      "title": "Local models"
+    },
     "pipeline": {
       "description": "选择用于处理每个页面的模型和选项。",
       "modelLabel": "{{stage}}模型",
       "options": {
         "bubbleThreshold": "气泡阈值",
+        "maxPixels": "Max pixels",
         "negativePrompt": "负面提示词",
+        "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "分镜阈值",
         "prompt": "提示词",
+        "seed": "Seed",
+        "source": {
+          "text_encoder": "Text encoder",
+          "transformer": "Transformer",
+          "vae": "VAE"
+        },
+        "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceFilename": "File",
+        "sourceKind": {
+          "builtin": "Bundled",
+          "huggingFace": "Hugging Face",
+          "localFile": "Local file"
+        },
+        "sourcePath": "Path",
+        "sourceRepository": "Repository",
+        "sourceRevision": "Revision (optional)",
+        "steps": "Steps",
+        "strength": "Strength",
         "textThreshold": "文本阈值"
       },
       "processing": "正在处理",
@@ -425,6 +509,7 @@
     },
     "tabs": {
       "appearance": "外观",
+      "models": "Models",
       "pipeline": "流水线",
       "providers": "提供商",
       "shortcuts": "快捷键",

@@ -1317,6 +1317,7 @@ describe('greenfield editor', () => {
             selected: true,
             memory_budget: 16 * 1024 ** 3,
             memory_used: 6 * 1024 ** 3,
+            memory_scope: 'device',
             utilization: 40,
           },
         ],
@@ -1325,6 +1326,31 @@ describe('greenfield editor', () => {
     render(<ResourceMonitor />)
     expect(screen.getByText('8%')).toBeInTheDocument()
     expect(screen.getByText('3%')).toBeInTheDocument()
+  })
+
+  it('says which processes a vram reading covers', async () => {
+    useKoharuStore.setState({
+      resources: {
+        process_memory: 2 * 1024 ** 3,
+        system_memory: 64 * 1024 ** 3,
+        process_cpu: 8,
+        devices: [
+          {
+            name: 'GPU',
+            selected: true,
+            memory_budget: 16 * 1024 ** 3,
+            memory_used: 6 * 1024 ** 3,
+            memory_scope: 'device',
+            utilization: 40,
+          },
+        ],
+      },
+    })
+    render(<ResourceMonitor />)
+    fireEvent.click(screen.getAllByRole('button')[0])
+    expect(
+      await screen.findByText('6.0/16.0 GB VRAM · this device, all applications'),
+    ).toBeInTheDocument()
   })
 
   it('keeps running work visible and stoppable', async () => {

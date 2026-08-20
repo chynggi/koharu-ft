@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     io::Cursor,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -13,7 +14,9 @@ use image::{
 use imageproc::region_labelling::{Connectivity, connected_components};
 use koharu_ml::{
     aot_inpainting::AotInpainting,
-    flux2_klein::{Flux2KleinInpaint, Flux2KleinInpaintOptions},
+    flux2_klein::{
+        ComponentSource, Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource,
+    },
     lama::{InpaintRequest, LaMa},
     rorem_mixed::{DEFAULT_NEGATIVE_PROMPT, DEFAULT_PROMPT, RoremMixed, RoremMixedOptions},
 };
@@ -25,20 +28,126 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::{StageInput, StageProcessor, finish, generation};
-use crate::{InpaintingModel, ModelCell};
+use crate::{InpaintingModel, ModelCell, resources::ResourceMonitor};
 
 const PRODUCER: &str = "dev.koharu.pipeline.inpainting";
+
+/// Where one FLUX.2 Klein checkpoint is loaded from.
+///
+/// Tagged with `kind` so that `koharu_config`'s merge treats a changed variant
+/// as a replaced subtree instead of blending two shapes.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ComponentSourceConfig {
+    /// The repository Koharu pins for this component.
+    #[default]
+    Builtin,
+    /// A checkpoint already on disk. Nothing is downloaded and the file is only read.
+    LocalFile { path: PathBuf },
+    /// Any Hugging Face repository. Without a revision the repository head is used.
+    HuggingFace {
+        repository: String,
+        #[serde(default)]
+        revision: Option<String>,
+        filename: String,
+    },
+}
+
+impl From<ComponentSourceConfig> for ComponentSource {
+    fn from(value: ComponentSourceConfig) -> Self {
+        match value {
+            ComponentSourceConfig::Builtin => Self::Builtin,
+            ComponentSourceConfig::LocalFile { path } => Self::LocalFile(path),
+            ComponentSourceConfig::HuggingFace {
+                repository,
+                revision,
+                filename,
+            } => Self::HuggingFace {
+                repository,
+                revision,
+                filename,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct Flux2KleinSourceConfig {
+    pub transformer: ComponentSourceConfig,
+    pub text_encoder: ComponentSourceConfig,
+    pub vae: ComponentSourceConfig,
+}
+
+impl From<Flux2KleinSourceConfig> for Flux2KleinSource {
+    fn from(value: Flux2KleinSourceConfig) -> Self {
+        Self {
+            transformer: value.transformer.into(),
+            text_encoder: value.text_encoder.into(),
+            vae: value.vae.into(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct Flux2KleinConfig {
     pub prompt: String,
+    /// Which checkpoints the context is assembled from. Defaults to the pinned
+    /// FLUX.2 Klein 4B repositories.
+    pub source: Flux2KleinSourceConfig,
+    pub steps: u32,
+    pub strength: f64,
+    /// `-1` draws a fresh seed for every call.
+    #[specta(type = f64)]
+    pub seed: i64,
+    pub padding_mask_crop: Option<u32>,
+    /// The working area every tile is shrunk to before denoising.
+    pub max_pixels: u32,
 }
 
 impl Default for Flux2KleinConfig {
     fn default() -> Self {
+        let defaults = Flux2KleinInpaintOptions::default();
         Self {
             prompt: "Remove the text and reconstruct the background.".to_owned(),
+            source: Flux2KleinSourceConfig::default(),
+            steps: u32::try_from(defaults.num_inference_steps)
+                .expect("the default step count fits in u32"),
+            strength: defaults.strength,
+            seed: defaults.seed,
+            padding_mask_crop: defaults.padding_mask_crop,
+            max_pixels: defaults.max_pixels,
+        }
+    }
+}
+
+impl Flux2KleinConfig {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.prompt.contains('\0'),
+            "FLUX.2 prompt contains NUL"
+        );
+        ensure!(self.steps > 0, "FLUX.2 steps must be greater than zero");
+        ensure!(
+            self.strength > 0.0 && self.strength <= 1.0,
+            "FLUX.2 strength must be greater than zero and at most one"
+        );
+        ensure!(
+            self.max_pixels >= 64 * 64,
+            "FLUX.2 max pixels must be at least {} (64x64)",
+            64 * 64
+        );
+        Flux2KleinSource::from(self.source.clone()).validate()
+    }
+
+    fn options(&self) -> Flux2KleinInpaintOptions {
+        Flux2KleinInpaintOptions {
+            padding_mask_crop: self.padding_mask_crop,
+            strength: self.strength,
+            num_inference_steps: self.steps as usize,
+            seed: self.seed,
+            max_pixels: self.max_pixels,
         }
     }
 }
@@ -62,19 +171,19 @@ impl Default for RoremMixedConfig {
 pub(super) struct Processor {
     config: InpaintingModel,
     device: koharu_ml::Device,
+    resources: Arc<ResourceMonitor>,
     model: ModelCell<Model>,
 }
 
 impl Processor {
-    pub(super) fn new(config: InpaintingModel, device: koharu_ml::Device) -> Result<Self> {
+    pub(super) fn new(
+        config: InpaintingModel,
+        device: koharu_ml::Device,
+        resources: Arc<ResourceMonitor>,
+    ) -> Result<Self> {
         match &config {
             InpaintingModel::LaMa {} | InpaintingModel::AotInpainting {} => {}
-            InpaintingModel::Flux2Klein(settings) => {
-                ensure!(
-                    !settings.prompt.contains('\0'),
-                    "FLUX.2 prompt contains NUL"
-                );
-            }
+            InpaintingModel::Flux2Klein(settings) => settings.validate()?,
             InpaintingModel::RoremMixed(settings) => {
                 ensure!(
                     !settings.prompt.contains('\0') && !settings.negative_prompt.contains('\0'),
@@ -86,8 +195,26 @@ impl Processor {
         Ok(Self {
             config,
             device,
+            resources,
             model: ModelCell::new(),
         })
+    }
+
+    /// The device description handed to a loader, with `memory_free` filled in
+    /// from the live monitor.
+    ///
+    /// `koharu_ml::Device` comes from `Hardware::discover()`, which is a
+    /// `OnceLock` probe that never populates `memory_free`, so FLUX's residency
+    /// check below it could only ever see `0`. The monitor is the only live
+    /// reading available, and its headroom is `budget - used` of one sample, so
+    /// it already accounts for whatever else holds memory in the provider's
+    /// scope.
+    fn device_for_load(&self) -> koharu_ml::Device {
+        let mut device = self.device.clone();
+        if let Some(headroom) = self.resources.accelerator_headroom() {
+            device.memory_free = usize::try_from(headroom.value).unwrap_or(usize::MAX);
+        }
+        device
     }
 }
 
@@ -108,7 +235,7 @@ impl StageProcessor for Processor {
 
     async fn load(&self) -> Result<()> {
         self.model
-            .ensure(|| Model::load(self.device.clone(), &self.config))
+            .ensure(|| Model::load(self.device_for_load(), &self.config))
             .await
     }
 
@@ -136,6 +263,23 @@ enum Model {
     },
 }
 
+/// FLUX exposes no size API once loaded, so the closest honest figure is the
+/// three resolved files on disk. Logged rather than displayed: it bounds the
+/// weights from above but says nothing about the compute graph.
+async fn log_weight_estimate(source: &Flux2KleinSource) {
+    let Ok(paths) = koharu_ml::flux2_klein::resolve_paths(source).await else {
+        return;
+    };
+    let sizes = paths.iter().map(|path| crate::file_size(path)).collect::<Vec<_>>();
+    if sizes.iter().any(Option::is_none) {
+        return;
+    }
+    tracing::debug!(
+        estimated_weight_bytes = sizes.iter().flatten().map(|bytes| bytes.value).sum::<u64>(),
+        "estimated FLUX.2 Klein weights from the resolved files"
+    );
+}
+
 impl Model {
     async fn load(device: koharu_ml::Device, config: &InpaintingModel) -> Result<Self> {
         match config {
@@ -145,10 +289,16 @@ impl Model {
             InpaintingModel::AotInpainting {} => Ok(Self::Aot(Arc::new(Mutex::new(
                 AotInpainting::load(device).await?,
             )))),
-            InpaintingModel::Flux2Klein(config) => Ok(Self::Flux {
-                model: Arc::new(Mutex::new(Flux2KleinInpaint::load(device).await?)),
-                config: config.clone(),
-            }),
+            InpaintingModel::Flux2Klein(config) => {
+                let source: Flux2KleinSource = config.source.clone().into();
+                log_weight_estimate(&source).await;
+                Ok(Self::Flux {
+                    model: Arc::new(Mutex::new(
+                        Flux2KleinInpaint::load(device, &source).await?,
+                    )),
+                    config: config.clone(),
+                })
+            }
             InpaintingModel::RoremMixed(config) => Ok(Self::Rorem {
                 model: Arc::new(Mutex::new(RoremMixed::load(device).await?)),
                 config: config.clone(),
@@ -234,7 +384,7 @@ impl Model {
                                     image,
                                     None,
                                     &DynamicImage::ImageLuma8(mask.clone()),
-                                    &Flux2KleinInpaintOptions::default(),
+                                    &config.options(),
                                 )
                             },
                         )
@@ -937,6 +1087,98 @@ mod tests {
         assert_eq!(prepared.mask.get_pixel(3, 4), &Luma([255]));
         assert_eq!(prepared.mask.get_pixel(0, 0), &Luma([0]));
         assert!(prepared.text_mask.pixels().all(|pixel| pixel[0] == 0));
+    }
+
+    #[test]
+    fn flux_defaults_reproduce_the_previous_inference_options() {
+        let config = Flux2KleinConfig::default();
+        assert_eq!(config.options(), Flux2KleinInpaintOptions::default());
+        assert_eq!(
+            Flux2KleinSource::from(config.source),
+            Flux2KleinSource::default()
+        );
+    }
+
+    #[test]
+    fn a_flux_section_written_before_the_settings_existed_still_loads() {
+        let config: Flux2KleinConfig =
+            toml::from_str("prompt = \"Erase the text.\"").expect("legacy section deserializes");
+        assert_eq!(config.prompt, "Erase the text.");
+        assert_eq!(config.options(), Flux2KleinInpaintOptions::default());
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn invalid_flux_settings_are_rejected() {
+        for config in [
+            Flux2KleinConfig {
+                steps: 0,
+                ..Default::default()
+            },
+            Flux2KleinConfig {
+                strength: 1.5,
+                ..Default::default()
+            },
+            Flux2KleinConfig {
+                max_pixels: 1024,
+                ..Default::default()
+            },
+            Flux2KleinConfig {
+                source: Flux2KleinSourceConfig {
+                    transformer: ComponentSourceConfig::LocalFile {
+                        path: PathBuf::from("relative.gguf"),
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ] {
+            assert!(config.validate().is_err(), "{config:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn flux_settings_reach_the_inference_options() {
+        let config = Flux2KleinConfig {
+            steps: 8,
+            strength: 0.5,
+            seed: 42,
+            padding_mask_crop: Some(32),
+            max_pixels: 512 * 512,
+            ..Default::default()
+        };
+        config.validate().unwrap();
+        assert_eq!(
+            config.options(),
+            Flux2KleinInpaintOptions {
+                padding_mask_crop: Some(32),
+                strength: 0.5,
+                num_inference_steps: 8,
+                seed: 42,
+                max_pixels: 512 * 512,
+            }
+        );
+    }
+
+    #[test]
+    fn a_hugging_face_override_round_trips_through_toml() {
+        let config = Flux2KleinConfig {
+            source: Flux2KleinSourceConfig {
+                transformer: ComponentSourceConfig::HuggingFace {
+                    repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),
+                    revision: None,
+                    filename: "flux-2-klein-4b-Q8_0.gguf".to_owned(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        config.validate().unwrap();
+        let document = toml::to_string(&config).unwrap();
+        assert_eq!(
+            toml::from_str::<Flux2KleinConfig>(&document).unwrap(),
+            config
+        );
     }
 
     fn rectangle_region([left, top, right, bottom]: [u32; 4]) -> FlatFillRegion {

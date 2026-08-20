@@ -220,6 +220,12 @@ export const commands = {
 	) => put<Preferences>("/config", { pipeline, providers, typesetting }),
 	getPreferences: () => get<Preferences>("/config"),
 	getTranslationModels: () => get<Model[]>("/translation-models"),
+	getLlmCapabilities: () => get<LlmCapabilities>("/llm/capabilities"),
+	// NOTE: the desktop command opened a native `.gguf` picker in the app
+	// process. Over HTTP the dialog can only ever open on the machine running
+	// koharu-rpc, which is the user's own machine for the CEF window but not
+	// for a remote browser — see the same gap on importPages/exportPages.
+	pickGgufFile: () => post<string | null>("/llm/gguf-file"),
 	getCanvasManifest: (generation: CanvasGeneration) => bytes(`/canvas/manifest/${generation}`),
 	getCanvasResource: (generation: CanvasGeneration, resource: string) =>
 		bytes(`/canvas/resource/${generation}/${encodeURIComponent(resource)}`),
@@ -362,10 +368,38 @@ export type CodexModel = {
 	reasoning: Reasoning[],
 };
 
+/**
+ *  Where one FLUX.2 Klein checkpoint is loaded from.
+ * 
+ *  Tagged with `kind` so that `koharu_config`'s merge treats a changed variant
+ *  as a replaced subtree instead of blending two shapes.
+ */
+export type ComponentSourceConfig = 
+/**  The repository Koharu pins for this component. */
+{ kind: "builtin" } | 
+/**  A checkpoint already on disk. Nothing is downloaded and the file is only read. */
+{ kind: "local_file"; path: string } | 
+/**  Any Hugging Face repository. Without a revision the repository head is used. */
+{ kind: "hugging_face"; repository: string; revision?: string | null; filename: string };
+
 export type Config = {
 	model: string | null,
 	reasoning: Reasoning,
 };
+
+/**
+ *  How the llama.cpp context is sized.
+ * 
+ *  `Dynamic` is the default and reproduces Koharu's per-inference sizing: the
+ *  context is exactly what the prepared prompt plus the requested output needs.
+ */
+export type ContextMode = 
+/**  Size the context from the prompt on every call. */
+{ kind: "dynamic" } | 
+/**  Always allocate `size` positions. Smaller than a prompt requires is an error. */
+{ kind: "fixed"; size: number } | 
+/**  Size dynamically, then clamp into the given range. */
+{ kind: "bounded"; minimum?: number | null; maximum?: number | null };
 
 export type CredentialInput = {
 	configured: boolean,
@@ -373,11 +407,29 @@ export type CredentialInput = {
 	clear: boolean,
 };
 
+/**  A GGUF file the user registered from their own filesystem. */
+export type CustomModel = {
+	/**  Stable identifier stored in the pipeline's model selection. */
+	id: string,
+	/**  Display name shown in the model picker. */
+	name: string,
+	/**  Absolute path to the `.gguf` weights. */
+	path: string,
+	/**  Optional MTMD projector; present means the model is used with vision. */
+	projector?: string | null,
+};
+
 export type DeepLConfig = {
 	base_url?: string | null,
 };
 
 export type DeepSeekConfig = Record<string, never>;
+
+export type DeferredCapability = {
+	/**  Field name in the runtime settings, e.g. `flash_attention`. */
+	setting: string,
+	reason: string,
+};
 
 export type DetectionModel = {
 	model: "koharu-layout-rfdetr-seg-2xl",
@@ -388,6 +440,12 @@ export type DeviceResources = {
 	selected: boolean,
 	memory_budget: number | null,
 	memory_used: number | null,
+	/**
+	 *  How much of the machine the two figures above cover. Windows reports
+	 *  this process alone, the Linux providers report the whole device, so the
+	 *  UI has to say which rather than labelling both "VRAM in use".
+	 */
+	memory_scope: MemoryScope | null,
 	utilization: number | null,
 };
 
@@ -410,8 +468,30 @@ export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run:
 
 export type ExportFormat = "png" | "psd";
 
+export type FlashAttentionMode = 
+/**  Let llama.cpp decide per backend and model. */
+"auto" | "on" | "off";
+
 export type Flux2KleinConfig = {
 	prompt?: string,
+	/**
+	 *  Which checkpoints the context is assembled from. Defaults to the pinned
+	 *  FLUX.2 Klein 4B repositories.
+	 */
+	source?: Flux2KleinSourceConfig,
+	steps?: number,
+	strength?: number,
+	/**  `-1` draws a fresh seed for every call. */
+	seed?: number,
+	padding_mask_crop?: number | null,
+	/**  The working area every tile is shrunk to before denoising. */
+	max_pixels?: number,
+};
+
+export type Flux2KleinSourceConfig = {
+	transformer?: ComponentSourceConfig,
+	text_encoder?: ComponentSourceConfig,
+	vae?: ComponentSourceConfig,
 };
 
 export type FontFace = {
@@ -481,6 +561,15 @@ export type GeometryUpdate = {
 
 export type GoogleCloudConfig = Record<string, never>;
 
+/**
+ *  How many model layers to offload to the accelerator.
+ *
+ *  `All` is the default and matches Koharu's existing behaviour. A layer count
+ *  larger than the model has is clamped by llama.cpp. When the selected device
+ *  is the CPU, no layers are offloaded regardless of this setting.
+ */
+export type GpuLayers = { kind: "all" } | { kind: "custom"; layers: number };
+
 export type GrokConfig = Record<string, never>;
 
 export type GroupRole = "text";
@@ -512,6 +601,15 @@ export type KoharuLayoutRFDetrSeg2XLConfig = {
 	panel_threshold?: number | null,
 };
 
+/**
+ *  KV cache element types llama.cpp accepts for `type_k` / `type_v`.
+ * 
+ *  This is deliberately narrower than [`KvCacheType`]: the k-quant and most
+ *  i-quant types exist in ggml but are not valid KV cache types, and offering
+ *  them would only produce runtime failures.
+ */
+export type KvCacheChoice = "f32" | "f16" | "bf16" | "q8_0" | "q5_1" | "q5_0" | "q4_1" | "q4_0" | "iq4_nl";
+
 export type LanguageChoice = {
 	tag: string,
 	name: string,
@@ -529,13 +627,64 @@ export type LayerVisibility = {
 	opacity: number,
 };
 
+/**
+ *  What the current build and device actually support.
+ * 
+ *  Anything llama.cpp only validates while creating a context is reported in
+ *  `deferred` rather than guessed at: the UI keeps those controls enabled and
+ *  surfaces llama.cpp's own error if a value is rejected.
+ */
+export type LlmCapabilities = {
+	/**  Human-readable accelerator description, or `CPU`. */
+	device: string,
+	backend: string,
+	/**
+	 *  Whether layers can be offloaded at all. `false` means the GPU Layers
+	 *  control has no effect.
+	 */
+	gpu_offload: boolean,
+	/**  Total device memory in bytes, when the driver reports it. */
+	total_memory: number | null,
+	/**  Settings that are only validated when a context is created. */
+	deferred: DeferredCapability[],
+};
+
+/**
+ *  llama.cpp settings a power user can override. Every field is optional so the
+ *  layers above can be merged without inventing values for what they do not set.
+ */
+export type LlmRuntimeConfig = {
+	context?: ContextMode | null,
+	/**  Upper bound on generated tokens. The per-run generation settings win. */
+	max_output_tokens?: number | null,
+	n_batch?: number | null,
+	n_ubatch?: number | null,
+	gpu_layers?: GpuLayers | null,
+	n_threads?: number | null,
+	n_threads_batch?: number | null,
+	kv_cache_type_k?: KvCacheChoice | null,
+	kv_cache_type_v?: KvCacheChoice | null,
+	flash_attention?: FlashAttentionMode | null,
+};
+
 export type LmStudioConfig = {
 	base_url?: string | null,
 };
 
-export type LocalConfig = Record<string, never>;
+/**  `[providers.local]`. */
+export type LocalConfig = {
+	/**  Runtime settings applied to every local model. */
+	runtime?: LlmRuntimeConfig,
+	/**  Per-model overrides keyed by model id, layered over `runtime`. */
+	profiles?: { [key in string]: LlmRuntimeConfig },
+	/**  GGUF files registered by the user. */
+	models?: CustomModel[],
+};
 
 export type LoginEvent = { type: "progress"; message: string } | { type: "device_code"; verification_url: string; user_code: string };
+
+/**  Mirror of [`koharu_pipeline::MemoryScope`] for the frontend. */
+export type MemoryScope = "process" | "device" | "system";
 
 export type MiniMaxConfig = Record<string, never>;
 

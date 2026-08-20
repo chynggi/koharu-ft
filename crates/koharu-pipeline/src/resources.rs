@@ -6,15 +6,27 @@ use std::time::Duration;
 
 use sysinfo::{ProcessesToUpdate, System, get_current_pid};
 
+mod bytes;
 mod vram;
+
+pub use bytes::{Bytes, Estimate, MeasuredSource, MemoryScope, Provenance, Tier, file_size};
 
 #[derive(Clone, Debug, Default)]
 pub struct DeviceResources {
     pub name: String,
     pub selected: bool,
-    pub memory_budget_bytes: Option<u64>,
-    pub memory_used_bytes: Option<u64>,
+    pub memory_budget_bytes: Option<Bytes>,
+    pub memory_used_bytes: Option<Bytes>,
     pub utilization_percent: Option<f32>,
+}
+
+impl DeviceResources {
+    /// Free accelerator memory, in the scope the provider reports. `None` when
+    /// the provider gave us nothing, never a fabricated zero.
+    #[must_use]
+    pub fn headroom(&self) -> Option<Bytes> {
+        Bytes::headroom_from(self.memory_budget_bytes?, self.memory_used_bytes?)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -124,5 +136,17 @@ impl ResourceMonitor {
 
     pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<ResourceSnapshot> {
         self.changed.subscribe()
+    }
+
+    /// Free memory on the accelerator the pipeline runs on, from the most
+    /// recent sample. `None` before the first sample and on platforms without
+    /// a provider.
+    pub(crate) fn accelerator_headroom(&self) -> Option<Bytes> {
+        let snapshot = self.changed.borrow();
+        snapshot
+            .devices
+            .iter()
+            .find(|device| device.selected)
+            .and_then(DeviceResources::headroom)
     }
 }

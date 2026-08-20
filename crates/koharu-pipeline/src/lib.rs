@@ -25,7 +25,10 @@ pub use pipeline::Pipeline;
 pub use progress::{Progress, ProgressSink};
 pub use report::{Committer, Report, RunStatus, StageOutput};
 pub use request::{InpaintingMask, Operation, Request, StopToken};
-pub use resources::{DeviceResources, ResourceSnapshot};
+pub use resources::{
+    Bytes, DeviceResources, Estimate, MeasuredSource, MemoryScope, Provenance, ResourceSnapshot,
+    Tier, file_size,
+};
 pub use scope::{Bounds, Scope};
 pub use stage::Stage;
 pub use stages::{Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, RoremMixedConfig};

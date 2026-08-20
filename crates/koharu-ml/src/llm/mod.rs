@@ -1,5 +1,6 @@
 //! High-level local LLM inference backed by llama.cpp.
 
+mod footprint;
 mod model;
 
 use std::{num::NonZeroU32, path::PathBuf, time::Duration};
@@ -11,6 +12,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use self::model::Model;
 
+pub use self::footprint::{ElementSize, KvGeometry};
+pub use koharu_llama::context::params::{KvCacheType, LlamaFlashAttentionType};
 pub use koharu_llama::model::params::LlamaLoadMode;
 
 const DEFAULT_GPU_LAYERS: u32 = 1000;
@@ -46,6 +49,20 @@ impl Llm {
             .await
             .context("LLM loading task panicked")??;
         Ok(Self { model })
+    }
+
+    /// The loaded tensors' size in bytes, as llama.cpp reports it. This is a
+    /// measurement of what was loaded, not an inference from the file name.
+    #[must_use]
+    pub fn weights_bytes(&self) -> u64 {
+        self.model.weights_bytes()
+    }
+
+    /// The attention shape behind the KV cache size, when the model states
+    /// enough metadata to determine it.
+    #[must_use]
+    pub fn kv_geometry(&self) -> Option<KvGeometry> {
+        self.model.kv_geometry()
     }
 
     /// Returns the input modalities advertised by the loaded model and projector.
@@ -242,7 +259,11 @@ pub enum Media<'a> {
 }
 
 /// Sampling and context settings for one inference call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// The context fields are all optional because the context is sized from the
+/// prepared prompt on every call; see [`crate::llm`] module docs and
+/// `model::context_values`. Leaving them unset reproduces that dynamic sizing.
+#[derive(Debug, Clone)]
 pub struct GenerationOptions {
     pub max_tokens: usize,
     pub temperature: f32,
@@ -257,11 +278,23 @@ pub struct GenerationOptions {
     pub presence_penalty: f32,
     /// Whether llama.cpp or MTMD should add the model's special prompt tokens.
     pub add_special: bool,
+    /// Fixed context size. Smaller than the prompt requires is an error.
     pub n_ctx: Option<NonZeroU32>,
+    /// Lower bound applied to a dynamically sized context.
+    pub n_ctx_min: Option<NonZeroU32>,
+    /// Upper bound applied to a dynamically sized context. A prompt that needs
+    /// more positions than this is an error rather than a silently truncated
+    /// generation.
+    pub n_ctx_max: Option<NonZeroU32>,
     pub n_batch: Option<u32>,
     pub n_ubatch: Option<u32>,
     pub n_threads: Option<i32>,
     pub n_threads_batch: Option<i32>,
+    /// KV cache key type; `None` keeps the llama.cpp default.
+    pub kv_cache_type_k: Option<KvCacheType>,
+    /// KV cache value type; `None` keeps the llama.cpp default.
+    pub kv_cache_type_v: Option<KvCacheType>,
+    pub flash_attention: LlamaFlashAttentionType,
 }
 
 impl Default for GenerationOptions {
@@ -279,10 +312,15 @@ impl Default for GenerationOptions {
             presence_penalty: 0.0,
             add_special: false,
             n_ctx: None,
+            n_ctx_min: None,
+            n_ctx_max: None,
             n_batch: None,
             n_ubatch: None,
             n_threads: None,
             n_threads_batch: None,
+            kv_cache_type_k: None,
+            kv_cache_type_v: None,
+            flash_attention: LlamaFlashAttentionType::Auto,
         }
     }
 }

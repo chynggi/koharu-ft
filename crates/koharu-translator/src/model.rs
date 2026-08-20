@@ -2,7 +2,7 @@ use koharu_ml::llm::GenerationOptions;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::Provider;
+use crate::{LlmRuntimeConfig, Provider};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default)]
@@ -92,11 +92,21 @@ pub(crate) struct ModelGeneration {
 }
 
 impl ModelGeneration {
-    pub(crate) fn options(self, overrides: GenerationConfig) -> GenerationOptions {
+    /// Merges the sampling layers, then applies the llama.cpp runtime settings.
+    ///
+    /// Precedence, lowest first: `GenerationOptions::default()`, this model's
+    /// catalog tuning, the resolved `[providers.local]` runtime settings, and
+    /// the per-run settings edited in the UI.
+    pub(crate) fn options(
+        self,
+        overrides: GenerationConfig,
+        runtime: &LlmRuntimeConfig,
+    ) -> GenerationOptions {
         let defaults = GenerationOptions::default();
-        GenerationOptions {
+        let mut options = GenerationOptions {
             max_tokens: overrides
                 .max_tokens
+                .or(runtime.max_output_tokens)
                 .or(self.max_tokens)
                 .map_or(1000, |value| value as usize),
             temperature: overrides
@@ -119,7 +129,9 @@ impl ModelGeneration {
                 .or(self.presence_penalty)
                 .unwrap_or(defaults.presence_penalty),
             ..defaults
-        }
+        };
+        runtime.apply(&mut options);
+        options
     }
 }
 

@@ -140,7 +140,30 @@ pub struct DeviceResources {
     pub memory_budget: Option<u64>,
     #[specta(type = Option<f64>)]
     pub memory_used: Option<u64>,
+    /// How much of the machine the two figures above cover. Windows reports
+    /// this process alone, the Linux providers report the whole device, so the
+    /// UI has to say which rather than labelling both "VRAM in use".
+    pub memory_scope: Option<MemoryScope>,
     pub utilization: Option<f32>,
+}
+
+/// Mirror of [`koharu_pipeline::MemoryScope`] for the frontend.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryScope {
+    Process,
+    Device,
+    System,
+}
+
+impl From<koharu_pipeline::MemoryScope> for MemoryScope {
+    fn from(value: koharu_pipeline::MemoryScope) -> Self {
+        match value {
+            koharu_pipeline::MemoryScope::Process => Self::Process,
+            koharu_pipeline::MemoryScope::Device => Self::Device,
+            koharu_pipeline::MemoryScope::System => Self::System,
+        }
+    }
 }
 
 impl From<koharu_pipeline::ResourceSnapshot> for ModelResources {
@@ -155,8 +178,12 @@ impl From<koharu_pipeline::ResourceSnapshot> for ModelResources {
                 .map(|device| DeviceResources {
                     name: device.name,
                     selected: device.selected,
-                    memory_budget: device.memory_budget_bytes,
-                    memory_used: device.memory_used_bytes,
+                    memory_budget: device.memory_budget_bytes.map(|bytes| bytes.value),
+                    memory_used: device.memory_used_bytes.map(|bytes| bytes.value),
+                    memory_scope: device
+                        .memory_budget_bytes
+                        .and_then(|bytes| bytes.scope())
+                        .map(MemoryScope::from),
                     utilization: device.utilization_percent,
                 })
                 .collect(),

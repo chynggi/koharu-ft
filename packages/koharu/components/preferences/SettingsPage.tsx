@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  Boxes,
   Cpu,
   KeyRound,
   Keyboard,
@@ -16,6 +17,7 @@ import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { LocalModelPreferences } from '@/components/preferences/LocalModelPreferences'
 import { PipelinePreferences } from '@/components/preferences/PipelinePreferences'
 import {
   PreferencePage,
@@ -51,6 +53,7 @@ const tabs = [
   ['pipeline', Cpu],
   ['providers', KeyRound],
   ['translation', Languages],
+  ['models', Boxes],
   ['typesetting', Type],
   ['shortcuts', Keyboard],
 ] as const
@@ -235,6 +238,12 @@ export function SettingsPage() {
                     )
                   }
                 />
+              ) : (
+                <LoadingPreferences />
+              ))}
+            {tab === 'models' &&
+              (providers ? (
+                <LocalModelPreferences value={providers} onChange={setProviders} />
               ) : (
                 <LoadingPreferences />
               ))}

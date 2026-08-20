@@ -32,10 +32,6 @@ pub(crate) struct LocalModelDescriptor {
     pub(crate) target_languages: SupportedLanguages,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
-#[serde(default)]
-pub struct LocalConfig {}
-
 pub(super) static MODELS: &[LocalModelDescriptor] = &[
     LocalModelDescriptor {
         id: "lfm2.5-1.2b-instruct",

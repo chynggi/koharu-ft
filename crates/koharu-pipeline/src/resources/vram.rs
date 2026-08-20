@@ -1,5 +1,8 @@
+use std::time::Instant;
+
 use koharu_ml::{Backend, Device, DeviceType};
 
+use super::{Bytes, MeasuredSource, MemoryScope};
 use crate::DeviceResources;
 
 #[cfg(target_os = "linux")]
@@ -29,6 +32,10 @@ pub(super) struct Sample {
     pub id: usize,
     pub name: String,
     pub vendor: Vendor,
+    /// The API the two figures below were read from, and how much of the
+    /// machine that API covers.
+    pub source: MeasuredSource,
+    pub scope: MemoryScope,
     pub budget_bytes: u64,
     pub used_bytes: u64,
     pub utilization_percent: Option<f32>,
@@ -71,6 +78,8 @@ impl Monitor {
                     id: target.index,
                     name: target.description.clone(),
                     vendor: Vendor::Apple,
+                    source: MeasuredSource::SystemMemory,
+                    scope: MemoryScope::System,
                     budget_bytes: _system.total_bytes,
                     used_bytes: _system.used_bytes,
                     utilization_percent: None,
@@ -112,15 +121,24 @@ pub(super) fn unavailable(target: &Device) -> Vec<DeviceResources> {
 
 fn map_samples(target: &Device, samples: Vec<Sample>) -> Vec<DeviceResources> {
     let selected = select_sample(target, &samples);
+    // One timestamp for the whole sweep, so budget and usage on a device are
+    // recognisably from the same reading.
+    let sampled_at = Instant::now();
     samples
         .into_iter()
         .enumerate()
-        .map(|(index, sample)| DeviceResources {
-            name: sample.name,
-            selected: selected == Some(index),
-            memory_budget_bytes: (sample.budget_bytes > 0).then_some(sample.budget_bytes),
-            memory_used_bytes: (sample.budget_bytes > 0).then_some(sample.used_bytes),
-            utilization_percent: sample.utilization_percent,
+        .map(|(index, sample)| {
+            let known = sample.budget_bytes > 0;
+            let reading = |value: u64| {
+                known.then(|| Bytes::measured(value, sample.source, sample.scope, sampled_at))
+            };
+            DeviceResources {
+                name: sample.name,
+                selected: selected == Some(index),
+                memory_budget_bytes: reading(sample.budget_bytes),
+                memory_used_bytes: reading(sample.used_bytes),
+                utilization_percent: sample.utilization_percent,
+            }
         })
         .collect()
 }
@@ -181,6 +199,8 @@ mod tests {
             id,
             name: name.to_owned(),
             vendor,
+            source: MeasuredSource::Nvml,
+            scope: MemoryScope::Device,
             budget_bytes: 8 * 1024 * 1024 * 1024,
             used_bytes: 2 * 1024 * 1024 * 1024,
             utilization_percent: Some(25.0),
@@ -208,5 +228,15 @@ mod tests {
         let devices = unavailable(&Device::vulkan(0));
         assert!(devices[0].selected);
         assert_eq!(devices[0].memory_budget_bytes, None);
+        assert_eq!(devices[0].headroom(), None);
+    }
+
+    #[test]
+    fn a_reading_keeps_the_scope_of_the_api_it_came_from() {
+        let devices = map_samples(&Device::cuda(0), vec![gpu(0, "NVIDIA RTX 4090", Vendor::Nvidia)]);
+        let headroom = devices[0].headroom().unwrap();
+
+        assert_eq!(headroom.value, 6 * 1024 * 1024 * 1024);
+        assert_eq!(headroom.scope(), Some(MemoryScope::Device));
     }
 }

@@ -5,6 +5,9 @@
 
 mod model;
 mod processor;
+mod source;
+
+use std::path::PathBuf;
 
 use anyhow::{Context, Result, ensure};
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
@@ -18,7 +21,10 @@ use self::{
     processor::Flux2ImageProcessor,
 };
 
-pub use self::processor::{Flux2KleinInpaintOptions, Flux2KleinOptions};
+pub use self::{
+    processor::{DEFAULT_MAX_PIXELS, Flux2KleinInpaintOptions, Flux2KleinOptions},
+    source::{ComponentSource, Flux2KleinSource},
+};
 
 model_repository!("unsloth/FLUX.2-klein-4B-GGUF" @ "0084d1df98e2e2137fe776d55170bc4792ec1d66" {
     TRANSFORMER_WEIGHTS = "flux-2-klein-4b-Q4_K_M.gguf"
@@ -30,27 +36,40 @@ model_repository!("unsloth/Qwen3-4B-GGUF" @ "22c9fc8a8c7700b76a1789366280a6a5a1a
     TEXT_ENCODER_WEIGHTS = "Qwen3-4B-Q4_K_M.gguf"
 });
 
+/// Resolves the three checkpoints a context is assembled from. Overridden
+/// components are taken from the user's source; the rest keep the pinned
+/// repositories above.
+/// The three weight files a source resolves to, in load order.
+///
+/// Callers that want to size the checkpoint before it is loaded need the paths,
+/// and resolving is a cache lookup once the files are present.
+pub async fn resolve_paths(source: &Flux2KleinSource) -> Result<[PathBuf; 3]> {
+    let paths = resolve(source).await?;
+    Ok([paths.transformer, paths.text_encoder, paths.vae])
+}
+
+async fn resolve(source: &Flux2KleinSource) -> Result<ModelPaths> {
+    let (transformer, text_encoder, vae) = tokio::try_join!(
+        source.transformer.resolve(TRANSFORMER_WEIGHTS),
+        source.text_encoder.resolve(TEXT_ENCODER_WEIGHTS),
+        source.vae.resolve(VAE_WEIGHTS),
+    )
+    .context("failed to resolve FLUX.2 Klein model assets")?;
+    Ok(ModelPaths {
+        transformer,
+        text_encoder,
+        vae,
+    })
+}
+
 #[derive(Debug)]
 pub struct Flux2Klein {
     model: Model,
 }
 
 impl Flux2Klein {
-    pub async fn load(device: crate::Device) -> Result<Self> {
-        let (transformer, text_encoder, vae) = tokio::try_join!(
-            TRANSFORMER_WEIGHTS.resolve(),
-            TEXT_ENCODER_WEIGHTS.resolve(),
-            VAE_WEIGHTS.resolve(),
-        )
-        .context("failed to resolve FLUX.2 Klein model assets")?;
-        let model = Model::new(
-            &device,
-            ModelPaths {
-                transformer,
-                text_encoder,
-                vae,
-            },
-        )?;
+    pub async fn load(device: crate::Device, source: &Flux2KleinSource) -> Result<Self> {
+        let model = Model::new(&device, resolve(source).await?)?;
         Ok(Self { model })
     }
 
@@ -72,14 +91,12 @@ impl Flux2Klein {
             options.num_images_per_prompt > 0,
             "num_images_per_prompt must be greater than zero"
         );
+        Flux2ImageProcessor::check_max_pixels(options.max_pixels)?;
 
         let mut condition_images = Vec::with_capacity(image.len());
         for image in image {
             Flux2ImageProcessor::check_image_input(image)?;
-            let mut image = image.clone();
-            if u64::from(image.width()) * u64::from(image.height()) > 1024 * 1024 {
-                image = Flux2ImageProcessor::_resize_to_target_area(&image, 1024 * 1024);
-            }
+            let image = Flux2ImageProcessor::fit_to_area(image, options.max_pixels);
             let width = (image.width() / 16) * 16;
             let height = (image.height() / 16) * 16;
             ensure!(width > 0 && height > 0);
@@ -128,21 +145,8 @@ pub struct Flux2KleinInpaint {
 }
 
 impl Flux2KleinInpaint {
-    pub async fn load(device: crate::Device) -> Result<Self> {
-        let (transformer, text_encoder, vae) = tokio::try_join!(
-            TRANSFORMER_WEIGHTS.resolve(),
-            TEXT_ENCODER_WEIGHTS.resolve(),
-            VAE_WEIGHTS.resolve(),
-        )
-        .context("failed to resolve FLUX.2 Klein model assets")?;
-        let model = Model::new(
-            &device,
-            ModelPaths {
-                transformer,
-                text_encoder,
-                vae,
-            },
-        )?;
+    pub async fn load(device: crate::Device, source: &Flux2KleinSource) -> Result<Self> {
+        let model = Model::new(&device, resolve(source).await?)?;
         Ok(Self { model })
     }
 
@@ -174,11 +178,9 @@ impl Flux2KleinInpaint {
             options.num_inference_steps > 0,
             "num_inference_steps must be greater than zero"
         );
+        Flux2ImageProcessor::check_max_pixels(options.max_pixels)?;
 
-        let mut image = image.clone();
-        if u64::from(image.width()) * u64::from(image.height()) > 1024 * 1024 {
-            image = Flux2ImageProcessor::_resize_to_target_area(&image, 1024 * 1024);
-        }
+        let image = Flux2ImageProcessor::fit_to_area(image, options.max_pixels);
         let width = (image.width() / 16) * 16;
         let height = (image.height() / 16) * 16;
         ensure!(width > 0 && height > 0);
@@ -226,13 +228,7 @@ impl Flux2KleinInpaint {
 
         let mut reference_images = vec![init_image.clone()];
         if let Some(image_reference) = image_reference {
-            let mut image_reference = image_reference.clone();
-            if u64::from(image_reference.width()) * u64::from(image_reference.height())
-                > 1024 * 1024
-            {
-                image_reference =
-                    Flux2ImageProcessor::_resize_to_target_area(&image_reference, 1024 * 1024);
-            }
+            let image_reference = Flux2ImageProcessor::fit_to_area(image_reference, options.max_pixels);
             let reference_width = (image_reference.width() / 16) * 16;
             let reference_height = (image_reference.height() / 16) * 16;
             ensure!(reference_width > 0 && reference_height > 0);

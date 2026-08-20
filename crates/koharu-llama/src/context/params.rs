@@ -122,6 +122,43 @@ impl From<LlamaAttentionType> for i32 {
     }
 }
 
+/// A rusty wrapper around `llama_flash_attn_type`.
+#[repr(i8)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum LlamaFlashAttentionType {
+    /// llama.cpp decides per backend and model.
+    #[default]
+    Auto = -1,
+    /// Flash attention is never used.
+    Disabled = 0,
+    /// Flash attention is requested; llama.cpp fails the context when the
+    /// backend cannot provide it.
+    Enabled = 1,
+}
+
+/// Create a `LlamaFlashAttentionType` from a `c_int` - returns
+/// `LlamaFlashAttentionType::Auto` if the value is not recognized.
+impl From<i32> for LlamaFlashAttentionType {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::Disabled,
+            1 => Self::Enabled,
+            _ => Self::Auto,
+        }
+    }
+}
+
+/// Create a `c_int` from a `LlamaFlashAttentionType`.
+impl From<LlamaFlashAttentionType> for i32 {
+    fn from(value: LlamaFlashAttentionType) -> Self {
+        match value {
+            LlamaFlashAttentionType::Disabled => 0,
+            LlamaFlashAttentionType::Enabled => 1,
+            LlamaFlashAttentionType::Auto => -1,
+        }
+    }
+}
+
 /// A rusty wrapper around `llama_context_type`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LlamaContextType {

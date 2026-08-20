@@ -29,8 +29,8 @@ use minijinja::{Environment, Error as TemplateError, ErrorKind as TemplateErrorK
 use serde::Serialize;
 
 use super::{
-    Capabilities, ChatMessage, FinishReason, Generation, GenerationControl, GenerationOptions,
-    Input, LoadOptions, Media, TokenChunk,
+    Capabilities, ChatMessage, ElementSize, KvCacheType, FinishReason, Generation, GenerationControl,
+    GenerationOptions, Input, KvGeometry, LoadOptions, Media, TokenChunk,
 };
 use crate::Backend;
 
@@ -196,6 +196,14 @@ impl Model {
         })
     }
 
+    pub(super) fn weights_bytes(&self) -> u64 {
+        self.model.size()
+    }
+
+    pub(super) fn kv_geometry(&self) -> Option<KvGeometry> {
+        KvGeometry::read(&self.model)
+    }
+
     pub(super) fn capabilities(&self) -> Capabilities {
         self.capabilities
     }
@@ -244,6 +252,7 @@ impl Model {
         };
         let prepared = self.prepare_prompt(input, options.add_special, mtmd.as_deref())?;
         let context_config = context_config(&prepared, options)?;
+        self.log_kv_cache_estimate(&context_config, options);
         let mut context = self
             .model
             .new_context(self.backend, context_config.params)
@@ -318,6 +327,28 @@ impl Model {
             generation_duration: generation_start.elapsed(),
             finish_reason,
         })
+    }
+
+    /// The KV cache is allocated by `new_context` below and cannot be read back
+    /// from llama.cpp, but every input to its size is known here, so the size is
+    /// computed and logged as an estimate. It excludes the compute graph.
+    fn log_kv_cache_estimate(&self, config: &ContextConfig, options: &GenerationOptions) {
+        let element = |kind: Option<KvCacheType>| {
+            kind.map_or(Some(ElementSize::F16), ElementSize::for_kv_cache_type)
+        };
+        let (Some(geometry), Some(key), Some(value)) = (
+            KvGeometry::read(&self.model),
+            element(options.kv_cache_type_k),
+            element(options.kv_cache_type_v),
+        ) else {
+            return;
+        };
+        tracing::debug!(
+            n_ctx = config.n_ctx,
+            weights_bytes = self.model.size(),
+            estimated_kv_cache_bytes = geometry.cache_bytes(config.n_ctx, key, value),
+            "estimated context footprint"
+        );
     }
 
     fn prepare_prompt(
@@ -577,6 +608,7 @@ enum PreparedPromptKind {
 struct ContextConfig {
     params: LlamaContextParams,
     n_batch: u32,
+    n_ctx: u32,
 }
 
 fn model_params(
@@ -605,7 +637,8 @@ fn context_config(prepared: &PreparedPrompt, options: &GenerationOptions) -> Res
     let mut params = LlamaContextParams::default()
         .with_n_ctx(Some(values.n_ctx))
         .with_n_batch(values.n_batch)
-        .with_n_ubatch(values.n_ubatch);
+        .with_n_ubatch(values.n_ubatch)
+        .with_flash_attention_policy(options.flash_attention);
     if prepared.non_causal {
         params = params.with_attention_type(LlamaAttentionType::NonCausal);
     }
@@ -615,9 +648,16 @@ fn context_config(prepared: &PreparedPrompt, options: &GenerationOptions) -> Res
     if let Some(n_threads_batch) = options.n_threads_batch {
         params = params.with_n_threads_batch(n_threads_batch);
     }
+    if let Some(type_k) = options.kv_cache_type_k {
+        params = params.with_type_k(type_k);
+    }
+    if let Some(type_v) = options.kv_cache_type_v {
+        params = params.with_type_v(type_v);
+    }
     Ok(ContextConfig {
         params,
         n_batch: values.n_batch,
+        n_ctx: values.n_ctx.get(),
     })
 }
 
@@ -644,8 +684,21 @@ fn context_values(prepared: &PreparedPrompt, options: &GenerationOptions) -> Res
         Some(_) => bail!(
             "n_ctx is too small: need at least {required} positions for prompt and generation"
         ),
-        None => NonZeroU32::new(u32::try_from(required).context("context size exceeds u32")?)
-            .expect("required context size is non-zero"),
+        None => {
+            let dynamic = NonZeroU32::new(u32::try_from(required).context("context size exceeds u32")?)
+                .expect("required context size is non-zero");
+            // A minimum only ever grows the context, so it cannot invalidate the
+            // requirement computed above.
+            let n_ctx = options.n_ctx_min.map_or(dynamic, |min| dynamic.max(min));
+            if let Some(max) = options.n_ctx_max {
+                ensure!(
+                    n_ctx <= max,
+                    "this prompt needs {n_ctx} context positions but the maximum context is {max}: \
+                     raise the maximum or lower the maximum output tokens"
+                );
+            }
+            n_ctx
+        }
     };
 
     let required_batch =
@@ -777,6 +830,8 @@ fn available_threads() -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use koharu_llama::context::params::{KvCacheType, LlamaFlashAttentionType};
+
     use super::*;
 
     fn prepared(tokens: usize, non_causal: bool) -> PreparedPrompt {
@@ -810,6 +865,80 @@ mod tests {
             ..Default::default()
         };
         assert!(context_values(&prepared(5, false), &options).is_err());
+    }
+
+    #[test]
+    fn minimum_context_raises_a_small_requirement() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            n_ctx_min: NonZeroU32::new(4096),
+            ..Default::default()
+        };
+        let config = context_values(&prepared(5, false), &options).unwrap();
+        assert_eq!(config.n_ctx, NonZeroU32::new(4096).unwrap());
+    }
+
+    #[test]
+    fn minimum_context_never_lowers_the_requirement() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            n_ctx_min: NonZeroU32::new(8),
+            ..Default::default()
+        };
+        let config = context_values(&prepared(5, false), &options).unwrap();
+        assert_eq!(config.n_ctx, NonZeroU32::new(16).unwrap());
+    }
+
+    #[test]
+    fn maximum_context_allows_a_requirement_that_fits() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            n_ctx_max: NonZeroU32::new(32768),
+            ..Default::default()
+        };
+        let config = context_values(&prepared(5, false), &options).unwrap();
+        assert_eq!(config.n_ctx, NonZeroU32::new(16).unwrap());
+    }
+
+    #[test]
+    fn maximum_context_rejects_an_oversized_requirement() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            n_ctx_max: NonZeroU32::new(8),
+            ..Default::default()
+        };
+        assert!(context_values(&prepared(5, false), &options).is_err());
+    }
+
+    #[test]
+    fn bounds_do_not_apply_to_an_explicit_context() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            n_ctx: NonZeroU32::new(2048),
+            n_ctx_min: NonZeroU32::new(4096),
+            n_ctx_max: NonZeroU32::new(64),
+            ..Default::default()
+        };
+        let config = context_values(&prepared(5, false), &options).unwrap();
+        assert_eq!(config.n_ctx, NonZeroU32::new(2048).unwrap());
+    }
+
+    #[test]
+    fn kv_cache_and_flash_attention_reach_the_context_params() {
+        let options = GenerationOptions {
+            max_tokens: 10,
+            kv_cache_type_k: Some(KvCacheType::Q8_0),
+            kv_cache_type_v: Some(KvCacheType::Q4_0),
+            flash_attention: LlamaFlashAttentionType::Enabled,
+            ..Default::default()
+        };
+        let config = context_config(&prepared(5, false), &options).unwrap();
+        assert_eq!(config.params.type_k(), KvCacheType::Q8_0);
+        assert_eq!(config.params.type_v(), KvCacheType::Q4_0);
+        assert_eq!(
+            config.params.flash_attention_policy(),
+            LlamaFlashAttentionType::Enabled
+        );
     }
 
     #[test]

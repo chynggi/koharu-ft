@@ -57,7 +57,7 @@ impl StageProcessor for Processor {
         if let Some(instructions) = self.config.instructions.as_deref() {
             request = request.with_instructions(instructions);
         }
-        if Translator::supports_vision(&self.config.model)
+        if self.translator.supports_vision(&self.config.model)
             && let Some(image) = input.images.get(&input.scene, input.page, "source").await?
         {
             request = request.with_image(image);

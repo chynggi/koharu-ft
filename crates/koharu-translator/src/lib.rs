@@ -19,6 +19,11 @@ use local::LocalTranslator;
 
 pub use backend::{TranslationContext, TranslationRequest};
 pub use language::Language;
+pub use local::{
+    ContextMode, CustomModel, FlashAttentionMode, GpuLayers, KvCacheChoice, LlmRuntimeConfig,
+    LocalConfig,
+};
+use local::LoadSignature;
 pub use model::{GenerationConfig, Model, ModelSelection, Quantization};
 pub(crate) use model::{ModelGeneration, QuantizationDefinition, display_name};
 pub use provider::{Provider, ProviderConfig, ProvidersConfig};
@@ -34,12 +39,15 @@ pub struct Translator {
 struct LoadedLocal {
     model: Option<String>,
     quantization: Option<String>,
+    load: LoadSignature,
     translator: Arc<LocalTranslator>,
 }
 
 impl LoadedLocal {
-    fn matches(&self, selection: &ModelSelection) -> bool {
-        self.model == selection.model && self.quantization == selection.quantization
+    fn matches(&self, selection: &ModelSelection, load: &LoadSignature) -> bool {
+        self.model == selection.model
+            && self.quantization == selection.quantization
+            && &self.load == load
     }
 }
 
@@ -62,9 +70,12 @@ impl Translator {
     }
 
     #[must_use]
-    pub fn supports_vision(selection: &ModelSelection) -> bool {
+    pub fn supports_vision(&self, selection: &ModelSelection) -> bool {
         selection.vision
-            && (selection.provider != Provider::Local || local::supports_vision(selection))
+            && (selection.provider != Provider::Local
+                || self.local_config().is_ok_and(|config| {
+                    local::supports_vision(selection, &config)
+                }))
     }
 
     #[must_use]
@@ -72,14 +83,22 @@ impl Translator {
         if selection.provider != Provider::Local {
             return true;
         }
+        let Ok(config) = self.local_config() else {
+            return true;
+        };
+        let load = LoadSignature::new(&config, selection.model.as_deref());
         self.local
             .try_lock()
             .map(|loaded| {
                 loaded
                     .as_ref()
-                    .is_some_and(|loaded| loaded.matches(selection))
+                    .is_some_and(|loaded| loaded.matches(selection, &load))
             })
             .unwrap_or(true)
+    }
+
+    fn local_config(&self) -> anyhow::Result<LocalConfig> {
+        Ok(self.providers.read()?.local.clone())
     }
 
     pub fn unload(&self) -> bool {
@@ -110,7 +129,7 @@ impl Translator {
             return Ok((provider_id, request.segments));
         }
 
-        if Self::supports_vision(selection) {
+        if self.supports_vision(selection) {
             request.prepare_image()?;
         } else {
             request.remove_image();
@@ -118,9 +137,11 @@ impl Translator {
 
         let expected = request.segments.len();
         let translated = if provider == Provider::Local {
+            let config = self.local_config()?;
+            let runtime = config.runtime_for(selection.model.as_deref().unwrap_or_default());
             self.local(selection)
                 .await?
-                .translate(request, generation)
+                .translate(request, generation, &runtime)
                 .await?
         } else {
             let providers = self.providers.read()?.clone();
@@ -142,21 +163,26 @@ impl Translator {
         let providers = ProvidersConfig::load()?;
         let providers = providers.read()?.clone();
         let client = koharu_runtime::http_client()?;
-        let mut models = local::models();
+        let mut models = local::models(&providers.local);
         models.extend(remote::models(&client, &providers).await);
         Ok(models)
     }
 
     async fn local(&self, selection: &ModelSelection) -> Result<Arc<LocalTranslator>> {
+        let config = self.local_config()?;
+        let load = LoadSignature::new(&config, selection.model.as_deref());
         let mut loaded = self.local.lock().await;
         if loaded
             .as_ref()
-            .is_none_or(|loaded| !loaded.matches(selection))
+            .is_none_or(|loaded| !loaded.matches(selection, &load))
         {
             *loaded = Some(LoadedLocal {
                 model: selection.model.clone(),
                 quantization: selection.quantization.clone(),
-                translator: Arc::new(LocalTranslator::load(self.device.clone(), selection).await?),
+                load,
+                translator: Arc::new(
+                    LocalTranslator::load(self.device.clone(), selection, &config).await?,
+                ),
             });
         }
         Ok(Arc::clone(
@@ -181,19 +207,41 @@ mod tests {
         }
     }
 
+    fn translator(local: LocalConfig) -> Translator {
+        Translator::from_config(
+            Device::cpu(),
+            koharu_config::Config::memory(ProvidersConfig {
+                local,
+                ..ProvidersConfig::default()
+            }),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn local_vision_requires_capability_and_selection() {
-        assert!(Translator::supports_vision(&local_selection(
-            "gemma4-e2b-it",
-            true
-        )));
-        assert!(!Translator::supports_vision(&local_selection(
-            "gemma4-e2b-it",
-            false
-        )));
-        assert!(!Translator::supports_vision(&local_selection(
-            "lfm2.5-1.2b-instruct",
-            true
-        )));
+        let translator = translator(LocalConfig::default());
+
+        assert!(translator.supports_vision(&local_selection("gemma4-e2b-it", true)));
+        assert!(!translator.supports_vision(&local_selection("gemma4-e2b-it", false)));
+        assert!(!translator.supports_vision(&local_selection("lfm2.5-1.2b-instruct", true)));
+    }
+
+    #[test]
+    fn a_registered_model_without_a_projector_has_no_vision() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("model.gguf");
+        std::fs::write(&path, b"GGUF").unwrap();
+        let translator = translator(LocalConfig {
+            models: vec![CustomModel {
+                id: "custom".to_owned(),
+                name: "Custom".to_owned(),
+                path,
+                projector: None,
+            }],
+            ..LocalConfig::default()
+        });
+
+        assert!(!translator.supports_vision(&local_selection("custom", true)));
     }
 }

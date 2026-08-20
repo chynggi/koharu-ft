@@ -3,6 +3,7 @@
 import { Eraser, FileText, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Flux2KleinOptions } from '@/components/preferences/Flux2KleinOptions'
 import {
   defaultModel,
   modelNames,
@@ -141,10 +142,9 @@ function ModelOptions({
       )
     case 'flux2-klein':
       return (
-        <TextField
-          label={t('settings.pipeline.options.prompt')}
-          value={model.prompt ?? 'Remove the text and reconstruct the background.'}
-          onChange={(prompt) => onChange({ ...model, prompt })}
+        <Flux2KleinOptions
+          value={model}
+          onChange={(changes) => onChange({ ...model, ...changes })}
         />
       )
     case 'rorem-mixed':

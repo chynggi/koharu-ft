@@ -93,6 +93,9 @@ impl ProviderPreferences {
             configs.push(entry.config);
         }
         let config = ProvidersConfig::from_entries(configs)?;
+        // Registered GGUF files and llama.cpp overrides are rejected here rather
+        // than when a translation run tries to load them.
+        config.local.validate()?;
         for (key, credential) in credentials {
             credential.save(key)?;
         }

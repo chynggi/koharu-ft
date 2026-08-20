@@ -163,7 +163,14 @@ describe('HTTP runtime', () => {
       system_memory: 8192,
       process_cpu: 5,
       devices: [
-        { name: 'GPU', selected: true, memory_budget: 8192, memory_used: 4096, utilization: 40 },
+        {
+          name: 'GPU',
+          selected: true,
+          memory_budget: 8192,
+          memory_used: 4096,
+          memory_scope: null,
+          utilization: 40,
+        },
       ],
     })
     expect(useKoharuStore.getState().downloads[7]).toMatchObject({ completed: 25, total: 100 })

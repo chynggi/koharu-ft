@@ -6,7 +6,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::core::Interface as _;
 
-use super::{Sample, Vendor};
+use super::{MeasuredSource, MemoryScope, Sample, Vendor};
 
 pub(super) struct Monitor {
     factory: IDXGIFactory6,
@@ -57,6 +57,9 @@ impl Monitor {
                 id: index as usize,
                 name: utf16_name(&description.Description),
                 vendor: vendor(description.VendorId),
+                // DXGI reports the budget and usage of this process only.
+                source: MeasuredSource::Dxgi,
+                scope: MemoryScope::Process,
                 budget_bytes: memory.Budget,
                 used_bytes: memory.CurrentUsage,
                 utilization_percent: None,

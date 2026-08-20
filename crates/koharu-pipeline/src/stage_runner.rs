@@ -27,7 +27,7 @@ impl StageRunner {
         resources: Arc<ResourceMonitor>,
     ) -> Result<Self> {
         Ok(Self {
-            stages: Stages::new(config, translator, device)?,
+            stages: Stages::new(config, translator, device, resources.clone())?,
             accelerator: AcceleratorGate::new(device, resources),
         })
     }

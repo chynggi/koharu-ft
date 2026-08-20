@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use nvml_wrapper::Nvml;
 
-use super::{Sample, Vendor};
+use super::{MeasuredSource, MemoryScope, Sample, Vendor};
 
 pub(super) struct Monitor {
     nvml: Option<Nvml>,
@@ -65,6 +65,8 @@ fn sample_nvml_device(nvml: &Nvml, index: u32) -> Result<Sample, String> {
         id: index as usize,
         name,
         vendor: Vendor::Nvidia,
+        source: MeasuredSource::Nvml,
+        scope: MemoryScope::Device,
         budget_bytes: memory.total,
         used_bytes: memory.used,
         utilization_percent: device
