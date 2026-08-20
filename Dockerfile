@@ -136,6 +136,9 @@ EXPOSE 47823
 COPY --chown=koharu:koharu <<'EOF' /home/koharu/entrypoint.sh
 #!/bin/bash
 set -euo pipefail
+
+display=99
+
 # The base image exports XDG_RUNTIME_DIR for its own user, and the uid we get
 # is not necessarily that one — vast.ai reported
 # 'XDG_RUNTIME_DIR "/run/user/1001" is owned by uid 1001, not our uid 1002'
@@ -144,8 +147,40 @@ set -euo pipefail
 XDG_RUNTIME_DIR="$(mktemp -d /tmp/koharu-runtime-XXXXXX)"
 chmod 700 "$XDG_RUNTIME_DIR"
 export XDG_RUNTIME_DIR
-Xvfb :99 -screen 0 1920x1080x24 &
-export DISPLAY=:99
+
+# A restarted container keeps its filesystem, so the previous run's X lock is
+# still here while the server that made it is gone. Xvfb then refuses to start
+# with "Server is already active for display 99" — which is what turned a
+# single startup failure into an endless restart loop. The lock holds the X
+# server's pid, so a dead pid means the lock is stale and ours to clear.
+lock="/tmp/.X${display}-lock"
+start_server=1
+if [ -e "$lock" ]; then
+  owner="$(tr -dc '0-9' < "$lock" 2>/dev/null || true)"
+  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+    start_server=0
+  else
+    rm -f "$lock" "/tmp/.X11-unix/X${display}"
+  fi
+fi
+
+if [ "$start_server" = 1 ]; then
+  Xvfb ":${display}" -screen 0 1920x1080x24 &
+fi
+export DISPLAY=":${display}"
+
+# Xvfb is backgrounded, so `set -e` cannot see it fail. Without this wait a
+# failure surfaces later and much less legibly, as CEF being unable to open a
+# display it was told exists.
+for _ in $(seq 100); do
+  [ -S "/tmp/.X11-unix/X${display}" ] && break
+  sleep 0.1
+done
+if [ ! -S "/tmp/.X11-unix/X${display}" ]; then
+  echo "entrypoint: Xvfb did not come up on ${DISPLAY}" >&2
+  exit 1
+fi
+
 exec dbus-run-session -- koharu
 EOF
 RUN sed -i 's/\r$//' /home/koharu/entrypoint.sh && chmod +x /home/koharu/entrypoint.sh
@@ -174,17 +209,26 @@ ENTRYPOINT ["/home/koharu/entrypoint.sh"]
 #    vast.ai templates can't express docker capabilities, and the host may
 #    also forbid unprivileged user namespaces, so turning the sandbox off is
 #    the only viable path on that marketplace.
-# 2. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
+#    Confirmed fixed on vast.ai: the zygote FATAL is gone from the log.
+# 2. `KOHARU_API_TOKEN` is REQUIRED at run time. The image binds
+#    KOHARU_RPC_HOST=0.0.0.0, and crates/koharu/src/main.rs refuses to start
+#    without a token on a non-loopback bind rather than expose the API
+#    unauthenticated — so with it unset the container panics on every boot:
+#      docker run -e KOHARU_API_TOKEN="$(openssl rand -hex 32)" ...
+#    On vast.ai put it in the template's environment. It is deliberately not
+#    defaulted or auto-generated: a token the operator never chose is one
+#    nobody rotates.
+# 3. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
 #    (currently 47823) for the desktop window's *initial* navigation to
 #    succeed without a race (see HANDOFF.md's Phase 3c section) — if you
 #    override the port here, update tauri.conf.json's devUrl to match
 #    before building, or the CEF window (not the HTTP API, which is
 #    unaffected) will show a connection-refused page.
-# 3. Xvfb has no GPU/compositor behind it; CEF fell back to software
+# 4. Xvfb has no GPU/compositor behind it; CEF fell back to software
 #    rendering without complaint in local testing, but if a future CEF/
 #    driver combination insists on real GPU access, this is the first
 #    place to check.
-# 4. Xvfb here is a bare virtual framebuffer with no compositor/GPU
+# 5. Xvfb here is a bare virtual framebuffer with no compositor/GPU
 #    acceleration wired to it; if CEF's GPU process insists on a real
 #    display/DRM node and fails hard instead of falling back to software
 #    rendering, this is the first place to look.
