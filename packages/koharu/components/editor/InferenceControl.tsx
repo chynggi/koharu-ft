@@ -18,7 +18,7 @@ import { ModelPicker } from '@/components/controls/ModelPicker'
 import { OutputPicker, type OutputDraft } from '@/components/controls/OutputPicker'
 import { call, refreshTranslationModels } from '@/lib/backend'
 import { receivePreferences, useKoharuStore } from '@/lib/store'
-import { modelKey, providerName } from '@/lib/translation'
+import { modelKey, modelSelection, providerName } from '@/lib/translation'
 import {
   commands,
   type Model,
@@ -144,12 +144,7 @@ function RuntimeSelector({
       ...preferences.pipeline,
       translation: {
         ...preferences.pipeline.translation,
-        model: {
-          provider: next.provider,
-          model: next.model,
-          quantization: next.quantizations[0]?.id ?? null,
-          vision: next.vision,
-        },
+        model: modelSelection(next),
       },
     }
     void call(commands.savePreferences, pipeline, preferences.providers, preferences.typesetting)
@@ -455,7 +450,8 @@ function availableModels(
       model: selected.model ?? null,
       name: selected.model ?? providerName(providers, selected.provider),
       quantizations: [],
-      vision: selected.vision,
+      vision: selected.vision ?? false,
+      reasoning: selected.reasoning ?? false,
     },
     ...models,
   ]

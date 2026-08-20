@@ -99,7 +99,10 @@ impl LocalTranslator {
         }
 
         let image = request.image.clone();
-        let prompt = self.render_prompt(&request)?;
+        let prompt = self.render_prompt(
+            &request,
+            generation.reasoning.unwrap_or(false) && self.descriptor.reasoning,
+        )?;
         let schema = prompt::output_schema(expected);
         let llm = Arc::clone(&self.llm);
         let generation = self.model.generation().options(generation, runtime);
@@ -116,7 +119,7 @@ impl LocalTranslator {
         Ok(segments)
     }
 
-    fn render_prompt(&self, request: &TranslationRequest) -> Result<String> {
+    fn render_prompt(&self, request: &TranslationRequest, reasoning: bool) -> Result<String> {
         let (system, payload) = prompt::prompts(request)?;
         let payload = if request.image.is_some() {
             format!("{}\n{payload}", media_marker())
@@ -129,6 +132,7 @@ impl LocalTranslator {
                 &[ChatMessage::system(system), ChatMessage::user(payload)],
                 ChatTemplateOptions {
                     add_generation_prompt: true,
+                    enable_thinking: reasoning,
                 },
             )
             .context("failed to render local translation prompt")?)
@@ -157,6 +161,7 @@ fn builtin_model(descriptor: &LocalModelDescriptor) -> Model {
             })
             .collect(),
         vision: descriptor.projector.is_some(),
+        reasoning: descriptor.reasoning,
     }
 }
 
@@ -169,6 +174,7 @@ fn custom_model(model: &CustomModel) -> Model {
         name: model.name.clone(),
         quantizations: Vec::new(),
         vision: model.projector.is_some(),
+        reasoning: false,
     }
 }
 
@@ -228,6 +234,7 @@ mod tests {
             model: Some("custom-vision".to_owned()),
             quantization: None,
             vision: true,
+            reasoning: false,
         };
 
         assert!(supports_vision(&selection, &config));

@@ -24,6 +24,7 @@ impl SupportedLanguages {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LocalModelDescriptor {
     pub(crate) id: &'static str,
+    pub(crate) reasoning: bool,
     pub(crate) name: &'static str,
     pub(crate) quantizations: &'static [QuantizationDefinition],
     pub(crate) generation: ModelGeneration,
@@ -35,6 +36,7 @@ pub(crate) struct LocalModelDescriptor {
 pub(super) static MODELS: &[LocalModelDescriptor] = &[
     LocalModelDescriptor {
         id: "lfm2.5-1.2b-instruct",
+        reasoning: false,
         name: "LFM2.5 1.2B Instruct",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_M", "Q4_K_M", "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"),
@@ -71,6 +73,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "ministral-3-8b-instruct",
+        reasoning: false,
         name: "Ministral 3 8B Instruct",
         quantizations: &[
             QuantizationDefinition::new(
@@ -114,6 +117,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-e2b-it",
+        reasoning: true,
         name: "Gemma 4 E2B Instruct",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"),
@@ -135,6 +139,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-e4b-it",
+        reasoning: true,
         name: "Gemma 4 E4B Instruct",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf"),
@@ -156,6 +161,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-12b-it",
+        reasoning: true,
         name: "Gemma 4 12B Instruct",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_XL",
@@ -178,6 +184,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-26b-a4b-it",
+        reasoning: true,
         name: "Gemma 4 26B A4B Instruct",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_XL",
@@ -200,6 +207,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-31b-it",
+        reasoning: true,
         name: "Gemma 4 31B Instruct",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_XL",
@@ -222,6 +230,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-e2b-uncensored",
+        reasoning: true,
         name: "Gemma 4 E2B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -276,6 +285,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-e4b-uncensored",
+        reasoning: true,
         name: "Gemma 4 E4B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -335,6 +345,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-12b-uncensored",
+        reasoning: true,
         name: "Gemma 4 12B Uncensored",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_M",
@@ -357,6 +368,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-26b-a4b-uncensored",
+        reasoning: true,
         name: "Gemma 4 26B A4B Uncensored",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_M",
@@ -379,6 +391,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "gemma4-31b-uncensored",
+        reasoning: true,
         name: "Gemma 4 31B Uncensored",
         quantizations: &[QuantizationDefinition::new(
             "Q4_K_M",
@@ -401,6 +414,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-0.8b",
+        reasoning: true,
         name: "Qwen 3.5 0.8B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-0.8B-UD-Q4_K_XL.gguf"),
@@ -429,6 +443,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-2b",
+        reasoning: true,
         name: "Qwen 3.5 2B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-2B-UD-Q4_K_XL.gguf"),
@@ -457,6 +472,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-4b",
+        reasoning: true,
         name: "Qwen 3.5 4B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-4B-UD-Q4_K_XL.gguf"),
@@ -485,6 +501,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-9b",
+        reasoning: true,
         name: "Qwen 3.5 9B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-9B-UD-Q4_K_XL.gguf"),
@@ -513,6 +530,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-27b",
+        reasoning: true,
         name: "Qwen 3.5 27B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-27B-UD-Q4_K_XL.gguf"),
@@ -541,6 +559,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-35b-a3b",
+        reasoning: true,
         name: "Qwen 3.5 35B A3B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"),
@@ -569,6 +588,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.6-27b",
+        reasoning: true,
         name: "Qwen 3.6 27B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.6-27B-UD-Q4_K_XL.gguf"),
@@ -597,6 +617,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.6-35b-a3b",
+        reasoning: true,
         name: "Qwen 3.6 35B A3B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"),
@@ -636,6 +657,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.8-27b",
+        reasoning: true,
         name: "Qwen 3.8 27B",
         quantizations: &[
             QuantizationDefinition::new("Q4_K_XL", "Q4_K XL", "Qwen3.8-27B-UD-Q4_K_XL.gguf"),
@@ -664,6 +686,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-2b-uncensored",
+        reasoning: true,
         name: "Qwen 3.5 2B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -703,6 +726,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-4b-uncensored",
+        reasoning: true,
         name: "Qwen 3.5 4B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -742,6 +766,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.5-9b-uncensored",
+        reasoning: true,
         name: "Qwen 3.5 9B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -781,6 +806,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.6-27b-uncensored",
+        reasoning: true,
         name: "Qwen 3.6 27B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -850,6 +876,7 @@ pub(super) static MODELS: &[LocalModelDescriptor] = &[
     },
     LocalModelDescriptor {
         id: "qwen3.6-35b-a3b-uncensored",
+        reasoning: true,
         name: "Qwen 3.6 35B A3B Uncensored",
         quantizations: &[
             QuantizationDefinition::new(
@@ -982,6 +1009,17 @@ mod tests {
                 );
             }
             assert!(!MODELS[..index].iter().any(|other| other.id == id));
+        }
+    }
+
+    #[test]
+    fn reasoning_matches_supported_chat_templates() {
+        for model in MODELS {
+            if matches!(model.id, "lfm2.5-1.2b-instruct" | "ministral-3-8b-instruct") {
+                assert!(!model.reasoning, "{} should not expose reasoning", model.id);
+            } else {
+                assert!(model.reasoning, "{} should expose reasoning", model.id);
+            }
         }
     }
 

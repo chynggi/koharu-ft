@@ -4,7 +4,7 @@ default-members = ["crates/koharu"]
 resolver = "3"
 
 [workspace.package]
-version = "0.73.0"
+version = "0.77.4"
 edition = "2024"
 description = "Manga translation tools"
 license = "MIT OR Apache-2.0"
@@ -33,6 +33,7 @@ koharu-torch = { path = "crates/koharu-torch" }
 koharu-torch-sys = { path = "crates/koharu-torch-sys" }
 koharu-agent = { path = "crates/koharu-agent" }
 koharu-ml = { path = "crates/koharu-ml" }
+koharu-metrics = { path = "crates/koharu-metrics" }
 koharu-pipeline = { path = "crates/koharu-pipeline" }
 koharu-translator = { path = "crates/koharu-translator" }
 koharu-psd = { path = "crates/koharu-psd" }
@@ -54,6 +55,7 @@ axum = { version = "0.8", features = ["multipart"] }
 async-trait = "0.1.92"
 tower-http = "0.6"
 tokio-stream = "0.1"
+backon = { version = "1.6.0", default-features = false, features = ["std", "tokio-sleep"] }
 imageproc = "0.27.0"
 ab_glyph = "0.2.32"
 clap = { version = "4.6.6", features = ["derive"] }
@@ -61,6 +63,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 specta = { version = "=2.0.0-rc.25", features = ["derive", "url", "uuid"] }
 tokio = { version = "1.53.1", features = ["full"] }
+log = "0.4.33"
 tracing = "0.1.44"
 tracing-core = "0.1.36"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "registry"] }
@@ -99,6 +102,7 @@ flate2 = "1.1.9"
 tempfile = "3.27.0"
 libloading = "0.9.0"
 nvml-wrapper = "0.12.1"
+num_cpus = "1.17.0"
 minijinja = "2.24.0"
 minijinja-contrib = { version = "2.24.0", features = ["pycompat"] }
 indoc = "2.0.7"
@@ -129,6 +133,7 @@ tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef", defa
     "devtools",
 ] }
 tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
+tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
 tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
 tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
 tauri-plugin-single-instance = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }

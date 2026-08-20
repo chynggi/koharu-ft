@@ -1,3 +1,235 @@
+## [0.77.4](https://github.com/mayocream/koharu/compare/0.77.3..0.77.4) - 2026-08-20
+
+### 📚 Documentation
+
+- Describe agent resources - ([dff193d](https://github.com/mayocream/koharu/commit/dff193de9fdbd6e40b3ec9995358b40572cb8164))
+- Make contribution guidance more welcoming - ([765d327](https://github.com/mayocream/koharu/commit/765d327170ae8330a54ef4755465467f956cef70))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(runtime)* Update native runtimes - ([6df4ded](https://github.com/mayocream/koharu/commit/6df4ded508658019e3b969ac9dc863d8fdccc9e1))
+
+
+## [0.77.3](https://github.com/mayocream/koharu/compare/0.77.2..0.77.3) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(translator)* Decode optional Gemini thinking capability - ([3da3391](https://github.com/mayocream/koharu/commit/3da339141b56b97323e001ce79df260cfd2ddc27))
+
+
+## [0.77.2](https://github.com/mayocream/koharu/compare/0.77.1..0.77.2) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Load ROCm libraries globally - ([1dda084](https://github.com/mayocream/koharu/commit/1dda08440a0b6d2115025ee9a8def543375083ff))
+
+
+## [0.77.1](https://github.com/mayocream/koharu/compare/0.77.0..0.77.1) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Load Linux cuFile for Torch - ([556485b](https://github.com/mayocream/koharu/commit/556485b18651e952e9adee92825b5c02d66ed31d))
+
+
+## [0.77.0](https://github.com/mayocream/koharu/compare/0.76.0..0.77.0) - 2026-08-19
+
+### ⛰️  Features
+
+- Add native usage metrics - ([66e603d](https://github.com/mayocream/koharu/commit/66e603d4438a2f61aee41cf6bbe38c36e97f8219))
+
+### 🐛 Bug Fixes
+
+- *(ci)* Cover supported ROCm targets in HIP builds - ([b855982](https://github.com/mayocream/koharu/commit/b855982c3e2eba09b3fc285535828d972b11e77e))
+- *(ci)* Target dependency releases at default branch - ([d2b04ad](https://github.com/mayocream/koharu/commit/d2b04ad4337229bcab4355610f936ef09bfc1417))
+- *(pipeline)* Refine detection and inpainting reruns - ([acb7d99](https://github.com/mayocream/koharu/commit/acb7d99c9855db8c09224655c84d5d68e359c2e5))
+
+
+## [0.76.0](https://github.com/mayocream/koharu/compare/0.75.16..0.76.0) - 2026-08-19
+
+### ⛰️  Features
+
+- *(translator)* Support local reasoning - ([87104fc](https://github.com/mayocream/koharu/commit/87104fcf4d419e0de0f9d0cca7c404d87a0b6a14))
+
+### 🐛 Bug Fixes
+
+- *(translator)* Respect model capabilities - ([f842172](https://github.com/mayocream/koharu/commit/f842172e636628da0a018dfa1c4811d4d90f5301))
+- *(translator)* Align reasoning capabilities - ([5b6672c](https://github.com/mayocream/koharu/commit/5b6672ccefb94a1afefcaf45190cb633b5b65442))
+
+
+## [0.75.16](https://github.com/mayocream/koharu/compare/0.75.15..0.75.16) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(ci)* Restore Windows 2022 app builds - ([bf7a6ea](https://github.com/mayocream/koharu/commit/bf7a6ea9036e7eb422bc298d13e9e1e181ba190a))
+- *(ci)* Stabilize dependency builds - ([2486494](https://github.com/mayocream/koharu/commit/248649469d15213ef2d64146a8bd8320ebf7edd2))
+- *(editor)* Replace text centered stroke with outward path ([#951](https://github.com/mayocream/koharu/issues/951)) - ([fbc2e4f](https://github.com/mayocream/koharu/commit/fbc2e4f11b6f0f7a815b00590a6bcaae574b2008))
+
+### ⚙️ Miscellaneous Tasks
+
+- Use ubuntu-latest runners - ([dda25ba](https://github.com/mayocream/koharu/commit/dda25baa1f70722c87de10ecc5216a0e742331a7))
+- Use windows-latest runners - ([d4997ca](https://github.com/mayocream/koharu/commit/d4997cad5dd1855f4b11e63ff250ba852e09864e))
+
+
+## [0.75.15](https://github.com/mayocream/koharu/compare/0.75.14..0.75.15) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(ci)* Avoid MSVC environment during app builds - ([7ab39f1](https://github.com/mayocream/koharu/commit/7ab39f14676ef0ff39166cfa1cc70a334af7dbbb))
+
+### ⚙️ Miscellaneous Tasks
+
+- Enable Linux AppImage bundling - ([6d4d303](https://github.com/mayocream/koharu/commit/6d4d303ea0cacbfba3ffa70280e2f915cda15ac6))
+
+
+## [0.75.14](https://github.com/mayocream/koharu/compare/0.75.13..0.75.14) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Preserve ROCm wheel layout - ([b830b49](https://github.com/mayocream/koharu/commit/b830b4955cd7411070a5526dea53caf0754c9578))
+
+### ⚙️ Miscellaneous Tasks
+
+- Optimize release caches - ([9aba741](https://github.com/mayocream/koharu/commit/9aba7419dbc9358bb77951995b691cfffd24f49c))
+
+
+## [0.75.13](https://github.com/mayocream/koharu/compare/0.75.12..0.75.13) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Share ROCm runtime on Linux - ([c6dab0c](https://github.com/mayocream/koharu/commit/c6dab0c076129551627744ac491b77f3bde4d66d))
+
+
+## [0.75.12](https://github.com/mayocream/koharu/compare/0.75.11..0.75.12) - 2026-08-19
+
+### 🐛 Bug Fixes
+
+- *(ui)* Gate vision by model capability - ([80b03f1](https://github.com/mayocream/koharu/commit/80b03f16d7340fd0560720f18806f31425f44216))
+
+
+## [0.75.11](https://github.com/mayocream/koharu/compare/0.75.10..0.75.11) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Isolate bundled ROCm libraries on Linux - ([6c21c9a](https://github.com/mayocream/koharu/commit/6c21c9add22e97ef75c7aa6459eb1c1c76ef1614))
+
+### ⚙️ Miscellaneous Tasks
+
+- Disable OpenMP for stable-diffusion.cpp - ([77de3a4](https://github.com/mayocream/koharu/commit/77de3a4d4d9f28fe290344e83c7cc3f9330bd313))
+
+
+## [0.75.10](https://github.com/mayocream/koharu/compare/0.75.9..0.75.10) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Load CUDA Torch dependencies in order - ([0d20664](https://github.com/mayocream/koharu/commit/0d2066409ed827761fbe5fc782cded94d13825b1))
+
+
+## [0.75.9](https://github.com/mayocream/koharu/compare/0.75.8..0.75.9) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(translator)* Use LM Studio vision capability - ([8ab7cde](https://github.com/mayocream/koharu/commit/8ab7cde12bfc8fc9bae2012c531a8442cd13426a))
+
+
+## [0.75.8](https://github.com/mayocream/koharu/compare/0.75.7..0.75.8) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Isolate bundled DRM symbols on Linux - ([fb74b75](https://github.com/mayocream/koharu/commit/fb74b7527bf1ddc3bd832cde09f3e2cc01f3c319))
+
+### ⚙️ Miscellaneous Tasks
+
+- Cache on release - ([9772b7c](https://github.com/mayocream/koharu/commit/9772b7cde02f5fd3896834d41a0a218243971e46))
+
+
+## [0.75.7](https://github.com/mayocream/koharu/compare/0.75.6..0.75.7) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(app)* Limit persistent log size - ([a4e8b4d](https://github.com/mayocream/koharu/commit/a4e8b4d029f2304eabbdc4a00059d67ee9cbd261))
+
+
+## [0.75.6](https://github.com/mayocream/koharu/compare/0.75.5..0.75.6) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(ml)* Select precision by device capability - ([ce2e6fb](https://github.com/mayocream/koharu/commit/ce2e6fbe2a4a31f7355c5c892ee9c5f4a6083e54))
+- *(runtime)* Retry interrupted download ranges - ([1143fe7](https://github.com/mayocream/koharu/commit/1143fe77dd1179e4e477c1776aff8d5f62382dbb))
+- *(runtime)* Correct Linux cuDNN library manifest - ([84ef3ee](https://github.com/mayocream/koharu/commit/84ef3ee5ed6c40e6ba0a2e9f0b2e92d25c761969))
+
+
+## [0.75.5](https://github.com/mayocream/koharu/compare/0.75.4..0.75.5) - 2026-08-18
+
+### ⛰️  Features
+
+- *(app)* Persist backend logs - ([3587243](https://github.com/mayocream/koharu/commit/3587243199c39335755ca28669dd171f412d8b6f))
+
+
+## [0.75.4](https://github.com/mayocream/koharu/compare/0.75.3..0.75.4) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Load ROCm Torch dependencies in order - ([01bc970](https://github.com/mayocream/koharu/commit/01bc97057d89169a5251dec9236707bb087f25b8))
+
+
+## [0.75.3](https://github.com/mayocream/koharu/compare/0.75.2..0.75.3) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(ui)* Preserve model toggle preferences - ([63764d6](https://github.com/mayocream/koharu/commit/63764d6c28647cd992200474be164fc5faad6d47))
+
+
+## [0.75.2](https://github.com/mayocream/koharu/compare/0.75.1..0.75.2) - 2026-08-18
+
+### 🐛 Bug Fixes
+
+- *(app)* Restore frameless window resizing - ([d8bddc4](https://github.com/mayocream/koharu/commit/d8bddc426b48758c8feec39694438c8699956d26))
+
+
+## [0.75.1](https://github.com/mayocream/koharu/compare/0.75.0..0.75.1) - 2026-08-18
+
+### ⚡ Performance
+
+- *(runtime)* Accelerate multipart downloads - ([22dab37](https://github.com/mayocream/koharu/commit/22dab373485245bbe1ce9ec2b35ca7a72ba56d45))
+
+
+## [0.75.0](https://github.com/mayocream/koharu/compare/0.74.0..0.75.0) - 2026-08-18
+
+### ⛰️  Features
+
+- *(runtime)* Add Linux CUDA and ROCm artifacts - ([cf914e8](https://github.com/mayocream/koharu/commit/cf914e8b92aee5829e6a6a03edd08a893b0eda95))
+
+### 🐛 Bug Fixes
+
+- *(ci)* Use Linux CUDA package names - ([2a05c67](https://github.com/mayocream/koharu/commit/2a05c67c24736c7bc117961c27c954ca5676276f))
+
+### 📚 Documentation
+
+- Improve readme feature list - ([b015225](https://github.com/mayocream/koharu/commit/b0152251435d6fff9afe3c746a76014e1150169c))
+- Improve readme - ([316795b](https://github.com/mayocream/koharu/commit/316795b93fe66f1abfea07af30cd98924b456a5d))
+- Document hardware runtime support - ([2d38f14](https://github.com/mayocream/koharu/commit/2d38f14ef4c76ad00355f7fe3ccb2004f7525c05))
+- Expand debug logging guide - ([cba2629](https://github.com/mayocream/koharu/commit/cba26293a26b9777a29769099c636e41d30f6454))
+
+### ⚡ Performance
+
+- *(runtime)* Maximize download throughput - ([b608a9f](https://github.com/mayocream/koharu/commit/b608a9f7f7311969fd7c5a31c0d1eb81c153c03b))
+
+### ⚙️ Miscellaneous Tasks
+
+- Automate native dependency releases - ([9cd3100](https://github.com/mayocream/koharu/commit/9cd3100515c17fbb0007bc456c5e47add6a49a55))
+
+
+## [0.74.0](https://github.com/mayocream/koharu/compare/0.73.0..0.74.0) - 2026-08-18
+
+### ⛰️  Features
+
+- *(runtime)* Support ROCm Torch on Linux - ([7462036](https://github.com/mayocream/koharu/commit/7462036cbda998e4517b3925d3117d8f36549f3f))
+
+### 🐛 Bug Fixes
+
+- *(app)* Hide link status bubble - ([002ec11](https://github.com/mayocream/koharu/commit/002ec11bd6133c082cf5989ac57ddb4f0f2ef46a))
+
+
 ## [0.73.0](https://github.com/mayocream/koharu/compare/0.72.0..0.73.0) - 2026-08-17
 
 ### ⛰️  Features
@@ -153,7 +385,7 @@
 - Enable devtools - ([49883fc](https://github.com/mayocream/koharu/commit/49883fce9bbbf9d25ea830abb738bd4375fc5fd5))
 
 
-## [0.67.0](https://github.com/mayocream/koharu/compare/stable-diffusion.cpp-master-820-de298c2..0.67.0) - 2026-08-15
+## [0.67.0](https://github.com/mayocream/koharu/compare/0.66.10..0.67.0) - 2026-08-15
 
 ### ⛰️  Features
 
@@ -176,12 +408,6 @@
 ### ⚙️ Miscellaneous Tasks
 
 - Update sponsors ([#927](https://github.com/mayocream/koharu/issues/927)) - ([106a99c](https://github.com/mayocream/koharu/commit/106a99cccc656168742b53f304c6abbd4cf28cf9))
-
-
-## [stable-diffusion.cpp-master-820-de298c2](https://github.com/mayocream/koharu/compare/0.66.10..stable-diffusion.cpp-master-820-de298c2) - 2026-08-14
-
-### ⚙️ Miscellaneous Tasks
-
 - Bump llama.cpp and sd.cpp - ([c4fddad](https://github.com/mayocream/koharu/commit/c4fddad24c77e345353788fae5c795bc329108bc))
 - Remove unused workspace dependencies - ([cac8f75](https://github.com/mayocream/koharu/commit/cac8f75718ad2585bd449c9e85d725deba777529))
 
@@ -2437,16 +2663,23 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 
 ## [0.9.9](https://github.com/mayocream/koharu/compare/0.9.8..0.9.9) - 2025-11-23
 
+### ⛰️  Features
+
+- Auto-update - ([38ab31a](https://github.com/mayocream/koharu/commit/38ab31a4d83ddcbdb246709797a055039429337f))
+
 ### Release
 
 - 0.9.9 - ([89798c2](https://github.com/mayocream/koharu/commit/89798c228976cde5456ba22bb5082379e09efd25))
+- 0.9.9-alpha.2 (auto-update test) - ([b29d2e8](https://github.com/mayocream/koharu/commit/b29d2e868750b45e34c5f5615341f0d11d82d127))
+- 0.9.9-alpha.1 - ([d4275c9](https://github.com/mayocream/koharu/commit/d4275c9121a6bc7a1d75432e0ca8617cade70512))
 
 
-## [0.9.8] - 2025-11-23
+## [0.9.8](https://github.com/mayocream/koharu/compare/0.9.7..0.9.8) - 2025-11-23
 
 ### Release
 
 - 0.9.8 - ([bf42787](https://github.com/mayocream/koharu/commit/bf42787aae76f0db4a0c8a7a10711a91bb9186d2))
+- 0.9.8-alpha.1 - ([42870fd](https://github.com/mayocream/koharu/commit/42870fd2aec837ae064796a68ce1363067c995d7))
 
 
 ## [0.9.7](https://github.com/mayocream/koharu/compare/0.9.6..0.9.7) - 2025-11-23
@@ -2920,13 +3153,18 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 ### 🐛 Bug Fixes
 
 - Fix update logic - ([a92cbfd](https://github.com/mayocream/koharu/commit/a92cbfd0f114bae45deb6ca3e5694b54de9b58aa))
+- Fix ci - ([71dacc7](https://github.com/mayocream/koharu/commit/71dacc7e3f12f7de6ea18dd21930da42bda282ad))
+
+### 📚 Documentation
+
+- Add dev steps - ([39d9443](https://github.com/mayocream/koharu/commit/39d9443f6551c24ab9aa009dd236a600ad394fab))
 
 ### Release
 
 - 0.3.0 - ([cf07472](https://github.com/mayocream/koharu/commit/cf0747220cc4aae421adff3fb2c6091937e52fd8))
 
 
-## [0.2.3] - 2025-10-27
+## [0.2.3](https://github.com/mayocream/koharu/compare/0.2.2..0.2.3) - 2025-10-27
 
 ### Release
 
@@ -3115,7 +3353,7 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Fix windows - ([3e3ec59](https://github.com/mayocream/koharu/commit/3e3ec59b79b2d529107715803a10d98be2228c05))
 
 
-## [0.1.1](https://github.com/mayocream/koharu/compare/v0.1.1..0.1.1) - 2025-05-28
+## [0.1.1] - 2025-05-28
 
 ### ⛰️  Features
 
@@ -3140,6 +3378,35 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Scroll mouse wheel to zoom the canvas - ([5c4724e](https://github.com/mayocream/koharu/commit/5c4724e757bafcba9026c1dddcd1cabf0cf31743))
 - Add lama - ([4ae2fd6](https://github.com/mayocream/koharu/commit/4ae2fd6677665ab804b814c306b8a355c5e505a8))
 - Add segmentation functionality and update state management - ([6aefd2d](https://github.com/mayocream/koharu/commit/6aefd2d0295f59fd753f82bc3fb803892e6c65f4))
+- Add CUDA feature support for ort dependency and update build configuration - ([8965151](https://github.com/mayocream/koharu/commit/8965151c4faf6eadf561f9d311cdddaf5cdf16e8))
+- Trigger OCR automatically when detect complete - ([223753a](https://github.com/mayocream/koharu/commit/223753a372d1490a6d5682cd191467b994835fa5))
+- OCR text editable - ([5ea3746](https://github.com/mayocream/koharu/commit/5ea3746a6ef471b2948a884b1aabd10ff38f7b2f))
+- Translate text using stream mode - ([c0aea96](https://github.com/mayocream/koharu/commit/c0aea96ff9c2f7ba552149881092edc8ed850fb7))
+- Use GPU acceleration when available - ([d649095](https://github.com/mayocream/koharu/commit/d64909568ade8e4cdbd08f6559924666b18908c6))
+- Highlight selected text item - ([9fd25f0](https://github.com/mayocream/koharu/commit/9fd25f0a8cb663274884f2e3e597e1107692ba39))
+- Order bboxes - ([727e836](https://github.com/mayocream/koharu/commit/727e836dc49c5d233347a519eade047e19e7d521))
+- Enhance canvas and detection panel with loading state and reset functionality - ([897f7af](https://github.com/mayocream/koharu/commit/897f7afe90c04b0d1e589fd70985a37d4deca478))
+- Add blocks state management and render rectangles in canvas - ([c439ef0](https://github.com/mayocream/koharu/commit/c439ef07636b5a381eb61ed39743305d1f0e2a48))
+- Implement comic text detection and update dependencies - ([0c7d25b](https://github.com/mayocream/koharu/commit/0c7d25be60447eb3f0b1e1774dbaedaa66c34b92))
+- Add comic text detection functionality and update dependencies - ([9070f43](https://github.com/mayocream/koharu/commit/9070f43c3b7b197c8ae05d2415d115a19212607e))
+- Add scale control - ([582ead8](https://github.com/mayocream/koharu/commit/582ead827920e466c208fed5334104e0cc943b15))
+- Add Tauri plugins for store and persisted scope, update dependencies in Cargo and package files - ([120d876](https://github.com/mayocream/koharu/commit/120d876a4c5b41d904cc2791388599114bbe599c))
+- Enhance canvas layout and improve image handling in Topbar component - ([1d54678](https://github.com/mayocream/koharu/commit/1d546780d6f201d2f0971268086efb905750cfd3))
+- Add Tauri plugins for dialog and logging, enhance canvas functionality, and improve app structure - ([771255e](https://github.com/mayocream/koharu/commit/771255e3365ddaad268a49e79fe0cb4fe01d317b))
+- Integrate react-konva for canvas rendering in App component - ([0aca2a1](https://github.com/mayocream/koharu/commit/0aca2a1570617768477cbbd562095deff9a3f592))
+- Add layout components and tools for layer management - ([d9b5ff1](https://github.com/mayocream/koharu/commit/d9b5ff18ff83ae83741ea6553c41a38a4952aa49))
+- Enhance image processing with configurable thresholds and bounding box drawing - ([5176216](https://github.com/mayocream/koharu/commit/517621624a5452cdd2a20e0957fedfcb69469b15))
+- Add image processing and object detection functionality to comic-text-detector - ([96692b5](https://github.com/mayocream/koharu/commit/96692b5e6600a5a7ddc0ec5537eba94ee1095135))
+- Update dependencies and enhance model session handling in main.rs - ([6a6b246](https://github.com/mayocream/koharu/commit/6a6b2464c3e5b1eacb12a6f5f380c6ccc1014b7b))
+- Implement main functionality for comic-text-detector and update dependencies - ([7aba290](https://github.com/mayocream/koharu/commit/7aba290a2db4a1aa4e722179659b4d31ce455741))
+- Add comic-text-detector package with initial implementation - ([155adde](https://github.com/mayocream/koharu/commit/155addec952f984b682e7eb169daea1b224d84a9))
+- Simplify manga109 to YOLO conversion by removing book selection and updating class mapping - ([2ff157b](https://github.com/mayocream/koharu/commit/2ff157b3ba9a4304314864b6ca3f3e518f577e0b))
+- Add script to download Blue Archive comics with asynchronous requests - ([98f31a0](https://github.com/mayocream/koharu/commit/98f31a0cf4d5c89019b7e98b99eaa716ee326bd6))
+- Enhance manga109 to YOLO conversion with 80/20 train/val split and YAML config - ([021eeb3](https://github.com/mayocream/koharu/commit/021eeb3e6aa9ef497b03e38da7d3828ebf1ff082))
+- Add Puppeteer script for Paperspace login and notebook access - ([adf207e](https://github.com/mayocream/koharu/commit/adf207e680a03b7f27973535ad8d7ceb590ad55f))
+- Add detection notebook for dataset preparation and training with YOLO - ([af44ec4](https://github.com/mayocream/koharu/commit/af44ec49473fa08ae5c234fa4d2f20be287b42e6))
+- Add manga109 to YOLO conversion script - ([85b28aa](https://github.com/mayocream/koharu/commit/85b28aa926eb0031f6ef3c8be4e7d567528bf69a))
+- Initialize Tauri + React application with basic greeting functionality - ([b3ab757](https://github.com/mayocream/koharu/commit/b3ab757192fb12f4c4137d1811da12654fec10ac))
 
 ### 🐛 Bug Fixes
 
@@ -3161,6 +3428,29 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Update README to correct bundle size from less than 10MB to less than 20MB - ([7e3e783](https://github.com/mayocream/koharu/commit/7e3e7832ebfaffe7920f9b81e2efe55ca08f9d96))
 - Canvas cannot be fully displayed when scrollbar is scrolled to the bottom - ([598c295](https://github.com/mayocream/koharu/commit/598c29598ff6ab248422d1d6048b6c50676dcc4d))
 - Right panel scrollbar - ([e0d5e3e](https://github.com/mayocream/koharu/commit/e0d5e3e0bde84b28ebbedf232b5a5d5856b419af))
+- Remove unnecessary blank line in README.md - ([ca0c16e](https://github.com/mayocream/koharu/commit/ca0c16ecc4a65d85d711ab52633c48edabe5ed96))
+- Redetect when switch tools, settings - ([83ffeba](https://github.com/mayocream/koharu/commit/83ffeba9e31c75993bfd2b078a4136a91cc31102))
+- Stream translate missing last piece - ([cb82324](https://github.com/mayocream/koharu/commit/cb823248dfbd44d7fa9ff623a989f2637a2959e3))
+- Specify shell for artifact processing step in release workflow - ([937ece3](https://github.com/mayocream/koharu/commit/937ece3913048c6d019c05a311392f8f151d1bb4))
+- Refactor artifact upload step to improve handling of paths - ([5a64297](https://github.com/mayocream/koharu/commit/5a64297221408f1397c3b4fc04badf554282ea15))
+- Update artifact paths formatting for GitHub release upload - ([33c04e3](https://github.com/mayocream/koharu/commit/33c04e3c37f9efdd0f7048f293bd5c89f4a5d35c))
+- Correct JSON parsing for artifact paths in release workflow - ([7e3d378](https://github.com/mayocream/koharu/commit/7e3d378c18c747df6dd43c96262745af28f06b38))
+- Add max height and overflow to OCR panel for better layout - ([11e11db](https://github.com/mayocream/koharu/commit/11e11db728e1236167c599061b3c332938111065))
+- Ocr results got cutted - ([4dacfa5](https://github.com/mayocream/koharu/commit/4dacfa5afbb67ed0720c24bbad04454ae8cd7ceb))
+- Display detected texts in detection and OCR panels - ([79b902b](https://github.com/mayocream/koharu/commit/79b902b8ae59bc8223b73b208c39e45938246f7c))
+- Clears blocks only when new image loaded - ([3426a34](https://github.com/mayocream/koharu/commit/3426a34567c50e739b81f9a44fda60b74d8cf6e0))
+- Fix panic - ([4a0b947](https://github.com/mayocream/koharu/commit/4a0b947a27cc0752bbd7fdfdd8513dbfdb5e98d8))
+- Simplify ort dependency declaration by removing unnecessary features - ([5d226c3](https://github.com/mayocream/koharu/commit/5d226c38f98b555f7e75fab88ea09f55f4cf5d44))
+- Ensure stage size is set correctly to match image dimensions - ([10b47af](https://github.com/mayocream/koharu/commit/10b47afc997ce8738d54ef95acd1be47f2db348b))
+- Ensure file selection is validated before processing in Topbar component - ([1b340a9](https://github.com/mayocream/koharu/commit/1b340a91057a0924e662db371953c2d52fc85639))
+- Fix typo - ([1f68c49](https://github.com/mayocream/koharu/commit/1f68c491d834eae9983088ed82c76592f704e540))
+- Fix build step - ([5e7c781](https://github.com/mayocream/koharu/commit/5e7c781f2c6a8ee248d8f117e2c48eae5b98260a))
+- Fix image loaded - ([c1aee01](https://github.com/mayocream/koharu/commit/c1aee01ab43444c0168aae5f4e5619cd707252de))
+- Move stageRef.current.destroyChildren() call to ensure proper cleanup before loading new image - ([41d02fb](https://github.com/mayocream/koharu/commit/41d02fb46c4002f429a50cbfcfc865ec963fb0a1))
+- Add missing description for manga-ocr model in README - ([e9ad2cf](https://github.com/mayocream/koharu/commit/e9ad2cf0cc5cd30350fe1c82d3df4970c326eb0f))
+- Fix typo - ([8e76902](https://github.com/mayocream/koharu/commit/8e7690222407688774d3e687e7f89ff86c7cc272))
+- Update gdown command to use placeholder for ID - ([a9180ab](https://github.com/mayocream/koharu/commit/a9180ab7ef528926ebd2881922c6e05a0d34826a))
+- Correct model import in main.rs - ([f6eab13](https://github.com/mayocream/koharu/commit/f6eab139b1da72b4a337dd2d46fdbfa21331387e))
 
 ### 🚜 Refactor
 
@@ -3181,6 +3471,12 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Remove imageSrcHistory and related logic from canvas store - ([4af1b4a](https://github.com/mayocream/koharu/commit/4af1b4a727be64cbc77e5d8f0960eaf4594e08e8))
 - Remove unused execution providers from model initialization - ([edc2ada](https://github.com/mayocream/koharu/commit/edc2ada6cf09b814c76ae367e322114cd0134984))
 - Extract canvas logic into hooks and utils - ([3e454ae](https://github.com/mayocream/koharu/commit/3e454ae223ec249fe74161f52a98fc483498bf5e))
+- Use available parallelism for intra-threads in model sessions - ([843b0ac](https://github.com/mayocream/koharu/commit/843b0acf360d1f26b4edd1265480efa24d1dd88f))
+- Use konva-react - ([7bd4739](https://github.com/mayocream/koharu/commit/7bd473972a17fa4068982c0148720f47b500ba34))
+- Update tool selection and improve topbar icon imports - ([1a8356a](https://github.com/mayocream/koharu/commit/1a8356a1d8b7a83dff933d7bc75bfdca270022d3))
+- Improve scale control component structure and functionality - ([9aca40f](https://github.com/mayocream/koharu/commit/9aca40f580e6c4ad1535cec159cadebd7765d741))
+- Update project structure and dependencies - ([f896aa1](https://github.com/mayocream/koharu/commit/f896aa11c4a23f75c20ee4c73260f662fea446b6))
+- Remove execution output from validation cell in detection notebook - ([aced59d](https://github.com/mayocream/koharu/commit/aced59d9c362961a1f49d134a09f32dd59887551))
 
 ### 📚 Documentation
 
@@ -3193,6 +3489,9 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Update workflow steps and model references in README - ([8c267b8](https://github.com/mayocream/koharu/commit/8c267b856fc07e1a3c9e6afa2966194a391bcbec))
 - Add LaMa inpainting model to the models section of README - ([434c249](https://github.com/mayocream/koharu/commit/434c249f0459dafc8c5059a73031e33b32caacbe))
 - Add Discord support note and fix punctuation in development status note - ([c5c1d31](https://github.com/mayocream/koharu/commit/c5c1d31cd73675c21842ae2f755ccd30cf5b5919))
+- Add note about development status and issue reporting in README.md - ([c97b9dc](https://github.com/mayocream/koharu/commit/c97b9dc2d07304c4429feab3fcae9550656247c5))
+- Update workflow section to use checklist format - ([5e8b6aa](https://github.com/mayocream/koharu/commit/5e8b6aa95df1d553011535e8941ca127ee33368a))
+- Update README with preview section and download instructions - ([16a2704](https://github.com/mayocream/koharu/commit/16a27047762630e37ed7f8132fb2c860e441cecc))
 
 ### ⚡ Performance
 
@@ -3258,48 +3557,6 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Cleanup lama inference code - ([58f9df5](https://github.com/mayocream/koharu/commit/58f9df504d85618bed8e7e0cd4bf8694556b3944))
 - Switch to a generic dotenv file ([#4](https://github.com/mayocream/koharu/issues/4)) - ([7a82465](https://github.com/mayocream/koharu/commit/7a824652e56b4ee2f733770720b2f71cc970ef5b))
 - Remove unused useRef import in canvas component - ([e2cc9cb](https://github.com/mayocream/koharu/commit/e2cc9cba33fbb39c66310b6cc5ed59eb5d7239a7))
-
-### Pref
-
-- Use rwlock - ([cad2f74](https://github.com/mayocream/koharu/commit/cad2f742094885156d7b6af955c951837dd11ea6))
-
-### Wip
-
-- Add inpaint inference - ([4641857](https://github.com/mayocream/koharu/commit/4641857bf71faac327e92a48fcc0e6a4478cca98))
-- Add ocr to web - ([a80b61b](https://github.com/mayocream/koharu/commit/a80b61b54f07926d3b8081105546f178ba22f399))
-
-
-## [0.1.1](https://github.com/mayocream/koharu/compare/v0.1.0..v0.1.1) - 2025-04-23
-
-### ⛰️  Features
-
-- Add CUDA feature support for ort dependency and update build configuration - ([8965151](https://github.com/mayocream/koharu/commit/8965151c4faf6eadf561f9d311cdddaf5cdf16e8))
-- Trigger OCR automatically when detect complete - ([223753a](https://github.com/mayocream/koharu/commit/223753a372d1490a6d5682cd191467b994835fa5))
-- OCR text editable - ([5ea3746](https://github.com/mayocream/koharu/commit/5ea3746a6ef471b2948a884b1aabd10ff38f7b2f))
-- Translate text using stream mode - ([c0aea96](https://github.com/mayocream/koharu/commit/c0aea96ff9c2f7ba552149881092edc8ed850fb7))
-- Use GPU acceleration when available - ([d649095](https://github.com/mayocream/koharu/commit/d64909568ade8e4cdbd08f6559924666b18908c6))
-- Highlight selected text item - ([9fd25f0](https://github.com/mayocream/koharu/commit/9fd25f0a8cb663274884f2e3e597e1107692ba39))
-
-### 🐛 Bug Fixes
-
-- Remove unnecessary blank line in README.md - ([ca0c16e](https://github.com/mayocream/koharu/commit/ca0c16ecc4a65d85d711ab52633c48edabe5ed96))
-- Redetect when switch tools, settings - ([83ffeba](https://github.com/mayocream/koharu/commit/83ffeba9e31c75993bfd2b078a4136a91cc31102))
-- Stream translate missing last piece - ([cb82324](https://github.com/mayocream/koharu/commit/cb823248dfbd44d7fa9ff623a989f2637a2959e3))
-- Specify shell for artifact processing step in release workflow - ([937ece3](https://github.com/mayocream/koharu/commit/937ece3913048c6d019c05a311392f8f151d1bb4))
-- Refactor artifact upload step to improve handling of paths - ([5a64297](https://github.com/mayocream/koharu/commit/5a64297221408f1397c3b4fc04badf554282ea15))
-- Update artifact paths formatting for GitHub release upload - ([33c04e3](https://github.com/mayocream/koharu/commit/33c04e3c37f9efdd0f7048f293bd5c89f4a5d35c))
-- Correct JSON parsing for artifact paths in release workflow - ([7e3d378](https://github.com/mayocream/koharu/commit/7e3d378c18c747df6dd43c96262745af28f06b38))
-
-### 🚜 Refactor
-
-- Use available parallelism for intra-threads in model sessions - ([843b0ac](https://github.com/mayocream/koharu/commit/843b0acf360d1f26b4edd1265480efa24d1dd88f))
-
-### 📚 Documentation
-
-- Add note about development status and issue reporting in README.md - ([c97b9dc](https://github.com/mayocream/koharu/commit/c97b9dc2d07304c4429feab3fcae9550656247c5))
-
-### ⚙️ Miscellaneous Tasks
-
 - Add tag trigger for versioned releases in build workflow - ([efc5114](https://github.com/mayocream/koharu/commit/efc51148cc41bb6cad4d971c36279ef1990473dd))
 - Update publish workflow to trigger on version tags only - ([475be6c](https://github.com/mayocream/koharu/commit/475be6c030b73c323e4a48d4d4dc571a9c882fc4))
 - Update macOS and Windows platform specifications in build configuration - ([cfe146c](https://github.com/mayocream/koharu/commit/cfe146cd237a0fb99b5bab4fa672655abd3b3e1f))
@@ -3310,76 +3567,21 @@ close #65 - ([f3039b6](https://github.com/mayocream/koharu/commit/f3039b64ff45f1
 - Update README and configuration for Windows setup and Tauri CLI dependencies - ([580b3f3](https://github.com/mayocream/koharu/commit/580b3f369b41fce136d3ec001fc629ad5e802d33))
 - Upload portable executable - ([1bd1416](https://github.com/mayocream/koharu/commit/1bd141646082efa63197cdd0b71a3b4125685dca))
 - Add rust cache - ([b12e77d](https://github.com/mayocream/koharu/commit/b12e77d33a1fb13ae7d8e12fe9f47fc7b79a2a16))
-
-
-## [0.1.0] - 2025-04-22
-
-### ⛰️  Features
-
-- Order bboxes - ([727e836](https://github.com/mayocream/koharu/commit/727e836dc49c5d233347a519eade047e19e7d521))
-- Enhance canvas and detection panel with loading state and reset functionality - ([897f7af](https://github.com/mayocream/koharu/commit/897f7afe90c04b0d1e589fd70985a37d4deca478))
-- Add blocks state management and render rectangles in canvas - ([c439ef0](https://github.com/mayocream/koharu/commit/c439ef07636b5a381eb61ed39743305d1f0e2a48))
-- Implement comic text detection and update dependencies - ([0c7d25b](https://github.com/mayocream/koharu/commit/0c7d25be60447eb3f0b1e1774dbaedaa66c34b92))
-- Add comic text detection functionality and update dependencies - ([9070f43](https://github.com/mayocream/koharu/commit/9070f43c3b7b197c8ae05d2415d115a19212607e))
-- Add scale control - ([582ead8](https://github.com/mayocream/koharu/commit/582ead827920e466c208fed5334104e0cc943b15))
-- Add Tauri plugins for store and persisted scope, update dependencies in Cargo and package files - ([120d876](https://github.com/mayocream/koharu/commit/120d876a4c5b41d904cc2791388599114bbe599c))
-- Enhance canvas layout and improve image handling in Topbar component - ([1d54678](https://github.com/mayocream/koharu/commit/1d546780d6f201d2f0971268086efb905750cfd3))
-- Add Tauri plugins for dialog and logging, enhance canvas functionality, and improve app structure - ([771255e](https://github.com/mayocream/koharu/commit/771255e3365ddaad268a49e79fe0cb4fe01d317b))
-- Integrate react-konva for canvas rendering in App component - ([0aca2a1](https://github.com/mayocream/koharu/commit/0aca2a1570617768477cbbd562095deff9a3f592))
-- Add layout components and tools for layer management - ([d9b5ff1](https://github.com/mayocream/koharu/commit/d9b5ff18ff83ae83741ea6553c41a38a4952aa49))
-- Enhance image processing with configurable thresholds and bounding box drawing - ([5176216](https://github.com/mayocream/koharu/commit/517621624a5452cdd2a20e0957fedfcb69469b15))
-- Add image processing and object detection functionality to comic-text-detector - ([96692b5](https://github.com/mayocream/koharu/commit/96692b5e6600a5a7ddc0ec5537eba94ee1095135))
-- Update dependencies and enhance model session handling in main.rs - ([6a6b246](https://github.com/mayocream/koharu/commit/6a6b2464c3e5b1eacb12a6f5f380c6ccc1014b7b))
-- Implement main functionality for comic-text-detector and update dependencies - ([7aba290](https://github.com/mayocream/koharu/commit/7aba290a2db4a1aa4e722179659b4d31ce455741))
-- Add comic-text-detector package with initial implementation - ([155adde](https://github.com/mayocream/koharu/commit/155addec952f984b682e7eb169daea1b224d84a9))
-- Simplify manga109 to YOLO conversion by removing book selection and updating class mapping - ([2ff157b](https://github.com/mayocream/koharu/commit/2ff157b3ba9a4304314864b6ca3f3e518f577e0b))
-- Add script to download Blue Archive comics with asynchronous requests - ([98f31a0](https://github.com/mayocream/koharu/commit/98f31a0cf4d5c89019b7e98b99eaa716ee326bd6))
-- Enhance manga109 to YOLO conversion with 80/20 train/val split and YAML config - ([021eeb3](https://github.com/mayocream/koharu/commit/021eeb3e6aa9ef497b03e38da7d3828ebf1ff082))
-- Add Puppeteer script for Paperspace login and notebook access - ([adf207e](https://github.com/mayocream/koharu/commit/adf207e680a03b7f27973535ad8d7ceb590ad55f))
-- Add detection notebook for dataset preparation and training with YOLO - ([af44ec4](https://github.com/mayocream/koharu/commit/af44ec49473fa08ae5c234fa4d2f20be287b42e6))
-- Add manga109 to YOLO conversion script - ([85b28aa](https://github.com/mayocream/koharu/commit/85b28aa926eb0031f6ef3c8be4e7d567528bf69a))
-- Initialize Tauri + React application with basic greeting functionality - ([b3ab757](https://github.com/mayocream/koharu/commit/b3ab757192fb12f4c4137d1811da12654fec10ac))
-
-### 🐛 Bug Fixes
-
-- Add max height and overflow to OCR panel for better layout - ([11e11db](https://github.com/mayocream/koharu/commit/11e11db728e1236167c599061b3c332938111065))
-- Ocr results got cutted - ([4dacfa5](https://github.com/mayocream/koharu/commit/4dacfa5afbb67ed0720c24bbad04454ae8cd7ceb))
-- Display detected texts in detection and OCR panels - ([79b902b](https://github.com/mayocream/koharu/commit/79b902b8ae59bc8223b73b208c39e45938246f7c))
-- Clears blocks only when new image loaded - ([3426a34](https://github.com/mayocream/koharu/commit/3426a34567c50e739b81f9a44fda60b74d8cf6e0))
-- Fix panic - ([4a0b947](https://github.com/mayocream/koharu/commit/4a0b947a27cc0752bbd7fdfdd8513dbfdb5e98d8))
-- Simplify ort dependency declaration by removing unnecessary features - ([5d226c3](https://github.com/mayocream/koharu/commit/5d226c38f98b555f7e75fab88ea09f55f4cf5d44))
-- Ensure stage size is set correctly to match image dimensions - ([10b47af](https://github.com/mayocream/koharu/commit/10b47afc997ce8738d54ef95acd1be47f2db348b))
-- Ensure file selection is validated before processing in Topbar component - ([1b340a9](https://github.com/mayocream/koharu/commit/1b340a91057a0924e662db371953c2d52fc85639))
-- Fix typo - ([1f68c49](https://github.com/mayocream/koharu/commit/1f68c491d834eae9983088ed82c76592f704e540))
-- Fix build step - ([5e7c781](https://github.com/mayocream/koharu/commit/5e7c781f2c6a8ee248d8f117e2c48eae5b98260a))
-- Fix image loaded - ([c1aee01](https://github.com/mayocream/koharu/commit/c1aee01ab43444c0168aae5f4e5619cd707252de))
-- Move stageRef.current.destroyChildren() call to ensure proper cleanup before loading new image - ([41d02fb](https://github.com/mayocream/koharu/commit/41d02fb46c4002f429a50cbfcfc865ec963fb0a1))
-- Add missing description for manga-ocr model in README - ([e9ad2cf](https://github.com/mayocream/koharu/commit/e9ad2cf0cc5cd30350fe1c82d3df4970c326eb0f))
-- Fix typo - ([8e76902](https://github.com/mayocream/koharu/commit/8e7690222407688774d3e687e7f89ff86c7cc272))
-- Update gdown command to use placeholder for ID - ([a9180ab](https://github.com/mayocream/koharu/commit/a9180ab7ef528926ebd2881922c6e05a0d34826a))
-- Correct model import in main.rs - ([f6eab13](https://github.com/mayocream/koharu/commit/f6eab139b1da72b4a337dd2d46fdbfa21331387e))
-
-### 🚜 Refactor
-
-- Use konva-react - ([7bd4739](https://github.com/mayocream/koharu/commit/7bd473972a17fa4068982c0148720f47b500ba34))
-- Update tool selection and improve topbar icon imports - ([1a8356a](https://github.com/mayocream/koharu/commit/1a8356a1d8b7a83dff933d7bc75bfdca270022d3))
-- Improve scale control component structure and functionality - ([9aca40f](https://github.com/mayocream/koharu/commit/9aca40f580e6c4ad1535cec159cadebd7765d741))
-- Update project structure and dependencies - ([f896aa1](https://github.com/mayocream/koharu/commit/f896aa11c4a23f75c20ee4c73260f662fea446b6))
-- Remove execution output from validation cell in detection notebook - ([aced59d](https://github.com/mayocream/koharu/commit/aced59d9c362961a1f49d134a09f32dd59887551))
-
-### 📚 Documentation
-
-- Update workflow section to use checklist format - ([5e8b6aa](https://github.com/mayocream/koharu/commit/5e8b6aa95df1d553011535e8941ca127ee33368a))
-- Update README with preview section and download instructions - ([16a2704](https://github.com/mayocream/koharu/commit/16a27047762630e37ed7f8132fb2c860e441cecc))
-
-### ⚙️ Miscellaneous Tasks
-
 - Tauri just output the executable file - ([488c688](https://github.com/mayocream/koharu/commit/488c688475182e93195d19974a254c11a72241d2))
 - Add prettier - ([50f8002](https://github.com/mayocream/koharu/commit/50f800242f77a68f0e8a6202fd378917075de1ea))
 - Update dependencies to latest versions - ([5f949f1](https://github.com/mayocream/koharu/commit/5f949f1bf137976793b45036225c5dfdca456d06))
 - Reorganize README structure and add models section - ([05d65f9](https://github.com/mayocream/koharu/commit/05d65f937ed6432a90583559b6ba20cd37858fb9))
 - Update @types/react and vite to latest versions - ([09a9301](https://github.com/mayocream/koharu/commit/09a9301f7dc8e506f9f6244738fc56c2a2a91eca))
 - Update dependencies to specific versions in bun.lock - ([f6b6f69](https://github.com/mayocream/koharu/commit/f6b6f6979f7c05dc37290b0202fb1d14520edc2e))
+
+### Pref
+
+- Use rwlock - ([cad2f74](https://github.com/mayocream/koharu/commit/cad2f742094885156d7b6af955c951837dd11ea6))
+
+### Wip
+
+- Add inpaint inference - ([4641857](https://github.com/mayocream/koharu/commit/4641857bf71faac327e92a48fcc0e6a4478cca98))
+- Add ocr to web - ([a80b61b](https://github.com/mayocream/koharu/commit/a80b61b54f07926d3b8081105546f178ba22f399))
 
 
 <!-- generated by git-cliff -->

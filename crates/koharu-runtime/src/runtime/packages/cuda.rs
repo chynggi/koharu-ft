@@ -55,7 +55,7 @@ pub(crate) enum Cuda {
         props(
             project = "nvidia-cudnn-cu13/9.20.0.48",
             windows = "cudnn64_9.dll,cudnn_adv64_9.dll,cudnn_cnn64_9.dll,cudnn_engines_precompiled64_9.dll,cudnn_engines_runtime_compiled64_9.dll,cudnn_graph64_9.dll,cudnn_heuristic64_9.dll,cudnn_ops64_9.dll",
-            linux = "libcudnn.so.9,libcudnn_adv.so.9,libcudnn_cnn.so.9,libcudnn_engines_precompiled.so.9,libcudnn_engines_runtime_compiled.so.9,libcudnn_engines_tensor_ir.so.9,libcudnn_graph.so.9,libcudnn_heuristic.so.9,libcudnn_ops.so.9"
+            linux = "libcudnn.so.9,libcudnn_adv.so.9,libcudnn_cnn.so.9,libcudnn_engines_precompiled.so.9,libcudnn_engines_runtime_compiled.so.9,libcudnn_graph.so.9,libcudnn_heuristic.so.9,libcudnn_ops.so.9"
         )
     )]
     Dnn920,
@@ -110,6 +110,12 @@ pub(crate) enum Cuda {
     )]
     #[cfg(target_os = "linux")]
     SparseLt08,
+    #[strum(
+        serialize = "cufile-1.15",
+        props(project = "nvidia-cufile/1.15.1.6", linux = "libcufile.so.0")
+    )]
+    #[cfg(target_os = "linux")]
+    File115,
     #[strum(
         serialize = "nccl-2.29",
         props(project = "nvidia-nccl-cu13/2.29.7", linux = "libnccl.so.2")

@@ -547,7 +547,8 @@ export type GenerationConfig = {
 	repeat_penalty?: number | null,
 	frequency_penalty?: number | null,
 	presence_penalty?: number | null,
-	thinking?: boolean,
+	reasoning?: boolean | null,
+	vision?: boolean | null,
 };
 
 export type Geometry = {
@@ -694,6 +695,7 @@ export type Model = {
 	name: string,
 	quantizations: Quantization[],
 	vision: boolean,
+	reasoning: boolean,
 };
 
 export type ModelResources = {
@@ -707,14 +709,14 @@ export type ModelSelection = {
 	provider: Provider,
 	model?: string | null,
 	quantization?: string | null,
-	vision: boolean,
+	vision?: boolean,
+	reasoning?: boolean,
 };
 
 export type OcrModel = { model: "paddleocr-vl-1.6" } | { model: "manga-ocr" } | { model: "baberu-ocr" };
 
 export type OpenAiCompatibleConfig = {
 	base_url?: string | null,
-	vision?: boolean,
 };
 
 export type OpenAiConfig = Record<string, never>;

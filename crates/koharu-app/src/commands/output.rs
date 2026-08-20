@@ -78,6 +78,7 @@ pub async fn export_pages_to(
     if pages.is_empty() {
         return Err(anyhow::anyhow!("there are no pages to export").into());
     }
+    let page_count = pages.len();
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
     let jobs = pages
@@ -161,6 +162,12 @@ pub async fn export_pages_to(
         .buffer_unordered(4)
         .try_collect::<Vec<_>>()
         .await?;
+    tracing::info!(
+        target: "koharu_metrics",
+        metric = "export",
+        export_format = ?format,
+        page_count,
+    );
     Ok(())
 }
 

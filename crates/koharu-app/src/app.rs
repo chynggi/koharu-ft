@@ -17,7 +17,14 @@ pub(crate) async fn initialize(handle: AppHandle<Cef>) -> Result<()> {
     koharu_ml::init()
         .await
         .context("failed to initialize the ML runtime")?;
-    let pipeline = koharu_pipeline::Pipeline::load(koharu_ml::device(false))?;
+    let device = koharu_ml::device(false);
+    koharu_metrics::context(serde_json::json!({
+        "compute_backend": device.backend.to_string().to_ascii_lowercase(),
+        "device_type": format!("{:?}", device.device_type).to_ascii_lowercase(),
+        "gpu_model": device.description.clone(),
+        "vram_bytes": device.memory_total,
+    }));
+    let pipeline = koharu_pipeline::Pipeline::load(device)?;
     handle.manage(pipeline.clone());
 
     let mut resources = pipeline.subscribe_resources();
@@ -48,6 +55,11 @@ pub(crate) async fn initialize(handle: AppHandle<Cef>) -> Result<()> {
     } else {
         desktop.clear().await;
     }
+    tracing::info!(
+        target: "koharu_metrics",
+        metric = "app_started",
+        startup_duration_ms = koharu_metrics::elapsed_milliseconds(),
+    );
     Ok(())
 }
 
@@ -66,6 +78,16 @@ pub fn run(context: tauri::Context<Cef>, frontend_url: tauri::Url) -> Result<()>
         ("use-angle", Some("vulkan")),
     ]);
     builder
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .clear_targets()
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir { file_name: None },
+                ))
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(|handle, _, _| {
             if let Some(window) = handle.get_webview_window("main") {
                 let _ = window.unminimize();

@@ -40,6 +40,7 @@ const nativeWindow = vi.hoisted(() => ({
   isMaximized: vi.fn(async () => false),
   minimize: vi.fn(async () => undefined),
   onResized: vi.fn(async () => () => undefined),
+  startResizeDragging: vi.fn(async () => undefined),
   toggleMaximize: vi.fn(async () => undefined),
 }))
 
@@ -93,8 +94,9 @@ const preferences: Preferences = {
         model: 'gemma4-e2b-it',
         quantization: null,
         vision: true,
+        reasoning: true,
       },
-      generation: {},
+      generation: { vision: true, reasoning: false },
       target_language: 'en-US',
       instructions: null,
     },
@@ -112,7 +114,7 @@ const preferences: Preferences = {
         name: 'OpenAI-compatible',
         config: {
           provider: 'openai-compatible',
-          settings: { base_url: 'http://localhost:11434/v1', vision: false },
+          settings: { base_url: 'http://localhost:11434/v1' },
         },
         credential: emptyCredential(),
       },
@@ -171,6 +173,7 @@ function installProject() {
         name: 'Gemma 4 E2B Instruct',
         quantizations: [],
         vision: true,
+        reasoning: true,
       },
     ],
     selectedPages: ['page'],
@@ -217,6 +220,41 @@ describe('greenfield editor', () => {
     await waitFor(() => expect(nativeWindow.onResized).toHaveBeenCalledTimes(1))
     view.unmount()
     await waitFor(() => expect(unlisten).toHaveBeenCalledTimes(1))
+  })
+
+  it('starts native resize dragging from every frameless window edge', () => {
+    nativeWindow.startResizeDragging.mockClear()
+    const view = render(<WindowControls />)
+    const directions = [
+      'North',
+      'South',
+      'East',
+      'West',
+      'NorthEast',
+      'NorthWest',
+      'SouthEast',
+      'SouthWest',
+    ]
+
+    for (const direction of directions) {
+      fireEvent.pointerDown(
+        view.container.querySelector(`[data-window-resize-handle="${direction}"]`)!,
+        { button: 0 },
+      )
+    }
+
+    expect(nativeWindow.startResizeDragging.mock.calls).toEqual(
+      directions.map((direction) => [direction]),
+    )
+  })
+
+  it('removes resize handles while the window is maximized', async () => {
+    nativeWindow.isMaximized.mockResolvedValueOnce(true)
+    const view = render(<WindowControls />)
+
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-window-resize-handle]')).not.toBeInTheDocument(),
+    )
   })
 
   it('shows import activity and prevents duplicate imports', async () => {
@@ -884,20 +922,36 @@ describe('greenfield editor', () => {
     expect(instructions).toHaveFocus()
   })
 
-  it('changes the translation model from the runtime selector', async () => {
+  it('changes the translation model without re-enabling vision or reasoning', async () => {
     installProject()
     const user = userEvent.setup()
-    const nextPreferences: Preferences = {
+    const currentPreferences: Preferences = {
       ...preferences,
       pipeline: {
         ...preferences.pipeline,
         translation: {
           ...preferences.pipeline.translation,
+          generation: {
+            ...preferences.pipeline.translation.generation,
+            vision: false,
+            reasoning: false,
+          },
+        },
+      },
+    }
+    useKoharuStore.setState({ preferences: currentPreferences })
+    const nextPreferences: Preferences = {
+      ...currentPreferences,
+      pipeline: {
+        ...currentPreferences.pipeline,
+        translation: {
+          ...currentPreferences.pipeline.translation,
           model: {
             provider: 'local',
             model: 'gemma4-12b-it',
             quantization: null,
             vision: true,
+            reasoning: true,
           },
         },
       },
@@ -912,6 +966,7 @@ describe('greenfield editor', () => {
           name: 'Gemma 4 12B',
           quantizations: [],
           vision: true,
+          reasoning: true,
         },
       ],
     })
@@ -930,12 +985,67 @@ describe('greenfield editor', () => {
     await waitFor(() =>
       expect(save).toHaveBeenCalledWith(
         nextPreferences.pipeline,
+        currentPreferences.providers,
+        currentPreferences.typesetting,
+      ),
+    )
+    expect(useKoharuStore.getState().preferences?.pipeline.translation).toEqual(
+      nextPreferences.pipeline.translation,
+    )
+  })
+
+  it('preserves vision when the runtime selector chooses a text-only model', async () => {
+    installProject()
+    const nextPreferences: Preferences = {
+      ...preferences,
+      pipeline: {
+        ...preferences.pipeline,
+        translation: {
+          ...preferences.pipeline.translation,
+          model: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            quantization: null,
+            vision: false,
+            reasoning: true,
+          },
+          generation: {
+            ...preferences.pipeline.translation.generation,
+            vision: true,
+            reasoning: false,
+          },
+        },
+      },
+    }
+    const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(nextPreferences)
+    useKoharuStore.setState({
+      translationModels: [
+        ...useKoharuStore.getState().translationModels,
+        {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          name: 'DeepSeek Chat',
+          quantizations: [],
+          vision: false,
+          reasoning: true,
+        },
+      ],
+    })
+    render(<CanvasCommandBar />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Processing settings' }))
+    fireEvent.click(screen.getByRole('button', { name: /Model Gemma 4 E2B Instruct/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use DeepSeek Chat from deepseek' }))
+
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        nextPreferences.pipeline,
         preferences.providers,
         preferences.typesetting,
       ),
     )
-    expect(useKoharuStore.getState().preferences?.pipeline.translation.model).toEqual(
-      nextPreferences.pipeline.translation.model,
+    expect(useKoharuStore.getState().preferences?.pipeline.translation).toEqual(
+      nextPreferences.pipeline.translation,
     )
   })
 
@@ -951,6 +1061,7 @@ describe('greenfield editor', () => {
           name: longName,
           quantizations: [],
           vision: true,
+          reasoning: false,
         },
       ],
     })
@@ -1008,8 +1119,23 @@ describe('greenfield editor', () => {
     expect(
       screen.getByText('Control how the model selects and varies generated text.'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Enable thinking' })).toBeInTheDocument()
-    expect(screen.queryByText('Enable thinking')).not.toBeInTheDocument()
+    expect(screen.getByText('Use model reasoning during translation.')).toBeInTheDocument()
+    const reasoning = screen.getByRole('switch', { name: 'Enable reasoning' })
+    expect(reasoning).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByText('Enable reasoning')).not.toBeInTheDocument()
+    save.mockClear()
+    await user.click(reasoning)
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          translation: expect.objectContaining({
+            generation: expect.objectContaining({ reasoning: true }),
+          }),
+        }),
+        preferences.providers,
+        preferences.typesetting,
+      ),
+    )
     const vision = screen.getByRole('switch', { name: 'Vision' })
     expect(screen.getByText('Feed page images to the LLM during translation.')).toBeInTheDocument()
     expect(vision).toBeChecked()
@@ -1019,7 +1145,7 @@ describe('greenfield editor', () => {
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({
           translation: expect.objectContaining({
-            model: expect.objectContaining({ vision: false }),
+            generation: expect.objectContaining({ vision: false }),
           }),
         }),
         preferences.providers,
@@ -1042,6 +1168,71 @@ describe('greenfield editor', () => {
     expect(screen.getByLabelText('Translation instructions')).toHaveClass(
       'field-sizing-fixed',
       'overflow-y-auto',
+    )
+  })
+
+  it('keeps generation controls independent from model capabilities', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const configured: Preferences = {
+      ...preferences,
+      pipeline: {
+        ...preferences.pipeline,
+        translation: {
+          ...preferences.pipeline.translation,
+          model: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            quantization: null,
+            vision: false,
+            reasoning: true,
+          },
+          generation: {
+            ...preferences.pipeline.translation.generation,
+            reasoning: false,
+          },
+        },
+      },
+    }
+    useKoharuStore.setState({
+      settingsOpen: true,
+      preferences: configured,
+      translationModels: [
+        {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          name: 'DeepSeek Chat',
+          quantizations: [],
+          vision: false,
+          reasoning: true,
+        },
+      ],
+    })
+    const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(configured)
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translation' }))
+    const reasoning = screen.getByRole('switch', { name: 'Enable reasoning' })
+    expect(reasoning).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('switch', { name: 'Vision' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await user.click(reasoning)
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          translation: expect.objectContaining({
+            generation: expect.objectContaining({ reasoning: true }),
+          }),
+        }),
+        configured.providers,
+        configured.typesetting,
+      ),
     )
   })
 
@@ -1179,6 +1370,7 @@ describe('greenfield editor', () => {
           name: 'OpenRouter Auto',
           quantizations: [],
           vision: true,
+          reasoning: true,
         },
       ],
     })
