@@ -797,9 +797,9 @@ dependencies = [
  "mime",
  "pin-project-lite",
  "sync_wrapper",
-  "tower-layer",
-  "tower-service",
-  "tracing",
+ "tower-layer",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -4570,8 +4570,8 @@ dependencies = [
  "clap",
  "console",
  "koharu-app",
- "koharu-rpc",
  "koharu-metrics",
+ "koharu-rpc",
  "koharu-torch-sys",
  "log",
  "rfd",
@@ -4899,7 +4899,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-rpc"
-version = "0.73.0"
+version = "0.77.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -9439,6 +9439,7 @@ dependencies = [
  "cef-dll-sys",
  "dioxus-debug-cell",
  "dirs",
+ "dispatch2",
  "dlopen2",
  "gtk",
  "html5ever 0.29.1",

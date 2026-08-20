@@ -101,7 +101,7 @@ impl LocalTranslator {
         let image = request.image.clone();
         let prompt = self.render_prompt(
             &request,
-            generation.reasoning.unwrap_or(false) && self.descriptor.reasoning,
+            generation.reasoning.unwrap_or(false) && self.model.supports_reasoning(),
         )?;
         let schema = prompt::output_schema(expected);
         let llm = Arc::clone(&self.llm);

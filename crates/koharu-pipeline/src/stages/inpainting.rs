@@ -1257,7 +1257,12 @@ mod tests {
                 png: Arc::<[u8]>::from([]),
             }),
         );
-        let processor = Processor::new(InpaintingModel::LaMa {}, koharu_ml::Device::cpu()).unwrap();
+        let processor = Processor::new(
+            InpaintingModel::LaMa {},
+            koharu_ml::Device::cpu(),
+            ResourceMonitor::new(&koharu_ml::Device::cpu()),
+        )
+        .unwrap();
 
         assert!(processor.skip(&automatic).unwrap());
         assert!(!processor.skip(&manual).unwrap());

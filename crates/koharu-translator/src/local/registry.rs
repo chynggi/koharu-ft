@@ -450,6 +450,15 @@ impl LocalModel {
             Self::Custom(model) => model.projector.is_some(),
         }
     }
+
+    pub(crate) fn supports_reasoning(&self) -> bool {
+        match self {
+            Self::Builtin(descriptor) => descriptor.reasoning,
+            // Unknown chat template; leave thinking off rather than emitting
+            // tokens the custom model's template may not understand.
+            Self::Custom(_) => false,
+        }
+    }
 }
 
 #[cfg(test)]
