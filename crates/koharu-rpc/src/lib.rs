@@ -55,9 +55,11 @@ pub fn serve(
     };
     tracing::info!("Koharu API listening on http://{host}:{port}");
     tokio::spawn(async move {
-        if let Err(error) =
-            axum::serve(listener, api::router(app, static_dir, api_token)).await
-        {
+        // `with_connect_info` so routes can tell a loopback caller (the desktop
+        // window) from a remote browser — see `routes::llm::pick_gguf_file`.
+        let service = api::router(app, static_dir, api_token)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>();
+        if let Err(error) = axum::serve(listener, service).await {
             tracing::error!(%error, "the Koharu API server stopped");
         }
     });

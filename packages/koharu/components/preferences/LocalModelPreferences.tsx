@@ -36,6 +36,9 @@ export function LocalModelPreferences({
 }) {
   const { t } = useTranslation()
   const [capabilities, setCapabilities] = useState<LlmCapabilities | null>(null)
+  // Set to a string once the native picker declines (a remote browser), which
+  // switches the row over to typing a path on the machine running Koharu.
+  const [manualPath, setManualPath] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -56,6 +59,16 @@ export function LocalModelPreferences({
 
   const update = (changes: Partial<LocalConfig>) =>
     onChange(replaceLocal(value, entry, { ...config, ...changes }))
+
+  const register = (path: string) =>
+    update({ models: [...models, draftModel(path, models)] })
+
+  const commitManualPath = () => {
+    const path = manualPath?.trim()
+    if (!path) return
+    register(path)
+    setManualPath(null)
+  }
 
   return (
     <PreferencePage title={t('settings.models.title')} description={t('settings.models.description')}>
@@ -80,8 +93,12 @@ export function LocalModelPreferences({
             onRemove={() => update({ models: models.filter((_, at) => at !== index) })}
           />
         ))}
-        <PreferenceRow title={t('settings.models.add')} description={t('settings.models.addDescription')}>
-          <div className='flex justify-end'>
+        <PreferenceRow
+          title={t('settings.models.add')}
+          description={t('settings.models.addDescription')}
+          align='start'
+        >
+          <div className='grid justify-items-end gap-2'>
             <Button
               type='button'
               variant='outline'
@@ -90,13 +107,37 @@ export function LocalModelPreferences({
               onClick={() => {
                 void call(commands.pickGgufFile)
                   .then((path) => {
-                    if (path) update({ models: [...models, draftModel(path, models)] })
+                    if (path) register(path)
+                    else setManualPath('')
                   })
                   .catch(() => undefined)
               }}
             >
               <Plus className='size-3.5' /> {t('settings.models.addLocal')}
             </Button>
+            {manualPath !== null && (
+              <div className='flex w-full gap-2'>
+                <Input
+                  aria-label={t('settings.models.path')}
+                  value={manualPath}
+                  placeholder={t('settings.models.pathPlaceholder')}
+                  className='h-8 min-w-0 flex-1 text-[12px]'
+                  onChange={(event) => setManualPath(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitManualPath()
+                  }}
+                />
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='icon'
+                  aria-label={t('settings.models.addLocal')}
+                  onClick={commitManualPath}
+                >
+                  <Plus />
+                </Button>
+              </div>
+            )}
           </div>
         </PreferenceRow>
       </PreferenceSection>

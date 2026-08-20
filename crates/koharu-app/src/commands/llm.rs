@@ -43,7 +43,7 @@ pub struct DeferredCapability {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_llm_capabilities() -> std::result::Result<LlmCapabilities, Error> {
+pub async fn get_llm_capabilities() -> std::result::Result<LlmCapabilities, Error> {
     let device = koharu_ml::device(false);
     let accelerated = device.backend != Backend::Cpu && device.device_type != DeviceType::Cpu;
     // Mirrors the condition koharu-ml applies when building model params: an
@@ -88,7 +88,7 @@ pub(crate) async fn get_llm_capabilities() -> std::result::Result<LlmCapabilitie
 /// Opens a native picker for a `.gguf` file. Returns `None` when dismissed.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn pick_gguf_file(
+pub async fn pick_gguf_file(
     window: WebviewWindow<Cef>,
 ) -> std::result::Result<Option<PathBuf>, Error> {
     Ok(rfd::AsyncFileDialog::new()

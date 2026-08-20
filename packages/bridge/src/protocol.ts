@@ -221,10 +221,10 @@ export const commands = {
 	getPreferences: () => get<Preferences>("/config"),
 	getTranslationModels: () => get<Model[]>("/translation-models"),
 	getLlmCapabilities: () => get<LlmCapabilities>("/llm/capabilities"),
-	// NOTE: the desktop command opened a native `.gguf` picker in the app
-	// process. Over HTTP the dialog can only ever open on the machine running
-	// koharu-rpc, which is the user's own machine for the CEF window but not
-	// for a remote browser — see the same gap on importPages/exportPages.
+	// The picker runs in the server process, so it only makes sense for a
+	// loopback caller (the desktop window). A remote browser gets `null` and
+	// the caller is expected to let the user type the server-side path
+	// instead — the path has to be one koharu-rpc can read either way.
 	pickGgufFile: () => post<string | null>("/llm/gguf-file"),
 	getCanvasManifest: (generation: CanvasGeneration) => bytes(`/canvas/manifest/${generation}`),
 	getCanvasResource: (generation: CanvasGeneration, resource: string) =>

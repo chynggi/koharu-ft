@@ -436,6 +436,8 @@
       "name": "Display name",
       "none": "No registered models",
       "noneDescription": "Add a .gguf file to use it as a translation model.",
+      "path": "Model path",
+      "pathPlaceholder": "Path to a .gguf on the machine running Koharu",
       "projector": "Projector",
       "projectorPlaceholder": "Optional mmproj .gguf for vision",
       "registered": "Registered models",

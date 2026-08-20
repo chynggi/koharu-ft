@@ -8,6 +8,7 @@ pub mod config;
 pub mod events;
 pub mod fonts;
 pub mod layers;
+pub mod llm;
 pub mod meta;
 pub mod operations;
 pub mod pages;
@@ -17,6 +18,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .merge(meta::router())
         .merge(config::router())
+        .merge(llm::router())
         .merge(projects::router())
         .merge(pages::router())
         .merge(operations::router())
