@@ -55,6 +55,22 @@ function put<T>(path: string, body: unknown): Promise<T> {
 	});
 }
 
+// No content-type: the browser has to set it, because only it knows the
+// multipart boundary it generated.
+function upload<T>(path: string, form: FormData): Promise<T> {
+	return request<T>(path, { method: "POST", body: form });
+}
+
+async function download(path: string, body: unknown): Promise<Blob> {
+	const response = await fetch(`${API_BASE_URL}${path}`, {
+		method: "POST",
+		headers: authHeaders({ "content-type": "application/json" }),
+		body: JSON.stringify(body),
+	});
+	if (!response.ok) throw new Error(await errorMessage(response));
+	return response.blob();
+}
+
 function del<T>(path: string): Promise<T> {
 	return request<T>(path, { method: "DELETE" });
 }
@@ -145,11 +161,23 @@ export const commands = {
 	openProject: (name: string) => post<null>(`/projects/${encodeURIComponent(name)}/open`),
 	deleteProject: (name: string) => del<null>(`/projects/${encodeURIComponent(name)}`),
 	closeProject: () => post<null>("/project/close"),
-	// NOTE: the desktop command picked files via a native dialog server-side;
-	// the HTTP route instead expects explicit file paths, which this browser
-	// client has no way to obtain from a bare `PageImportSource`. Kept for
-	// call-site compatibility — see Phase 3b report for the tracked gap.
-	importPages: (_source: PageImportSource) => post<null>("/pages/import", { files: [] }),
+	// Server-side paths. Only meaningful when the caller can name files the
+	// server can open — that is, the desktop window. A browser cannot, and must
+	// use `importPagesUpload` instead; see the note there.
+	importPages: (files: string[]) => post<PageSummary[]>("/pages/import", { files }),
+	// The remote path. Source images live on the user's machine, so there is no
+	// path the server could be given that would refer to the same file — the
+	// bytes have to travel. Accepts archives (cbz/zip/rar) and PDFs as well as
+	// images, exactly like the path-based route.
+	importPagesUpload: (files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append("files", file, file.name);
+		return upload<PageSummary[]>("/pages/import/upload", form);
+	},
+	// The desktop path: the dialog opens in the server process, which is the
+	// user's own machine there. Rejected for a remote caller — see the route.
+	importPagesDialog: (source: PageImportSource) =>
+		post<PageSummary[]>("/pages/import/dialog", { source }),
 	selectPage: (page: EntityId) => post<PageSelection>("/page/select", { page }),
 	renamePage: (page: EntityId, label: string) => post<null>("/page/rename", { page, label }),
 	deletePages: (pages: EntityId[]) => post<null>("/pages/delete", { pages }),
@@ -170,12 +198,17 @@ export const commands = {
 	redo: () => post<null>("/project/redo"),
 	process: (scope: Scope, operation: Operation) => post<JobId>("/process", { scope, operation }),
 	stopJob: (job: JobId) => post<null>("/process/stop", { job }),
-	// NOTE: the desktop command picked the destination via a native save
-	// dialog; the HTTP route instead expects an explicit target directory.
-	// `directory` is optional here only to keep existing 2-arg call sites
-	// compiling — see Phase 3b report for the tracked gap.
-	exportPages: (pages: EntityId[], format: ExportFormat, directory = "") =>
+	// A directory on the server. Same caveat as `importPages`: only a caller
+	// that can name the server's filesystem has any use for this.
+	exportPages: (pages: EntityId[], format: ExportFormat, directory: string) =>
 		post<null>("/pages/export", { pages, format, directory }),
+	// The desktop path: native folder picker, server-side, loopback only.
+	exportPagesDialog: (pages: EntityId[], format: ExportFormat) =>
+		post<null>("/pages/export/dialog", { pages, format }),
+	// The remote path. Rendered output has to reach the user's machine, so it
+	// comes back as one ZIP rather than being written somewhere they cannot see.
+	exportPagesDownload: (pages: EntityId[], format: ExportFormat) =>
+		download("/pages/export/download", { pages, format }),
 	getThumbnail: (page: EntityId) => bytes(`/pages/${page}/thumbnail`),
 	getFonts: () => get<FontFamily[]>("/fonts"),
 	getFontPreview: (familyName: string) =>

@@ -20,6 +20,7 @@ import {
   useProject,
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
+import { runExport } from '@/lib/transfer'
 import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
 import {
   Menubar,
@@ -104,7 +105,7 @@ export function TitleBar() {
               <MenubarItem
                 disabled={!project || pages.length === 0}
                 onClick={() =>
-                  void call(commands.exportPages, exportSelection(selectedPages, page?.id), 'png')
+                  void call(runExport, exportSelection(selectedPages, page?.id), 'png')
                 }
               >
                 {t('menu.exportPng')}
@@ -112,7 +113,7 @@ export function TitleBar() {
               <MenubarItem
                 disabled={!project || pages.length === 0}
                 onClick={() =>
-                  void call(commands.exportPages, exportSelection(selectedPages, page?.id), 'psd')
+                  void call(runExport, exportSelection(selectedPages, page?.id), 'psd')
                 }
               >
                 {t('menu.exportPsd')}

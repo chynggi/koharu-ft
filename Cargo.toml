@@ -50,7 +50,7 @@ image = "0.25.10"
 webp = { version = "0.3.1" }
 fast_image_resize = { version = "6.1.0", features = ["image", "rayon"] }
 anyhow = "1.0.104"
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 async-trait = "0.1.92"
 tower-http = "0.6"
 tokio-stream = "0.1"

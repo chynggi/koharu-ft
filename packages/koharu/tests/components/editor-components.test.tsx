@@ -222,11 +222,18 @@ describe('greenfield editor', () => {
   it('shows import activity and prevents duplicate imports', async () => {
     const user = userEvent.setup()
     installProject()
+    // This test is about the in-flight UI, not the transport, so it takes the
+    // desktop route: without `__TAURI_INTERNALS__` the import would open a
+    // browser file picker, which never resolves under jsdom.
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      value: {},
+      configurable: true,
+    })
     let finishImport: (() => void) | undefined
-    const importPages = vi.spyOn(commands, 'importPages').mockImplementation(
+    const importPages = vi.spyOn(commands, 'importPagesDialog').mockImplementation(
       () =>
-        new Promise<null>((resolve) => {
-          finishImport = () => resolve(null)
+        new Promise<PageSummary[]>((resolve) => {
+          finishImport = () => resolve([])
         }),
     )
     render(
@@ -253,6 +260,7 @@ describe('greenfield editor', () => {
 
     finishImport?.()
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
   })
 
   it('opens community links in a new tab', async () => {

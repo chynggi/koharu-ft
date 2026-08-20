@@ -67,54 +67,52 @@ capability(`--cap-add=SYS_ADMIN`)를 표현할 수 없으므로, 샌드박스를
   API이지 우리 커맨드 IPC가 아니다. `WindowChrome`/`Updater`가 `__TAURI_INTERNALS__`
   런타임 감지로 조건부 사용하는 정상 데스크톱 기능.
 
+### import / export 브라우저 갭 (5차 세션)
+
+Phase 3b가 "브라우저에 네이티브 다이얼로그가 없다"며 플레이스홀더로 남긴 항목.
+해결됐다. 갈래를 나눈 기준은 취향이 아니라 **파일이 어느 머신에 있어야 하는가**다.
+
+| 라우트 | 대상 | 방식 |
+|---|---|---|
+| `/pages/import`, `/pages/export` | 스크립트·API | 서버 경로 (기존) |
+| `/pages/import/dialog`, `/pages/export/dialog` | 데스크톱 | 네이티브 다이얼로그, **루프백 전용** |
+| `/pages/import/upload`, `/pages/export/download` | 원격 브라우저 | multipart / zip |
+
+클라이언트는 `packages/koharu/lib/transfer.ts`의 `runImport`/`runExport`에서
+`__TAURI_INTERNALS__`로 갈라진다. 서버측 루프백 판정만으로는 부족하다 — 컨테이너
+안의 CEF 창도 루프백이지만 headless Xvfb 위에 있어서, 다이얼로그를 열면 아무도 볼 수
+없는 화면에 떠서 요청이 반환되지 않는다. 라우트의 루프백 가드는 이중 방어로 남겼다.
+
+**두 번 방향을 고친 지점 (같은 함정을 다시 밟지 말 것):**
+
+1. 업로드 바이트용 디코드 경로를 따로 만들 뻔했다. `zip::extract` / `rar::extract` /
+   `pdf::render`가 **셋 다 `&Path`를 받는다**(`import/mod.rs:97-99`). 바이트
+   디스패치는 그 네 갈래 분기의 두 번째 사본이 되어 갈라진다. 그래서 업로드는 임시
+   파일로 흘려보내고 기존 `import()`를 그대로 부른다. export도 같은 이유로 임시
+   디렉터리에 렌더한 뒤 zip으로 묶는다 — `export_pages_to`의 렌더·이름·순서 규칙을
+   복제하지 않기 위해서다.
+2. `importPages(files: string[])`로 서명을 바꾼 뒤에야 **CEF 창의 브라우저
+   컨텍스트도 실제 경로를 얻을 수 없다**는 것을 알아챘다. 그래서 데스크톱 경로는
+   클라이언트가 경로를 넘기는 방식이 아니라 서버측 다이얼로그 라우트여야 한다.
+   기존 Tauri 커맨드(`lifecycle::import_pages`, `output::export_pages`)가 다이얼로그
+   부터 커밋까지 이미 전부 하므로 그대로 호출한다.
+
+**주의해서 다룬 두 지점:**
+
+- 업로드 파일명은 caller가 정하는 값이 곧 경로가 된다. `Path::file_name()`으로 마지막
+  성분만 취해 staging 디렉터리 밖으로 나가는 경로를 잘라낸다.
+- 필드는 `field.bytes()`가 아니라 `chunk()`로 흘려 쓴다. CBZ 하나가 메모리에 담기
+  어려운 크기일 수 있고, staging의 존재 이유가 그것을 담지 않는 것이다. 그래서
+  업로드 라우트만 `DefaultBodyLimit::disable()`이다 — 메모리는 여전히 유계고, 쓰는
+  자원은 임시 디렉터리 공간이며, 비-루프백 바인드에서는 토큰이 있어야 도달한다.
+
+**아직 검증되지 않음:** 실제 원격 브라우저로 업로드/다운로드를 돌려본 적이 없다.
+단위 테스트는 분기만 덮는다(`tests/lib/transfer.test.ts`) — 브라우저 파일 피커는
+jsdom에서 열리지 않으므로 업로드 경로의 실제 왕복은 실기 확인이 필요하다.
+
 ---
 
 ## 2. 남은 작업
-
-### A. importPages / exportPages 브라우저 갭 (우선순위 높음)
-
-원격 브라우저에는 네이티브 파일 다이얼로그가 없다. 현재 `protocol.ts`에서:
-
-```ts
-importPages: (_source: PageImportSource) => post<null>("/pages/import", { files: [] }),
-exportPages: (pages, format, directory = "") => post<null>("/pages/export", { ... }),
-```
-
-빈 경로를 보내 서버에서 검증 실패한다. **참고할 선례가 생겼다** — `pickGgufFile`이
-같은 문제를 만나 이렇게 풀었다(`crates/koharu-rpc/src/routes/llm.rs`):
-
-- 루프백 호출자에게만 네이티브 다이얼로그를 열고, 원격에는 `null` 반환
-- UI가 `null`을 받으면 서버 측 경로를 직접 입력받는 필드로 전환
-
-**정정 (2026-08-20):** 이전 판은 "pickGgufFile과 같은 모양인지 아닌지가 설계 결정
-지점"이라고 적었다. 그것은 틀렸다. 결정 지점이 아니라 **답이 정해진 문제**다. 파일이
-어느 쪽 머신에 있어야 하는지가 두 경우를 가른다:
-
-- **GGUF**는 llama.cpp가 로드하므로 **서버**에 있어야 한다. 그래서 경로가 올바른
-  통화이고, 수 GB 업로드는 오답이다.
-- **importPages**의 원본 이미지는 **사용자 머신**에 있다. 원격에서 서버 경로를
-  입력받아 봐야 그 파일은 서버에 없다 → **업로드 필수.**
-- **exportPages**의 결과물은 사용자에게 가야 한다 → **다운로드 필수.**
-
-즉 A는 pickGgufFile 패턴을 재사용할 수 없다.
-
-**구현 크기 (2026-08-20 실측).** 백엔드는 이미 갈라져 있어 입출력 통화만 바꾸면 된다:
-
-- `koharu_app::commands::import::import(files)`가 경로를 받아 디코드된
-  `bytes`/`width`/`height`/`format`을 돌려준다. 업로드용은 경로 대신 바이트를 받는
-  변형이 필요하고, 그 뒤 페이지 삽입 경로는 그대로 재사용된다
-  (`routes/pages.rs`의 `import_pages`).
-- `output::export_pages_to(directory, ...)`는 경로형 변형이 이미 있다. 다운로드용은
-  디렉터리 대신 zip 스트림을 만드는 변형이 필요하다.
-- axum `multipart` feature와 zip 크레이트가 추가로 필요하다.
-- 프런트는 `<input type="file">`과 blob 다운로드가 필요하다. **주의:** 데스크톱 CEF
-  창에서는 기존 네이티브 다이얼로그 경로가 여전히 더 낫다 — 루프백 분기를 유지할지
-  업로드로 일원화할지는 이 시점에 판단할 것.
-
-**여전히 유효한 주의:** 컨테이너에서 CEF 창은 headless Xvfb 위에 있으므로, 원격
-호출자에게 다이얼로그를 열면 아무도 볼 수 없는 화면에 떠서 요청이 영영 반환되지
-않는다. 루프백 판정은 `ConnectInfo<SocketAddr>`로 하며, 이를 위해 `lib.rs`가
-`into_make_service_with_connect_info::<SocketAddr>()`를 쓴다.
 
 ### B. 제거된 upstream 기능 재도입 (별도 이슈, 착수 전 필요 여부 판단)
 

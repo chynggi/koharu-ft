@@ -12,6 +12,7 @@ import {
 import { commands, type FontFamily, type PageImportSource } from '@koharu/bridge/protocol'
 
 import { call } from './backend'
+import { runImport } from './transfer'
 
 export const projectKey = ['project'] as const
 export const pagesKey = ['pages'] as const
@@ -87,7 +88,7 @@ export function useImportPages() {
   const importing = useIsMutating({ mutationKey: importPagesKey }) > 0
   const mutation = useMutation({
     mutationKey: importPagesKey,
-    mutationFn: (source: PageImportSource) => call(commands.importPages, source),
+    mutationFn: (source: PageImportSource) => call(runImport, source),
     onSuccess: () => refresh(projectKey, pagesKey, pageKey),
   })
   return { importPages: mutation.mutate, importing }
