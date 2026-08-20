@@ -1,6 +1,7 @@
 # HANDOFF — koharu-rpc 포팅
 
-최종 갱신: 2026-08-20 (5차 세션 — 상태 재검증 + Tauri IPC 잔존 정리)
+최종 갱신: 2026-08-20 (5차 세션 계속 — vast.ai 실배포에서 나온 로그로 CEF 샌드박스·
+X 락·토큰 인증 3건 수정. 샌드박스 수정은 재배포로 확인됨, 나머지 둘은 미확인)
 
 이 문서는 2·3·4차 세션 기록이 층층이 쌓이면서 서로 모순된 상태였다(상단은 "Phase 3c
 완료", 58행은 "Phase 3c 아직 시작 안 함"). 5차 세션에서 각 항목을 트리에 대고 실제로
@@ -10,6 +11,14 @@
 브랜치: 포팅 작업은 전부 `main`에 있다. `restore/koharu-rpc`는 main에 완전히 병합되어
 고유 커밋이 0이므로(`git rev-list --left-right --count main...restore/koharu-rpc` → `2 0`)
 삭제 후보다.
+
+`fork/vram-accounting`(로컬 LLM·FLUX.2 Klein·VRAM 회계, 별도 세션 계열)는 분기점
+`e386c0fe`에서 main이 6커밋 앞서 있다 — 이번 세션의 CEF/도커/토큰 수정 4개가 전부
+그 브랜치에는 없다. **머지 전에 리베이스가 필요하고, 리베이스는 §3 "배포 확인"이
+green을 낼 때까지 미룬다** — 지금 얹으면 다음 부팅이 실패했을 때 엔트리포인트·인증·
+포크 코드 중 무엇이 원인인지 가릴 수 없다. 겹치는 파일은 `Cargo.lock`,
+`packages/bridge/src/protocol.ts`, `tests/components/editor-components.test.tsx`
+셋뿐이라(지난 리베이스의 20개보다 작음) 충돌 자체는 기계적이다.
 
 ---
 
@@ -21,8 +30,10 @@
 | Phase 3b — 프론트엔드 HTTP 전환 | 완료 | `protocol.ts`에 Tauri invoke 호출 0건 |
 | Phase 3c — 정적 서빙 + CEF 통합 | 완료 | `tauri.conf.json`의 `devUrl: http://127.0.0.1:47823` |
 | CEF 실행 경로 결정 | 해결 (경로 B) | `vendor/tauri-runtime-cef/Cargo.toml`의 `default = []` |
-| 토큰 인증 | 있음 | `crates/koharu/src/main.rs`의 `KOHARU_API_TOKEN` |
+| 토큰 인증 | 있음, `/`도 게이팅됨 | `crates/koharu/src/main.rs`의 `KOHARU_API_TOKEN`, `api.rs`의 `index_with_token` |
 | 임시 파일 정리 | 완료 | `rpc-pid.txt`, `target/debug/*-out.log` 전부 없음 |
+| CEF 샌드박스 끄기 | **vast.ai 재배포로 확인됨** | 재배포 로그에서 zygote FATAL 사라짐 |
+| X 락 정리 | 미확인 (재배포 대기) | `Dockerfile`의 entrypoint 락 판정 |
 
 ### CEF 실행 경로 — 어떻게 끝났나
 
@@ -69,8 +80,43 @@ Check failed: . : Operation not permitted (1)
 증명되지 않는다. 아마 문제없겠지만 **증명된 적이 없고**, 이 실패는 재확인에 이미지
 전체 재빌드가 든다.
 
-**아직 실기 검증 안 됨:** 이 수정으로 컴파일은 통과하지만, 고쳐진 이미지를 vast.ai에서
-실제로 띄워본 적은 없다. 확인 방법은 §3 아래 "배포 확인" 참조.
+**실기 검증됨 (2026-08-20).** 이 수정을 반영해 재빌드한 이미지를 vast.ai에 올린 로그에서
+zygote FATAL과 네임스페이스 오류가 **완전히 사라졌다.** `("no-sandbox", Some(""))` 형태
+(§ 위 (2))가 실제로 통했다는 뜻이다. 다만 같은 로그가 곧바로 다음 절의 두 문제를
+드러냈다 — 앱이 그 지점을 넘어가 더 뒤에서 죽었기 때문에 보인 것들이다.
+
+### X 락으로 인한 무한 재시작 루프
+
+샌드박스 수정 재배포 로그에 남아 있던 증상:
+
+```
+(EE) Fatal server error:
+(EE) Server is already active for display 99
+    If this server is no longer running, remove /tmp/.X99-lock
+    and start again.
+dbus-run-session: ignoring unknown child process 53
+thread 'main' panicked at crates/koharu/src/main.rs:55:9:
+KOHARU_RPC_HOST is set to a non-loopback address (0.0.0.0) but KOHARU_API_TOKEN is unset...
+```
+
+이게 수십 번 반복됐다. 원인은 컨테이너가 재시작해도 파일시스템은 남는다는 것 —
+이전 실행의 `/tmp/.X99-lock`이 그대로 남아 Xvfb가 다음 부팅에서 영영 못 뜬다. 즉
+**최초 실패 한 번(토큰 미설정)이 영구 재시작 루프로 증폭됐고**, 이후 로그 줄은 전부
+원인이 아니라 그 부작용이었다.
+
+`entrypoint.sh`가 이제 락 파일의 PID를 읽어, 죽은 PID면 락과 소켓을 지우고 새로
+띄우고, 살아 있으면 재사용한다. Xvfb가 백그라운드라 `set -e`가 실패를 못 보므로
+소켓이 뜰 때까지 기다리는 것도 추가했다.
+
+**검증:** 락 판정 로직만 떼어 콜드 스타트·죽은 PID·살아있는 PID·빈 파일·공백 패딩
+PID(Xvfb가 실제로 쓰는 형식) 5가지 케이스를 임시 디렉터리로 8/8 통과시켰다
+(`67ac5ae9` 커밋 메시지 참조 — 별도 파일로 남기지 않고 커밋에만 기록).
+**컨테이너 안에서 Xvfb와 실제로 상호작용해본 적은 없다.** 로컬 Docker 데몬이 꺼져
+있어 이 세션에서는 컨테이너 재현이 불가능했다.
+
+**같은 로그에 있던 `KOHARU_API_TOKEN is unset` 패닉은 버그가 아니다.** 비-루프백
+바인드에서 토큰 없이 API를 노출하지 않으려는 의도된 가드다. vast.ai 템플릿
+환경변수에 `KOHARU_API_TOKEN`을 설정해야 한다 — Dockerfile 실행 노트 §2 참조.
 
 ### 토큰 인증
 
@@ -102,6 +148,11 @@ Check failed: . : Operation not permitted (1)
   `encodeURIComponent`로 감싸므로, 디코딩하지 않으면 **올바른 토큰이 401로 거부되어**
   잘못된 시크릿처럼 보인다.
 - 판정 로직은 `crates/koharu-rpc/src/api.rs`의 단위 테스트 7개가 덮는다.
+
+**이 구멍은 사용자 로그가 아니라 코드 재검토로 찾았다** — 샌드박스·X 락 수정과 달리
+실배포에서 증상으로 나타난 적이 없다. 즉 지금까지 아무도 이 구멍을 실제로 찌른 적이
+없다는 뜻일 수도, 그냥 아직 시도가 없었다는 뜻일 수도 있다. 재배포 후 §3의 401/200
+확인이 이 수정에 대한 첫 실기 검증이다.
 
 ### Tauri IPC 잔존 정리 (5차 세션)
 
@@ -240,24 +291,38 @@ import/export 작업 이전의 main 위에 있다 — 리베이스하면 프런�
 
 ### 배포 확인 (vast.ai)
 
-컴파일과 단위 테스트로는 컨테이너 기동을 검증할 수 없다. 이미지를 새로 빌드한 뒤
-로그에서 확인할 것:
+컴파일과 단위 테스트로는 컨테이너 기동을 검증할 수 없다. 진행 기록:
 
-- `zygote_host_impl_linux.cc ... Check failed` 가 **없어야** 한다. 남아 있다면
-  스위치가 실제로 붙지 않은 것이다. 실행 중인 프로세스의 커맨드라인으로 직접
-  확인할 수 있다: `tr '\0' '\n' < /proc/<pid>/cmdline | grep sandbox`.
-  **`--no-sandbox=` 형태로(끝에 `=`) 나오는 것이 정상이다** — 이유는 §1의 정정 참조.
-- `XDG_RUNTIME_DIR ... is owned by uid` dbus 경고가 없어야 한다.
-- `Owner of /tmp/.X11-unix should be set to root` 경고가 없어야 한다.
+**1차 재배포 (`a04671d1` 기준) — 완료, 부분 green.**
+`zygote_host_impl_linux.cc ... Check failed`와 네임스페이스 오류가 로그에서
+사라짐 — 샌드박스 수정 확인됨. 대신 X 락 재시작 루프와 `KOHARU_API_TOKEN unset`
+패닉이 새로 드러남 → `67ac5ae9`, `90afd55f`로 수정, push 완료.
+
+**2차 재배포 (`90afd55f` 기준) — 아직 실행 안 함.** 이미지를 다시 빌드하고,
+vast.ai 템플릿 환경변수에 `KOHARU_API_TOKEN`을 설정한 뒤(`openssl rand -hex 32`),
+태그를 새 짧은 SHA로 고정해서(캐시된 구 이미지 재사용 방지) 다음을 확인할 것:
+
+- `Server is already active for display 99` 가 없어야 한다 (X 락 정리 확인).
+- `KOHARU_API_TOKEN is unset` 패닉이 없어야 한다 (환경변수 설정 확인 — 코드가
+  아니라 설정 문제였다는 뜻).
 - `curl -H "Authorization: Bearer $KOHARU_API_TOKEN" http://<host>:<port>/api/v1/meta`
   가 이름과 버전을 돌려주어야 한다.
 - `curl -i http://<host>:<port>/` 는 **401이어야 한다.** 200이면서 본문에
-  `__KOHARU_API_TOKEN__`이 보이면 토큰이 그대로 새는 것이다.
+  `__KOHARU_API_TOKEN__`이 보이면 토큰이 그대로 새는 것이다 (`90afd55f` 확인).
 - `curl -i "http://<host>:<port>/?token=$KOHARU_API_TOKEN"` 는 200이고 본문에
   주입된 토큰이 있어야 한다. 브라우저도 이 URL로 열 것.
 
-**이미지가 최신 소스에서 빌드된 것인지 먼저 확인할 것.** 위 증상은 `--no-sandbox`
-누락으로도, 그냥 오래된 이미지로도 똑같이 나타난다. GHCR 워크플로는 수동 트리거다.
+이미 확인된 것(스위치 커맨드라인 형태 등)은 재확인 불필요:
+`tr '\0' '\n' < /proc/<pid>/cmdline | grep sandbox`가 `--no-sandbox=`로 나오는 것,
+`XDG_RUNTIME_DIR`/`X11-unix` 경고가 없는 것은 1차에서 이미 간접 확인됨(같은
+entrypoint 블록이 원인이었던 dbus/Xvfb 경고들이 로그에서 사라짐).
+
+**이미지가 최신 소스에서 빌드된 것인지 먼저 확인할 것.** 증상이 수정 누락과
+오래된 이미지 재사용 양쪽에서 똑같이 나타난다. GHCR 워크플로는 수동 트리거다
+(`gh workflow run docker.yml --ref main`).
+
+**2차 재배포가 green이면 그다음이 `fork/vram-accounting` 리베이스+머지다** —
+문서 상단 참조.
 
 **한 번도 검증되지 않은 것:** 실제 원격 브라우저로 vast.ai 배포본에 붙어 프로젝트를
 처리하는 end-to-end 실행. 4차 세션의 Edge 검증은 로컬 `bun run dev` 기준이었다.
