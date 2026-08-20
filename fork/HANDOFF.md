@@ -196,6 +196,13 @@ conflicted.
 `pub(crate) mod` into `pub mod` so koharu-rpc could call the command functions
 directly, and added `import`. Resolved to upstream's list plus `pub mod llm;`.
 
+A second rebase followed on 2026-08-20, after main removed the dead
+`bindings()` command table along with `bin/generate.rs` (which regenerated
+`protocol.ts` from tauri-specta and would have destroyed the hand-written HTTP
+client — see the root `HANDOFF.md`). The fork's two `llm::` entries in that
+table went with it; `pub mod llm;` stays, and `routes/llm.rs` calls the two
+functions directly, so nothing is lost.
+
 **`packages/bridge/src/protocol.ts`** — this is the one that matters. At 0.70.3
 the file was tauri-specta's generated IPC bridge; the RPC port replaced it with
 a hand-written fetch/SSE client that keeps the same `commands` shape. Upstream's
