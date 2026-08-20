@@ -61,6 +61,14 @@ Check failed: . : Operation not permitted (1)
 둘은 같은 `#[cfg(not(feature = "sandbox"))]`로 묶어 두었다 — 어긋나면 조용히 다시
 이 증상으로 돌아온다.
 
+(2)는 `("no-sandbox", Some(""))` 형태로 넣어 `--no-sandbox=`로 렌더된다. Chromium은
+스위치 맵을 이름으로 키잉하므로 zygote host가 실제로 보는 `HasSwitch("no-sandbox")`는
+어느 쪽이든 참이다. 굳이 이 형태를 쓴 이유는 증거다 — `ozone-platform`이
+`append_switch_with_value`로 들어가 컨테이너에서 X11을 실제로 강제하는 것이 확인된
+반면, `append_switch`가 앞의 `--`를 떼고 키를 넣는다는 것은 이 트리의 어디로도
+증명되지 않는다. 아마 문제없겠지만 **증명된 적이 없고**, 이 실패는 재확인에 이미지
+전체 재빌드가 든다.
+
 **아직 실기 검증 안 됨:** 이 수정으로 컴파일은 통과하지만, 고쳐진 이미지를 vast.ai에서
 실제로 띄워본 적은 없다. 확인 방법은 §3 아래 "배포 확인" 참조.
 
@@ -215,8 +223,9 @@ import/export 작업 이전의 main 위에 있다 — 리베이스하면 프런�
 로그에서 확인할 것:
 
 - `zygote_host_impl_linux.cc ... Check failed` 가 **없어야** 한다. 남아 있다면
-  `--no-sandbox`가 실제로 붙지 않은 것이다. 실행 중인 프로세스의 커맨드라인으로
-  직접 확인할 수 있다: `tr '\0' ' ' < /proc/<pid>/cmdline`.
+  스위치가 실제로 붙지 않은 것이다. 실행 중인 프로세스의 커맨드라인으로 직접
+  확인할 수 있다: `tr '\0' '\n' < /proc/<pid>/cmdline | grep sandbox`.
+  **`--no-sandbox=` 형태로(끝에 `=`) 나오는 것이 정상이다** — 이유는 §1의 정정 참조.
 - `XDG_RUNTIME_DIR ... is owned by uid` dbus 경고가 없어야 한다.
 - `Owner of /tmp/.X11-unix should be set to root` 경고가 없어야 한다.
 - `curl -H "Authorization: Bearer $KOHARU_API_TOKEN" http://<host>:<port>/api/v1/meta`

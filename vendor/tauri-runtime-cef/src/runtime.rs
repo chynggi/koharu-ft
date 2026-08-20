@@ -1461,8 +1461,18 @@ impl<T: UserEvent> CefRuntime<T> {
     // `zygote_host_impl_linux.cc: Check failed: . : Operation not permitted`,
     // which is exactly what the vast.ai deployment hit. Kept under the same
     // `sandbox` feature as the setting so the two cannot drift apart.
+    //
+    // Passed as an empty-valued switch, which renders as `--no-sandbox=`
+    // rather than `--no-sandbox`. Chromium keys its switch map by name, so
+    // `HasSwitch("no-sandbox")` — what the zygote host actually tests — holds
+    // either way. The reason for the odd-looking form is evidence:
+    // `ozone-platform` below reaches Chromium through
+    // `append_switch_with_value` and demonstrably forces X11 in the container,
+    // while nothing here establishes that `append_switch` strips a leading
+    // `--` before inserting the key. That may well be fine — it is simply
+    // unproven, and this failure costs a full image rebuild to retest.
     #[cfg(not(feature = "sandbox"))]
-    command_line_args.push(("--no-sandbox".to_string(), None));
+    command_line_args.push(("no-sandbox".to_string(), Some(String::new())));
     let mut app = TauriCefApp::new(
       context.clone(),
       context_initialized.clone(),
