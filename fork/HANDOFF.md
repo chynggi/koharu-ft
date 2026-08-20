@@ -1,9 +1,12 @@
-# HANDOFF — 2026-08-19
+# HANDOFF — 2026-08-20
 
 Where the fork stands, what is verified, and what was interrupted mid-flight.
 
-Baseline: upstream Koharu **0.70.3** (`db439495`). **Nothing is committed.** The
-entire fork lives in the working tree (52 entries in `git status`).
+Baseline: **0.73.0 plus the koharu-rpc port**, on branch `fork/vram-accounting`
+in the `D:\koharu-ft-serve` clone. The fork was written against upstream 0.70.3
+(`db439495`) and lived entirely in the working tree of the old
+`C:\Users\chyng\koharu-ft` clone; on 2026-08-20 it was committed as-is and
+rebased 30 commits forward. §8 records what that cost.
 
 ---
 
@@ -139,12 +142,16 @@ Green as of the last run:
 
 | check | result | last run |
 | --- | --- | --- |
-| `cargo test -j 6 -p koharu-pipeline --lib` | 65/65 | step 4 |
-| `cargo test -j 6 -p koharu-ml --lib` | 61 passed, 16 ignored | step 4 |
-| `cargo check -j 6 --workspace` | clean, no new warnings | step 4 |
-| `tsc --noEmit -p packages/koharu/tsconfig.json` | exit 0 | end of step 3 |
-| `oxlint packages/koharu` | clean | end of step 3 |
-| `vitest run` | 81/81 across 12 files | end of step 3 |
+| `cargo test -j 6 -p koharu-pipeline --lib` | 65/65 | rebase |
+| `cargo test -j 6 -p koharu-ml --lib` | 61 passed, 16 ignored | rebase |
+| `cargo check -j 6 --workspace` | clean, no new warnings | rebase |
+| `tsc --noEmit -p packages/koharu/tsconfig.json` | exit 0 | rebase |
+| `oxlint packages/koharu` | clean | rebase |
+| `bun run --filter '@koharu/app' test` | 84/84 across 12 files | rebase |
+
+The whole table was re-run after the rebase and matches step 4's numbers. The
+vitest count moved 81 → 84 because the 30 upstream commits added three tests,
+not because anything here changed.
 
 The only pre-existing warning in the tree is `koharu-torch-sys`'s build-script
 `linker_messages` one. It is not ours.
@@ -177,3 +184,34 @@ The first thing a machine with real weights should do is run those four.
 Constraints that still govern step 5: nothing hard-refuses a load (the driver
 stays the OOM authority), no infinite retry, no summing across tiers into one
 confident number, and no letter grades on hardware.
+
+---
+
+## 8. The rebase onto 0.73.0 + koharu-rpc
+
+The 30 intervening commits touched 20 of the fork's 52 files, but only two
+conflicted.
+
+**`crates/koharu-app/src/commands/mod.rs`** — upstream turned every
+`pub(crate) mod` into `pub mod` so koharu-rpc could call the command functions
+directly, and added `import`. Resolved to upstream's list plus `pub mod llm;`.
+
+**`packages/bridge/src/protocol.ts`** — this is the one that matters. At 0.70.3
+the file was tauri-specta's generated IPC bridge; the RPC port replaced it with
+a hand-written fetch/SSE client that keeps the same `commands` shape. Upstream's
+version wins outright; the fork's contribution to it is four items, re-added by
+hand: the `GpuLayers` and `MemoryScope` types, and the `getLlmCapabilities` /
+`pickGgufFile` entries.
+
+**The transport gap this exposed.** `get_llm_capabilities` and `pick_gguf_file`
+were Tauri commands with no HTTP route, and `LocalModelPreferences` calls both.
+`crates/koharu-rpc/src/routes/llm.rs` now serves them. `GET /llm/capabilities`
+is a straight port. `POST /llm/gguf-file` opens the native picker **only for a
+loopback caller** and returns `null` otherwise, because the dialog runs in the
+server process: in the container that display is a headless Xvfb, so a remote
+caller would get a dialog nobody can see and a request that never returns. The
+UI falls back to typing a path, which is the right shape regardless — llama.cpp
+loads the weights server-side, so the path must be one koharu-rpc can read.
+
+**Still unexercised.** The four items in §6's "never verified" list are
+unchanged, and `/llm/gguf-file` has never been hit from a real remote browser.
