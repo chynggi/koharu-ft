@@ -4,11 +4,12 @@
 
 const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
 	?.env;
-const API_BASE_URL = env?.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8787/api/v1";
-// Required only when koharu-rpc is bound to a non-loopback host (see
-// KOHARU_API_TOKEN in crates/koharu/src/main.rs); harmless to leave unset
-// for local loopback use.
-const API_TOKEN = env?.NEXT_PUBLIC_API_TOKEN;
+const API_BASE_URL = env?.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
+// Injected into the served index.html by koharu-rpc at startup when the API
+// is bound to a non-loopback host (see KOHARU_API_TOKEN in
+// crates/koharu/src/main.rs), so the token never has to be baked into the
+// static bundle or the Docker image. Unset for local loopback use.
+const API_TOKEN = (globalThis as { __KOHARU_API_TOKEN__?: string }).__KOHARU_API_TOKEN__;
 
 function authHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
 	if (!API_TOKEN) return headers;

@@ -73,16 +73,13 @@ COPY . .
 
 RUN bun install
 
-# Baked into the static export at build time (Next.js NEXT_PUBLIC_* vars are
-# inlined, not read at runtime) — must match the KOHARU_API_TOKEN the
-# container is *run* with below, or the UI will send a stale/mismatched
-# token and every /api/v1 call will 401. Pass the same value to both:
-#   docker build --build-arg KOHARU_API_TOKEN=<token> -t koharu .
-#   docker run -e KOHARU_API_TOKEN=<token> ...
-ARG KOHARU_API_TOKEN
+# The API token is NOT baked into the image: koharu-rpc injects
+# `window.__KOHARU_API_TOKEN__` into the served index.html at startup from
+# the runtime KOHARU_API_TOKEN environment variable, so the same image can
+# be reused with a fresh secret per instance and no secret lands in a layer.
+# The frontend now uses a relative `/api/v1` base URL, so it works both from
+# the local CEF window (127.0.0.1) and a remote browser (vast.ai port map).
 ARG KOHARU_RPC_PORT=47823
-ENV NEXT_PUBLIC_API_TOKEN=${KOHARU_API_TOKEN}
-ENV NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:${KOHARU_RPC_PORT}/api/v1
 
 # tauri.conf.json has createUpdaterArtifacts=true (for real desktop
 # releases), which makes the CLI also try to sign an updater artifact and
@@ -119,7 +116,6 @@ WORKDIR /home/koharu
 RUN xdg-user-dirs-update
 
 ENV KOHARU_RPC_HOST=0.0.0.0
-ENV KOHARU_API_TOKEN=${KOHARU_API_TOKEN}
 ENV KOHARU_RPC_PORT=${KOHARU_RPC_PORT}
 EXPOSE 47823
 
@@ -137,7 +133,7 @@ Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 exec dbus-run-session -- koharu
 EOF
-RUN chmod +x /home/koharu/entrypoint.sh
+RUN sed -i 's/\r$//' /home/koharu/entrypoint.sh && chmod +x /home/koharu/entrypoint.sh
 
 # The base image ships its own ENTRYPOINT (vast.ai's instance-portal/SSH/
 # provisioning bootstrap) that parses its own flags rather than `exec "$@"`
@@ -150,15 +146,10 @@ ENTRYPOINT ["/home/koharu/entrypoint.sh"]
 
 # --- build-verified locally via Docker Desktop; run notes below are from
 #     actually starting the resulting image ---
-# 1. `docker run` needs `--cap-add=SYS_ADMIN` (confirmed necessary): without
-#    it, CEF's zygote fails to create the namespaces its sandbox needs even
-#    running as a non-root user ("Failed to move to new namespace: ...
-#    Operation not permitted"), and the app dies before binding the API
-#    port at all. This is a real capability grant, not a rubber stamp —
-#    weigh it against just disabling the CEF sandbox feature instead (see
-#    vendor/tauri-runtime-cef's `sandbox` feature, already patched off once
-#    on the Windows side of this branch for unrelated reasons) if that
-#    tradeoff matters for your deployment.
+# 1. The CEF sandbox feature is disabled (vendor/tauri-runtime-cef's default
+#    feature is patched to `[]`), so no `--cap-add=SYS_ADMIN` is needed.
+#    vast.ai templates can't express docker capabilities, which makes this
+#    the only viable path on that marketplace.
 # 2. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
 #    (currently 47823) for the desktop window's *initial* navigation to
 #    succeed without a race (see HANDOFF.md's Phase 3c section) — if you

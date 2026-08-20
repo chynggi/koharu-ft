@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -35,7 +37,7 @@ async fn require_token(State(token): State<Arc<str>>, req: Request, next: Next) 
 
 pub fn router(app: AppState, static_dir: Option<PathBuf>, api_token: Option<String>) -> Router {
     let mut api = routes::router();
-    if let Some(token) = api_token {
+    if let Some(token) = api_token.clone() {
         api = api.layer(middleware::from_fn_with_state(
             Arc::<str>::from(token),
             require_token,
@@ -46,8 +48,14 @@ pub fn router(app: AppState, static_dir: Option<PathBuf>, api_token: Option<Stri
     if let Some(dir) = static_dir {
         if dir.is_dir() {
             let index = dir.join("index.html");
-            let serve_dir = ServeDir::new(&dir).not_found_service(ServeFile::new(index));
-            router = router.fallback_service(serve_dir);
+            let serve_dir = ServeDir::new(&dir).not_found_service(ServeFile::new(index.clone()));
+            let token = Arc::<str>::from(api_token.unwrap_or_default());
+            let index_route = move || {
+                let index = index.clone();
+                let token = token.clone();
+                async move { index_with_token(token, index).await }
+            };
+            router = router.route("/", get(index_route)).fallback_service(serve_dir);
         } else {
             tracing::warn!(
                 path = %dir.display(),
@@ -60,5 +68,37 @@ pub fn router(app: AppState, static_dir: Option<PathBuf>, api_token: Option<Stri
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(app)
+}
+
+async fn index_with_token(token: Arc<str>, index: PathBuf) -> Response {
+    let body = match tokio::fs::read_to_string(&index).await {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::error!(%error, path = %index.display(), "failed to read index.html");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let injected = if token.is_empty() {
+        body
+    } else {
+        body.replacen(
+            "<head>",
+            &format!(
+                "<head><script>window.__KOHARU_API_TOKEN__ = {token:?};</script>",
+                token = token,
+            ),
+            1,
+        )
+    };
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Body::from(injected))
+        .unwrap_or_else(|error| {
+            tracing::error!(%error, "failed to build index.html response");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })
 }
 
