@@ -105,6 +105,8 @@ fn sample_drm(skip_nvidia: bool) -> Vec<Sample> {
                 id,
                 name,
                 vendor,
+                source: MeasuredSource::DrmSysfs,
+                scope: MemoryScope::Device,
                 budget_bytes: total,
                 used_bytes: used,
                 utilization_percent: read_number(device.join("gpu_busy_percent"))
