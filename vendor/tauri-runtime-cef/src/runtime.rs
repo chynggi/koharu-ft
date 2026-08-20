@@ -1448,6 +1448,21 @@ impl<T: UserEvent> CefRuntime<T> {
     };
 
     command_line_args.push(("--enable-media-stream".to_string(), None));
+    // The other half of `Settings::no_sandbox` below, and it is not redundant.
+    // `Settings` only reaches `cef::initialize`, which only the browser process
+    // runs; subprocesses go through `execute_process` above, which is called
+    // before these settings even exist. `OnBeforeCommandLineProcessing` is the
+    // one hook that fires in *every* process, so the switch has to travel on
+    // the command line for the sandbox to actually be off everywhere.
+    //
+    // Without it, a container that cannot create namespaces - no
+    // `--cap-add=SYS_ADMIN`, or a host with unprivileged user namespaces
+    // disabled - dies at startup with
+    // `zygote_host_impl_linux.cc: Check failed: . : Operation not permitted`,
+    // which is exactly what the vast.ai deployment hit. Kept under the same
+    // `sandbox` feature as the setting so the two cannot drift apart.
+    #[cfg(not(feature = "sandbox"))]
+    command_line_args.push(("--no-sandbox".to_string(), None));
     let mut app = TauriCefApp::new(
       context.clone(),
       context_initialized.clone(),

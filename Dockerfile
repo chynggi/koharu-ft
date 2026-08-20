@@ -102,10 +102,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 RUN dpkg -i /koharu/dist/*.deb || (apt-get update && apt-get install -f -y --no-install-recommends)
 
 # Chromium/CEF's sandbox refuses to run as root (the same class of problem
-# this branch hit on Windows under an elevated shell — see HANDOFF.md) —
-# run as an unprivileged user instead of reaching for --no-sandbox.
+# this branch hit on Windows under an elevated shell — see HANDOFF.md), so
+# run as an unprivileged user. Note that this is *not* on its own enough to
+# make the sandbox work here: the namespace sandbox still needs either
+# --cap-add=SYS_ADMIN or a host that permits unprivileged user namespaces,
+# and vast.ai templates can express neither. The build therefore turns the
+# sandbox off outright — see the note above ENTRYPOINT.
 RUN useradd --create-home --shell /bin/bash koharu \
     && usermod -aG video,render koharu 2>/dev/null || true
+# Created here, as root, because Xvfb otherwise makes it itself and warns
+# "Owner of /tmp/.X11-unix should be set to root" on every start.
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 USER koharu
 WORKDIR /home/koharu
 
@@ -129,6 +136,14 @@ EXPOSE 47823
 COPY --chown=koharu:koharu <<'EOF' /home/koharu/entrypoint.sh
 #!/bin/bash
 set -euo pipefail
+# The base image exports XDG_RUNTIME_DIR for its own user, and the uid we get
+# is not necessarily that one — vast.ai reported
+# 'XDG_RUNTIME_DIR "/run/user/1001" is owned by uid 1001, not our uid 1002'
+# and dbus then refused to set up its transient directory. Point it at
+# somewhere this process definitely owns instead of guessing the uid.
+XDG_RUNTIME_DIR="$(mktemp -d /tmp/koharu-runtime-XXXXXX)"
+chmod 700 "$XDG_RUNTIME_DIR"
+export XDG_RUNTIME_DIR
 Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 exec dbus-run-session -- koharu
@@ -146,9 +161,18 @@ ENTRYPOINT ["/home/koharu/entrypoint.sh"]
 
 # --- build-verified locally via Docker Desktop; run notes below are from
 #     actually starting the resulting image ---
-# 1. The CEF sandbox feature is disabled (vendor/tauri-runtime-cef's default
-#    feature is patched to `[]`), so no `--cap-add=SYS_ADMIN` is needed.
-#    vast.ai templates can't express docker capabilities, which makes this
+# 1. No `--cap-add=SYS_ADMIN` is needed, because the CEF sandbox is off.
+#    That takes *two* changes, and an earlier revision of this note was wrong
+#    to claim the first one was enough:
+#      a. vendor/tauri-runtime-cef's `default` feature is patched to `[]`,
+#         which sets `CefSettings::no_sandbox`.
+#      b. the same crate appends `--no-sandbox` to the command line. (a) only
+#         reaches `cef::initialize`, which only the browser process runs, so
+#         with (a) alone the zygote still tried to create namespaces and the
+#         container died at
+#         `zygote_host_impl_linux.cc: Check failed: . : Operation not permitted`.
+#    vast.ai templates can't express docker capabilities, and the host may
+#    also forbid unprivileged user namespaces, so turning the sandbox off is
 #    the only viable path on that marketplace.
 # 2. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
 #    (currently 47823) for the desktop window's *initial* navigation to

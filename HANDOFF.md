@@ -27,12 +27,42 @@
 ### CEF 실행 경로 — 어떻게 끝났나
 
 3차 세션의 `RunDeElevated` 진단(관리자 권한 셸에서 CEF가 뜨지 않음)은 유효했고,
-최종 해법은 **경로 B(no-sandbox 단일 exe)** 였다. `vendor/tauri-runtime-cef`의
-`default` feature를 `[]`로 패치해 `sandbox`를 끈다. 이 패치는 진단용 실험이 아니라
+최종 해법은 **경로 B(no-sandbox 단일 exe)** 였다. 이 구성은 진단용 실험이 아니라
 **현재 유지되어야 하는 구성**이다 — vast.ai 같은 마켓플레이스 템플릿은 docker
-capability(`--cap-add=SYS_ADMIN`)를 표현할 수 없으므로, 샌드박스를 끄는 쪽이 배포
-가능한 유일한 경로다. (3차 세션 기록의 "가설 확정 시 vendor 패치를 되돌릴 것"은
-따라서 **무효**다.)
+capability(`--cap-add=SYS_ADMIN`)를 표현할 수 없고 호스트가 비특권 user namespace를
+막아둘 수도 있으므로, 샌드박스를 끄는 쪽이 배포 가능한 유일한 경로다. (3차 세션
+기록의 "가설 확정 시 vendor 패치를 되돌릴 것"은 따라서 **무효**다.)
+
+**정정 (2026-08-20, 5차 세션):** 이전 판은 "`default` feature를 `[]`로 패치해
+`sandbox`를 끈다"까지만 적었고, 그것으로 충분한 것처럼 읽혔다. **충분하지 않았다.**
+vast.ai 실배포에서 컨테이너가 다음으로 죽었다:
+
+```
+Failed to move to new namespace: PID namespaces supported, Network namespace
+supported, but failed: errno = Operation not permitted
+FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:207]
+Check failed: . : Operation not permitted (1)
+```
+
+샌드박스를 끄는 데는 **두 조각**이 필요하다:
+
+1. `vendor/tauri-runtime-cef/Cargo.toml`의 `default = []` → `CefSettings::no_sandbox`.
+2. 같은 크레이트가 `command_line_args`에 `--no-sandbox`를 넣는 것.
+
+(1)만으로 부족한 이유는 순서다. `runtime.rs`에서 `cef::execute_process`가 **먼저**
+호출되고 `Settings`는 그 뒤에 만들어져 `cef::initialize`에만 전달된다. 그런데
+서브프로세스(zygote 포함)는 같은 바이너리로 재진입해 `execute_process`에서 처리되므로
+`no_sandbox`를 볼 기회가 없다. 모든 프로세스에서 실행되는 훅은
+`CefApp::OnBeforeCommandLineProcessing` 하나뿐이고, `command_line_args`가 바로 그
+경로다. Linux에서 `sandbox` cargo feature의 다른 사용처는 전부
+`#[cfg(target_os = "macos")]`이므로, 그 feature는 사실상 `no_sandbox` 플래그 하나만
+바꿨을 뿐이었다.
+
+둘은 같은 `#[cfg(not(feature = "sandbox"))]`로 묶어 두었다 — 어긋나면 조용히 다시
+이 증상으로 돌아온다.
+
+**아직 실기 검증 안 됨:** 이 수정으로 컴파일은 통과하지만, 고쳐진 이미지를 vast.ai에서
+실제로 띄워본 적은 없다. 확인 방법은 §3 아래 "배포 확인" 참조.
 
 ### 토큰 인증
 
@@ -169,17 +199,35 @@ cargo test -j 6 -p koharu-pipeline --lib      # 52/52
 cargo test -j 6 -p koharu-ml --lib            # 44 passed, 16 ignored
 bunx tsc --noEmit -p packages/koharu/tsconfig.json
 bunx oxlint packages/koharu
-bun run --filter '@koharu/app' test           # 83/83 across 12 files
+bun run --filter '@koharu/app' test           # 86/86 across 13 files
 ```
 
 위 수치는 **`main` 기준**이다. `fork/vram-accounting` 브랜치는 자체 테스트를 더해
-52→65, 44→61, 83→84가 되므로 두 브랜치의 숫자를 섞지 말 것.
+rust 쪽이 52→65, 44→61이 되므로 두 브랜치의 숫자를 섞지 말 것. (그 브랜치는 아직
+import/export 작업 이전의 main 위에 있다 — 리베이스하면 프런트 수치도 바뀐다.)
 
 트리의 유일한 기존 경고는 `koharu-torch-sys`의 빌드 스크립트 `linker_messages`다.
 우리 것이 아니다.
 
+### 배포 확인 (vast.ai)
+
+컴파일과 단위 테스트로는 컨테이너 기동을 검증할 수 없다. 이미지를 새로 빌드한 뒤
+로그에서 확인할 것:
+
+- `zygote_host_impl_linux.cc ... Check failed` 가 **없어야** 한다. 남아 있다면
+  `--no-sandbox`가 실제로 붙지 않은 것이다. 실행 중인 프로세스의 커맨드라인으로
+  직접 확인할 수 있다: `tr '\0' ' ' < /proc/<pid>/cmdline`.
+- `XDG_RUNTIME_DIR ... is owned by uid` dbus 경고가 없어야 한다.
+- `Owner of /tmp/.X11-unix should be set to root` 경고가 없어야 한다.
+- `curl -H "Authorization: Bearer $KOHARU_API_TOKEN" http://<host>:<port>/api/v1/meta`
+  가 이름과 버전을 돌려주어야 한다.
+
+**이미지가 최신 소스에서 빌드된 것인지 먼저 확인할 것.** 위 증상은 `--no-sandbox`
+누락으로도, 그냥 오래된 이미지로도 똑같이 나타난다. GHCR 워크플로는 수동 트리거다.
+
 **한 번도 검증되지 않은 것:** 실제 원격 브라우저로 vast.ai 배포본에 붙어 프로젝트를
 처리하는 end-to-end 실행. 4차 세션의 Edge 검증은 로컬 `bun run dev` 기준이었다.
+import/export 업로드·다운로드도 실기로는 아직 한 번도 돌지 않았다.
 
 ---
 
