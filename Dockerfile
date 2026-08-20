@@ -218,6 +218,10 @@ ENTRYPOINT ["/home/koharu/entrypoint.sh"]
 #    On vast.ai put it in the template's environment. It is deliberately not
 #    defaulted or auto-generated: a token the operator never chose is one
 #    nobody rotates.
+#    **Open the UI as `http://<host>:<port>/?token=<token>`, not bare `/`.**
+#    `/` hands the page its own token, so it is authenticated exactly as the
+#    API is; without the parameter it answers 401. The parameter stays in the
+#    address bar and the app never changes routes, so a refresh keeps working.
 # 3. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
 #    (currently 47823) for the desktop window's *initial* navigation to
 #    succeed without a race (see HANDOFF.md's Phase 3c section) — if you
