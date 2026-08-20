@@ -86,9 +86,33 @@ exportPages: (pages, format, directory = "") => post<null>("/pages/export", { ..
 - 루프백 호출자에게만 네이티브 다이얼로그를 열고, 원격에는 `null` 반환
 - UI가 `null`을 받으면 서버 측 경로를 직접 입력받는 필드로 전환
 
-import/export도 같은 모양이 맞는지, 아니면 실제 업로드/다운로드 플로우가 필요한지가
-설계 결정 지점이다. **주의:** 컨테이너에서 CEF 창은 headless Xvfb 위에 있으므로,
-원격 호출자에게 다이얼로그를 열면 아무도 볼 수 없는 화면에 떠서 요청이 영영 반환되지
+**정정 (2026-08-20):** 이전 판은 "pickGgufFile과 같은 모양인지 아닌지가 설계 결정
+지점"이라고 적었다. 그것은 틀렸다. 결정 지점이 아니라 **답이 정해진 문제**다. 파일이
+어느 쪽 머신에 있어야 하는지가 두 경우를 가른다:
+
+- **GGUF**는 llama.cpp가 로드하므로 **서버**에 있어야 한다. 그래서 경로가 올바른
+  통화이고, 수 GB 업로드는 오답이다.
+- **importPages**의 원본 이미지는 **사용자 머신**에 있다. 원격에서 서버 경로를
+  입력받아 봐야 그 파일은 서버에 없다 → **업로드 필수.**
+- **exportPages**의 결과물은 사용자에게 가야 한다 → **다운로드 필수.**
+
+즉 A는 pickGgufFile 패턴을 재사용할 수 없다.
+
+**구현 크기 (2026-08-20 실측).** 백엔드는 이미 갈라져 있어 입출력 통화만 바꾸면 된다:
+
+- `koharu_app::commands::import::import(files)`가 경로를 받아 디코드된
+  `bytes`/`width`/`height`/`format`을 돌려준다. 업로드용은 경로 대신 바이트를 받는
+  변형이 필요하고, 그 뒤 페이지 삽입 경로는 그대로 재사용된다
+  (`routes/pages.rs`의 `import_pages`).
+- `output::export_pages_to(directory, ...)`는 경로형 변형이 이미 있다. 다운로드용은
+  디렉터리 대신 zip 스트림을 만드는 변형이 필요하다.
+- axum `multipart` feature와 zip 크레이트가 추가로 필요하다.
+- 프런트는 `<input type="file">`과 blob 다운로드가 필요하다. **주의:** 데스크톱 CEF
+  창에서는 기존 네이티브 다이얼로그 경로가 여전히 더 낫다 — 루프백 분기를 유지할지
+  업로드로 일원화할지는 이 시점에 판단할 것.
+
+**여전히 유효한 주의:** 컨테이너에서 CEF 창은 headless Xvfb 위에 있으므로, 원격
+호출자에게 다이얼로그를 열면 아무도 볼 수 없는 화면에 떠서 요청이 영영 반환되지
 않는다. 루프백 판정은 `ConnectInfo<SocketAddr>`로 하며, 이를 위해 `lib.rs`가
 `into_make_service_with_connect_info::<SocketAddr>()`를 쓴다.
 
@@ -106,9 +130,30 @@ Phase 2에서 fork에 대응 구현이 없어 삭제한 것들:
 `routes/llm.rs`는 5차 세션에서 다시 생겼다(포크 작업의 로컬 LLM 설정 UI가 필요로 함).
 나머지는 아직 없다.
 
-### C. `#[specta::specta]` 51개 정리 (낮음)
+### C. specta 전체 제거 (낮음, 단 범위가 큼)
 
-`bindings()` 제거로 고아가 된 속성. 기계적이지만 51개소 × 11파일이라 별도 패스.
+**정정 (2026-08-20):** 이전 판은 "`#[specta::specta]` 51개 정리"라고 적었다. 범위를
+4배 축소한 서술이었다. 확인해 보니 **specta는 워크스페이스 전체에서 죽었다.**
+
+```
+grep -rn "TypeCollection\|specta_typescript\|\.export(\|Typescript::" crates/ --include=*.rs
+→ 결과 없음
+```
+
+`Type` impl을 읽는 쪽이 어디에도 없다. 모든 사용처가 `use specta::Type` +
+`derive(..., Type)`, 즉 **읽는 쪽 없는 쓰기**다. 유일한 소비자였던 `bindings()` /
+`bin/generate.rs`가 사라졌기 때문이다.
+
+실제 범위: `#[specta::specta]` 51개 + `derive(Type)` 약 140개 + 20여 파일의 import +
+8개 크레이트의 `specta` 의존성 + 워크스페이스 항목. `#[specta(type = f64)]`(specta가
+BigInt를 금지해 넣은 것)도 함께 사라진다.
+
+제거를 권하는 이유는 정리 그 자체가 아니다. **죽은 타입 내보내기 체계가 살아 있는 척
+하는 것이 더 나쁘기 때문**이다 — 지금 `derive(Type)`은 `protocol.ts`가 생성되거나
+검증되는 듯한 인상을 주지만, 그 파일은 손으로 유지되며 Rust 쪽과의 일치를 아무도
+강제하지 않는다. 게다가 `specta`는 `=2.0.0-rc.25`로 핀되어 있어 업그레이드를 묶는다.
+
+되돌릴 근거: 데스크톱 IPC/타입 생성 경로를 언젠가 복원한다면 전부 다시 필요하다.
 
 ### D. `restore/koharu-rpc` 브랜치 삭제 (낮음)
 
