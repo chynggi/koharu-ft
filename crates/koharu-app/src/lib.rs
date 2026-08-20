@@ -6,7 +6,6 @@ mod app;
 pub mod commands;
 
 pub use app::run;
-pub use commands::bindings;
 
 /// Register a hook that runs once during Tauri setup, after the application
 /// states are managed and before the main window is shown. Embedders use this
