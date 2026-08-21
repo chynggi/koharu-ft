@@ -5,6 +5,7 @@ pub mod fonts;
 pub mod import;
 pub mod lifecycle;
 pub mod llm;
+pub mod naming;
 pub mod output;
 pub mod preferences;
 pub mod processing;
