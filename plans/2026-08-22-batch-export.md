@@ -863,7 +863,45 @@ git commit -m "fix(export): archive nested export directories, not just the top 
 ### Task 5: 라우트를 Job과 2단계 다운로드로 바꾼다
 
 **Files:**
+- Modify: `crates/koharu-app/src/commands/output.rs`
 - Modify: `crates/koharu-rpc/src/routes/pages.rs`
+- Modify: `crates/koharu-rpc/src/lib.rs`
+
+- [ ] **Step 0: 폴더 선택 커맨드를 Job 방식으로 바꾼다**
+
+`crates/koharu-app/src/commands/output.rs`의 `export_pages` Tauri 커맨드를 아래로 교체한다.
+
+선택창은 `koharu-app`에 남는다. `rfd`는 이 크레이트의 의존성이고 `koharu-rpc`의 것이 아니므로 라우트 쪽으로 옮기면 의존성이 하나 늘어난다. 단일 작업 가드도 선택창 바로 옆에 있어야 한다 — 거절할 것이면 사용자를 폴더 선택으로 붙잡아두기 전에 거절해야 하기 때문이다.
+
+폴더를 고른 뒤 `start_export`에 넘기므로 `project`/`desktop` State 인자는 더 이상 필요 없다. `start_export`가 `AppHandle`에서 직접 가져간다.
+
+```rust
+/// 네이티브 폴더 선택창을 띄우고 내보내기 Job을 시작한다.
+///
+/// 선택창을 띄우기 **전에** 다른 작업이 도는지 확인한다. 거절할 것이면
+/// 사용자를 폴더 선택으로 붙잡아두기 전에 거절해야 한다.
+#[tauri::command]
+#[specta::specta]
+pub async fn export_pages(
+    window: WebviewWindow<Cef>,
+    pages: Vec<EntityId>,
+    options: ExportOptions,
+) -> std::result::Result<Option<JobId>, Error> {
+    let handle = window.app_handle().clone();
+    if !handle.state::<Processing>().stops.lock().is_empty() {
+        return Err(anyhow::anyhow!("another process is already running").into());
+    }
+    let Some(directory) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .pick_folder()
+        .await
+        .map(|directory| directory.path().to_owned())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(start_export(handle, directory, pages, options).await?))
+}
+```
 
 - [ ] **Step 1: 스테이징 상태를 정의한다**
 
