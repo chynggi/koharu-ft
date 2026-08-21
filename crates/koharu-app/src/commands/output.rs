@@ -12,8 +12,9 @@ use koharu_scene::{AssetRole, EntityId, Snapshot};
 use serde::Deserialize;
 use specta::Type;
 use std::sync::Arc;
-use tauri::{Cef, State, WebviewWindow, ipc::IpcResponse};
+use tauri::{AppHandle, Cef, Manager as _, State, WebviewWindow, ipc::IpcResponse};
 
+use super::processing::{Job, JobChannel, JobId, JobKind, JobState, Processing};
 use super::{Error, project::CurrentProject};
 use koharu_desktop::Desktop;
 
@@ -305,4 +306,104 @@ async fn rasterize(
         .await
         .context("rasterizer worker stopped unexpectedly")?
         .map_err(Into::into)
+}
+
+/// 내보내기를 백그라운드 Job으로 시작하고 그 id를 즉시 돌려준다.
+///
+/// `Processing.stops`의 단일 작업 제약을 그대로 쓴다. 내보내기와 파이프라인은
+/// 둘 다 GPU를 많이 쓰므로 동시에 돌 이유가 없고, 이 제약 덕분에 스테이징
+/// 디렉터리도 한 번에 하나만 존재한다.
+pub async fn start_export(
+    handle: AppHandle<Cef>,
+    directory: std::path::PathBuf,
+    pages: Vec<EntityId>,
+    options: ExportOptions,
+) -> std::result::Result<JobId, Error> {
+    // 패턴은 여기서 한 번 검증한다. 대화상자가 이미 막지만 HTTP API는
+    // 신뢰 경계이고, 경로 이탈을 클라이언트 검증에만 맡길 수 없다.
+    crate::commands::naming::Template::parse(&options.pattern)?;
+
+    let id = JobId::new();
+    let stop = StopToken::default();
+    {
+        let processing = handle.state::<Processing>();
+        let mut stops = processing.stops.lock();
+        if !stops.is_empty() {
+            return Err(anyhow::anyhow!("another process is already running").into());
+        }
+        stops.insert(id, stop.clone());
+    }
+    let job = Job {
+        id,
+        kind: JobKind::Export,
+        state: JobState::Running,
+        completed: 0,
+        total: 0,
+        page: None,
+        stage: None,
+        model: None,
+        error: None,
+    };
+    handle.state::<Processing>().jobs.lock().insert(id, job.clone());
+    handle.state::<JobChannel>().publish(job);
+
+    let task_handle = handle.clone();
+    let task_stop = stop.clone();
+    drop(tokio::spawn(async move {
+        let progress_handle = task_handle.clone();
+        let progress: Arc<dyn Fn(usize, usize, EntityId) + Send + Sync> =
+            Arc::new(move |completed, total, page| {
+                let job = {
+                    let processing = progress_handle.state::<Processing>();
+                    let mut jobs = processing.jobs.lock();
+                    jobs.get_mut(&id).map(|job| {
+                        job.completed = completed;
+                        job.total = total;
+                        job.page = Some(page);
+                        job.clone()
+                    })
+                };
+                if let Some(job) = job {
+                    progress_handle.state::<JobChannel>().publish(job);
+                }
+            });
+        let result = export_pages_to(
+            directory,
+            pages,
+            options,
+            progress,
+            task_stop.clone(),
+            task_handle.state::<CurrentProject>(),
+            task_handle.state::<Desktop>(),
+        )
+        .await;
+        let (stopped, error) = match result {
+            Ok(()) => (task_stop.stopped(), None),
+            Err(error) => {
+                tracing::error!(%error, "export failed");
+                (false, Some(format!("{error}")))
+            }
+        };
+        task_handle.state::<Processing>().stops.lock().remove(&id);
+        let job = task_handle
+            .state::<Processing>()
+            .jobs
+            .lock()
+            .remove(&id)
+            .map(|mut job| {
+                job.state = if stopped {
+                    JobState::Stopped
+                } else if error.is_some() {
+                    JobState::Failed
+                } else {
+                    JobState::Finished
+                };
+                job.error = error;
+                job
+            });
+        if let Some(job) = job {
+            task_handle.state::<JobChannel>().publish(job);
+        }
+    }));
+    Ok(id)
 }

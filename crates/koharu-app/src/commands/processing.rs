@@ -35,9 +35,19 @@ impl fmt::Display for JobId {
     }
 }
 
+/// 작업의 종류. `stage`와 `model`은 파이프라인 전용이라 내보내기에서는
+/// 비므로, 프론트엔드가 라벨을 고를 근거가 따로 필요하다.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum JobKind {
+    Processing,
+    Export,
+}
+
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct Job {
     pub id: JobId,
+    pub kind: JobKind,
     pub state: JobState,
     #[specta(type = f64)]
     pub completed: usize,
@@ -117,6 +127,7 @@ pub async fn process(
     }
     let job = Job {
         id,
+        kind: JobKind::Processing,
         state: JobState::Running,
         completed: 0,
         total: 0,
