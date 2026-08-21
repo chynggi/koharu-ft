@@ -1874,6 +1874,10 @@ git commit -m "i18n: strings for the batch export dialog"
 
 - [ ] `cargo test -p koharu-app -p koharu-rpc` 통과
 - [ ] `bun run test` 통과
+- [ ] `cd packages/koharu && bunx tsc --noEmit` 통과 — **테스트만으로는 부족하다.**
+      `TitleBar`의 테스트는 명령을 목으로 대체하므로 `runExport(pages, 'png')`처럼
+      타입이 어긋난 호출도 런타임에서는 그냥 지나간다. `Job`에 필드를 더한 것도
+      마찬가지로 테스트 픽스처에서 `tsc`로만 드러난다.
 - [ ] `bun run lint` 통과
 - [ ] `cargo build --release && bun run ui:build` 후 앱을 띄워 실제로 확인
   - 전체 페이지를 PNG+PSD로 내보내고 `png/`, `psd/`가 생기는지
