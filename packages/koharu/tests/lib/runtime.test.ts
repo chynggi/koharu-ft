@@ -119,6 +119,7 @@ describe('HTTP runtime', () => {
     act(() => {
       handlers.onJob({
         id: 'job',
+        kind: 'processing',
         state: 'running',
         completed: 0,
         total: 4,
@@ -192,6 +193,7 @@ describe('HTTP runtime', () => {
     const handlers = streamBinding.mock.calls.at(-1)![0]
     handlers.onJob({
       id: 'job',
+      kind: 'processing',
       state: 'running',
       completed: 1,
       total: 2,

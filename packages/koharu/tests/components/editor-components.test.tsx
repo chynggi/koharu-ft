@@ -1586,6 +1586,7 @@ describe('greenfield editor', () => {
         job: {
           state: 'running',
           id: 'job',
+          kind: 'processing',
           completed: 1,
           total: 4,
           page: 'page',
