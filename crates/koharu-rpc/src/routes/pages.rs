@@ -433,27 +433,31 @@ async fn export_download(
     ))
 }
 
-/// Pack the flat set of files `export_pages_to` just wrote into a ZIP.
+/// `export_pages_to`가 방금 쓴 파일들을 ZIP으로 묶는다.
+///
+/// 형식별 하위 폴더를 쓰면 출력이 한 겹 더 깊어지므로 재귀해야 한다. 엔트리
+/// 이름은 `root` 기준 상대 경로라 압축을 풀면 폴더 구조가 그대로 살아난다.
 fn archive_directory(root: &std::path::Path) -> anyhow::Result<Vec<u8>> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     // Deflate earns little on PNG and a lot on PSD. One method for both keeps
     // this to a single path; the cost next to rendering the pages is noise.
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
-    let mut entries: Vec<_> = std::fs::read_dir(root)
-        .context("failed to list the rendered export")?
-        .collect::<Result<Vec<_>, _>>()
-        .context("failed to list the rendered export")?
-        .into_iter()
-        .filter(|entry| entry.path().is_file())
-        .collect();
-    entries.sort_by_key(std::fs::DirEntry::file_name);
+    let mut entries = Vec::new();
+    collect_files(root, &mut entries)?;
     if entries.is_empty() {
         anyhow::bail!("the export produced no files");
     }
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let bytes = std::fs::read(entry.path())
+    entries.sort();
+    for path in entries {
+        let name = path
+            .strip_prefix(root)
+            .context("an export file escaped the staging directory")?
+            .to_string_lossy()
+            // ZIP은 언제나 '/'를 쓴다. Windows의 '\'를 그대로 두면 풀 때
+            // 폴더가 아니라 이름에 역슬래시가 든 파일이 된다.
+            .replace('\\', "/");
+        let bytes = std::fs::read(&path)
             .with_context(|| format!("failed to read the rendered page {name}"))?;
         writer
             .start_file(&name, options)
@@ -466,6 +470,22 @@ fn archive_directory(root: &std::path::Path) -> anyhow::Result<Vec<u8>> {
         .finish()
         .context("failed to finalize the export archive")?
         .into_inner())
+}
+
+/// `directory` 아래의 모든 파일 경로를 깊이 우선으로 모은다.
+fn collect_files(
+    directory: &std::path::Path,
+    out: &mut Vec<std::path::PathBuf>,
+) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(directory).context("failed to list the rendered export")? {
+        let path = entry.context("failed to list the rendered export")?.path();
+        if path.is_dir() {
+            collect_files(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 async fn get_thumbnail(
@@ -494,4 +514,44 @@ async fn move_page(
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::archive_directory;
+
+    #[test]
+    fn a_nested_export_keeps_its_subfolders_in_the_archive() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("png")).unwrap();
+        std::fs::create_dir(root.path().join("psd")).unwrap();
+        std::fs::write(root.path().join("png/0001_a.png"), b"png").unwrap();
+        std::fs::write(root.path().join("psd/0001_a.psd"), b"psd").unwrap();
+
+        let archive = archive_directory(root.path()).unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).unwrap();
+        let mut names: Vec<_> = (0..zip.len())
+            .map(|index| zip.by_index(index).unwrap().name().to_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["png/0001_a.png", "psd/0001_a.psd"]);
+    }
+
+    #[test]
+    fn a_flat_export_is_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("0002_b.png"), b"b").unwrap();
+        std::fs::write(root.path().join("0001_a.png"), b"a").unwrap();
+
+        let archive = archive_directory(root.path()).unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).unwrap();
+        assert_eq!(zip.len(), 2);
+        assert_eq!(zip.by_index(0).unwrap().name(), "0001_a.png");
+    }
+
+    #[test]
+    fn an_empty_export_is_still_an_error() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(archive_directory(root.path()).is_err());
+    }
 }
