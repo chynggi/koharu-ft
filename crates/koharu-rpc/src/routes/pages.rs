@@ -434,11 +434,19 @@ async fn export_download(
 async fn export_download_archive(
     State(app): State<AppState>,
     Path(job): Path<JobId>,
-) -> ApiResult<impl IntoResponse> {
-    let staging = app
-        .state::<ExportStaging>()
-        .take(job)
-        .context("there is no finished export waiting for this job")?;
+) -> ApiResult<axum::response::Response> {
+    // 없는 스테이징은 404다. `ApiError`로 흘려보내면 전부 500이 되는데,
+    // 취소되었거나 실패한 내보내기를 받으러 온 것과 서버가 고장난 것을
+    // 클라이언트가 구분할 수 없게 된다.
+    let Some(staging) = app.state::<ExportStaging>().take(job) else {
+        return Ok((
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "there is no finished export waiting for this job",
+            })),
+        )
+            .into_response());
+    };
     let root = staging.path().to_owned();
     let archive = tokio::task::spawn_blocking(move || archive_directory(&root))
         .await
@@ -453,7 +461,8 @@ async fn export_download_archive(
             ),
         ],
         Bytes::from(archive),
-    ))
+    )
+        .into_response())
 }
 
 /// `export_pages_to`가 방금 쓴 파일들을 ZIP으로 묶는다.
