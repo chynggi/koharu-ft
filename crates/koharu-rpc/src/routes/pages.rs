@@ -14,7 +14,6 @@
 use std::io::Write as _;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::Context as _;
 use axum::Json;
@@ -25,7 +24,6 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 use tokio::io::AsyncWriteExt as _;
-use koharu_pipeline::StopToken;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, EntityId, PageDraft};
 use serde::Deserialize;
 use tauri::Manager as _;
@@ -35,11 +33,41 @@ use koharu_app::commands::editing;
 use koharu_app::commands::import;
 use koharu_app::commands::lifecycle::{self, PageImportSource, PageSelection};
 use koharu_app::commands::output::{self, ExportOptions};
-use koharu_app::commands::processing::Processing;
+use koharu_app::commands::processing::{JobId, Processing};
 use koharu_app::commands::project::{CurrentProject, Page, PageSummary};
 
 use crate::AppState;
 use crate::error::{ApiResult, ipc_bytes};
+
+/// 브라우저용 ZIP이 만들어지는 임시 디렉터리.
+///
+/// 다운로드가 2단계가 되면서 임시 디렉터리가 요청보다 오래 살아야 한다.
+/// 단일 작업 제약 덕에 동시에 하나뿐이므로 맵이 아니라 슬롯 하나면 된다.
+/// 새 내보내기가 시작되면 이전 것이 교체되며 `TempDir`의 Drop이 지운다.
+///
+/// `parking_lot`이 아니라 `std::sync::Mutex`인 것은 `koharu-rpc`가
+/// `parking_lot`에 의존하지 않기 때문이다. 잠금 구간에 `await`가 없으므로
+/// 표준 뮤텍스로 충분하다.
+#[derive(Default)]
+pub struct ExportStaging(std::sync::Mutex<Option<(JobId, tempfile::TempDir)>>);
+
+impl ExportStaging {
+    fn put(&self, job: JobId, directory: tempfile::TempDir) {
+        *self.0.lock().expect("the export staging lock is never poisoned") = Some((job, directory));
+    }
+
+    /// 이 job의 스테이징을 꺼내 소유권을 넘긴다. 호출자가 놓으면 지워진다.
+    fn take(&self, job: JobId) -> Option<tempfile::TempDir> {
+        let mut slot = self.0.lock().expect("the export staging lock is never poisoned");
+        match slot.take() {
+            Some((held, directory)) if held == job => Some(directory),
+            other => {
+                *slot = other;
+                None
+            }
+        }
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -61,6 +89,7 @@ pub fn router() -> Router<AppState> {
         .route("/pages/export", post(export_pages))
         .route("/pages/export/dialog", post(export_dialog))
         .route("/pages/export/download", post(export_download))
+        .route("/pages/export/download/{job}", get(export_download_archive))
         .route("/pages/{id}/thumbnail", get(get_thumbnail))
         .route("/page/rename", post(rename_page))
         .route("/pages/delete", post(delete_pages))
@@ -222,23 +251,18 @@ struct ExportDialogRequest {
     options: ExportOptions,
 }
 
-/// Export through the desktop window's native folder picker. Loopback only,
-/// for the same reason as `import_dialog`.
+/// 네이티브 폴더 선택은 `koharu-app`에 있다. `rfd`가 그 크레이트의 의존성이고
+/// `koharu-rpc`의 것이 아니므로, 선택창을 여기로 옮기면 의존성이 하나 늘어난다.
+/// 단일 작업 가드도 선택창 바로 옆에 있는 편이 낫다.
 async fn export_dialog(
     State(app): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(request): Json<ExportDialogRequest>,
-) -> ApiResult<()> {
+) -> ApiResult<Json<Option<JobId>>> {
     let window = require_local_window(&app, peer)?;
-    output::export_pages(
-        window,
-        request.pages,
-        request.options,
-        app.state::<CurrentProject>(),
-        app.state::<koharu_desktop::Desktop>(),
-    )
-    .await?;
-    Ok(())
+    Ok(Json(
+        output::export_pages(window, request.pages, request.options).await?,
+    ))
 }
 
 fn require_local_window(
@@ -369,22 +393,14 @@ struct ExportPagesRequest {
 async fn export_pages(
     State(app): State<AppState>,
     Json(request): Json<ExportPagesRequest>,
-) -> ApiResult<()> {
+) -> ApiResult<Json<JobId>> {
     let directory = PathBuf::from(request.directory);
     if !directory.is_dir() {
         return Err(anyhow::anyhow!("the export directory does not exist").into());
     }
-    output::export_pages_to(
-        directory,
-        request.pages,
-        request.options,
-        Arc::new(|_, _, _| {}),
-        StopToken::default(),
-        app.state::<CurrentProject>(),
-        app.state::<koharu_desktop::Desktop>(),
-    )
-    .await?;
-    Ok(())
+    Ok(Json(
+        output::start_export(app.clone(), directory, request.pages, request.options).await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -393,29 +409,36 @@ struct ExportDownloadRequest {
     options: ExportOptions,
 }
 
-/// Render an export into a temporary directory and return it as one ZIP.
+/// 브라우저용 내보내기를 임시 디렉터리에 시작한다.
 ///
-/// The detour mirrors the one in `import_upload`, for the same reason:
-/// `export_pages_to` already renders, names and writes every page, and asking
-/// it to yield bytes instead would mean a second copy of that pipeline. One
-/// archive rather than one response per page because an export is a set - the
-/// browser cannot be made to save twenty files from one gesture, and the
-/// `{:04}_` prefixes that carry reading order only mean something together.
+/// 요청 하나로 렌더링까지 끝내면 응답이 마지막에야 나가 진행률을 보낼 길이
+/// 없다. 그래서 여기서는 Job만 시작하고, 클라이언트가 job이 끝나는 것을 SSE로
+/// 본 뒤 `GET /pages/export/download/{job}`으로 ZIP을 받는다.
 async fn export_download(
     State(app): State<AppState>,
     Json(request): Json<ExportDownloadRequest>,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<Json<JobId>> {
     let staging = tempfile::tempdir().context("failed to create a staging directory")?;
-    output::export_pages_to(
+    let job = output::start_export(
+        app.clone(),
         staging.path().to_owned(),
         request.pages,
         request.options,
-        Arc::new(|_, _, _| {}),
-        StopToken::default(),
-        app.state::<CurrentProject>(),
-        app.state::<koharu_desktop::Desktop>(),
     )
     .await?;
+    app.state::<ExportStaging>().put(job, staging);
+    Ok(Json(job))
+}
+
+/// 끝난 내보내기의 스테이징을 ZIP으로 넘기고 지운다.
+async fn export_download_archive(
+    State(app): State<AppState>,
+    Path(job): Path<JobId>,
+) -> ApiResult<impl IntoResponse> {
+    let staging = app
+        .state::<ExportStaging>()
+        .take(job)
+        .context("there is no finished export waiting for this job")?;
     let root = staging.path().to_owned();
     let archive = tokio::task::spawn_blocking(move || archive_directory(&root))
         .await

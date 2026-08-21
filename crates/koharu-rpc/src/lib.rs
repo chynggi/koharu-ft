@@ -13,6 +13,7 @@ pub mod routes;
 use std::path::PathBuf;
 
 use tauri::{AppHandle, Cef};
+use tauri::Manager as _;
 
 /// Axum state: the live Tauri application handle.
 pub type AppState = AppHandle<Cef>;
@@ -54,6 +55,7 @@ pub fn serve(
         }
     };
     tracing::info!("Koharu API listening on http://{host}:{port}");
+    app.manage(routes::pages::ExportStaging::default());
     tokio::spawn(async move {
         // `with_connect_info` so routes can tell a loopback caller (the desktop
         // window) from a remote browser — see `routes::llm::pick_gguf_file`.

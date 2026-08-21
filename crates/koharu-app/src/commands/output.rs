@@ -75,33 +75,30 @@ impl ExportOptions {
     }
 }
 
+/// 네이티브 폴더 선택창을 띄우고 내보내기 Job을 시작한다.
+///
+/// 선택창을 띄우기 **전에** 다른 작업이 도는지 확인한다. 거절할 것이면
+/// 사용자를 폴더 선택으로 붙잡아두기 전에 거절해야 한다.
 #[tauri::command]
 #[specta::specta]
 pub async fn export_pages(
     window: WebviewWindow<Cef>,
     pages: Vec<EntityId>,
     options: ExportOptions,
-    project: State<'_, CurrentProject>,
-    desktop: State<'_, Desktop>,
-) -> std::result::Result<(), Error> {
+) -> std::result::Result<Option<JobId>, Error> {
+    let handle = window.app_handle().clone();
+    if !handle.state::<Processing>().stops.lock().is_empty() {
+        return Err(anyhow::anyhow!("another process is already running").into());
+    }
     let Some(directory) = rfd::AsyncFileDialog::new()
         .set_parent(&window)
         .pick_folder()
         .await
         .map(|directory| directory.path().to_owned())
     else {
-        return Ok(());
+        return Ok(None);
     };
-    export_pages_to(
-        directory,
-        pages,
-        options,
-        Arc::new(|_, _, _| {}),
-        StopToken::default(),
-        project,
-        desktop,
-    )
-    .await
+    Ok(Some(start_export(handle, directory, pages, options).await?))
 }
 
 /// [`export_pages`]의 코어. 네이티브 대화상자 대신 명시적 출력 폴더를 받는다.
