@@ -11,6 +11,8 @@
     "downloadingFiles": "{{count}}개 파일 다운로드 중",
     "downloadingFiles_one": "{{count}}개 파일 다운로드 중",
     "downloadingFiles_other": "{{count}}개 파일 다운로드 중",
+    "exportFailed": "내보내기에 실패했습니다.",
+    "exporting": "내보내는 중",
     "modelDownload": "모델 다운로드",
     "processing": "처리 중",
     "processingFailed": "처리에 실패했습니다.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu를 계속 실행할 수 없습니다",
     "tryAgain": "다시 시도"
+  },
+  "export": {
+    "cancel": "취소",
+    "description": "페이지를 이미지 파일로 렌더링합니다.",
+    "formats": "형식",
+    "pattern": "파일명 패턴",
+    "patternError": {
+      "separator": "패턴에 경로 구분자나 '..'를 쓸 수 없습니다.",
+      "token": "알 수 없는 토큰입니다. {index} 또는 {label}을 쓰세요.",
+      "unclosed": "패턴의 중괄호가 맞지 않습니다.",
+      "width": "자릿수는 숫자여야 합니다."
+    },
+    "scope": "페이지",
+    "scopeAll": "전체 페이지 ({{count}})",
+    "scopeSelected": "선택한 페이지 ({{count}})",
+    "start": "내보내기",
+    "subfolders": "형식별로 폴더 나누기",
+    "title": "페이지 내보내기"
   },
   "fontPicker": {
     "activeFilterCount": "활성 필터 {{count}}개",
@@ -245,8 +265,7 @@
     "delete": "선택 항목 삭제",
     "discord": "Discord",
     "edit": "편집",
-    "exportPng": "PNG 내보내기…",
-    "exportPsd": "PSD 내보내기…",
+    "export": "내보내기…",
     "file": "파일",
     "fit": "창에 맞춤",
     "github": "GitHub",

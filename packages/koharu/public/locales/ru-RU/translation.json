@@ -11,6 +11,8 @@
     "downloadingFiles": "Скачивание файлов: {{count}}",
     "downloadingFiles_one": "Скачивание файлов: {{count}}",
     "downloadingFiles_other": "Скачивание файлов: {{count}}",
+    "exportFailed": "Не удалось выполнить экспорт.",
+    "exporting": "Экспорт",
     "modelDownload": "Скачивание модели",
     "processing": "Обработка",
     "processingFailed": "Ошибка обработки.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu не может продолжить работу",
     "tryAgain": "Повторить"
+  },
+  "export": {
+    "cancel": "Отмена",
+    "description": "Отрисовывает страницы в файлы изображений.",
+    "formats": "Форматы",
+    "pattern": "Шаблон имени файла",
+    "patternError": {
+      "separator": "Шаблон не может содержать разделитель пути или '..'.",
+      "token": "Неизвестный токен. Используйте {index} или {label}.",
+      "unclosed": "Непарная фигурная скобка в шаблоне.",
+      "width": "Количество цифр должно быть числом."
+    },
+    "scope": "Страницы",
+    "scopeAll": "Все страницы ({{count}})",
+    "scopeSelected": "Выбранные ({{count}})",
+    "start": "Экспортировать",
+    "subfolders": "Отдельные папки для каждого формата",
+    "title": "Экспорт страниц"
   },
   "fontPicker": {
     "activeFilterCount": "Активных фильтров: {{count}}",
@@ -245,8 +265,7 @@
     "delete": "Удалить выбранное",
     "discord": "Discord",
     "edit": "Правка",
-    "exportPng": "Экспорт PNG…",
-    "exportPsd": "Экспорт PSD…",
+    "export": "Экспорт…",
     "file": "Файл",
     "fit": "Вписать в окно",
     "github": "GitHub",

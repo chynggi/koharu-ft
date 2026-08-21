@@ -11,6 +11,8 @@
     "downloadingFiles": "Baixando {{count}} arquivos",
     "downloadingFiles_one": "Baixando {{count}} arquivos",
     "downloadingFiles_other": "Baixando {{count}} arquivos",
+    "exportFailed": "Falha ao exportar.",
+    "exporting": "Exportando",
     "modelDownload": "Download do modelo",
     "processing": "Processando",
     "processingFailed": "Falha no processamento.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "O Koharu não pôde continuar",
     "tryAgain": "Tentar novamente"
+  },
+  "export": {
+    "cancel": "Cancelar",
+    "description": "Renderiza as páginas como arquivos de imagem.",
+    "formats": "Formatos",
+    "pattern": "Padrão de nome",
+    "patternError": {
+      "separator": "O padrão não pode conter separador de caminho nem '..'.",
+      "token": "Token desconhecido. Use {index} ou {label}.",
+      "unclosed": "Chave sem correspondência no padrão.",
+      "width": "A quantidade de dígitos precisa ser um número."
+    },
+    "scope": "Páginas",
+    "scopeAll": "Todas as páginas ({{count}})",
+    "scopeSelected": "Selecionadas ({{count}})",
+    "start": "Exportar",
+    "subfolders": "Pastas separadas por formato",
+    "title": "Exportar páginas"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtros ativos",
@@ -245,8 +265,7 @@
     "delete": "Excluir seleção",
     "discord": "Discord",
     "edit": "Editar",
-    "exportPng": "Exportar PNG…",
-    "exportPsd": "Exportar PSD…",
+    "export": "Exportar…",
     "file": "Arquivo",
     "fit": "Ajustar à janela",
     "github": "GitHub",

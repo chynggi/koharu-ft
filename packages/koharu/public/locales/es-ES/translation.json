@@ -11,6 +11,8 @@
     "downloadingFiles": "Descargando {{count}} archivos",
     "downloadingFiles_one": "Descargando {{count}} archivos",
     "downloadingFiles_other": "Descargando {{count}} archivos",
+    "exportFailed": "Error al exportar.",
+    "exporting": "Exportando",
     "modelDownload": "Descarga del modelo",
     "processing": "Procesando",
     "processingFailed": "Error de procesamiento.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu no pudo continuar",
     "tryAgain": "Intentar de nuevo"
+  },
+  "export": {
+    "cancel": "Cancelar",
+    "description": "Renderiza las páginas como archivos de imagen.",
+    "formats": "Formatos",
+    "pattern": "Patrón de nombre",
+    "patternError": {
+      "separator": "El patrón no puede contener un separador de ruta ni '..'.",
+      "token": "Token desconocido. Usa {index} o {label}.",
+      "unclosed": "Llave sin cerrar en el patrón.",
+      "width": "El número de dígitos tiene que ser un número."
+    },
+    "scope": "Páginas",
+    "scopeAll": "Todas las páginas ({{count}})",
+    "scopeSelected": "Seleccionadas ({{count}})",
+    "start": "Exportar",
+    "subfolders": "Carpetas separadas por formato",
+    "title": "Exportar páginas"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtros activos",
@@ -245,8 +265,7 @@
     "delete": "Eliminar selección",
     "discord": "Discord",
     "edit": "Editar",
-    "exportPng": "Exportar PNG…",
-    "exportPsd": "Exportar PSD…",
+    "export": "Exportar…",
     "file": "Archivo",
     "fit": "Ajustar a la ventana",
     "github": "GitHub",

@@ -11,6 +11,8 @@
     "downloadingFiles": "Downloading {{count}} files",
     "downloadingFiles_one": "Downloading {{count}} file",
     "downloadingFiles_other": "Downloading {{count}} files",
+    "exportFailed": "Export failed.",
+    "exporting": "Exporting",
     "modelDownload": "Model download",
     "processing": "Processing",
     "processingFailed": "Processing failed.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu could not continue",
     "tryAgain": "Try again"
+  },
+  "export": {
+    "cancel": "Cancel",
+    "description": "Render the pages to image files.",
+    "formats": "Formats",
+    "pattern": "Filename pattern",
+    "patternError": {
+      "separator": "The pattern cannot contain a path separator or '..'.",
+      "token": "Unknown token. Use {index} or {label}.",
+      "unclosed": "Unmatched brace in the pattern.",
+      "width": "The digit count has to be a number."
+    },
+    "scope": "Pages",
+    "scopeAll": "All pages ({{count}})",
+    "scopeSelected": "Selected ({{count}})",
+    "start": "Export",
+    "subfolders": "Separate folders per format",
+    "title": "Export pages"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} active filters",
@@ -245,8 +265,7 @@
     "delete": "Delete Selected",
     "discord": "Discord",
     "edit": "Edit",
-    "exportPng": "Export PNG…",
-    "exportPsd": "Export PSD…",
+    "export": "Export…",
     "file": "File",
     "fit": "Fit Window",
     "github": "GitHub",

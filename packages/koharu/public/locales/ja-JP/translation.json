@@ -11,6 +11,8 @@
     "downloadingFiles": "{{count}}件のファイルをダウンロード中",
     "downloadingFiles_one": "{{count}}件のファイルをダウンロード中",
     "downloadingFiles_other": "{{count}}件のファイルをダウンロード中",
+    "exportFailed": "書き出しに失敗しました。",
+    "exporting": "書き出し中",
     "modelDownload": "モデルのダウンロード",
     "processing": "処理中",
     "processingFailed": "処理に失敗しました。",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharuを続行できませんでした",
     "tryAgain": "再試行"
+  },
+  "export": {
+    "cancel": "キャンセル",
+    "description": "ページを画像ファイルとして書き出します。",
+    "formats": "形式",
+    "pattern": "ファイル名パターン",
+    "patternError": {
+      "separator": "パターンにパス区切り文字や '..' は使えません。",
+      "token": "不明なトークンです。{index} または {label} を使ってください。",
+      "unclosed": "パターンの波かっこが対応していません。",
+      "width": "桁数は数値で指定してください。"
+    },
+    "scope": "ページ",
+    "scopeAll": "すべてのページ ({{count}})",
+    "scopeSelected": "選択中 ({{count}})",
+    "start": "書き出す",
+    "subfolders": "形式ごとにフォルダーを分ける",
+    "title": "ページの書き出し"
   },
   "fontPicker": {
     "activeFilterCount": "有効なフィルター: {{count}}件",
@@ -245,8 +265,7 @@
     "delete": "選択項目を削除",
     "discord": "Discord",
     "edit": "編集",
-    "exportPng": "PNGを書き出す…",
-    "exportPsd": "PSDを書き出す…",
+    "export": "書き出し…",
     "file": "ファイル",
     "fit": "ウィンドウに合わせる",
     "github": "GitHub",

@@ -11,6 +11,8 @@
     "downloadingFiles": "{{count}} dosya indiriliyor",
     "downloadingFiles_one": "{{count}} dosya indiriliyor",
     "downloadingFiles_other": "{{count}} dosya indiriliyor",
+    "exportFailed": "Dışa aktarma başarısız oldu.",
+    "exporting": "Dışa aktarılıyor",
     "modelDownload": "Model indirme",
     "processing": "İşleniyor",
     "processingFailed": "İşleme başarısız oldu.",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu devam edemedi",
     "tryAgain": "Tekrar dene"
+  },
+  "export": {
+    "cancel": "İptal",
+    "description": "Sayfaları görüntü dosyaları olarak işler.",
+    "formats": "Biçimler",
+    "pattern": "Dosya adı deseni",
+    "patternError": {
+      "separator": "Desen yol ayırıcısı veya '..' içeremez.",
+      "token": "Bilinmeyen belirteç. {index} veya {label} kullanın.",
+      "unclosed": "Desende eşleşmeyen süslü parantez.",
+      "width": "Basamak sayısı bir sayı olmalı."
+    },
+    "scope": "Sayfalar",
+    "scopeAll": "Tüm sayfalar ({{count}})",
+    "scopeSelected": "Seçili ({{count}})",
+    "start": "Dışa aktar",
+    "subfolders": "Her biçim için ayrı klasör",
+    "title": "Sayfaları dışa aktar"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} etkin filtre",
@@ -245,8 +265,7 @@
     "delete": "Seçilenleri Sil",
     "discord": "Discord",
     "edit": "Düzenle",
-    "exportPng": "PNG Dışa Aktar…",
-    "exportPsd": "PSD Dışa Aktar…",
+    "export": "Dışa Aktar…",
     "file": "Dosya",
     "fit": "Pencereye Sığdır",
     "github": "GitHub",
