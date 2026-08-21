@@ -14,6 +14,7 @@
 use std::io::Write as _;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use axum::Json;
@@ -24,6 +25,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 use tokio::io::AsyncWriteExt as _;
+use koharu_pipeline::StopToken;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, EntityId, PageDraft};
 use serde::Deserialize;
 use tauri::Manager as _;
@@ -32,7 +34,7 @@ use koharu_app::commands::canvas::CanvasChannel;
 use koharu_app::commands::editing;
 use koharu_app::commands::import;
 use koharu_app::commands::lifecycle::{self, PageImportSource, PageSelection};
-use koharu_app::commands::output::{self, ExportFormat};
+use koharu_app::commands::output::{self, ExportOptions};
 use koharu_app::commands::processing::Processing;
 use koharu_app::commands::project::{CurrentProject, Page, PageSummary};
 
@@ -217,7 +219,7 @@ async fn import_dialog(
 #[derive(Deserialize)]
 struct ExportDialogRequest {
     pages: Vec<EntityId>,
-    format: ExportFormat,
+    options: ExportOptions,
 }
 
 /// Export through the desktop window's native folder picker. Loopback only,
@@ -231,7 +233,7 @@ async fn export_dialog(
     output::export_pages(
         window,
         request.pages,
-        request.format,
+        request.options,
         app.state::<CurrentProject>(),
         app.state::<koharu_desktop::Desktop>(),
     )
@@ -360,7 +362,7 @@ async fn delete_pages(
 #[derive(Deserialize)]
 struct ExportPagesRequest {
     pages: Vec<EntityId>,
-    format: ExportFormat,
+    options: ExportOptions,
     directory: String,
 }
 
@@ -375,7 +377,9 @@ async fn export_pages(
     output::export_pages_to(
         directory,
         request.pages,
-        request.format,
+        request.options,
+        Arc::new(|_, _, _| {}),
+        StopToken::default(),
         app.state::<CurrentProject>(),
         app.state::<koharu_desktop::Desktop>(),
     )
@@ -386,7 +390,7 @@ async fn export_pages(
 #[derive(Deserialize)]
 struct ExportDownloadRequest {
     pages: Vec<EntityId>,
-    format: ExportFormat,
+    options: ExportOptions,
 }
 
 /// Render an export into a temporary directory and return it as one ZIP.
@@ -405,7 +409,9 @@ async fn export_download(
     output::export_pages_to(
         staging.path().to_owned(),
         request.pages,
-        request.format,
+        request.options,
+        Arc::new(|_, _, _| {}),
+        StopToken::default(),
         app.state::<CurrentProject>(),
         app.state::<koharu_desktop::Desktop>(),
     )

@@ -4,6 +4,7 @@ use image::{
     ExtendedColorType, ImageEncoder as _,
     codecs::png::{CompressionType, FilterType, PngEncoder},
 };
+use koharu_pipeline::StopToken;
 use koharu_psd::{PsdExportOptions, export_page};
 use koharu_rasterizer::{Raster, RasterOptions, Rasterizer};
 use koharu_renderer::{Frame, Renderer};
@@ -35,12 +36,50 @@ pub enum ExportFormat {
     Psd,
 }
 
+impl ExportFormat {
+    #[must_use]
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Psd => "psd",
+        }
+    }
+
+    /// 형식별 하위 폴더 이름. 확장자와 같지만 뜻이 달라 따로 둔다.
+    #[must_use]
+    pub fn subfolder(self) -> &'static str {
+        self.extension()
+    }
+}
+
+/// 한 번의 내보내기 실행이 받는 선택지.
+#[derive(Clone, Debug, Deserialize, Type)]
+pub struct ExportOptions {
+    /// 최소 하나. 둘을 함께 주면 페이지마다 두 파일이 나온다.
+    pub formats: Vec<ExportFormat>,
+    /// `crate::commands::naming::Template`이 파싱하는 패턴.
+    pub pattern: String,
+    /// 형식이 둘일 때 `png/`, `psd/`로 나눌지.
+    pub subfolders: bool,
+}
+
+impl ExportOptions {
+    /// 대상 폴더 아래에서 이 형식이 쓰일 경로.
+    fn directory(&self, root: &std::path::Path, format: ExportFormat) -> std::path::PathBuf {
+        if self.subfolders {
+            root.join(format.subfolder())
+        } else {
+            root.to_owned()
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn export_pages(
     window: WebviewWindow<Cef>,
     pages: Vec<EntityId>,
-    format: ExportFormat,
+    options: ExportOptions,
     project: State<'_, CurrentProject>,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<(), Error> {
@@ -52,19 +91,36 @@ pub async fn export_pages(
     else {
         return Ok(());
     };
-    export_pages_to(directory, pages, format, project, desktop).await
+    export_pages_to(
+        directory,
+        pages,
+        options,
+        Arc::new(|_, _, _| {}),
+        StopToken::default(),
+        project,
+        desktop,
+    )
+    .await
 }
 
-/// Core of [`export_pages`], taking an explicit output directory instead of
-/// showing a native file dialog. Used directly by the HTTP API, which has no
-/// dialog to show.
+/// [`export_pages`]의 코어. 네이티브 대화상자 대신 명시적 출력 폴더를 받는다.
+///
+/// `pages`가 비어 있으면 프로젝트의 모든 페이지가 대상이다. 진행률의 분모는
+/// `pages × formats`지만 파일 이름의 번호는 형식과 무관한 페이지 순번이다 —
+/// 두 값은 서로 다른 것을 센다.
 pub async fn export_pages_to(
     directory: std::path::PathBuf,
     pages: Vec<EntityId>,
-    format: ExportFormat,
+    options: ExportOptions,
+    progress: Arc<dyn Fn(usize, usize, EntityId) + Send + Sync>,
+    stop: StopToken,
     project: State<'_, CurrentProject>,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<(), Error> {
+    if options.formats.is_empty() {
+        return Err(anyhow::anyhow!("no export format was selected").into());
+    }
+    let template = crate::commands::naming::Template::parse(&options.pattern)?;
     let snapshot = {
         let project = project.project.lock().await;
         let project = project.as_ref().context("no project is open")?;
@@ -79,46 +135,56 @@ pub async fn export_pages_to(
         return Err(anyhow::anyhow!("there are no pages to export").into());
     }
     let page_count = pages.len();
-    let renderer = desktop.renderer();
-    let rasterizer = desktop.rasterizer().await?;
+
+    // 이름은 형식과 무관하게 페이지마다 한 번 정해진다. 충돌 해소도 여기서
+    // 끝나야 PNG와 PSD가 같은 줄기를 공유한다.
+    let mut names = crate::commands::naming::Names::default();
     let jobs = pages
         .into_iter()
         .enumerate()
         .map(|(index, page_id)| {
             let page = snapshot.page(page_id)?.page()?;
-            let name = page
-                .label
-                .trim()
-                .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
-            let name = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
-            let name = name
-                .chars()
-                .map(|character| {
-                    if matches!(
-                        character,
-                        '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
-                    ) {
-                        '_'
-                    } else {
-                        character
-                    }
-                })
-                .collect::<String>();
-            let stem = format!(
-                "{:04}_{}",
-                index + 1,
-                if name.is_empty() { "page" } else { &name }
-            );
-            Ok::<_, anyhow::Error>((page_id, stem))
+            let stem = template.render(index + 1, &page.label)?;
+            Ok::<_, anyhow::Error>((page_id, names.unique(stem)))
         })
         .collect::<Result<Vec<_>>>()?;
-    stream::iter(jobs)
-        .map(|(page_id, stem)| {
+
+    for format in &options.formats {
+        let target = options.directory(&directory, *format);
+        tokio::fs::create_dir_all(&target)
+            .await
+            .with_context(|| format!("failed to create {}", target.display()))?;
+    }
+
+    let total = page_count.saturating_mul(options.formats.len());
+    let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let renderer = desktop.renderer();
+    let rasterizer = desktop.rasterizer().await?;
+    let units: Vec<_> = jobs
+        .into_iter()
+        .flat_map(|(page_id, stem)| {
+            options
+                .formats
+                .iter()
+                .map(move |format| (page_id, stem.clone(), *format))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    stream::iter(units)
+        .map(|(page_id, stem, format)| {
             let renderer = renderer.clone();
             let rasterizer = Arc::clone(&rasterizer);
             let snapshot = snapshot.clone();
-            let directory = directory.clone();
+            let target = options.directory(&directory, format);
+            let stop = stop.clone();
+            let progress = Arc::clone(&progress);
+            let completed = Arc::clone(&completed);
             async move {
+                // 취소는 협조적이다. 이미 시작된 최대 4건은 마저 끝난다.
+                if stop.stopped() {
+                    return Ok::<_, anyhow::Error>(());
+                }
                 let frame = renderer.render(&snapshot, page_id).await?;
                 match format {
                     ExportFormat::Png => {
@@ -126,9 +192,9 @@ pub async fn export_pages_to(
                             rasterize(Arc::clone(&rasterizer), &frame, RasterOptions::default())
                                 .await?
                                 .image;
+                        let path = target.join(format!("{stem}.png"));
                         tokio::task::spawn_blocking(move || -> Result<()> {
-                            let file =
-                                std::fs::File::create(directory.join(format!("{stem}.png")))?;
+                            let file = std::fs::File::create(path)?;
                             PngEncoder::new_with_quality(
                                 file,
                                 CompressionType::Best,
@@ -153,19 +219,22 @@ pub async fn export_pages_to(
                             &PsdExportOptions::default(),
                         )
                         .await?;
-                        tokio::fs::write(directory.join(format!("{stem}.psd")), bytes).await?;
+                        tokio::fs::write(target.join(format!("{stem}.psd")), bytes).await?;
                     }
                 }
-                Ok::<_, anyhow::Error>(())
+                let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                progress(done, total, page_id);
+                Ok(())
             }
         })
         .buffer_unordered(4)
         .try_collect::<Vec<_>>()
         .await?;
+
     tracing::info!(
         target: "koharu_metrics",
         metric = "export",
-        export_format = ?format,
+        export_formats = ?options.formats,
         page_count,
     );
     Ok(())
