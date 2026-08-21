@@ -80,17 +80,7 @@ function upload<T>(path: string, form: FormData): Promise<T> {
 	return request<T>(path, { method: "POST", body: form });
 }
 
-async function download(path: string, body: unknown): Promise<Blob> {
-	const response = await fetch(`${API_BASE_URL}${path}`, {
-		method: "POST",
-		headers: authHeaders({ "content-type": "application/json" }),
-		body: JSON.stringify(body),
-	});
-	if (!response.ok) throw new Error(await errorMessage(response));
-	return response.blob();
-}
-
-/** `download`의 GET판. 본문 없는 이진 응답을 Blob으로 가져온다. */
+/** 이진 응답을 Blob으로 가져온다. `bytes`와 달리 파일로 저장할 것에 쓴다. */
 async function downloadGet(path: string): Promise<Blob> {
 	const response = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders() });
 	if (!response.ok) throw new Error(await errorMessage(response));
