@@ -951,30 +951,18 @@ struct ExportDialogRequest {
     options: ExportOptions,
 }
 
-/// 네이티브 폴더 선택창을 띄우고, 고른 폴더로 내보내기 Job을 시작한다.
-///
-/// 선택창을 띄우기 **전에** 다른 작업이 도는지 확인한다. 거절할 것이면
-/// 사용자를 폴더 선택으로 붙잡아두기 전에 거절해야 한다.
+/// 네이티브 폴더 선택은 `koharu-app`에 있다. `rfd`가 그 크레이트의 의존성이고
+/// `koharu-rpc`의 것이 아니므로, 선택창을 여기로 옮기면 의존성이 하나 늘어난다.
+/// 단일 작업 가드도 선택창 바로 옆에 있는 편이 낫다.
 async fn export_dialog(
     State(app): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(request): Json<ExportDialogRequest>,
 ) -> ApiResult<Json<Option<JobId>>> {
     let window = require_local_window(&app, peer)?;
-    if !app.state::<Processing>().stops.lock().is_empty() {
-        return Err(anyhow::anyhow!("another process is already running").into());
-    }
-    let Some(directory) = rfd::AsyncFileDialog::new()
-        .set_parent(&window)
-        .pick_folder()
-        .await
-        .map(|directory| directory.path().to_owned())
-    else {
-        return Ok(Json(None));
-    };
-    Ok(Json(Some(
-        output::start_export(app.clone(), directory, request.pages, request.options).await?,
-    )))
+    Ok(Json(
+        output::export_pages(window, request.pages, request.options).await?,
+    ))
 }
 
 #[derive(Deserialize)]
