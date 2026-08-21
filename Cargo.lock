@@ -4532,7 +4532,6 @@ checksum = "72585bb6cc9bc370d1d545b7e23fcce71dfd4461c5e15275e3cf51bdfd9a980a"
 dependencies = [
  "apple-native-keyring-store",
  "keyring-core",
- "linux-keyutils-keyring-store",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
 ]
@@ -4983,9 +4982,9 @@ dependencies = [
  "anyhow",
  "keyring",
  "keyring-core",
- "linux-keyutils-keyring-store",
  "secrecy",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5215,26 +5214,6 @@ name = "linebender_resource_handle"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
-
-[[package]]
-name = "linux-keyutils"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83270a18e9f90d0707c41e9f35efada77b64c0e6f3f1810e71c8368a864d5590"
-dependencies = [
- "bitflags 2.13.1",
- "libc",
-]
-
-[[package]]
-name = "linux-keyutils-keyring-store"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39fbed79f71dc21eb21d3d07c0e908a3c58ff9a1fdbf5cf44230fb3deb6d994b"
-dependencies = [
- "keyring-core",
- "linux-keyutils",
-]
 
 [[package]]
 name = "linux-raw-sys"

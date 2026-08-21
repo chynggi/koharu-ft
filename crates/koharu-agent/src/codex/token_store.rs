@@ -48,7 +48,10 @@ impl TokenStore {
         if let Some(id) = tokens.id.as_deref() {
             self.set_field(&generation, "id", id)?;
         }
-        koharu_secrets::set(ACTIVE_KEY, &SecretString::from(generation.clone()))?;
+        koharu_secrets::set(
+            koharu_secrets::SecretKey::stored(ACTIVE_KEY),
+            &SecretString::from(generation.clone()),
+        )?;
 
         if let Some(previous) = previous {
             let previous = previous.expose_secret();
@@ -61,7 +64,7 @@ impl TokenStore {
 
     pub(super) fn delete(self) -> Result<()> {
         let active = get(ACTIVE_KEY)?;
-        koharu_secrets::delete(ACTIVE_KEY)?;
+        koharu_secrets::delete(koharu_secrets::SecretKey::stored(ACTIVE_KEY))?;
         if let Some(active) = active {
             self.delete_generation(active.expose_secret())?;
         }
@@ -90,13 +93,15 @@ impl TokenStore {
     fn set_field(self, generation: &str, field: &str, value: &str) -> Result<()> {
         let chunks = split(value);
         for (index, chunk) in chunks.iter().enumerate() {
+            let key = chunk_key(generation, field, index);
             koharu_secrets::set(
-                &chunk_key(generation, field, index),
+                koharu_secrets::SecretKey::stored(&key),
                 &SecretString::from((*chunk).to_owned()),
             )?;
         }
+        let key = count_key(generation, field);
         koharu_secrets::set(
-            &count_key(generation, field),
+            koharu_secrets::SecretKey::stored(&key),
             &SecretString::from(chunks.len().to_string()),
         )?;
         Ok(())
@@ -108,9 +113,10 @@ impl TokenStore {
             let count = get(&count_key)?
                 .and_then(|value| value.expose_secret().parse::<usize>().ok())
                 .unwrap_or_default();
-            koharu_secrets::delete(&count_key)?;
+            koharu_secrets::delete(koharu_secrets::SecretKey::stored(&count_key))?;
             for index in 0..count {
-                koharu_secrets::delete(&chunk_key(generation, field, index))?;
+                let key = chunk_key(generation, field, index);
+                koharu_secrets::delete(koharu_secrets::SecretKey::stored(&key))?;
             }
         }
         Ok(())
@@ -118,7 +124,8 @@ impl TokenStore {
 }
 
 fn get(key: &str) -> Result<Option<SecretString>> {
-    koharu_secrets::get(key).with_context(|| format!("failed to read secret {key}"))
+    koharu_secrets::get(koharu_secrets::SecretKey::stored(key))
+        .with_context(|| format!("failed to read secret {key}"))
 }
 
 fn count_key(generation: &str, field: &str) -> String {

@@ -13,16 +13,16 @@ publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-keyring = { workspace = true }
-keyring-core = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-linux-keyutils-keyring-store = { workspace = true }
-
 [target.'cfg(windows)'.dependencies]
 keyring = { workspace = true, features = ["windows-native-keyring-store"] }
+keyring-core = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { workspace = true, features = ["apple-native-keyring-store"] }
+keyring-core = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

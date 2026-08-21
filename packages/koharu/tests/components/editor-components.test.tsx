@@ -46,7 +46,13 @@ const nativeWindow = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => nativeWindow }))
 
-const emptyCredential = () => ({ configured: false, value: null, clear: false })
+const emptyCredential = () => ({
+  configured: false,
+  editable: true,
+  environment_variable: null,
+  value: null,
+  clear: false,
+})
 
 const textLayer: Layer = {
   type: 'text',
@@ -341,7 +347,9 @@ describe('greenfield editor', () => {
 
   it('loads page thumbnails into the filmstrip', async () => {
     installProject()
-    const thumbnail = vi.spyOn(commands, 'getThumbnail').mockResolvedValue(new Uint8Array([1]).buffer)
+    const thumbnail = vi
+      .spyOn(commands, 'getThumbnail')
+      .mockResolvedValue(new Uint8Array([1]).buffer)
     render(<PageRail />)
     await waitFor(() => expect(thumbnail).toHaveBeenCalledWith('page'))
     expect(await screen.findByRole('img', { name: 'Page 1' })).toHaveAttribute(
@@ -1244,7 +1252,7 @@ describe('greenfield editor', () => {
         {
           name: 'DeepL',
           config: { provider: 'deepl' as const, settings: { base_url: null } },
-          credential: { configured: true, value: null, clear: false },
+          credential: { ...emptyCredential(), configured: true },
         },
       ],
     }
@@ -1273,10 +1281,36 @@ describe('greenfield editor', () => {
     expect(onChange).toHaveBeenCalledWith({
       entries: [
         expect.objectContaining({
-          credential: { configured: false, value: null, clear: true },
+          credential: { ...emptyCredential(), clear: true },
         }),
       ],
     })
+  })
+
+  it('shows Linux environment credentials as read-only', () => {
+    const providers = {
+      entries: [
+        {
+          name: 'OpenAI',
+          config: { provider: 'openai' as const, settings: {} },
+          credential: {
+            configured: true,
+            editable: false,
+            environment_variable: 'OPENAI_API_KEY',
+            value: null,
+            clear: false,
+          },
+        },
+      ],
+    }
+    render(<ProviderPreferences value={providers} onChange={vi.fn()} />)
+
+    expect(screen.getByText('OPENAI_API_KEY')).toBeInTheDocument()
+    expect(screen.getByLabelText('OpenAI credential')).toBeDisabled()
+    expect(screen.getByLabelText('OpenAI credential')).toHaveAttribute('placeholder', 'Configured')
+    expect(
+      screen.queryByRole('button', { name: 'Clear OpenAI credential' }),
+    ).not.toBeInTheDocument()
   })
 
   it('preserves a credential draft and focus when autosave finishes', async () => {
@@ -1292,7 +1326,7 @@ describe('greenfield editor', () => {
           entries: providers.entries.map((entry) => ({
             ...entry,
             credential: entry.credential?.value
-              ? { configured: true, value: null, clear: false }
+              ? { ...entry.credential, configured: true, value: null, clear: false }
               : entry.credential,
           })),
         },

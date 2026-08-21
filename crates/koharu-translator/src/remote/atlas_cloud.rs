@@ -22,8 +22,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key =
-        koharu_secrets::get("atlas-cloud")?.context("atlas-cloud API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::AtlasCloud.secret_key().unwrap())?
+        .context("atlas-cloud API key is not configured")?;
     let backend = ChatBackend {
         reasoning: generation.reasoning,
         ..ChatBackend::new(
@@ -39,7 +39,7 @@ pub(super) async fn translate(
 }
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("atlas-cloud")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::AtlasCloud.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let discovered = super::openai_compatible::discover_models(

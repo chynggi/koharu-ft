@@ -22,7 +22,7 @@ const ROOT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 pub struct GeminiConfig {}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("gemini")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::Gemini.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let mut url = Url::parse(ROOT).expect("Gemini API root is valid");
@@ -80,7 +80,8 @@ pub(super) async fn translate(
     generation: &TranslationGeneration,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("gemini")?.context("gemini API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::Gemini.secret_key().unwrap())?
+        .context("gemini API key is not configured")?;
     let (system, user) = prompt::prompts(request)?;
     let schema = prompt::output_schema(request.segments.len());
     let mut url =

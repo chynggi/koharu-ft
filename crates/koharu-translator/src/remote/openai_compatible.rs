@@ -38,7 +38,7 @@ pub(super) async fn compatible(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("openai-compatible")?;
+    let api_key = koharu_secrets::get(Provider::OpenAiCompatible.secret_key().unwrap())?;
     let endpoint = endpoint(config.base_url.as_ref(), "chat/completions");
     let backend = ChatBackend {
         reasoning_effort: generation
@@ -164,7 +164,7 @@ impl<'a> ChatBackend<'a> {
 }
 
 pub(super) async fn models(client: &Client, config: &OpenAiCompatibleConfig) -> Result<Vec<Model>> {
-    let api_key = koharu_secrets::get("openai-compatible")?;
+    let api_key = koharu_secrets::get(Provider::OpenAiCompatible.secret_key().unwrap())?;
     let request = client.get(endpoint(config.base_url.as_ref(), "models"));
     let request = match api_key {
         Some(api_key) => request.bearer_auth(api_key.expose_secret()),

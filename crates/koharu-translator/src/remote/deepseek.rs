@@ -17,7 +17,7 @@ const MODELS_URL: &str = "https://api.deepseek.com/models";
 pub struct DeepSeekConfig {}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("deepseek")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::DeepSeek.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let response: ModelsResponse = send_json(
@@ -46,7 +46,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("deepseek")?.context("deepseek API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::DeepSeek.secret_key().unwrap())?
+        .context("deepseek API key is not configured")?;
     let backend = ChatBackend {
         temperature: generation.temperature.or(Some(1.3)),
         thinking: generation

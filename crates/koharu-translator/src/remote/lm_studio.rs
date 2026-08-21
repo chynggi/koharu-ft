@@ -36,7 +36,7 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("lm-studio")?;
+    let api_key = koharu_secrets::get(Provider::LmStudio.secret_key().unwrap())?;
     let (system, input) = prompt::prompts(request)?;
     let body = ChatRequest {
         model,
@@ -69,7 +69,7 @@ pub(super) async fn translate(
 }
 
 pub(super) async fn models(client: &Client, config: &LmStudioConfig) -> Result<Vec<Model>> {
-    let api_key = koharu_secrets::get("lm-studio")?;
+    let api_key = koharu_secrets::get(Provider::LmStudio.secret_key().unwrap())?;
     let request = client.get(endpoint(config.base_url.as_ref(), "models"));
     let request = match api_key {
         Some(api_key) => request.bearer_auth(api_key.expose_secret()),

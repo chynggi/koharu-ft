@@ -101,6 +101,26 @@ function CredentialField({
     else if (!value.configured || value.clear) setDraftValue('')
   }, [value.clear, value.configured, value.value])
   const configured = !value.clear && (value.configured || Boolean(draftValue))
+  if (!value.editable) {
+    return (
+      <div className='grid gap-1'>
+        <label htmlFor={inputId} className='text-[10px] text-muted-foreground'>
+          {value.environment_variable}
+        </label>
+        <Input
+          id={inputId}
+          aria-label={t('settings.providers.credentialLabel', { provider: label })}
+          type='text'
+          disabled
+          value=''
+          placeholder={
+            configured ? t('settings.providers.configured') : t('settings.providers.notConfigured')
+          }
+          className='h-8 min-w-0 flex-1 text-[12px]'
+        />
+      </div>
+    )
+  }
   return (
     <div className='grid gap-1'>
       <label htmlFor={inputId} className='text-[10px] text-muted-foreground'>
@@ -133,7 +153,7 @@ function CredentialField({
             aria-label={t('settings.providers.clearCredential', { provider: label })}
             onClick={() => {
               setDraftValue('')
-              onChange({ configured: false, value: null, clear: true })
+              onChange({ ...value, configured: false, value: null, clear: true })
             }}
           >
             <Eraser />

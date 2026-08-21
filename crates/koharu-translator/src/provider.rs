@@ -201,8 +201,77 @@ define_providers! {
     }
 }
 
+impl Provider {
+    #[must_use]
+    pub const fn secret_key(self) -> Option<koharu_secrets::SecretKey<'static>> {
+        let (name, variable) = match self {
+            Self::Local => return None,
+            Self::AtlasCloud => ("atlas-cloud", "ATLASCLOUD_API_KEY"),
+            Self::OpenAi => ("openai", "OPENAI_API_KEY"),
+            Self::Gemini => ("gemini", "GEMINI_API_KEY"),
+            Self::Claude => ("claude", "ANTHROPIC_API_KEY"),
+            Self::Grok => ("grok", "XAI_API_KEY"),
+            Self::MiniMax => ("minimax", "MINIMAX_API_KEY"),
+            Self::DeepSeek => ("deepseek", "DEEPSEEK_API_KEY"),
+            Self::OpenAiCompatible => ("openai-compatible", "OPENAI_COMPATIBLE_API_KEY"),
+            Self::OpenRouter => ("openrouter", "OPENROUTER_API_KEY"),
+            Self::LmStudio => ("lm-studio", "LM_STUDIO_API_TOKEN"),
+            Self::DeepL => ("deepl", "DEEPL_API_KEY"),
+            Self::GoogleCloudTranslation => ("google-cloud-translation", "GOOGLE_CLOUD_API_KEY"),
+            Self::Caiyun => ("caiyun", "CAIYUN_API_KEY"),
+        };
+        Some(koharu_secrets::SecretKey::environment(name, variable))
+    }
+
+    #[must_use]
+    pub const fn credential_required(self) -> bool {
+        !matches!(self, Self::Local | Self::OpenAiCompatible | Self::LmStudio)
+    }
+}
+
 impl ProvidersConfig {
     pub fn load() -> anyhow::Result<koharu_config::Config<Self>> {
         koharu_config::load("providers")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_credentials_use_canonical_environment_variables() {
+        let expected = [
+            (Provider::AtlasCloud, "ATLASCLOUD_API_KEY", true),
+            (Provider::OpenAi, "OPENAI_API_KEY", true),
+            (Provider::Gemini, "GEMINI_API_KEY", true),
+            (Provider::Claude, "ANTHROPIC_API_KEY", true),
+            (Provider::Grok, "XAI_API_KEY", true),
+            (Provider::MiniMax, "MINIMAX_API_KEY", true),
+            (Provider::DeepSeek, "DEEPSEEK_API_KEY", true),
+            (
+                Provider::OpenAiCompatible,
+                "OPENAI_COMPATIBLE_API_KEY",
+                false,
+            ),
+            (Provider::OpenRouter, "OPENROUTER_API_KEY", true),
+            (Provider::LmStudio, "LM_STUDIO_API_TOKEN", false),
+            (Provider::DeepL, "DEEPL_API_KEY", true),
+            (
+                Provider::GoogleCloudTranslation,
+                "GOOGLE_CLOUD_API_KEY",
+                true,
+            ),
+            (Provider::Caiyun, "CAIYUN_API_KEY", true),
+        ];
+        assert!(Provider::Local.secret_key().is_none());
+        assert!(!Provider::Local.credential_required());
+        for (provider, variable, required) in expected {
+            assert_eq!(
+                provider.secret_key().unwrap().environment_variable(),
+                Some(variable)
+            );
+            assert_eq!(provider.credential_required(), required);
+        }
     }
 }

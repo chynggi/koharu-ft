@@ -22,7 +22,7 @@ description: 各設定ページと保存動作のリファレンスです。
 
 Local、Atlas Cloud、OpenAI、Gemini、Claude、DeepSeek、OpenAI-compatible、OpenRouter、LM Studio、DeepL、Google Cloud Translation、Caiyun を設定します。
 
-認証情報は OS の資格情報サービスへ、URL と非秘密設定は共通設定ファイルへ保存されます。変更後はモデルカタログを更新します。
+Windows と macOS では認証情報を OS の資格情報サービスへ保存します。Linux では実行時環境変数から読み取り、設定画面には読み取り専用で表示します。値の変更は再起動または再デプロイで反映します。URL と非秘密設定は共通設定ファイルへ保存され、変更後はモデルカタログを更新します。
 
 ## 翻訳
 

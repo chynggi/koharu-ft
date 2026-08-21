@@ -17,11 +17,13 @@ pub struct DeepLConfig {
 }
 
 pub(super) async fn models() -> Result<Vec<Model>> {
-    Ok(if koharu_secrets::get("deepl")?.is_some() {
-        vec![Model::service(Provider::DeepL, "DeepL")]
-    } else {
-        Vec::new()
-    })
+    Ok(
+        if koharu_secrets::get(Provider::DeepL.secret_key().unwrap())?.is_some() {
+            vec![Model::service(Provider::DeepL, "DeepL")]
+        } else {
+            Vec::new()
+        },
+    )
 }
 
 pub(super) async fn translate(
@@ -29,7 +31,8 @@ pub(super) async fn translate(
     config: &DeepLConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("deepl")?.context("deepl API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::DeepL.secret_key().unwrap())?
+        .context("deepl API key is not configured")?;
     let target = target(request.target_language).ok_or(Error::UnsupportedLanguage {
         provider: "deepl",
         language: request.target_language,

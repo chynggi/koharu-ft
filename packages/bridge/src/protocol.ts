@@ -403,6 +403,8 @@ export type ContextMode =
 
 export type CredentialInput = {
 	configured: boolean,
+	editable: boolean,
+	environment_variable: string | null,
 	value: string | null,
 	clear: boolean,
 };

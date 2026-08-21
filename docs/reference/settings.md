@@ -27,7 +27,7 @@ Processor profiles are retained independently when you switch models.
 
 Configure Local, Atlas Cloud, OpenAI, Gemini, Claude, DeepSeek, OpenAI-compatible, OpenRouter, LM Studio, DeepL, Google Cloud Translation, and Caiyun connections.
 
-Credentials are stored in the operating system credential service. Provider URLs and non-secret options are stored in the shared configuration file. Changing a provider causes the model picker to refresh its catalog.
+Windows and macOS store credentials in the operating system credential service. Linux reads provider credentials from runtime environment variables and displays them as read-only; rotate a value by restarting or redeploying Koharu. Provider URLs and non-secret options are stored in the shared configuration file. Changing a provider causes the model picker to refresh its catalog.
 
 ## Translation
 

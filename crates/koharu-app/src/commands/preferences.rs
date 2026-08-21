@@ -3,7 +3,6 @@
 use anyhow::Result;
 use koharu_pipeline::PipelineConfig;
 use koharu_renderer::TypesettingConfig;
-use koharu_secrets::ExposeSecret as _;
 use koharu_translator::{Language, Model, Provider, ProviderConfig, ProvidersConfig};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -60,12 +59,10 @@ impl ProviderPreferences {
             .into_iter()
             .map(|config| {
                 let provider = config.provider();
-                let credential = if provider == Provider::Local {
-                    None
-                } else {
-                    let key: &'static str = provider.into();
-                    Some(CredentialInput::load(key)?)
-                };
+                let credential = provider
+                    .secret_key()
+                    .map(CredentialInput::load)
+                    .transpose()?;
                 Ok(ProviderPreference {
                     name: provider.name().to_owned(),
                     config,
@@ -84,8 +81,7 @@ impl ProviderPreferences {
             match entry.credential {
                 None if provider == Provider::Local => {}
                 Some(credential) if provider != Provider::Local => {
-                    let key: &'static str = provider.into();
-                    credentials.push((key, credential));
+                    credentials.push((provider.secret_key().unwrap(), credential));
                 }
                 None => anyhow::bail!("missing credential input for {provider}"),
                 Some(_) => anyhow::bail!("local translation does not accept credentials"),
@@ -106,6 +102,8 @@ impl ProviderPreferences {
 #[derive(Clone, Default, Deserialize, Serialize, Type)]
 pub struct CredentialInput {
     pub configured: bool,
+    pub editable: bool,
+    pub environment_variable: Option<String>,
     pub value: Option<String>,
     pub clear: bool,
 }
@@ -115,6 +113,8 @@ impl fmt::Debug for CredentialInput {
         formatter
             .debug_struct("CredentialInput")
             .field("configured", &self.configured)
+            .field("editable", &self.editable)
+            .field("environment_variable", &self.environment_variable)
             .field("value", &self.value.as_ref().map(|_| "[REDACTED]"))
             .field("clear", &self.clear)
             .finish()
@@ -122,16 +122,28 @@ impl fmt::Debug for CredentialInput {
 }
 
 impl CredentialInput {
-    fn load(key: &str) -> Result<Self> {
+    fn load(key: koharu_secrets::SecretKey<'_>) -> Result<Self> {
         Ok(Self {
-            configured: koharu_secrets::get(key)?
-                .is_some_and(|secret| !secret.expose_secret().trim().is_empty()),
+            configured: koharu_secrets::get(key)?.is_some(),
+            editable: !koharu_secrets::is_read_only(),
+            environment_variable: koharu_secrets::is_read_only()
+                .then(|| key.environment_variable().map(str::to_owned))
+                .flatten(),
             value: None,
             clear: false,
         })
     }
 
-    fn save(self, key: &str) -> Result<()> {
+    fn save(self, key: koharu_secrets::SecretKey<'_>) -> Result<()> {
+        if koharu_secrets::is_read_only() {
+            if self.clear || self.value.is_some() {
+                anyhow::bail!(
+                    "{} is managed by the environment and cannot be changed from Koharu",
+                    key.environment_variable().unwrap_or("this credential")
+                );
+            }
+            return Ok(());
+        }
         if self.clear {
             koharu_secrets::delete(key)?;
         } else if let Some(value) = self.value {

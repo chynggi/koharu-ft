@@ -16,11 +16,13 @@ const URL: &str = "https://api.interpreter.caiyunai.com/v1/translator";
 pub struct CaiyunConfig {}
 
 pub(super) async fn models() -> Result<Vec<Model>> {
-    Ok(if koharu_secrets::get("caiyun")?.is_some() {
-        vec![Model::service(Provider::Caiyun, "Caiyun")]
-    } else {
-        Vec::new()
-    })
+    Ok(
+        if koharu_secrets::get(Provider::Caiyun.secret_key().unwrap())?.is_some() {
+            vec![Model::service(Provider::Caiyun, "Caiyun")]
+        } else {
+            Vec::new()
+        },
+    )
 }
 
 pub(super) async fn translate(
@@ -28,7 +30,8 @@ pub(super) async fn translate(
     _config: &CaiyunConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("caiyun")?.context("caiyun API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::Caiyun.secret_key().unwrap())?
+        .context("caiyun API key is not configured")?;
     let target = target(request.target_language).ok_or(Error::UnsupportedLanguage {
         provider: "caiyun",
         language: request.target_language,

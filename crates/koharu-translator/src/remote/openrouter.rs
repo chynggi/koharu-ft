@@ -24,8 +24,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key =
-        koharu_secrets::get("openrouter")?.context("openrouter API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::OpenRouter.secret_key().unwrap())?
+        .context("openrouter API key is not configured")?;
     let backend = ChatBackend {
         reasoning: generation.reasoning,
         ..ChatBackend::new(
@@ -41,7 +41,7 @@ pub(super) async fn translate(
 }
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("openrouter")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::OpenRouter.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let discovered: Result<ModelsResponse> = super::send_json(

@@ -26,7 +26,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("grok")?.context("grok API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::Grok.secret_key().unwrap())?
+        .context("grok API key is not configured")?;
     let response: Response = send_json(
         "grok",
         client
@@ -49,7 +50,7 @@ pub(super) async fn translate(
 }
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("grok")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::Grok.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let response: ModelsResponse = send_json(

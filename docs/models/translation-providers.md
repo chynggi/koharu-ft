@@ -25,7 +25,7 @@ Open **Settings -> Providers**, choose a provider, and enter the fields it expos
 
 After choosing a model, use **Settings -> Translation -> Vision input** to include the source page image. For an OpenAI-compatible endpoint, enable it only when the endpoint and chosen model actually support image messages.
 
-Credentials are stored through the operating system's secure credential service. Endpoint and provider settings are written to `~/.koharu/config.toml`; secret values are not written there.
+On Windows and macOS, credentials are stored through the operating system's secure credential service. On Linux, credentials are read-only runtime environment variables: `ATLASCLOUD_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `MINIMAX_API_KEY`, `DEEPSEEK_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `OPENROUTER_API_KEY`, `LM_STUDIO_API_TOKEN`, `DEEPL_API_KEY`, `GOOGLE_CLOUD_API_KEY`, and `CAIYUN_API_KEY`. Settings shows the active variable but cannot change it; restart or redeploy Koharu after rotating a value. Endpoint and provider settings are written to `~/.koharu/config.toml`; secret values are never written there.
 
 ## Choose a model
 

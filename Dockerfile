@@ -222,17 +222,22 @@ ENTRYPOINT ["/home/koharu/entrypoint.sh"]
 #    `/` hands the page its own token, so it is authenticated exactly as the
 #    API is; without the parameter it answers 401. The parameter stays in the
 #    address bar and the app never changes routes, so a refresh keeps working.
-# 3. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
+# 3. Provider credentials are read from runtime environment variables on Linux.
+#    Copy `.env.example`, fill only the providers in use, and pass it with
+#    `--env-file .env`; never add provider secrets as Docker ARG or image ENV.
+#    The Settings UI reports these credentials as environment-managed and
+#    read-only. No Keyutils syscall or custom seccomp option is required.
+# 4. `KOHARU_RPC_PORT` must match `devUrl` in crates/koharu/tauri.conf.json
 #    (currently 47823) for the desktop window's *initial* navigation to
 #    succeed without a race (see HANDOFF.md's Phase 3c section) — if you
 #    override the port here, update tauri.conf.json's devUrl to match
 #    before building, or the CEF window (not the HTTP API, which is
 #    unaffected) will show a connection-refused page.
-# 4. Xvfb has no GPU/compositor behind it; CEF fell back to software
+# 5. Xvfb has no GPU/compositor behind it; CEF fell back to software
 #    rendering without complaint in local testing, but if a future CEF/
 #    driver combination insists on real GPU access, this is the first
 #    place to check.
-# 5. Xvfb here is a bare virtual framebuffer with no compositor/GPU
+# 6. Xvfb here is a bare virtual framebuffer with no compositor/GPU
 #    acceleration wired to it; if CEF's GPU process insists on a real
 #    display/DRM node and fails hard instead of falling back to software
 #    rendering, this is the first place to look.

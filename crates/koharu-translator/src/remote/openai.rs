@@ -17,7 +17,7 @@ const MODELS_URL: &str = "https://api.openai.com/v1/models";
 pub struct OpenAiConfig {}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("openai")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::OpenAi.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let response: ModelsResponse = send_json(
@@ -74,7 +74,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("openai")?.context("openai API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::OpenAi.secret_key().unwrap())?
+        .context("openai API key is not configured")?;
     let backend = ChatBackend {
         max_tokens: None,
         max_completion_tokens: generation.max_tokens,

@@ -299,14 +299,15 @@ import/export 작업 이전의 main 위에 있다 — 리베이스하면 프런�
 패닉이 새로 드러남 → `67ac5ae9`, `90afd55f`로 수정, push 완료.
 
 **2차 재배포 (`90afd55f` 기준) — 아직 실행 안 함.** 이미지를 다시 빌드하고,
-vast.ai 템플릿 환경변수에 `KOHARU_API_TOKEN`을 설정한 뒤(`openssl rand -hex 32`),
-태그를 새 짧은 SHA로 고정해서(캐시된 구 이미지 재사용 방지) 다음을 확인할 것:
+vast.ai 템플릿 환경변수에 `KOHARU_API_TOKEN`과 사용할 provider key를 설정한 뒤(`openssl rand -hex 32`),
+태그를 새 짧은 SHA로 고정해서(캐시된 구 이미지 재사용 방지) 다음을 확인할 것. Linux는 provider credential을 환경변수에서 직접 읽으므로 Keyutils용 seccomp/capability 옵션은 필요 없다:
 
 - `Server is already active for display 99` 가 없어야 한다 (X 락 정리 확인).
 - `KOHARU_API_TOKEN is unset` 패닉이 없어야 한다 (환경변수 설정 확인 — 코드가
   아니라 설정 문제였다는 뜻).
 - `curl -H "Authorization: Bearer $KOHARU_API_TOKEN" http://<host>:<port>/api/v1/meta`
   가 이름과 버전을 돌려주어야 한다.
+- 같은 인증으로 `/api/v1/config`가 200을 반환하고, 주입한 provider의 `configured`가 true이며 `environment_variable`만 노출되어야 한다. `platform storage: PermissionDenied` 로그는 없어야 한다.
 - `curl -i http://<host>:<port>/` 는 **401이어야 한다.** 200이면서 본문에
   `__KOHARU_API_TOKEN__`이 보이면 토큰이 그대로 새는 것이다 (`90afd55f` 확인).
 - `curl -i "http://<host>:<port>/?token=$KOHARU_API_TOKEN"` 는 200이고 본문에

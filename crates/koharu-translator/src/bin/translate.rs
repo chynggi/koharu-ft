@@ -1,8 +1,10 @@
+#[cfg(not(target_os = "linux"))]
 use std::env;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use koharu_config::Config;
+#[cfg(not(target_os = "linux"))]
 use koharu_secrets::{ExposeSecret, SecretString};
 use koharu_translator::{
     GenerationConfig, Language, ModelSelection, Provider, ProvidersConfig, TranslationRequest,
@@ -105,37 +107,44 @@ async fn main() -> Result<()> {
 }
 
 fn prepare_secret(args: &Args, provider: Provider) -> Result<()> {
-    let provider_id: &'static str = provider.into();
-    let Some((variable, required)) = (match provider {
-        Provider::Local => None,
-        Provider::AtlasCloud => Some(("ATLASCLOUD_API_KEY", true)),
-        Provider::OpenAi => Some(("OPENAI_API_KEY", true)),
-        Provider::Gemini => Some(("GEMINI_API_KEY", true)),
-        Provider::Claude => Some(("ANTHROPIC_API_KEY", true)),
-        Provider::Grok => Some(("XAI_API_KEY", true)),
-        Provider::MiniMax => Some(("MINIMAX_API_KEY", true)),
-        Provider::DeepSeek => Some(("DEEPSEEK_API_KEY", true)),
-        Provider::OpenAiCompatible => Some(("OPENAI_COMPATIBLE_API_KEY", false)),
-        Provider::OpenRouter => Some(("OPENROUTER_API_KEY", true)),
-        Provider::LmStudio => Some(("LM_STUDIO_API_TOKEN", false)),
-        Provider::DeepL => Some(("DEEPL_API_KEY", true)),
-        Provider::GoogleCloudTranslation => Some(("GOOGLE_CLOUD_API_KEY", true)),
-        Provider::Caiyun => Some(("CAIYUN_API_KEY", true)),
-    }) else {
+    let Some(key) = provider.secret_key() else {
         return Ok(());
     };
-    let value = args
-        .api_key
-        .clone()
-        .filter(|key| !key.trim().is_empty())
-        .or_else(|| env::var(variable).ok().filter(|key| !key.trim().is_empty()));
-    if let Some(value) = value {
-        koharu_secrets::set(provider_id, &SecretString::from(value))?;
-    } else if required
-        && koharu_secrets::get(provider_id)?
-            .is_none_or(|value| value.expose_secret().trim().is_empty())
+    let variable = key
+        .environment_variable()
+        .expect("translation provider credentials define an environment variable");
+
+    #[cfg(target_os = "linux")]
     {
-        anyhow::bail!("--api-key, {variable}, or a stored API key is required");
+        if args
+            .api_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
+        {
+            anyhow::bail!(
+                "--api-key is unavailable on Linux; set {variable} before starting Koharu"
+            );
+        }
+        if provider.credential_required() && koharu_secrets::get(key)?.is_none() {
+            anyhow::bail!("{variable} is required");
+        }
     }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let value = args
+            .api_key
+            .clone()
+            .filter(|key| !key.trim().is_empty())
+            .or_else(|| env::var(variable).ok().filter(|key| !key.trim().is_empty()));
+        if let Some(value) = value {
+            koharu_secrets::set(key, &SecretString::from(value))?;
+        } else if provider.credential_required()
+            && koharu_secrets::get(key)?.is_none_or(|value| value.expose_secret().trim().is_empty())
+        {
+            anyhow::bail!("--api-key, {variable}, or a stored API key is required");
+        }
+    }
+
     Ok(())
 }

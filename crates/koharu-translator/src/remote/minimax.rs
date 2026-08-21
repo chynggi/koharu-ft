@@ -18,7 +18,7 @@ const MODELS_URL: &str = "https://api.minimax.io/v1/models";
 pub struct MiniMaxConfig {}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
-    let Some(api_key) = koharu_secrets::get("minimax")? else {
+    let Some(api_key) = koharu_secrets::get(Provider::MiniMax.secret_key().unwrap())? else {
         return Ok(Vec::new());
     };
     let response: ModelsResponse = send_json(
@@ -47,7 +47,8 @@ pub(super) async fn translate(
     generation: &GenerationConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("minimax")?.context("minimax API key is not configured")?;
+    let api_key = koharu_secrets::get(Provider::MiniMax.secret_key().unwrap())?
+        .context("minimax API key is not configured")?;
     let (system, user) = prompt::prompts(request)?;
     let response: Response = send_json(
         "minimax",

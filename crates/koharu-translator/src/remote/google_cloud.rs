@@ -18,7 +18,7 @@ pub struct GoogleCloudConfig {}
 
 pub(super) async fn models() -> Result<Vec<Model>> {
     Ok(
-        if koharu_secrets::get("google-cloud-translation")?.is_some() {
+        if koharu_secrets::get(Provider::GoogleCloudTranslation.secret_key().unwrap())?.is_some() {
             vec![Model::service(
                 Provider::GoogleCloudTranslation,
                 "Google Cloud Translation",
@@ -34,7 +34,7 @@ pub(super) async fn translate(
     _config: &GoogleCloudConfig,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let api_key = koharu_secrets::get("google-cloud-translation")?
+    let api_key = koharu_secrets::get(Provider::GoogleCloudTranslation.secret_key().unwrap())?
         .context("google-cloud-translation API key is not configured")?;
     let mut url = Url::parse(URL).expect("Google API URL is valid");
     url.query_pairs_mut()

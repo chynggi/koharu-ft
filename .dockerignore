@@ -7,5 +7,6 @@ packages/*/.next/
 packages/*/dist/
 vendor/tauri-runtime-cef/target/
 .vscode/
+.env
 *.log
 rpc-pid.txt
