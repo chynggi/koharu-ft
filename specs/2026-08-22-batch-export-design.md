@@ -193,8 +193,8 @@ pub async fn export_pages_to(
 
 ### 5. i18n
 
-신규 문구는 `packages/koharu/public/locales`의 7개 로케일(en-US, es-ES,
-ja-JP, ko-KR, pt-BR, ru-RU, tr-TR)에 모두 채운다.
+신규 문구는 `packages/koharu/public/locales`의 9개 로케일(en-US, es-ES,
+ja-JP, ko-KR, pt-BR, ru-RU, tr-TR, zh-CN, zh-TW)에 모두 채운다.
 
 ## 오류 처리
 

@@ -1,7 +1,7 @@
 # HANDOFF — 일괄 내보내기 (`feat/batch-export`)
 
-최종 갱신: 2026-08-22 (구현 세션 1차 — 계획 10개 태스크 전부 커밋됨, 로케일 2개 누락으로
-테스트 1건 실패 중, 실제 앱 확인 미실시)
+최종 갱신: 2026-08-22 (정리 세션 — §3 로케일 누락 해결로 테스트 98/98, 문서 정정 완료.
+남은 것은 §4 실제 앱 확인뿐)
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §4는 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -47,14 +47,14 @@
 | 내보내기 대화상자 | 완료 | `packages/koharu/tests/components/export-dialog.test.tsx` → 4 passed |
 | `ActivityCenter` 라벨 | 완료 | `job.kind === 'export'` 분기 (`ActivityCenter.tsx`) |
 | 로케일 7개 | 완료 | `git show af24401c --stat` |
-| 로케일 9개 | **미완료 — §3 참조** | `bun run test` → `localization.test.ts` 실패 |
+| 로케일 9개 | 완료 | `bun run test` → 98 passed |
 
 ### 검증 명령 한 줄 요약
 
 ```bash
 cargo test -p koharu-app -p koharu-rpc        # 19 + 10 passed
 cd packages/koharu && bunx tsc --noEmit       # 출력 없음
-cd packages/koharu && bun run test            # 97 passed, 1 failed (§3)
+cd packages/koharu && bun run test            # 98 passed
 cd packages/koharu && bun run lint            # clean
 ```
 
@@ -68,7 +68,11 @@ cd packages/koharu && bun run lint            # clean
 
 ---
 
-## 3. 지금 깨져 있는 것 — 로케일이 9개다
+## 3. [해결됨] 깨져 있던 것 — 로케일은 아홉 개였다
+
+**해결됨 (정리 세션):** `zh-CN`·`zh-TW`에 아래 14개 키를 채우고 `menu.exportPng`·
+`menu.exportPsd`를 지워 `bun run test` → 98/98, `bunx tsc --noEmit` 클린. `specs/`·`plans/`의
+"7개 로케일" 표현도 9개로 정정했다. 아래는 당시 원인 기록이다.
 
 `bun run test` → `tests/lib/localization.test.ts > defines the same flattened translation
 schema in every locale` **실패 (97/98).**
@@ -152,7 +156,7 @@ bun run ui:build          # packages/koharu/out 재생성 — protocol.ts 변경
 
 ## 6. 다음 세션이 할 일
 
-1. `zh-CN`·`zh-TW` 번역 추가 → `bun run test` 98/98 (§3)
-2. `specs/`·`plans/`의 "7개 로케일" → 9개로 정정
-3. 실제 앱에서 §4 표를 위에서 아래로 확인
-4. 전부 green이면 `main`에 병합
+1. [x] `zh-CN`·`zh-TW` 번역 추가 → `bun run test` 98/98 (§3)
+2. [x] `specs/`·`plans/`의 "7개 로케일" → 9개로 정정
+3. [ ] 실제 앱에서 §4 표를 위에서 아래로 확인
+4. [ ] §3 해결분과 문서 정정을 커밋하고 `main`에 병합

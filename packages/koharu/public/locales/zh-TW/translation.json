@@ -11,6 +11,8 @@
     "downloadingFiles": "正在下載 {{count}} 個檔案",
     "downloadingFiles_one": "正在下載 {{count}} 個檔案",
     "downloadingFiles_other": "正在下載 {{count}} 個檔案",
+    "exportFailed": "匯出失敗。",
+    "exporting": "正在匯出",
     "modelDownload": "模型下載",
     "processing": "正在處理",
     "processingFailed": "處理失敗。",
@@ -74,6 +76,24 @@
   "errors": {
     "fatalTitle": "Koharu 無法繼續執行",
     "tryAgain": "再試一次"
+  },
+  "export": {
+    "cancel": "取消",
+    "description": "將頁面算繪為影像檔案。",
+    "formats": "格式",
+    "pattern": "檔案名稱模式",
+    "patternError": {
+      "separator": "模式不能包含路徑分隔符號或 '..'。",
+      "token": "未知的標記。請使用 {index} 或 {label}。",
+      "unclosed": "模式中存在未配對的大括號。",
+      "width": "位數必須為數字。"
+    },
+    "scope": "頁面",
+    "scopeAll": "全部頁面（{{count}}）",
+    "scopeSelected": "所選頁面（{{count}}）",
+    "start": "匯出",
+    "subfolders": "按格式分資料夾",
+    "title": "匯出頁面"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} 個啟用的篩選條件",
@@ -245,8 +265,7 @@
     "delete": "刪除所選項目",
     "discord": "Discord",
     "edit": "編輯",
-    "exportPng": "匯出 PNG…",
-    "exportPsd": "匯出 PSD…",
+    "export": "匯出…",
     "file": "檔案",
     "fit": "適應視窗",
     "github": "GitHub",

@@ -37,7 +37,7 @@
 | `packages/koharu/lib/transfer.ts` | `runExport` 2단계 흐름 |
 | `packages/koharu/components/app/TitleBar.tsx` | 메뉴 두 항목 → 대화상자 한 항목 |
 | `packages/koharu/components/editor/ActivityCenter.tsx` | `job.kind`로 라벨 선택 |
-| `packages/koharu/public/locales/*/translation.json` | 7개 로케일 신규 문구 |
+| `packages/koharu/public/locales/*/translation.json` | 9개 로케일 신규 문구 |
 
 ---
 
@@ -1655,14 +1655,14 @@ git commit -m "feat(app): label export jobs as exports in the activity center"
 
 ---
 
-### Task 10: 7개 로케일
+### Task 10: 9개 로케일
 
 **Files:**
-- Modify: `packages/koharu/public/locales/{en-US,es-ES,ja-JP,ko-KR,pt-BR,ru-RU,tr-TR}/translation.json`
+- Modify: `packages/koharu/public/locales/{en-US,es-ES,ja-JP,ko-KR,pt-BR,ru-RU,tr-TR,zh-CN,zh-TW}/translation.json`
 
 - [ ] **Step 1: `menu` 키를 바꾼다**
 
-7개 파일 모두에서 `menu.exportPng`와 `menu.exportPsd`를 지우고 `menu.export`를 넣는다 (알파벳 순서상 `menu.file` 앞).
+9개 파일 모두에서 `menu.exportPng`와 `menu.exportPsd`를 지우고 `menu.export`를 넣는다 (알파벳 순서상 `menu.file` 앞).
 
 | 로케일 | `menu.export` |
 |---|---|
@@ -1673,6 +1673,8 @@ git commit -m "feat(app): label export jobs as exports in the activity center"
 | pt-BR | `Exportar…` |
 | ru-RU | `Экспорт…` |
 | tr-TR | `Dışa Aktar…` |
+| zh-CN | `导出…` |
+| zh-TW | `匯出…` |
 
 - [ ] **Step 2: `activity` 키를 더한다**
 
@@ -1688,10 +1690,12 @@ git commit -m "feat(app): label export jobs as exports in the activity center"
 | pt-BR | `Exportando` | `Falha ao exportar.` |
 | ru-RU | `Экспорт` | `Не удалось выполнить экспорт.` |
 | tr-TR | `Dışa aktarılıyor` | `Dışa aktarma başarısız oldu.` |
+| zh-CN | `正在导出` | `导出失败。` |
+| zh-TW | `正在匯出` | `匯出失敗。` |
 
 - [ ] **Step 3: `export` 블록을 더한다**
 
-7개 파일 모두에 `export` 블록을 넣는다. 각 파일의 기존 키 정렬 방식(알파벳 순)을 그대로 지킨다.
+9개 파일 모두에 `export` 블록을 넣는다. 각 파일의 기존 키 정렬 방식(알파벳 순)을 그대로 지킨다.
 
 i18next는 `{{...}}`만 보간하므로 오류 문구 안의 `{index}`, `{label}`은 이스케이프 없이 그대로 쓴다.
 
@@ -1853,6 +1857,52 @@ tr-TR:
     "start": "Dışa aktar",
     "subfolders": "Her biçim için ayrı klasör",
     "title": "Sayfaları dışa aktar"
+  },
+```
+
+zh-CN:
+
+```json
+  "export": {
+    "cancel": "取消",
+    "description": "将页面渲染为图像文件。",
+    "formats": "格式",
+    "pattern": "文件名模式",
+    "patternError": {
+      "separator": "模式不能包含路径分隔符或 '..'。",
+      "token": "未知标记。请使用 {index} 或 {label}。",
+      "unclosed": "模式中存在不匹配的花括号。",
+      "width": "位数必须为数字。"
+    },
+    "scope": "页面",
+    "scopeAll": "全部页面（{{count}}）",
+    "scopeSelected": "所选页面（{{count}}）",
+    "start": "导出",
+    "subfolders": "按格式分文件夹",
+    "title": "导出页面"
+  },
+```
+
+zh-TW:
+
+```json
+  "export": {
+    "cancel": "取消",
+    "description": "將頁面算繪為影像檔案。",
+    "formats": "格式",
+    "pattern": "檔案名稱模式",
+    "patternError": {
+      "separator": "模式不能包含路徑分隔符號或 '..'。",
+      "token": "未知的標記。請使用 {index} 或 {label}。",
+      "unclosed": "模式中存在未配對的大括號。",
+      "width": "位數必須為數字。"
+    },
+    "scope": "頁面",
+    "scopeAll": "全部頁面（{{count}}）",
+    "scopeSelected": "所選頁面（{{count}}）",
+    "start": "匯出",
+    "subfolders": "按格式分資料夾",
+    "title": "匯出頁面"
   },
 ```
 
