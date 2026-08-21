@@ -2,9 +2,18 @@
 // Tauri IPC bridge; keeps the same `commands` shape and types so callers
 // need zero changes beyond the transport underneath.
 
-const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-	?.env;
-const API_BASE_URL = env?.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
+// Spelled as a literal `process.env.NEXT_PUBLIC_...` member expression on
+// purpose. Next substitutes the build-time value by matching exactly that
+// shape in the source, so reaching it through a variable
+// (`globalThis.process?.env`) is never substituted, leaves `process`
+// undefined in the browser, and silently pins every deployment to the
+// default below. There is no `typeof process` guard for the same reason: it
+// survives substitution and would evaluate false in the browser, discarding
+// the value that was just inlined next to it.
+// Declared locally rather than by depending on @types/node: this module runs
+// in the browser, and only this one substituted value is ever read from here.
+declare const process: { env: Record<string, string | undefined> };
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
 // Injected into the served index.html by koharu-rpc at startup when the API
 // is bound to a non-loopback host (see KOHARU_API_TOKEN in
 // crates/koharu/src/main.rs), so the token never has to be baked into the
@@ -21,7 +30,7 @@ async function errorMessage(response: Response): Promise<string> {
 		const body = await response.json();
 		return typeof body?.error === "string" ? body.error : "request failed";
 	} catch {
-		return "request failed";
+		return `request failed (HTTP ${response.status})`;
 	}
 }
 
@@ -32,7 +41,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	});
 	if (!response.ok) throw new Error(await errorMessage(response));
 	const text = await response.text();
-	return (text ? JSON.parse(text) : null) as T;
+	if (!text) return null as T;
+	try {
+		return JSON.parse(text) as T;
+	} catch {
+		// A 2xx body that is not JSON means the request never reached the API:
+		// something in front of it — a dev server, a proxy, a static-file
+		// fallback — answered with its own page. Say that, rather than letting
+		// `Unexpected token '<'` stand in for it.
+		const type = response.headers.get("content-type") ?? "an unknown content type";
+		throw new Error(`${path} returned ${type} instead of JSON; the Koharu API did not answer`);
+	}
 }
 
 function get<T>(path: string): Promise<T> {

@@ -89,8 +89,29 @@ async fn require_token(State(token): State<Arc<str>>, req: Request, next: Next) 
     }
 }
 
+/// An unmatched `/api/v1/*` path, answered as JSON.
+///
+/// Without this the nested API router has no fallback of its own, so axum
+/// hands the request to the *outer* fallback — the static frontend — and an
+/// unknown API path comes back as `index.html`. Callers then see a
+/// `text/html` body where they expected the protocol: `EventSource` aborts
+/// the stream for the wrong MIME type, and `request()` reports
+/// `Unexpected token '<'` from parsing `<!DOCTYPE html>` as JSON. Neither
+/// names the actual problem, which is that the route does not exist.
+async fn api_not_found(uri: Uri) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        axum::Json(serde_json::json!({
+            "error": format!("no such API route: {}", uri.path()),
+        })),
+    )
+        .into_response()
+}
+
 pub fn router(app: AppState, static_dir: Option<PathBuf>, api_token: Option<String>) -> Router {
-    let mut api = routes::router();
+    // Registered before the token layer so an unauthenticated caller gets 401
+    // rather than 404, and cannot enumerate routes by the difference.
+    let mut api = routes::router().fallback(api_not_found);
     if let Some(token) = api_token.clone() {
         api = api.layer(middleware::from_fn_with_state(
             Arc::<str>::from(token),
