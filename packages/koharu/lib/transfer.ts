@@ -1,5 +1,6 @@
 'use client'
 
+import { useKoharuStore } from '@/lib/store'
 import {
   commands,
   type EntityId,
@@ -77,6 +78,26 @@ export async function runExport(
 export async function finishExport(job: JobId): Promise<void> {
   if (isEmbedded()) return
   saveBlob(await commands.getExportArchive(job), 'koharu-export.zip')
+}
+
+/**
+ * Job이 끝날 때까지 기다렸다가 `finishExport`를 부른다.
+ *
+ * 진행률은 이미 `ActivityCenter`가 보여주므로 여기서는 완료만 본다. 스토어
+ * 구독을 쓰는 것은 job 이벤트가 SSE로 오기 때문이다 — 폴링할 것이 없다.
+ */
+export function finishExportWhenDone(job: JobId): Promise<void> {
+  return new Promise((resolve) => {
+    const check = (state: { jobs: Record<string, { state: string }> }) => {
+      const current = state.jobs[job]
+      if (!current || current.state === 'running') return
+      unsubscribe()
+      if (current.state === 'finished') void finishExport(job).then(resolve, () => resolve())
+      else resolve()
+    }
+    const unsubscribe = useKoharuStore.subscribe(check)
+    check(useKoharuStore.getState())
+  })
 }
 
 /** Hand a blob to the browser as a download. */

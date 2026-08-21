@@ -6,6 +6,7 @@ import { useState, type ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AboutDialog } from '@/components/app/AboutDialog'
+import { ExportDialog } from '@/components/app/ExportDialog'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call } from '@/lib/backend'
 import { selectableLayer } from '@/lib/geometry'
@@ -20,7 +21,7 @@ import {
   useProject,
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { runExport } from '@/lib/transfer'
+import { finishExportWhenDone, runExport } from '@/lib/transfer'
 import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
 import {
   Menubar,
@@ -39,6 +40,7 @@ import { cn } from '@koharu/ui/lib/utils'
 export function TitleBar() {
   const { t } = useTranslation()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const macOS = useMacOS()
   const project = useProject().data
   const pagesQuery = usePages(Boolean(project))
@@ -104,19 +106,9 @@ export function TitleBar() {
               </MenubarSub>
               <MenubarItem
                 disabled={!project || pages.length === 0}
-                onClick={() =>
-                  void call(runExport, exportSelection(selectedPages, page?.id), 'png')
-                }
+                onClick={() => setExportOpen(true)}
               >
-                {t('menu.exportPng')}
-              </MenubarItem>
-              <MenubarItem
-                disabled={!project || pages.length === 0}
-                onClick={() =>
-                  void call(runExport, exportSelection(selectedPages, page?.id), 'psd')
-                }
-              >
-                {t('menu.exportPsd')}
+                {t('menu.export')}
               </MenubarItem>
               <MenubarSeparator />
               <MenubarItem disabled={!project} onClick={closeProject}>
@@ -271,13 +263,19 @@ export function TitleBar() {
         {!macOS && <WindowControls />}
       </header>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        pages={pages.map((page) => page.id)}
+        selected={selectedPages}
+        onStart={(target, options) => {
+          void call(runExport, target, options)
+            .then((job) => (job ? finishExportWhenDone(job) : undefined))
+            .catch(() => undefined)
+        }}
+      />
     </>
   )
-}
-
-function exportSelection(selected: string[], active?: string): string[] {
-  if (selected.length) return selected
-  return active ? [active] : []
 }
 
 function MenubarTrigger({ className, ...props }: ComponentProps<typeof UiMenubarTrigger>) {
