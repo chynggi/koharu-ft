@@ -137,6 +137,11 @@ pub async fn export_pages_to(
 | `POST /pages/export/download` | `JobId` 반환, 스테이징 디렉터리에 렌더링 |
 | `GET /pages/export/download/{job}` | 신규. ZIP 반환 후 스테이징 정리 |
 
+**`export_dialog`은 네이티브 폴더 선택창을 띄우기 전에 단일 작업 제약을
+확인한다.** 현재 순서(`pages.rs:225`)대로라면 파이프라인이 도는 중에도 폴더를
+고르게 한 다음에야 "another process is already running"으로 거절하게 된다.
+거절할 것이면 사용자를 붙잡기 전에 거절한다.
+
 브라우저 경로가 2단계가 되면서 임시 디렉터리가 요청보다 오래 살아야 한다.
 `Mutex<Option<(JobId, TempDir)>>` 하나를 `ExportStaging` 상태로 둔다. 단일
 작업 제약 덕에 동시에 하나뿐이므로 맵이 필요 없고, 새 내보내기가 시작되면
@@ -146,10 +151,17 @@ pub async fn export_pages_to(
 `GET /pages/export/download/{job}`은 요청된 job의 스테이징이 없으면 404를
 반환한다. job이 `stopped`나 `failed`로 끝난 경우가 여기 해당한다.
 
-**`archive_directory`는 재귀해야 한다.** 현재 구현(`pages.rs`)은
-`std::fs::read_dir`로 한 겹만 읽는다. 형식별 하위 폴더를 켠 채 브라우저에서
-내보내면 ZIP이 비어 나온다. 하위 경로를 ZIP 엔트리 이름으로 보존하도록
-고친다.
+**`archive_directory`는 재귀해야 한다.** 현재 구현(`pages.rs:429`)은
+`std::fs::read_dir`로 한 겹만 읽고 `entry.path().is_file()`로 거른다. 형식별
+하위 폴더를 켠 채 브라우저에서 내보내면 걸러진 결과가 비어
+`bail!("the export produced no files")`로 실패한다. 렌더링은 멀쩡히 끝난
+뒤이므로 오류 문구가 원인을 정반대로 가리킨다. 하위 경로를 ZIP 엔트리 이름으로
+보존하도록 재귀시킨다.
+
+`packages/bridge/src/protocol.ts`는 생성되지 않고 **손으로 쓴 파일이다**
+(파일 첫 줄 주석). `Job`에 `kind`를 더하고 세 내보내기 명령의 시그니처를
+바꾸는 변경은 전부 여기에 직접 반영해야 한다. 어딘가에서 자동 생성되기를
+기다릴 것이 없다.
 
 ### 4. 프론트엔드
 
