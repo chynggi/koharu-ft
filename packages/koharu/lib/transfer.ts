@@ -3,7 +3,8 @@
 import {
   commands,
   type EntityId,
-  type ExportFormat,
+  type ExportOptions,
+  type JobId,
   type PageImportSource,
   type PageSummary,
 } from '@koharu/bridge/protocol'
@@ -54,13 +55,28 @@ export async function runImport(source: PageImportSource): Promise<PageSummary[]
   return commands.importPagesUpload(files)
 }
 
-/** Export pages by whichever route this client can actually use. */
-export async function runExport(pages: EntityId[], format: ExportFormat): Promise<void> {
-  if (isEmbedded()) {
-    await commands.exportPagesDialog(pages, format)
-    return
-  }
-  saveBlob(await commands.exportPagesDownload(pages, format), 'koharu-export.zip')
+/**
+ * 내보내기 Job을 시작한다. 렌더링은 백그라운드에서 돌고, 진행률은 job
+ * 이벤트로 온다. 데스크톱에서 사용자가 폴더 선택을 취소하면 `null`이다.
+ */
+export async function runExport(
+  pages: EntityId[],
+  options: ExportOptions,
+): Promise<JobId | null> {
+  if (isEmbedded()) return commands.exportPagesDialog(pages, options)
+  return commands.exportPagesDownload(pages, options)
+}
+
+/**
+ * Job이 끝난 뒤 결과를 사용자에게 넘긴다.
+ *
+ * 데스크톱은 이미 사용자가 고른 폴더에 파일이 들어 있으므로 할 일이 없다.
+ * 브라우저는 여기서 ZIP을 받아 저장한다 — 서버가 임시 디렉터리를 붙들고
+ * 있으므로 이 호출이 그것을 비우는 역할도 한다.
+ */
+export async function finishExport(job: JobId): Promise<void> {
+  if (isEmbedded()) return
+  saveBlob(await commands.getExportArchive(job), 'koharu-export.zip')
 }
 
 /** Hand a blob to the browser as a download. */
