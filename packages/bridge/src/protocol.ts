@@ -90,6 +90,13 @@ async function download(path: string, body: unknown): Promise<Blob> {
 	return response.blob();
 }
 
+/** `download`의 GET판. 본문 없는 이진 응답을 Blob으로 가져온다. */
+async function downloadGet(path: string): Promise<Blob> {
+	const response = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders() });
+	if (!response.ok) throw new Error(await errorMessage(response));
+	return response.blob();
+}
+
 function del<T>(path: string): Promise<T> {
 	return request<T>(path, { method: "DELETE" });
 }
@@ -219,15 +226,21 @@ export const commands = {
 	stopJob: (job: JobId) => post<null>("/process/stop", { job }),
 	// A directory on the server. Same caveat as `importPages`: only a caller
 	// that can name the server's filesystem has any use for this.
-	exportPages: (pages: EntityId[], format: ExportFormat, directory: string) =>
-		post<null>("/pages/export", { pages, format, directory }),
+	// 셋 다 즉시 `JobId`를 돌려주고 렌더링은 백그라운드에서 돈다. 진행률은
+	// `openEventStream`의 job 이벤트로 오고, 중단은 `stopJob`이다.
+	exportPages: (pages: EntityId[], options: ExportOptions, directory: string) =>
+		post<JobId>("/pages/export", { pages, options, directory }),
 	// The desktop path: native folder picker, server-side, loopback only.
-	exportPagesDialog: (pages: EntityId[], format: ExportFormat) =>
-		post<null>("/pages/export/dialog", { pages, format }),
+	// 사용자가 선택창을 닫으면 `null`이다.
+	exportPagesDialog: (pages: EntityId[], options: ExportOptions) =>
+		post<JobId | null>("/pages/export/dialog", { pages, options }),
 	// The remote path. Rendered output has to reach the user's machine, so it
 	// comes back as one ZIP rather than being written somewhere they cannot see.
-	exportPagesDownload: (pages: EntityId[], format: ExportFormat) =>
-		download("/pages/export/download", { pages, format }),
+	// 렌더링과 전송이 나뉘어 있다: 이것이 job을 시작하고,
+	// `getExportArchive`가 끝난 뒤의 ZIP을 가져온다.
+	exportPagesDownload: (pages: EntityId[], options: ExportOptions) =>
+		post<JobId>("/pages/export/download", { pages, options }),
+	getExportArchive: (job: JobId) => downloadGet(`/pages/export/download/${job}`),
 	getThumbnail: (page: EntityId) => bytes(`/pages/${page}/thumbnail`),
 	getFonts: () => get<FontFamily[]>("/fonts"),
 	getFontPreview: (familyName: string) =>
@@ -489,6 +502,12 @@ export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run:
 
 export type ExportFormat = "png" | "psd";
 
+export type ExportOptions = {
+	formats: ExportFormat[],
+	pattern: string,
+	subfolders: boolean,
+};
+
 export type FlashAttentionMode = 
 /**  Let llama.cpp decide per backend and model. */
 "auto" | "on" | "off";
@@ -604,6 +623,7 @@ export type InpaintingModel = { model: "lama" } | { model: "aot-inpainting" } | 
 
 export type Job = {
 	id: JobId,
+	kind: JobKind,
 	state: JobState,
 	completed: number,
 	total: number,
@@ -614,6 +634,8 @@ export type Job = {
 };
 
 export type JobId = string;
+
+export type JobKind = "processing" | "export";
 
 export type JobState = "running" | "finished" | "failed" | "stopped";
 
