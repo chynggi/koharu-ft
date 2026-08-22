@@ -44,6 +44,7 @@ pub mod pp_ocr_v6;
 pub mod rorem_mixed;
 pub mod speech_bubble_yolo11n;
 pub mod speech_bubble_yolov8m;
+pub mod torchscript;
 
 pub use koharu_diffusion as diffusion;
 pub use koharu_llama as llama;
