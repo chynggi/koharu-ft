@@ -13,9 +13,9 @@ SHA-256:
 - `image_4k.jpg`: `1b6c0a50f8a4a5101d745bda7ee311abb3f4ee011433c71f83e71a9f718eec7a`
 - `mask_4k.png`: `53f772430d81b5ded3f0b243641b5595d921c37da3fd8f026036090a98d5bb57`
 
-## Measured: LaMa vs MI-GAN (2026-08-22)
+## Measured: LaMa vs MI-GAN vs Manga inpainter (2026-08-22)
 
-Both benchmarks ran on the same CPU device (`koharu_ml::Device::default()`)
+All benchmarks ran on the same CPU device (`koharu_ml::Device::default()`)
 with the pinned builtin checkpoints, on:
 
 - CPU: Intel Core i5-10400
@@ -26,8 +26,13 @@ with the pinned builtin checkpoints, on:
 |---|---|---|
 | LaMa (safetensors) | 3840×2074 + mask | 11.919 s |
 | MI-GAN (TorchScript) | 3840×2074 + mask | 821.78 ms |
+| Manga inpainter (TorchScript ×2) | 3840×2074 + mask | 65.232 s |
 
 MI-GAN was ~14.5× faster than LaMa on this fixture on CPU, confirming the
 "fast and light erase-only model" claim. The speedup is structural: MI-GAN
 only ever infers 512×512 crops, while LaMa pads and infers at full modulo-8
 resolution.
+
+The Manga inpainter is the slowest of the three: both its line model and its
+inpaintor run over the full padded resolution, with no crop or resize escape
+hatch on this fixture. Pick it for manga line-art quality, not speed.

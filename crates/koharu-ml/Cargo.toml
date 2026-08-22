@@ -64,6 +64,10 @@ name = "mi_gan"
 harness = false
 
 [[bench]]
+name = "manga_inpaintor"
+harness = false
+
+[[bench]]
 name = "comic_text_detector"
 harness = false
 

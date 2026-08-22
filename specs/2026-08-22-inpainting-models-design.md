@@ -216,9 +216,11 @@ pub enum Weights {
 
 ## 열린 질문
 
-- **Manga 인페인터(`manga_inpaintor.jit` + `erika.jit`)를 넣을 것인가.**
-  망가 전용이고 TorchScript라 비용이 MI-GAN과 같다. 다만 모델 두 개를 엮는
-  2단 파이프라인이라 전처리가 더 붙는다. MI-GAN 결과를 보고 판단한다.
+- ~~**Manga 인페인터(`manga_inpaintor.jit` + `erika.jit`)를 넣을 것인가.**~~
+  **결정(2026-08-22): 넣는다.** 구현 완료. 4K CPU 벤치에서 LaMa 11.9s 대비
+  65.2s로 세 모델 중 가장 느리지만, 망가 선화 복원 품질이 목적이므로
+  속도는 수용한다. 시드 42 고정으로 실행 간 결과가 byte-identical함을
+  실측으로 확인했다.
 - **체크포인트 재배포.** IOPaint 체크포인트는 GitHub 릴리스에서 오고
   `HuggingFaceFile`은 HF만 받는다. `mayocream/` 아래로 미러링할지, 소스 갈래에
   URL 변형을 추가할지 정해야 한다.

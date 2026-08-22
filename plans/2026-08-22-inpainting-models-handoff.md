@@ -1,5 +1,55 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
+최종 갱신: 2026-08-22 심야 (**계획 Task 0~10 완료 + 설계 문서의 열린 질문이던 Manga 인페인터도 구현 완료.**)
+
+## Manga 인페인터 (`manga_inpaintor.jit` + `erika.jit`) — 추가 세션
+
+설계 문서 "열린 질문"의 마지막 미결정 항목을 사용자 결정으로 넣었다. 네 커밋:
+
+- `c15b92db feat(ml): add the Manga inpainter`
+- `c7e75ef6 feat(pipeline): select the Manga inpainter`
+- `eb4b9292 feat(ui): expose the Manga inpainter as an inpainting model`
+- (벤치 커밋은 이 문서 갱신과 함께 예정)
+
+### 구현 노트
+
+- **HD 전략 디스패치 공용화.** 상류 `manga.py`는 LaMa와 같은 base 클래스
+  `__call__`을 쓴다(`pad_mod=16`만 다름). LaMa 프로세서의 crop/resize/original
+  디스패치를 `inpaint_ops::dispatch_hd_strategy`로 끌어올려 두 모델이 공유한다.
+  MI-GAN은 자체 `__call__`이라 그대로다.
+- **2-모델 소스.** `MangaSource { inpaintor, line }`은 FLUX의
+  `Flux2KleinSource` 패턴을 따른다.
+- **시드 재현성.** 상류는 forward마다 `self.seed = 42`로 리셋한다.
+  `manual_seed(42)` + (CUDA 시) `Cuda::manual_seed_all(42)`로 맞췄다.
+- **그레이 변환.** OpenCV `COLOR_RGB2GRAY`(BT.601 고정소수) 계수를 직접
+  구현했다. `image` 크레이트의 luma 변환은 계수가 달라 상류와 byte가 어긋난다.
+- **출력은 그레이스케일.** 마스크 영역이 흑백으로 채워진다(만화용 설계).
+  `sd_keep_unmasked_area` 블렌드로 마스크 밖은 원색 보존.
+
+### 완료 검증 (전부 실측)
+
+| 항목 | 결과 |
+|---|---|
+| 체크포인트 MD5 (IOPaint 핀값과 대조) | `manga_inpaintor.jit` `7d8b269c...`, `erika.jit` `0c926d5a...` — 둘 다 일치. BLAKE3로 리모트 저장소 핀 |
+| 실제 체크포인트로 5입력 forward, modulo-16 패딩, 시드 재현성 | **1 passed** (ignored 테스트, `KOHARU_MANGA_INPAINTOR_TS`/`KOHARU_MANGA_LINE_TS`로 실행). 두 실행이 byte-identical |
+| `cargo test -p koharu-ml --lib -- --test-threads=1` | **85 passed, 0 failed, 20 ignored** (LaMa HD 디스패치 리팩터링 후 무회귀) |
+| `cargo test -p koharu-pipeline` | **77 passed, 0 failed** (신규 3: 라운드트립, 기본값 고정, validate 실패 — Task 8 패턴) |
+| tsc `--noEmit` | 통과. 이번엔 로케일 신규 키 2개(`source.inpaintor`, `source.line`)를 9개 전 로케일에 추가했다 |
+| CLI 스모크 (4K, 로컬 가중치, CPU) | 출력 PNG 정상 생성 (16.2MB) |
+| `cargo bench -p koharu-ml --bench manga_inpaintor` | **65.232s (62.4~68.6s), 10 샘플** — 세 모델 중 가장 느림. LaMa 대비 ~5.5×, MI-GAN 대비 ~80×. 구조적 이유: 두 모델이 패딩된 전체 해상도를 통과. README에 기록 |
+
+### 사용자 확인이 필요한 것
+
+- **앱 UI 경로의 Manga 인페인터 엔드투엔드 검증.** MI-GAN UI 경로는
+  사용자가 이미 검증했지만 Manga 쪽은 아직이다. 첫 실행 시 245MB
+  (72.5+173MB) 다운로드가 발생한다.
+- `package.json`의 `release` 스크립트 한 줄은 사용자 로컬 수정으로 보존 중
+  (커밋하지 않음).
+
+---
+
+아래는 Task 7~10 완료 시점의 이전 핸드오프 내용이다.
+
 최종 갱신: 2026-08-22 저녁 (**Task 7~10 완료. 계획의 모든 태스크 종료.**)
 
 Task 7~10은 2026-08-22 저녁 세션에서 완료됐다. 다음 네 커밋이다:
