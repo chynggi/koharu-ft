@@ -200,17 +200,18 @@ cargo test -p koharu-ml --lib -- --test-threads=1
 
 | 크레이트 | 결과 |
 |---|---|
-| `koharu-ml --lib` (단일 스레드) | 60 passed, **2 failed**, 17 ignored |
+| `koharu-ml --lib` (단일 스레드) | 65 passed, 0 failed, 18 ignored (Task 3 이후) |
 | `koharu-runtime` | 21 passed, 0 failed |
 | `koharu-pipeline` | 67 passed, 0 failed |
 
-`2 failed`는 **이 브랜치와 무관한 기존 실패**다:
+**정정 (Task 3 시점):** Task 0~2 동안 계속 실패하던 두 테스트
 
 - `baberu_ocr::processor::tests::bicubic_resize_stays_aligned_with_pillow`
 - `comic_onomatopoeia::recognizer::processor::tests::bicubic_resize_stays_aligned_with_pillow`
 
-`git diff --name-only main...HEAD`로 해당 모듈 미변경을 확인했고, 사전 커밋 `f7b6ed6e`를
-별도 worktree에 체크아웃해 동일 크래시를 재현했다. **이 둘 외에 실패가 늘면 그건 회귀다.**
+는 **코드 문제가 아니라 환경(Python 경로) 문제였고 지금은 통과한다.** 이 브랜치와 무관하다는
+판단 자체는 맞았으나 "영구적 기존 실패"로 본 것은 틀렸다. **현재 기준선은 실패 0건이다 —
+어떤 실패든 나오면 회귀로 취급할 것.**
 
 ---
 
