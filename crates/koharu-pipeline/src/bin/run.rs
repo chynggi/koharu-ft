@@ -12,8 +12,7 @@ use koharu_config::Config;
 use koharu_pipeline::{
     Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
     LaMaConfig, OcrModel, Operation, Pipeline, PipelineConfig, Progress, Request, RoremMixedConfig,
-    Scope,
-    StageOutput, TranslationConfig,
+    Scope, StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;

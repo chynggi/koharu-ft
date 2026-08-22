@@ -3,7 +3,9 @@ use koharu_translator::{GenerationConfig, Language};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 
-use crate::stages::{Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, RoremMixedConfig};
+use crate::stages::{
+    Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, RoremMixedConfig,
+};
 
 #[derive(Clone, Debug, PartialEq, Type)]
 pub struct PipelineConfig {

@@ -1207,6 +1207,17 @@ mod tests {
     }
 
     #[test]
+    fn an_invalid_lama_source_is_rejected() {
+        let config = LaMaConfig {
+            source: ComponentSourceConfig::LocalFile {
+                path: PathBuf::from("relative.pt"),
+            },
+            ..Default::default()
+        };
+        assert!(config.validate().is_err(), "{config:?} should be rejected");
+    }
+
+    #[test]
     fn flux_settings_reach_the_inference_options() {
         let config = Flux2KleinConfig {
             steps: 8,
