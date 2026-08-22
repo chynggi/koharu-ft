@@ -14,11 +14,10 @@ use image::{
 use imageproc::region_labelling::{Connectivity, connected_components};
 use koharu_ml::{
     aot_inpainting::AotInpainting,
-    flux2_klein::{
-        ComponentSource, Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource,
-    },
+    flux2_klein::{Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource},
     lama::{InpaintRequest, LaMa},
     rorem_mixed::{DEFAULT_NEGATIVE_PROMPT, DEFAULT_PROMPT, RoremMixed, RoremMixedOptions},
+    source::ComponentSource,
 };
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, BubbleRegion, EntityOrigin, Geometry, Origin,
@@ -51,6 +50,8 @@ pub enum ComponentSourceConfig {
         revision: Option<String>,
         filename: String,
     },
+    /// An arbitrary URL. `digest` is a 64-character BLAKE3 hex digest (case-insensitive).
+    Url { url: String, digest: String },
 }
 
 impl From<ComponentSourceConfig> for ComponentSource {
@@ -67,6 +68,7 @@ impl From<ComponentSourceConfig> for ComponentSource {
                 revision,
                 filename,
             },
+            ComponentSourceConfig::Url { url, digest } => Self::Url { url, digest },
         }
     }
 }

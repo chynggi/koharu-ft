@@ -22,6 +22,18 @@ macro_rules! model_repository {
     };
 }
 
+/// The URL equivalent of `model_repository!`, for checkpoints published outside
+/// Hugging Face.
+#[expect(unused_macros, reason = "the first URL-pinned model lands separately")]
+macro_rules! remote_repository {
+    ($($name:ident = $url:literal @ $digest:literal),+ $(,)?) => {
+        $(
+            const $name: koharu_runtime::RemoteFile<'static> =
+                koharu_runtime::RemoteFile::pinned($url, $digest);
+        )+
+    };
+}
+
 mod backend;
 
 pub mod aot_inpainting;
@@ -42,6 +54,7 @@ pub mod paddle_ocr_vl_quantized;
 pub mod pp_doclayout_v3;
 pub mod pp_ocr_v6;
 pub mod rorem_mixed;
+pub mod source;
 pub mod speech_bubble_yolo11n;
 pub mod speech_bubble_yolov8m;
 pub mod torchscript;
