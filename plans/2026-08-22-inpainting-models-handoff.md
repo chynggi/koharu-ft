@@ -9,7 +9,7 @@
 - `c15b92db feat(ml): add the Manga inpainter`
 - `c7e75ef6 feat(pipeline): select the Manga inpainter`
 - `eb4b9292 feat(ui): expose the Manga inpainter as an inpainting model`
-- (벤치 커밋은 이 문서 갱신과 함께 예정)
+- `f37457d7 bench(ml): compare the Manga inpainter against LaMa and MI-GAN` (이 문서 갱신 포함)
 
 ### 구현 노트
 
