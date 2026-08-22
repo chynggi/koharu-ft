@@ -343,9 +343,19 @@ md5sum migan_traced.pt
 
 Expected: `76eb3b1a71c400ee3290524f7a11b89c  migan_traced.pt`
 
-세 BLAKE3 해시를 적어 둔다. 이 계획에서는 `MIGAN_B3` /
-`ANIME_MANGA_LAMA_B3` / `BIG_LAMA_B3`로 부른다 — **구현 시 실제 해시로
-치환해야 하며, 자리표시자가 남은 채로 커밋하지 않는다.**
+**측정 결과 (2026-08-22, 이미 계획에 반영됨).** 자리표시자는 남아 있지 않다.
+
+| 파일 | 크기 | BLAKE3 |
+|---|---|---|
+| `migan_traced.pt` | 26 MB | `fde1e5f7c6b6a48082f8eff36b9117e64b8c14ea4d1a76af508e29d357b28cbd` |
+| `anime-manga-big-lama.pt` | 197 MB | `9213532a6e9990afcd0c9f3f31da82cc4c8c1ec86a13641e3ec37648d5e75f8b` |
+| `big-lama.pt` | 197 MB | `1e3e5989dae88d561f1c8e8456c8fe9595739aaa9898862d004abf192c6d9e76` |
+
+`migan_traced.pt`의 MD5는 `76eb3b1a71c400ee3290524f7a11b89c`로 IOPaint가
+못박아 둔 값과 일치하는 것을 확인했다.
+
+`big-lama.pt`(원본, 만화 파인튜닝이 아닌 쪽)는 내장 기본값으로 쓰지 않지만,
+설정에서 `Url` 갈래로 지정할 때 쓰라고 기록해 둔다.
 
 - [ ] **Step 9: 커밋한다**
 
@@ -738,7 +748,7 @@ model_repository!("mayocream/lama-manga" @ "f91c85b26913b3e83f9877867b4c336da367
 remote_repository! {
     TORCHSCRIPT_WEIGHTS =
         "https://github.com/Sanster/models/releases/download/AnimeMangaInpainting/anime-manga-big-lama.pt"
-        @ "ANIME_MANGA_LAMA_B3",
+        @ "9213532a6e9990afcd0c9f3f31da82cc4c8c1ec86a13641e3ec37648d5e75f8b",
 }
 
 #[derive(Debug)]
@@ -794,7 +804,7 @@ impl LaMa {
 }
 ```
 
-`ANIME_MANGA_LAMA_B3`는 Task 0 Step 8에서 구한 실제 BLAKE3 해시로 치환한다.
+다이제스트는 Task 0 Step 8에서 측정한 실제 값이다.
 
 - [ ] **Step 5: CLI를 맞춘다**
 
@@ -1266,7 +1276,7 @@ use self::processor::Processor;
 // 상류 원본에서 직접 받는다. 미러링하지 않는다.
 remote_repository! {
     WEIGHTS = "https://github.com/Sanster/models/releases/download/migan/migan_traced.pt"
-        @ "MIGAN_B3",
+        @ "fde1e5f7c6b6a48082f8eff36b9117e64b8c14ea4d1a76af508e29d357b28cbd",
 }
 
 #[derive(Debug)]
@@ -1299,7 +1309,7 @@ impl MiGan {
 }
 ```
 
-`MIGAN_B3`는 Task 0 Step 8에서 구한 실제 BLAKE3 해시로 치환한다.
+다이제스트는 Task 0 Step 8에서 측정한 실제 값이다.
 
 - [ ] **Step 3: 프로세서를 쓴다**
 
@@ -1737,10 +1747,8 @@ git commit -m "bench(ml): compare MI-GAN against LaMa"
 
 **남은 위험**
 
-- **Task 0의 자리표시자.** `MIGAN_B3`·`ANIME_MANGA_LAMA_B3`가 치환되지
-  않으면 `RemoteFile::validate`가 로드 시점에 "digest must be 64 hex
-  characters"로 실패한다 — 조용히 잘못된 파일을 쓰는 일은 없다. Task 3
-  Step 9와 Task 7 Step 5의 실행 확인이 이를 잡는다.
+- ~~Task 0의 자리표시자~~ **해소됨.** 세 다이제스트를 실측해 계획에 반영했다
+  (Task 0 Step 8 표). 자리표시자는 남아 있지 않다.
 - **상류 릴리스 자산의 가용성.** 원본을 미러링하지 않으므로 GitHub 릴리스가
   사라지면 내장 기본값이 죽는다. 세 URL 모두 현재 200으로 응답하는 것을
   확인했다. 다이제스트가 있으므로 상류가 같은 URL에 다른 파일을 올려도
