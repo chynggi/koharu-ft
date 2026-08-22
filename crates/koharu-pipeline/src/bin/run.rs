@@ -11,7 +11,8 @@ use clap::{Parser, ValueEnum};
 use koharu_config::Config;
 use koharu_pipeline::{
     Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
-    OcrModel, Operation, Pipeline, PipelineConfig, Progress, Request, RoremMixedConfig, Scope,
+    LaMaConfig, OcrModel, Operation, Pipeline, PipelineConfig, Progress, Request, RoremMixedConfig,
+    Scope,
     StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
@@ -115,7 +116,7 @@ impl Arguments {
                 instructions: self.translation_instructions.clone(),
             },
             inpainting: match self.inpainting {
-                InpaintingChoice::LaMa => InpaintingModel::LaMa {},
+                InpaintingChoice::LaMa => InpaintingModel::LaMa(LaMaConfig::default()),
                 InpaintingChoice::AotInpainting => InpaintingModel::AotInpainting {},
                 InpaintingChoice::Flux2Klein => {
                     InpaintingModel::Flux2Klein(Flux2KleinConfig::default())

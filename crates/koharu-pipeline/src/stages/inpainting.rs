@@ -73,6 +73,42 @@ impl From<ComponentSourceConfig> for ComponentSource {
     }
 }
 
+/// The format of the LaMa weights file. The config representation of
+/// `koharu_ml::lama::WeightsFormat`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WeightsFormatConfig {
+    #[default]
+    SafeTensors,
+    TorchScript,
+}
+
+impl From<WeightsFormatConfig> for koharu_ml::lama::WeightsFormat {
+    fn from(value: WeightsFormatConfig) -> Self {
+        match value {
+            WeightsFormatConfig::SafeTensors => Self::SafeTensors,
+            WeightsFormatConfig::TorchScript => Self::TorchScript,
+        }
+    }
+}
+
+/// LaMa checkpoint selection. Defaults to the `mayocream/lama-manga`
+/// safetensors checkpoint, matching the behavior before this field existed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct LaMaConfig {
+    pub source: ComponentSourceConfig,
+    pub format: WeightsFormatConfig,
+}
+
+impl LaMaConfig {
+    fn validate(&self) -> Result<()> {
+        ComponentSource::from(self.source.clone())
+            .validate()
+            .context("LaMa weights")
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct Flux2KleinSourceConfig {
@@ -184,7 +220,8 @@ impl Processor {
         resources: Arc<ResourceMonitor>,
     ) -> Result<Self> {
         match &config {
-            InpaintingModel::LaMa {} | InpaintingModel::AotInpainting {} => {}
+            InpaintingModel::LaMa(settings) => settings.validate()?,
+            InpaintingModel::AotInpainting {} => {}
             InpaintingModel::Flux2Klein(settings) => settings.validate()?,
             InpaintingModel::RoremMixed(settings) => {
                 ensure!(
@@ -224,7 +261,7 @@ impl Processor {
 impl StageProcessor for Processor {
     fn model(&self) -> &'static str {
         match self.config {
-            InpaintingModel::LaMa {} => "lama",
+            InpaintingModel::LaMa(_) => "lama",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
@@ -303,9 +340,14 @@ async fn log_weight_estimate(source: &Flux2KleinSource) {
 impl Model {
     async fn load(device: koharu_ml::Device, config: &InpaintingModel) -> Result<Self> {
         match config {
-            InpaintingModel::LaMa {} => {
-                Ok(Self::LaMa(Arc::new(Mutex::new(LaMa::load(device).await?))))
-            }
+            InpaintingModel::LaMa(config) => Ok(Self::LaMa(Arc::new(Mutex::new(
+                LaMa::load(
+                    device,
+                    &ComponentSource::from(config.source.clone()),
+                    config.format.into(),
+                )
+                .await?,
+            )))),
             InpaintingModel::AotInpainting {} => Ok(Self::Aot(Arc::new(Mutex::new(
                 AotInpainting::load(device).await?,
             )))),
@@ -1260,7 +1302,7 @@ mod tests {
             }),
         );
         let processor = Processor::new(
-            InpaintingModel::LaMa {},
+            InpaintingModel::LaMa(LaMaConfig::default()),
             koharu_ml::Device::cpu(),
             ResourceMonitor::new(&koharu_ml::Device::cpu()),
         )
