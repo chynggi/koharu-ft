@@ -300,6 +300,12 @@ pub async fn list_projects(
     Ok(library.list()?)
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "project_created",
+    skip_all,
+    fields(origin = "user")
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn create_project(
@@ -312,6 +318,12 @@ pub async fn create_project(
     Ok(())
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "project_opened",
+    skip_all,
+    fields(origin = "user")
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn open_project(
@@ -324,6 +336,12 @@ pub async fn open_project(
     Ok(())
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "project_closed",
+    skip_all,
+    fields(origin = "user")
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn close_project(handle: AppHandle<Cef>) -> std::result::Result<(), Error> {
@@ -331,6 +349,12 @@ pub async fn close_project(handle: AppHandle<Cef>) -> std::result::Result<(), Er
     Ok(())
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "project_deleted",
+    skip_all,
+    fields(origin = "user")
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_project(
@@ -376,6 +400,12 @@ async fn close_current_project(handle: &AppHandle<Cef>) -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "import",
+    skip_all,
+    fields(origin = "user", method = ?source),
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn import_pages(
@@ -478,9 +508,16 @@ pub async fn import_pages(
         import_source = ?source,
         page_count,
     );
+    tracing::info!(target: "koharu_metrics", metric = "page_imported", page_count);
     Ok(())
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "page_selected",
+    skip_all,
+    fields(origin = "user")
+)]
 #[tauri::command]
 #[specta::specta]
 pub async fn select_page(
