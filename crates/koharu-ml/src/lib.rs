@@ -34,6 +34,7 @@ macro_rules! remote_repository {
 }
 
 mod backend;
+pub(crate) mod inpaint_ops;
 
 pub mod aot_inpainting;
 pub mod baberu_ocr;
