@@ -11,7 +11,8 @@ use koharu_scene::{Edit, EntityId, Generation, Patch, ProducerId, Snapshot};
 
 pub use detection::KoharuLayoutRFDetrSeg2XLConfig;
 pub use inpainting::{
-    Flux2KleinConfig, LaMaConfig, MiGanConfig, RoremMixedConfig, WeightsFormatConfig,
+    Flux2KleinConfig, LaMaConfig, MangaInpaintorConfig, MiGanConfig, RoremMixedConfig,
+    WeightsFormatConfig,
 };
 
 use crate::{Bounds, ImageCache, InpaintingMask, PipelineConfig, Stage};

@@ -16,6 +16,7 @@ use koharu_ml::{
     aot_inpainting::AotInpainting,
     flux2_klein::{Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource},
     lama::{InpaintRequest, LaMa},
+    manga_inpaintor::{MangaInpaintor, MangaSource},
     mi_gan::MiGan,
     rorem_mixed::{DEFAULT_NEGATIVE_PROMPT, DEFAULT_PROMPT, RoremMixed, RoremMixedOptions},
     source::ComponentSource,
@@ -123,6 +124,30 @@ impl MiGanConfig {
         ComponentSource::from(self.source.clone())
             .validate()
             .context("MI-GAN weights")
+    }
+}
+
+impl From<MangaInpaintorConfig> for MangaSource {
+    fn from(value: MangaInpaintorConfig) -> Self {
+        Self {
+            inpaintor: value.inpaintor.into(),
+            line: value.line.into(),
+        }
+    }
+}
+
+/// Manga inpainter checkpoint selection. The pipeline is assembled from an
+/// inpaintor and a line model, mirroring `Flux2KleinSourceConfig`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct MangaInpaintorConfig {
+    pub inpaintor: ComponentSourceConfig,
+    pub line: ComponentSourceConfig,
+}
+
+impl MangaInpaintorConfig {
+    fn validate(&self) -> Result<()> {
+        MangaSource::from(self.clone()).validate()
     }
 }
 
@@ -236,6 +261,7 @@ impl Processor {
         match &config {
             InpaintingModel::LaMa(settings) => settings.validate()?,
             InpaintingModel::MiGan(settings) => settings.validate()?,
+            InpaintingModel::MangaInpaintor(settings) => settings.validate()?,
             InpaintingModel::AotInpainting {} => {}
             InpaintingModel::Flux2Klein(settings) => settings.validate()?,
             InpaintingModel::RoremMixed(settings) => {
@@ -278,6 +304,7 @@ impl StageProcessor for Processor {
         match self.config {
             InpaintingModel::LaMa(_) => "lama",
             InpaintingModel::MiGan(_) => "mi-gan",
+            InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
@@ -326,6 +353,7 @@ impl StageProcessor for Processor {
 enum Model {
     LaMa(Arc<Mutex<LaMa>>),
     MiGan(Arc<Mutex<MiGan>>),
+    MangaInpaintor(Arc<Mutex<MangaInpaintor>>),
     Aot(Arc<Mutex<AotInpainting>>),
     Flux {
         model: Arc<Mutex<Flux2KleinInpaint>>,
@@ -371,6 +399,9 @@ impl Model {
             InpaintingModel::MiGan(config) => Ok(Self::MiGan(Arc::new(Mutex::new(
                 MiGan::load(device, &ComponentSource::from(config.source.clone())).await?,
             )))),
+            InpaintingModel::MangaInpaintor(config) => Ok(Self::MangaInpaintor(Arc::new(
+                Mutex::new(MangaInpaintor::load(device, &config.clone().into()).await?),
+            ))),
             InpaintingModel::AotInpainting {} => Ok(Self::Aot(Arc::new(Mutex::new(
                 AotInpainting::load(device).await?,
             )))),
@@ -449,6 +480,32 @@ impl Model {
                     })
                     .await
                     .context("MI-GAN task panicked")??,
+                )
+            }
+            Self::MangaInpaintor(model) => {
+                let model = model.clone();
+                (
+                    "manga-inpaintor",
+                    tokio::task::spawn_blocking(move || -> Result<DynamicImage> {
+                        let model = model
+                            .lock()
+                            .map_err(|_| anyhow!("Manga inpainter model lock is poisoned"))?;
+                        inpaint_tiled(
+                            &prepared.image,
+                            &prepared.mask,
+                            &prepared.text_mask,
+                            &prepared.flat_fill_regions,
+                            |image, mask| {
+                                Ok(DynamicImage::ImageRgb8(model.inference(
+                                    image,
+                                    mask,
+                                    &InpaintRequest::default(),
+                                )?))
+                            },
+                        )
+                    })
+                    .await
+                    .context("Manga inpainter task panicked")??,
                 )
             }
             Self::Aot(model) => {
@@ -1222,6 +1279,13 @@ mod tests {
     }
 
     #[test]
+    fn manga_inpaintor_defaults_are_builtin() {
+        let config = MangaInpaintorConfig::default();
+        assert_eq!(config.inpaintor, ComponentSourceConfig::Builtin);
+        assert_eq!(config.line, ComponentSourceConfig::Builtin);
+    }
+
+    #[test]
     fn a_flux_section_written_before_the_settings_existed_still_loads() {
         let config: Flux2KleinConfig =
             toml::from_str("prompt = \"Erase the text.\"").expect("legacy section deserializes");
@@ -1276,6 +1340,17 @@ mod tests {
             source: ComponentSourceConfig::LocalFile {
                 path: PathBuf::from("relative.pt"),
             },
+        };
+        assert!(config.validate().is_err(), "{config:?} should be rejected");
+    }
+
+    #[test]
+    fn an_invalid_manga_inpaintor_source_is_rejected() {
+        let config = MangaInpaintorConfig {
+            inpaintor: ComponentSourceConfig::LocalFile {
+                path: PathBuf::from("relative.jit"),
+            },
+            ..Default::default()
         };
         assert!(config.validate().is_err(), "{config:?} should be rejected");
     }

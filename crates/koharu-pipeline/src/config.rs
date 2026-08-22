@@ -4,7 +4,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 
 use crate::stages::{
-    Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MiGanConfig, RoremMixedConfig,
+    Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
+    MiGanConfig, RoremMixedConfig,
 };
 
 #[derive(Clone, Debug, PartialEq, Type)]
@@ -69,6 +70,7 @@ impl Serialize for PipelineConfig {
         let inpainting = match &self.inpainting {
             InpaintingModel::LaMa(_) => "lama",
             InpaintingModel::MiGan(_) => "mi-gan",
+            InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
@@ -84,6 +86,11 @@ impl Serialize for PipelineConfig {
             }
             InpaintingModel::MiGan(config) => {
                 processor.mi_gan.get_or_insert_with(|| config.clone());
+            }
+            InpaintingModel::MangaInpaintor(config) => {
+                processor
+                    .manga_inpaintor
+                    .get_or_insert_with(|| config.clone());
             }
             InpaintingModel::Flux2Klein(config) => {
                 processor.flux2_klein.get_or_insert_with(|| config.clone());
@@ -142,6 +149,9 @@ impl<'de> Deserialize<'de> for PipelineConfig {
         let inpainting = match file.inpainting.model.as_str() {
             "lama" => InpaintingModel::LaMa(file.processor.lama.clone().unwrap_or_default()),
             "mi-gan" => InpaintingModel::MiGan(file.processor.mi_gan.clone().unwrap_or_default()),
+            "manga-inpaintor" => InpaintingModel::MangaInpaintor(
+                file.processor.manga_inpaintor.clone().unwrap_or_default(),
+            ),
             "aot-inpainting" => InpaintingModel::AotInpainting {},
             "flux2-klein" => {
                 InpaintingModel::Flux2Klein(file.processor.flux2_klein.clone().unwrap_or_default())
@@ -231,6 +241,12 @@ impl PipelineConfig {
                     .clone()
                     .unwrap_or_else(|| config.clone()),
             )),
+            InpaintingModel::MangaInpaintor(config) => Ok(InpaintingModel::MangaInpaintor(
+                self.processor
+                    .manga_inpaintor
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
             InpaintingModel::AotInpainting {} => Ok(InpaintingModel::AotInpainting {}),
             InpaintingModel::Flux2Klein(config) => Ok(InpaintingModel::Flux2Klein(
                 self.processor
@@ -269,6 +285,8 @@ pub struct ProcessorConfig {
     pub lama: Option<LaMaConfig>,
     #[serde(rename = "mi-gan")]
     pub mi_gan: Option<MiGanConfig>,
+    #[serde(rename = "manga-inpaintor")]
+    pub manga_inpaintor: Option<MangaInpaintorConfig>,
     #[serde(rename = "flux2-klein")]
     pub flux2_klein: Option<Flux2KleinConfig>,
     #[serde(rename = "rorem-mixed")]
@@ -300,6 +318,8 @@ pub enum InpaintingModel {
     LaMa(LaMaConfig),
     #[serde(rename = "mi-gan")]
     MiGan(MiGanConfig),
+    #[serde(rename = "manga-inpaintor")]
+    MangaInpaintor(MangaInpaintorConfig),
     #[serde(rename = "aot-inpainting")]
     AotInpainting {},
     #[serde(rename = "flux2-klein")]
@@ -530,5 +550,21 @@ mod tests {
         let parsed: PipelineConfig = toml::from_str(&text).unwrap();
 
         assert!(matches!(parsed.inpainting(), Ok(InpaintingModel::MiGan(_))));
+    }
+
+    #[test]
+    fn a_manga_inpaintor_selection_round_trips() {
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::MangaInpaintor(MangaInpaintorConfig::default()),
+            ..PipelineConfig::default()
+        };
+
+        let text = toml::to_string(&config).unwrap();
+        let parsed: PipelineConfig = toml::from_str(&text).unwrap();
+
+        assert!(matches!(
+            parsed.inpainting(),
+            Ok(InpaintingModel::MangaInpaintor(_))
+        ));
     }
 }
