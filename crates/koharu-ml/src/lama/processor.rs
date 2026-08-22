@@ -27,7 +27,7 @@ impl InpaintModel {
 
     pub(super) fn call(
         &self,
-        model: &dyn Backend,
+        model: &Backend,
         image: &DynamicImage,
         mask: &GrayImage,
         config: &InpaintRequest,
@@ -104,7 +104,7 @@ impl InpaintModel {
 
     fn pad_forward(
         &self,
-        model: &dyn Backend,
+        model: &Backend,
         image: &RgbImage,
         mask: &GrayImage,
         config: &InpaintRequest,

@@ -31,7 +31,7 @@ remote_repository! {
 
 #[derive(Debug)]
 pub struct LaMa {
-    backend: Box<dyn Backend>,
+    backend: Backend,
     processor: InpaintModel,
 }
 
@@ -42,24 +42,24 @@ impl LaMa {
         format: WeightsFormat,
     ) -> Result<Self> {
         let device: Device = device.try_into_device()?;
-        let backend: Box<dyn Backend> = match format {
+        let backend = match format {
             WeightsFormat::SafeTensors => {
                 let path = source
                     .resolve(WEIGHTS.into())
                     .await
-                    .context("failed to resolve LaMa weights")?;
+                    .context("failed to resolve LaMa safetensors weights")?;
                 let mut model = Model::new(&FFCResNetGeneratorConfig::default(), device);
                 model
                     .load(&path)
                     .context("failed to load LaMa safetensors")?;
-                Box::new(model)
+                Backend::SafeTensors(Box::new(model))
             }
             WeightsFormat::TorchScript => {
                 let path = source
                     .resolve(TORCHSCRIPT_WEIGHTS.into())
                     .await
-                    .context("failed to resolve LaMa weights")?;
-                Box::new(TorchScript::load(&path, device)?)
+                    .context("failed to resolve LaMa TorchScript weights")?;
+                Backend::TorchScript(TorchScript::load(&path, device)?)
             }
         };
         Ok(Self {
@@ -74,10 +74,7 @@ impl LaMa {
         mask: &GrayImage,
         config: &InpaintRequest,
     ) -> Result<RgbImage> {
-        koharu_torch::no_grad(|| {
-            self.processor
-                .call(self.backend.as_ref(), image, mask, config)
-        })
+        koharu_torch::no_grad(|| self.processor.call(&self.backend, image, mask, config))
     }
 }
 
@@ -111,7 +108,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            format!("{torchscript:#}").contains("garbage.pt"),
+            format!("{torchscript:#}").contains("failed to load TorchScript archive"),
             "{torchscript:#}"
         );
     }
