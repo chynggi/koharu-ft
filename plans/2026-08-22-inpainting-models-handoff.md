@@ -1,6 +1,6 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
-최종 갱신: 2026-08-22 (Task 0~3 구현·리뷰 완료. 다음은 Task 4)
+최종 갱신: 2026-08-22 (Task 0~4 구현·리뷰 완료. 다음은 Task 5 — UI)
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §5의 미검증 항목은 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -62,6 +62,8 @@ libtorch·sd.cpp에 이은 **세 번째 네이티브 런타임과 두 번째 CUD
 | 3 | `Backend` — safetensors/TorchScript 두 형식 | 완료, 리뷰 2종 + 수정 반영 | `cargo test -p koharu-ml --lib -- --test-threads=1` |
 | 3 | `WeightsFormat` 설정 갈래 + CLI `--torchscript`/`--weights` | 완료 | `lama/config.rs`, `bin/lama.rs` |
 | 3 | **4K 실사진으로 두 경로 무회귀 실측** | 완료 | 아래 |
+| 4 | `InpaintingModel::LaMa(LaMaConfig)` 설정 배선 | 완료, 리뷰 2종 + 수정 | `cargo test -p koharu-pipeline` → 71 passed |
+| 4 | 기존 `koharu.toml` 무손상 | 완료 | `an_existing_file_without_a_lama_section_keeps_the_builtin_checkpoint` |
 
 커밋 (오래된 것부터):
 
@@ -171,11 +173,37 @@ safetensors Δ14.1 / Δ0.01, TorchScript Δ14.2 / Δ0.01 — 둘 다 마스크 �
 논거는 맞지만(`config.rs`는 이식된 IOPaint YAML용, `WeightsFormat`은 Koharu 로더 노브)
 Task 4가 같은 파일에 LaMa 설정을 배선하므로 그 모양을 본 뒤 판단한다.
 
+### Task 4 리뷰 결과 (스펙·품질 모두 PASS, 후속 수정 2건 반영)
+
+`924d6c7c` 구현, `05c2941e`·`9dae6140` 코디네이터 후속. 워크스페이스 빌드 복구됨.
+`koharu-pipeline` **71 passed / 0 failed**.
+
+하위 호환이 이 태스크의 핵심이었고 코드로 추적해 확인했다: `Serialize`의 `match`가
+`processor.lama`를 채우는 것은 **`LaMa(config)` 팔 안에서뿐**이라, LaMa가 아닌 모델을 쓰는
+사용자의 파일에 `[processor.lama]`가 새로 생기지 않는다. `flux2_klein`·`rorem_mixed`와 동일 패턴.
+
+**리뷰가 잡아낸 테스트 구멍 2건 — 둘 다 변이로 실재를 확인한 뒤 고쳤다:**
+
+1. **기본값이 고정돼 있지 않았다.** 구현자가 `assert_eq!(lama.source, ComponentSourceConfig::Builtin)`을
+   `LaMaConfig::default().source`와의 비교로 바꿔, 기본값이 `Builtin`에서 벗어나도 초록이었다.
+   바꾼 이유 자체는 정당했다 — `mod stages`·`mod inpainting`이 둘 다 비공개라 쓰이지 않는
+   `pub use`는 실제로 경고가 난다. 그래서 재수출 대신 **타입이 사는 모듈**에
+   `lama_defaults_reproduce_the_previous_checkpoint`를 추가했다(형제 Flux 테스트 옆).
+2. **`LaMaConfig::validate()`의 실패 경로가 완전히 무방비였다.** 본문을 `Ok(())`로 바꿔도
+   스위트 전체가 초록이었다. `an_invalid_lama_source_is_rejected` 추가.
+
+**포맷:** `resources/bytes.rs`·`vram.rs`·`stages/inpainting.rs`·`stages/mod.rs`는 **main에서 이미
+미포맷**이다(worktree로 대조 확인). 이번 태스크가 더럽힌 `config.rs`·`bin/run.rs`만 포맷했다.
+`cargo fmt -p koharu-pipeline`을 통째로 돌리지 말 것 — 무관한 4개 파일이 diff에 섞인다.
+
+**`WeightsFormat` 위치 문제 종결:** `lama/config.rs` 유지. 파이프라인 쪽 `WeightsFormatConfig`에서
+`Into`로 넘기는 배선에 마찰이 없었다. 다만 그 파일 doc 헤더의 "IOPaint YAML" 설명은 이 enum에
+맞지 않으니 주석만 손볼 여지가 있다.
+
 ### 남은 Task (계획서 참조)
 
 | Task | 내용 | 모델 배정(제안) |
 |---|---|---|
-| 4 | `InpaintingModel::LaMa(LaMaConfig)` 파이프라인 배선 | sonnet |
 | 5 | LaMa 소스·형식 UI + 9개 로케일 | sonnet |
 | 6 | 전처리 헬퍼를 `inpaint_ops.rs`로 추출 | sonnet |
 | 7 | MI-GAN 모듈 (텐서 연산) | opus |
