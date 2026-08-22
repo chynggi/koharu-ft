@@ -1,6 +1,6 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
-최종 갱신: 2026-08-22 (Task 0~2 구현·리뷰 완료. 다음은 Task 3)
+최종 갱신: 2026-08-22 (Task 0~3 구현·리뷰 완료. 다음은 Task 4)
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §5의 미검증 항목은 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -58,7 +58,10 @@ libtorch·sd.cpp에 이은 **세 번째 네이티브 런타임과 두 번째 CUD
 | 1 | **실제 `big-lama.pt`로 동작 실증** | 완료 | §3 |
 | 2 | `ComponentSource`를 `flux2_klein` → 크레이트 공용으로 이동 | 완료, 리뷰 2종 통과 | `crates/koharu-ml/src/source.rs` |
 | 2 | `ComponentSource::Url { url, digest }` 갈래 추가 | 완료, 리뷰 2종 통과 | `a_url_override_requires_a_digest` |
-| 2 | `remote_repository!` 매크로 | 완료(미사용, Task 3에서 첫 사용) | `koharu-ml/src/lib.rs` |
+| 2 | `remote_repository!` 매크로 | 완료 (Task 3이 첫 사용, `#[expect]` 제거됨) | `koharu-ml/src/lib.rs` |
+| 3 | `Backend` — safetensors/TorchScript 두 형식 | 완료, 리뷰 2종 + 수정 반영 | `cargo test -p koharu-ml --lib -- --test-threads=1` |
+| 3 | `WeightsFormat` 설정 갈래 + CLI `--torchscript`/`--weights` | 완료 | `lama/config.rs`, `bin/lama.rs` |
+| 3 | **4K 실사진으로 두 경로 무회귀 실측** | 완료 | 아래 |
 
 커밋 (오래된 것부터):
 
@@ -144,11 +147,34 @@ clippy도 이 diff와 무관한 기존 `large_enum_variant` 경고 외에 깨끗
 리뷰어가 커밋 diff만 보고 판단했으나 계획서 812행(Task 3, LaMa 2종)·1341행(Task 7, MI-GAN)에
 호출 블록이 있어 사용처는 2곳이다. `model_repository!`와 대칭이므로 존치한다.
 
+### Task 3 리뷰 결과 (스펙 PASS / 품질 CHANGES NEEDED → 수정 완료)
+
+핵심 검증: `processor.rs` diff가 **정확히 3곳**(import, 매개변수 타입 2곳, `?` 하나)뿐이라
+**전처리가 비트 단위로 불변**임이 증명됐다. 이 태스크의 위험은 사실상 그것 하나였다.
+
+엔드투엔드 실측(4K 픽셀 diff, 마스크 내부/외부):
+safetensors Δ14.1 / Δ0.01, TorchScript Δ14.2 / Δ0.01 — 둘 다 마스크 안쪽만 칠한다.
+
+품질 리뷰 must-fix 2건은 `38784b44`로 반영:
+
+1. **`Box<dyn Backend>` → `enum Backend`.** 변형이 컴파일 타임에 정확히 둘이고 호출당 1회
+   디스패치라 동적 디스패치가 불필요했다. 결정적 이유는 따로 있다 — 옛 `impl`의
+   `Ok(Model::forward(self, ..))`가 **반드시 UFCS여야 했다.** `self.forward(..)`로 쓰면
+   트레이트 메서드로 조용히 무한 재귀하고 컴파일도 경고도 통과한다. enum에선 이 함정이
+   존재할 수 없다. (`clippy::large_enum_variant` 때문에 `SafeTensors(Box<Model>)`로 박싱.)
+2. **TorchScript 테스트 단언이 거짓 통과했다.** `contains("garbage.pt")`는 경로가 양쪽
+   에러 경로에 다 나와서 `resolve`가 실패해 로더가 안 돌아도 초록불이었다.
+   `"failed to load TorchScript archive"`로 교체. 구현자가 존재하지 않는 경로로 일회용
+   테스트를 만들어 옛 단언이 거짓 통과함을 실증한 뒤 고쳤다.
+
+**보류한 리뷰 제안 1건:** `WeightsFormat`을 `config.rs`에서 `backend.rs`로 옮기자는 제안.
+논거는 맞지만(`config.rs`는 이식된 IOPaint YAML용, `WeightsFormat`은 Koharu 로더 노브)
+Task 4가 같은 파일에 LaMa 설정을 배선하므로 그 모양을 본 뒤 판단한다.
+
 ### 남은 Task (계획서 참조)
 
 | Task | 내용 | 모델 배정(제안) |
 |---|---|---|
-| 3 | LaMa `Backend` 트레이트 + safetensors/TorchScript 두 구현 | opus |
 | 4 | `InpaintingModel::LaMa(LaMaConfig)` 파이프라인 배선 | sonnet |
 | 5 | LaMa 소스·형식 UI + 9개 로케일 | sonnet |
 | 6 | 전처리 헬퍼를 `inpaint_ops.rs`로 추출 | sonnet |
