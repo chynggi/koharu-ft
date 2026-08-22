@@ -609,7 +609,7 @@ export type GroupRole = "text";
 
 export type InpaintingModel = {
 	model: "lama",
-} & LaMaConfig | { model: "mi-gan" } & MiGanConfig | { model: "aot-inpainting" } | {
+} & LaMaConfig | { model: "mi-gan" } & MiGanConfig | { model: "manga-inpaintor" } & MangaInpaintorConfig | { model: "aot-inpainting" } | {
 	model: "flux2-klein",
 } & Flux2KleinConfig | {
 	model: "rorem-mixed",
@@ -730,6 +730,15 @@ export type LocalConfig = {
 
 export type LoginEvent = { type: "progress"; message: string } | { type: "device_code"; verification_url: string; user_code: string };
 
+/**
+ *  Manga inpainter checkpoint selection. The pipeline is assembled from an
+ *  inpaintor and a line model.
+ */
+export type MangaInpaintorConfig = {
+	inpaintor?: ComponentSourceConfig,
+	line?: ComponentSourceConfig,
+};
+
 /**  Mirror of [`koharu_pipeline::MemoryScope`] for the frontend. */
 export type MemoryScope = "process" | "device" | "system";
 
@@ -840,6 +849,7 @@ export type ProcessorConfig = {
 	"koharu-layout-rfdetr-seg-2xl"?: KoharuLayoutRFDetrSeg2XLConfig | null,
 	lama?: LaMaConfig | null,
 	"mi-gan"?: MiGanConfig | null,
+	"manga-inpaintor"?: MangaInpaintorConfig | null,
 	"flux2-klein"?: Flux2KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
 };

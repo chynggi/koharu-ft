@@ -482,6 +482,8 @@
         "prompt": "プロンプト",
         "seed": "Seed",
         "source": {
+          "inpaintor": "補完モデル",
+          "line": "線画モデル",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"

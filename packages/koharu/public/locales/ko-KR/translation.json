@@ -482,6 +482,8 @@
         "prompt": "프롬프트",
         "seed": "시드",
         "source": {
+          "inpaintor": "인페인터",
+          "line": "선화 모델",
           "text_encoder": "텍스트 인코더",
           "transformer": "트랜스포머",
           "vae": "VAE"

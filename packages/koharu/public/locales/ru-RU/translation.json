@@ -482,6 +482,8 @@
         "prompt": "Промпт",
         "seed": "Seed",
         "source": {
+          "inpaintor": "Инпейнтер",
+          "line": "Модель линий",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"

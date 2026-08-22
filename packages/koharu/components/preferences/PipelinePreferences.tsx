@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Flux2KleinOptions } from '@/components/preferences/Flux2KleinOptions'
 import { LaMaOptions } from '@/components/preferences/LaMaOptions'
+import { MangaInpaintorOptions } from '@/components/preferences/MangaInpaintorOptions'
 import { MiGanOptions } from '@/components/preferences/MiGanOptions'
 import {
   defaultModel,
@@ -149,6 +150,13 @@ function ModelOptions({
     case 'mi-gan':
       return (
         <MiGanOptions value={model} onChange={(changes) => onChange({ ...model, ...changes })} />
+      )
+    case 'manga-inpaintor':
+      return (
+        <MangaInpaintorOptions
+          value={model}
+          onChange={(changes) => onChange({ ...model, ...changes })}
+        />
       )
     case 'flux2-klein':
       return (

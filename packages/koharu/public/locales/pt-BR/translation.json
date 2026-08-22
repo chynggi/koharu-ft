@@ -482,6 +482,8 @@
         "prompt": "Prompt",
         "seed": "Seed",
         "source": {
+          "inpaintor": "Inpaintor",
+          "line": "Modelo de linhas",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"

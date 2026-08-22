@@ -482,6 +482,8 @@
         "prompt": "İstem",
         "seed": "Seed",
         "source": {
+          "inpaintor": "İnpyntör",
+          "line": "Çizgi modeli",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"

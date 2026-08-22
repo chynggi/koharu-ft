@@ -482,6 +482,8 @@
         "prompt": "提示詞",
         "seed": "Seed",
         "source": {
+          "inpaintor": "修復模型",
+          "line": "線稿模型",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"
