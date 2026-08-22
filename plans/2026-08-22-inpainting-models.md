@@ -180,7 +180,9 @@ pub struct RemoteFile<'a> {
 }
 
 impl<'a> RemoteFile<'a> {
-    /// `digest`는 파일 내용의 BLAKE3 해시를 소문자 16진수 64자로 적은 것이다.
+    /// `digest`는 파일 내용의 BLAKE3 해시를 16진수 64자로 적은 것이다.
+    /// 대소문자는 가리지 않되, 캐시 경로에는 소문자로 정규화해 넣는다 —
+    /// 같은 파일이 표기만 달라 캐시에 두 번 들어가지 않게 하기 위해서다.
     #[must_use]
     pub const fn pinned(url: &'a str, digest: &'a str) -> Self {
         Self { url, digest }
@@ -530,7 +532,8 @@ git commit -m "feat(ml): add a TorchScript archive loader"
 
 ```rust
     /// 임의 URL. 다이제스트로 못박는다 — 없으면 캐시가 오염될 수 있으므로
-    /// 필수다.
+    /// 필수다. 검증은 `RemoteFile::validate`에 위임하므로 형식 규칙이
+    /// 한 곳에만 있다.
     Url { url: String, digest: String },
 ```
 
@@ -575,7 +578,7 @@ git commit -m "feat(ml): add a TorchScript archive loader"
 같은 갈래와 `From` 팔을 추가한다.
 
 ```rust
-    /// 임의 URL. `digest`는 BLAKE3 소문자 16진수 64자다.
+    /// 임의 URL. `digest`는 BLAKE3 16진수 64자다 (대소문자 무관).
     Url { url: String, digest: String },
 ```
 
@@ -1749,6 +1752,13 @@ git commit -m "bench(ml): compare MI-GAN against LaMa"
 
 - ~~Task 0의 자리표시자~~ **해소됨.** 세 다이제스트를 실측해 계획에 반영했다
   (Task 0 Step 8 표). 자리표시자는 남아 있지 않다.
+- **이 계획서의 코드는 컴파일된 적이 없다.** Task 0에서 이미 두 건이
+  드러났다 — `blake3::Hasher::update_mmap_rayon`은 워크스페이스가 해당
+  피처를 켜지 않아 쓸 수 없었고(`update_reader`로 대체), 다이제스트
+  대소문자 정책이 산문과 코드에서 어긋나 있었다(대소문자 허용 + 캐시
+  경로 소문자 정규화로 확정). **뒤 태스크의 코드 블록도 같은 눈으로 볼
+  것.** 특히 Task 3의 `Box<dyn Backend>`와 Task 7의 텐서 연산은 검증되지
+  않은 추론이다. 구현자는 고치고 신고하도록 지시받는다.
 - **상류 릴리스 자산의 가용성.** 원본을 미러링하지 않으므로 GitHub 릴리스가
   사라지면 내장 기본값이 죽는다. 세 URL 모두 현재 200으로 응답하는 것을
   확인했다. 다이제스트가 있으므로 상류가 같은 URL에 다른 파일을 올려도
