@@ -56,3 +56,6 @@ test-results/
 
 # Zensical build output
 /docs/site/
+
+# cmd
+.commandcode/
