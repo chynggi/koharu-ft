@@ -1162,6 +1162,13 @@ mod tests {
     }
 
     #[test]
+    fn lama_defaults_reproduce_the_previous_checkpoint() {
+        let config = LaMaConfig::default();
+        assert_eq!(config.source, ComponentSourceConfig::Builtin);
+        assert_eq!(config.format, WeightsFormatConfig::SafeTensors);
+    }
+
+    #[test]
     fn a_flux_section_written_before_the_settings_existed_still_loads() {
         let config: Flux2KleinConfig =
             toml::from_str("prompt = \"Erase the text.\"").expect("legacy section deserializes");
