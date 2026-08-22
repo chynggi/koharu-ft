@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Flux2KleinOptions } from '@/components/preferences/Flux2KleinOptions'
 import { LaMaOptions } from '@/components/preferences/LaMaOptions'
+import { MiGanOptions } from '@/components/preferences/MiGanOptions'
 import {
   defaultModel,
   modelNames,
@@ -144,6 +145,10 @@ function ModelOptions({
     case 'lama':
       return (
         <LaMaOptions value={model} onChange={(changes) => onChange({ ...model, ...changes })} />
+      )
+    case 'mi-gan':
+      return (
+        <MiGanOptions value={model} onChange={(changes) => onChange({ ...model, ...changes })} />
       )
     case 'flux2-klein':
       return (

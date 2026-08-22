@@ -2,15 +2,8 @@
 
 import { useTranslation } from 'react-i18next'
 
-import { NumberField, TextField } from '@/components/preferences/PreferenceFields'
-import type { ComponentSourceConfig, Flux2KleinConfig } from '@koharu/bridge/protocol'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@koharu/ui/components/select'
+import { ComponentSourceField, NumberField, TextField } from '@/components/preferences/PreferenceFields'
+import type { Flux2KleinConfig } from '@koharu/bridge/protocol'
 
 const DEFAULT_PROMPT = 'Remove the text and reconstruct the background.'
 const DEFAULT_STEPS = 4
@@ -97,99 +90,3 @@ export function Flux2KleinOptions({
   )
 }
 
-export function ComponentSourceField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: ComponentSourceConfig
-  onChange: (value: ComponentSourceConfig) => void
-}) {
-  const { t } = useTranslation()
-  const kinds = {
-    builtin: t('settings.pipeline.options.sourceKind.builtin'),
-    local_file: t('settings.pipeline.options.sourceKind.localFile'),
-    hugging_face: t('settings.pipeline.options.sourceKind.huggingFace'),
-    url: t('settings.pipeline.options.sourceKind.url'),
-  }
-  return (
-    <div className='grid gap-1'>
-      <label className='grid gap-1 text-[10px] text-muted-foreground'>
-        {label}
-        <Select
-          value={value.kind}
-          items={kinds}
-          onValueChange={(kind) => {
-            if (kind) onChange(emptySource(kind as ComponentSourceConfig['kind']))
-          }}
-        >
-          <SelectTrigger aria-label={label} className='h-8 text-[11px] text-foreground'>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(kinds).map(([kind, name]) => (
-              <SelectItem key={kind} value={kind}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
-      {value.kind === 'local_file' && (
-        <TextField
-          label={t('settings.pipeline.options.sourcePath')}
-          value={value.path}
-          onChange={(path) => onChange({ ...value, path })}
-        />
-      )}
-      {value.kind === 'hugging_face' && (
-        <div className='grid grid-cols-3 gap-2'>
-          <TextField
-            label={t('settings.pipeline.options.sourceRepository')}
-            value={value.repository}
-            onChange={(repository) => onChange({ ...value, repository })}
-          />
-          <TextField
-            label={t('settings.pipeline.options.sourceFilename')}
-            value={value.filename}
-            onChange={(filename) => onChange({ ...value, filename })}
-          />
-          <TextField
-            label={t('settings.pipeline.options.sourceRevision')}
-            value={value.revision ?? ''}
-            onChange={(revision) => onChange({ ...value, revision: revision || null })}
-          />
-        </div>
-      )}
-      {value.kind === 'url' && (
-        <div className='grid grid-cols-2 gap-2'>
-          <TextField
-            label={t('settings.pipeline.options.sourceUrl')}
-            type='url'
-            value={value.url}
-            onChange={(url) => onChange({ ...value, url })}
-          />
-          <TextField
-            label={t('settings.pipeline.options.sourceDigest')}
-            value={value.digest}
-            onChange={(digest) => onChange({ ...value, digest })}
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig {
-  switch (kind) {
-    case 'builtin':
-      return { kind }
-    case 'local_file':
-      return { kind, path: '' }
-    case 'hugging_face':
-      return { kind, repository: '', revision: null, filename: '' }
-    case 'url':
-      return { kind, url: '', digest: '' }
-  }
-}

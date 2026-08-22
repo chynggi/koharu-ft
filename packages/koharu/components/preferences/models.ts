@@ -13,7 +13,7 @@ export type ModelName = PipelineModel['model']
 export const modelOptions = {
   detection: ['koharu-layout-rfdetr-seg-2xl'],
   ocr: ['paddleocr-vl-1.6', 'manga-ocr', 'baberu-ocr'],
-  inpainting: ['lama', 'aot-inpainting', 'flux2-klein', 'rorem-mixed'],
+  inpainting: ['lama', 'mi-gan', 'aot-inpainting', 'flux2-klein', 'rorem-mixed'],
 } satisfies Record<ModelStage, ModelName[]>
 
 export const modelNames: Record<ModelName, string> = {
@@ -22,6 +22,7 @@ export const modelNames: Record<ModelName, string> = {
   'manga-ocr': 'Manga OCR',
   'baberu-ocr': 'Baberu OCR',
   lama: 'LaMa',
+  'mi-gan': 'MI-GAN',
   'aot-inpainting': 'AOT Inpainting',
   'flux2-klein': 'FLUX.2 Klein',
   'rorem-mixed': 'RORem Mixed',
@@ -35,6 +36,7 @@ export function defaultModel(model: ModelName): PipelineModel {
     case 'manga-ocr':
     case 'baberu-ocr':
     case 'lama':
+    case 'mi-gan':
     case 'aot-inpainting':
       return { model }
     case 'flux2-klein':
@@ -86,6 +88,9 @@ export function replaceStage(
           ...config.processor,
           ...(model.model === 'lama'
             ? { lama: { source: model.source ?? undefined, format: model.format ?? undefined } }
+            : {}),
+          ...(model.model === 'mi-gan'
+            ? { 'mi-gan': { source: model.source ?? undefined } }
             : {}),
           ...(model.model === 'flux2-klein'
             ? { 'flux2-klein': { prompt: model.prompt ?? undefined } }

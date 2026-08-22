@@ -2,7 +2,7 @@
 
 import { useTranslation } from 'react-i18next'
 
-import { ComponentSourceField } from '@/components/preferences/Flux2KleinOptions'
+import { ComponentSourceField } from '@/components/preferences/PreferenceFields'
 import type { LaMaConfig, WeightsFormatConfig } from '@koharu/bridge/protocol'
 import {
   Select,

@@ -609,7 +609,7 @@ export type GroupRole = "text";
 
 export type InpaintingModel = {
 	model: "lama",
-} & LaMaConfig | { model: "aot-inpainting" } | {
+} & LaMaConfig | { model: "mi-gan" } & MiGanConfig | { model: "aot-inpainting" } | {
 	model: "flux2-klein",
 } & Flux2KleinConfig | {
 	model: "rorem-mixed",
@@ -735,6 +735,14 @@ export type MemoryScope = "process" | "device" | "system";
 
 export type MiniMaxConfig = Record<string, never>;
 
+/**
+ *  MI-GAN checkpoint selection. A prompt-free erase-only model, so it only
+ *  carries a source.
+ */
+export type MiGanConfig = {
+	source?: ComponentSourceConfig,
+};
+
 export type Model = {
 	provider: Provider,
 	model: string | null,
@@ -831,6 +839,7 @@ export type Preferences = {
 export type ProcessorConfig = {
 	"koharu-layout-rfdetr-seg-2xl"?: KoharuLayoutRFDetrSeg2XLConfig | null,
 	lama?: LaMaConfig | null,
+	"mi-gan"?: MiGanConfig | null,
 	"flux2-klein"?: Flux2KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
 };
