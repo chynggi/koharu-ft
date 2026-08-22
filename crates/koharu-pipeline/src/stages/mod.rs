@@ -10,7 +10,9 @@ use async_trait::async_trait;
 use koharu_scene::{Edit, EntityId, Generation, Patch, ProducerId, Snapshot};
 
 pub use detection::KoharuLayoutRFDetrSeg2XLConfig;
-pub use inpainting::{Flux2KleinConfig, LaMaConfig, RoremMixedConfig, WeightsFormatConfig};
+pub use inpainting::{
+    Flux2KleinConfig, LaMaConfig, MiGanConfig, RoremMixedConfig, WeightsFormatConfig,
+};
 
 use crate::{Bounds, ImageCache, InpaintingMask, PipelineConfig, Stage};
 
@@ -87,7 +89,11 @@ impl Stages {
             detection: detection::Processor::new(config.detection()?, device.clone()),
             ocr: ocr::Processor::new(config.ocr.clone(), device.clone()),
             translation: translation::Processor::new(config.translation.clone(), translator),
-            inpainting: inpainting::Processor::new(config.inpainting()?, device.clone(), resources)?,
+            inpainting: inpainting::Processor::new(
+                config.inpainting()?,
+                device.clone(),
+                resources,
+            )?,
         })
     }
 
