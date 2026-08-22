@@ -26,6 +26,32 @@
 | LaMa TorchScript는 `forward(image, mask)` 2입력이다 | IOPaint `iopaint/model/lama.py:46-63` |
 | MI-GAN TorchScript는 `forward(cat([0.5-mask, erased], 1))` 1입력이다 | IOPaint `iopaint/model/mi_gan.py:82-110` |
 | 모델 설정은 `ProcessorConfig`의 `Option<T>` 필드에 저장된다 | `koharu-pipeline/src/config.rs:240-252` |
+| **실증됨**: `big-lama.pt`(197MB)가 `CModule`로 로드되고 `forward_ts`가 `[1,3,512,512]`를 반환한다 | Task 1의 `big_lama_accepts_an_image_and_a_mask`, CPU 5.3초 |
+
+## 테스트 실행 환경 (Windows)
+
+`koharu-ml`의 테스트를 돌리려면 **DLL 두 디렉터리**가 PATH에 있어야 한다.
+없으면 `failed to load any dynamic library from [koharu-torch]:
+koharu-torch.dll: LoadLibraryExW failed`로 죽는다. 코드 문제가 아니다.
+
+로더는 실행 파일 옆을 먼저 보고(`torch_api.rs`의
+`__koharu_bindgen_bundled_library_paths`), 없으면 OS 검색 경로로 넘어간다.
+테스트 바이너리는 `target/debug/deps/`에 있고 거기엔 DLL이 없으므로 PATH가
+유일한 경로다.
+
+| 디렉터리 | 담고 있는 것 |
+|---|---|
+| `%LOCALAPPDATA%\koharu` | `koharu-torch.dll` (C++ shim) |
+| `%LOCALAPPDATA%\koharu\packages	orch.12.1\cpu\libtorch\lib` | `c10.dll`, `torch_cpu.dll` 등 libtorch 본체 |
+
+Git Bash에서는 **반드시 `cygpath -u`로 변환**해야 한다. `$LOCALAPPDATA`는
+백슬래시를 포함하고, 콜론으로 구분되는 PATH에 `C:\...`를 그대로 넣으면
+드라이브 문자에서 잘려 조용히 깨진다.
+
+```bash
+LA=$(cygpath -u "$LOCALAPPDATA")
+export PATH="$LA/koharu:$LA/koharu/packages/torch/2.12.1/cpu/libtorch/lib:$PATH"
+```
 
 **LaMa 전처리는 이미 TorchScript와 일치한다.** `lama/processor.rs:126-127`이
 `pad(image/255.0, 8)`과 `pad((mask>0) as f32, 8)`을 만드는데, 이는
