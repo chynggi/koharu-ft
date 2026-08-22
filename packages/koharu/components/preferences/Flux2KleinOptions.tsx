@@ -166,6 +166,7 @@ export function ComponentSourceField({
         <div className='grid grid-cols-2 gap-2'>
           <TextField
             label={t('settings.pipeline.options.sourceUrl')}
+            type='url'
             value={value.url}
             onChange={(url) => onChange({ ...value, url })}
           />
@@ -180,7 +181,7 @@ export function ComponentSourceField({
   )
 }
 
-export function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig {
+function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig {
   switch (kind) {
     case 'builtin':
       return { kind }
