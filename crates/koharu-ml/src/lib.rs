@@ -24,7 +24,6 @@ macro_rules! model_repository {
 
 /// The URL equivalent of `model_repository!`, for checkpoints published outside
 /// Hugging Face.
-#[expect(unused_macros, reason = "the first URL-pinned model lands separately")]
 macro_rules! remote_repository {
     ($($name:ident = $url:literal @ $digest:literal),+ $(,)?) => {
         $(

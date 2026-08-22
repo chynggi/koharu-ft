@@ -11,8 +11,8 @@ use imageproc::contours::{BorderType, find_contours_with_threshold};
 use koharu_torch::{Device, Kind, Tensor};
 
 use super::{
+    backend::Backend,
     config::{HDStrategy, InpaintRequest},
-    model::Model,
 };
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl InpaintModel {
 
     pub(super) fn call(
         &self,
-        model: &Model,
+        model: &dyn Backend,
         image: &DynamicImage,
         mask: &GrayImage,
         config: &InpaintRequest,
@@ -104,7 +104,7 @@ impl InpaintModel {
 
     fn pad_forward(
         &self,
-        model: &Model,
+        model: &dyn Backend,
         image: &RgbImage,
         mask: &GrayImage,
         config: &InpaintRequest,
@@ -126,7 +126,7 @@ impl InpaintModel {
         let model_image = pad_img_to_modulo(image_tensor.to_kind(Kind::Float) / 255.0, 8);
         let model_mask = pad_img_to_modulo(mask_tensor.gt(0.0).to_kind(Kind::Float), 8);
         let output = model
-            .forward(&model_image, &model_mask)
+            .forward(&model_image, &model_mask)?
             .narrow(2, 0, i64::from(height))
             .narrow(3, 0, i64::from(width))
             .clamp(0.0, 1.0)
