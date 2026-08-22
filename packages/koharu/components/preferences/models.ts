@@ -84,6 +84,9 @@ export function replaceStage(
         inpainting: model as InpaintingModel,
         processor: {
           ...config.processor,
+          ...(model.model === 'lama'
+            ? { lama: { source: model.source ?? undefined, format: model.format ?? undefined } }
+            : {}),
           ...(model.model === 'flux2-klein'
             ? { 'flux2-klein': { prompt: model.prompt ?? undefined } }
             : {}),

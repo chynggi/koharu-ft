@@ -97,7 +97,7 @@ export function Flux2KleinOptions({
   )
 }
 
-function ComponentSourceField({
+export function ComponentSourceField({
   label,
   value,
   onChange,
@@ -111,6 +111,7 @@ function ComponentSourceField({
     builtin: t('settings.pipeline.options.sourceKind.builtin'),
     local_file: t('settings.pipeline.options.sourceKind.localFile'),
     hugging_face: t('settings.pipeline.options.sourceKind.huggingFace'),
+    url: t('settings.pipeline.options.sourceKind.url'),
   }
   return (
     <div className='grid gap-1'>
@@ -161,11 +162,25 @@ function ComponentSourceField({
           />
         </div>
       )}
+      {value.kind === 'url' && (
+        <div className='grid grid-cols-2 gap-2'>
+          <TextField
+            label={t('settings.pipeline.options.sourceUrl')}
+            value={value.url}
+            onChange={(url) => onChange({ ...value, url })}
+          />
+          <TextField
+            label={t('settings.pipeline.options.sourceDigest')}
+            value={value.digest}
+            onChange={(digest) => onChange({ ...value, digest })}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
-function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig {
+export function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig {
   switch (kind) {
     case 'builtin':
       return { kind }
@@ -173,5 +188,7 @@ function emptySource(kind: ComponentSourceConfig['kind']): ComponentSourceConfig
       return { kind, path: '' }
     case 'hugging_face':
       return { kind, repository: '', revision: null, filename: '' }
+    case 'url':
+      return { kind, url: '', digest: '' }
   }
 }

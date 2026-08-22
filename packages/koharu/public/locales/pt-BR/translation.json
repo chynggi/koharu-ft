@@ -469,6 +469,12 @@
       "modelLabel": "Modelo de {{stage}}",
       "options": {
         "bubbleThreshold": "Limite de balão",
+        "checkpointSource": "Origem do checkpoint",
+        "format": "Formato",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
         "maxPixels": "Max pixels",
         "negativePrompt": "Prompt negativo",
         "paddingMaskCrop": "Mask crop padding",
@@ -481,15 +487,18 @@
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceDigest": "Resumo (BLAKE3)",
         "sourceFilename": "File",
         "sourceKind": {
           "builtin": "Bundled",
           "huggingFace": "Hugging Face",
-          "localFile": "Local file"
+          "localFile": "Local file",
+          "url": "URL"
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
         "sourceRevision": "Revision (optional)",
+        "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",
         "textThreshold": "Limite de texto"

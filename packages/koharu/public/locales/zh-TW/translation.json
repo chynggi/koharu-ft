@@ -469,6 +469,12 @@
       "modelLabel": "{{stage}}模型",
       "options": {
         "bubbleThreshold": "對話框閾值",
+        "checkpointSource": "檢查點來源",
+        "format": "格式",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
         "maxPixels": "Max pixels",
         "negativePrompt": "負面提示詞",
         "paddingMaskCrop": "Mask crop padding",
@@ -481,15 +487,18 @@
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceDigest": "摘要 (BLAKE3)",
         "sourceFilename": "File",
         "sourceKind": {
           "builtin": "Bundled",
           "huggingFace": "Hugging Face",
-          "localFile": "Local file"
+          "localFile": "Local file",
+          "url": "URL"
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
         "sourceRevision": "Revision (optional)",
+        "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",
         "textThreshold": "文字閾值"

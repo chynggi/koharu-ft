@@ -402,7 +402,9 @@ export type ComponentSourceConfig =
 /**  A checkpoint already on disk. Nothing is downloaded and the file is only read. */
 { kind: "local_file"; path: string } | 
 /**  Any Hugging Face repository. Without a revision the repository head is used. */
-{ kind: "hugging_face"; repository: string; revision?: string | null; filename: string };
+{ kind: "hugging_face"; repository: string; revision?: string | null; filename: string } |
+/**  An arbitrary URL. `digest` is a 64-character BLAKE3 hex digest (case-insensitive). */
+{ kind: "url"; url: string; digest: string };
 
 export type Config = {
 	model: string | null,
@@ -605,7 +607,9 @@ export type GrokConfig = Record<string, never>;
 
 export type GroupRole = "text";
 
-export type InpaintingModel = { model: "lama" } | { model: "aot-inpainting" } | {
+export type InpaintingModel = {
+	model: "lama",
+} & LaMaConfig | { model: "aot-inpainting" } | {
 	model: "flux2-klein",
 } & Flux2KleinConfig | {
 	model: "rorem-mixed",
@@ -643,6 +647,15 @@ export type KoharuLayoutRFDetrSeg2XLConfig = {
  *  them would only produce runtime failures.
  */
 export type KvCacheChoice = "f32" | "f16" | "bf16" | "q8_0" | "q5_1" | "q5_0" | "q4_1" | "q4_0" | "iq4_nl";
+
+/**
+ *  LaMa checkpoint selection. Defaults to the `mayocream/lama-manga`
+ *  safetensors checkpoint, matching the behavior before this field existed.
+ */
+export type LaMaConfig = {
+	source?: ComponentSourceConfig,
+	format?: WeightsFormatConfig,
+};
 
 export type LanguageChoice = {
 	tag: string,
@@ -817,6 +830,7 @@ export type Preferences = {
 
 export type ProcessorConfig = {
 	"koharu-layout-rfdetr-seg-2xl"?: KoharuLayoutRFDetrSeg2XLConfig | null,
+	lama?: LaMaConfig | null,
 	"flux2-klein"?: Flux2KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
 };
@@ -935,5 +949,11 @@ export type TypographyUpdate = {
 	layer: EntityId,
 	typography: Typography,
 };
+
+/**
+ *  The format of the LaMa weights file. The config representation of
+ *  `koharu_ml::lama::WeightsFormat`.
+ */
+export type WeightsFormatConfig = "safe_tensors" | "torch_script";
 
 export type WritingMode = "Horizontal" | "Vertical";
