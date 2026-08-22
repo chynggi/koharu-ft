@@ -1,7 +1,6 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
-최종 갱신: 2026-08-22 (사용자 지시로 Task 2 리뷰 도중 중단. Task 0·1은 리뷰까지 완료,
-Task 2는 **구현만 되고 리뷰가 하나도 돌지 않았다**)
+최종 갱신: 2026-08-22 (Task 0~2 구현·리뷰 완료. 다음은 Task 3)
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §5의 미검증 항목은 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -57,9 +56,9 @@ libtorch·sd.cpp에 이은 **세 번째 네이티브 런타임과 두 번째 CUD
 | 0 | 상류 체크포인트 3종 BLAKE3 실측 | 완료 | §4 표 |
 | 1 | `TorchScript` — `CModule` 얇은 래퍼 | 완료, 리뷰 2종 통과 | `cargo test -p koharu-ml --lib torchscript -- --test-threads=1` |
 | 1 | **실제 `big-lama.pt`로 동작 실증** | 완료 | §3 |
-| 2 | `ComponentSource`를 `flux2_klein` → 크레이트 공용으로 이동 | 구현됨, **리뷰 안 함** | `crates/koharu-ml/src/source.rs` |
-| 2 | `ComponentSource::Url { url, digest }` 갈래 추가 | 구현됨, **리뷰 안 함** | `a_url_override_requires_a_digest` |
-| 2 | `remote_repository!` 매크로 | 구현됨, **리뷰 안 함** | `koharu-ml/src/lib.rs` |
+| 2 | `ComponentSource`를 `flux2_klein` → 크레이트 공용으로 이동 | 완료, 리뷰 2종 통과 | `crates/koharu-ml/src/source.rs` |
+| 2 | `ComponentSource::Url { url, digest }` 갈래 추가 | 완료, 리뷰 2종 통과 | `a_url_override_requires_a_digest` |
+| 2 | `remote_repository!` 매크로 | 완료(미사용, Task 3에서 첫 사용) | `koharu-ml/src/lib.rs` |
 
 커밋 (오래된 것부터):
 
@@ -120,19 +119,30 @@ finished in 5.29s
 
 ## 5. 아직 안 된 것
 
-### 즉시 해야 할 것 — Task 2 리뷰
+### Task 2 리뷰 결과 (2026-08-22, 스펙·품질 2종 모두 PASS, must-fix 0건)
 
-`d48ffa05`는 **구현만 됐고 스펙 리뷰도 품질 리뷰도 돌지 않았다.** 다음 세션의 첫 작업이다.
-구현자가 스스로 신고한 것 3건은 리뷰 시 확인 대상이다:
+두 리뷰어 모두 `--test-threads=1`로 직접 재실행해 기준선(60/2/17) 일치를 확인했다.
+clippy도 이 diff와 무관한 기존 `large_enum_variant` 경고 외에 깨끗하다.
 
-1. **URL 테스트 단언 수정** — 계획서의 `contains("64 hex")`가 실제 메시지와 달라
-   `"digest must be 64 hex characters: {digest}"` 전체 구절로 바꿨다고 함.
-2. **`#[expect(unused_macros, reason = ...)]`** — `remote_repository!`가 Task 3까지
-   미사용이라 경고가 나는 것을 이걸로 막았다. Task 3에서 매크로를 쓰기 시작하면 이
-   속성이 스스로 "불필요" 경고를 내 지우는 걸 잊지 않게 되는 구조다. **다만 코드베이스에
-   `#[expect]` 선례가 없고 targeted `#[allow]`만 있다** — 관례를 따를지 판단 필요.
-3. **`packages/bridge/src/protocol.ts:399`의 `ComponentSourceConfig`는 specta 생성물이
-   아니라 수작업 타입**이라 `url` 갈래가 아직 없다. Task 5·9(UI)에 직접 영향.
+- 이동 시 유실 없음. derive·`validate()` 로직·에러 문자열 보존, 테스트 3건 온전히 이동.
+- `flux2_klein::ComponentSource` 경로가 재수출로 살아 있어 기존 호출처 호환.
+- `Url` 갈래는 `resolve`·`validate` 둘 다 `RemoteFile`에 위임 — 다이제스트 로직 중복 없음.
+
+구현자 자진 신고 3건 판정:
+
+1. **테스트 단언** — 실제 메시지는 `remote.rs:50`의 `"digest must be 64 hex characters: {}"`.
+   계획서의 느슨한 `contains("64 hex")`보다 나은 수정. **채택.**
+2. **`#[expect(unused_macros)]` — 유지 결정.** 워크스페이스에 `#[allow]` 792건 대
+   `#[expect]` 1건(이것)으로 선례가 없는 건 사실이나, 여기선 `#[allow]`보다 우월하다.
+   Task 3이 매크로를 쓰는 순간 이 속성이 스스로 빌드를 깨뜨려 제거를 강제하기 때문이다.
+   **→ Task 3 구현자는 `remote_repository!` 첫 사용과 함께 이 `#[expect]`를 지워야 한다.**
+3. **`packages/bridge/src/protocol.ts`** — 수작업 타입이 맞고(파일 헤더로 확인),
+   `ComponentSourceConfig`(399행)에 `url` 갈래가 없다. 계획서 Task 2 범위에 `packages/bridge`가
+   없으므로 **누락이 아니라 정상 이월**. Task 5·9(UI)에서 처리한다.
+
+품질 리뷰가 제기한 "`remote_repository!`는 호출처 0개인 투기적 추상화" 지적은 **기각**한다.
+리뷰어가 커밋 diff만 보고 판단했으나 계획서 812행(Task 3, LaMa 2종)·1341행(Task 7, MI-GAN)에
+호출 블록이 있어 사용처는 2곳이다. `model_repository!`와 대칭이므로 존치한다.
 
 ### 남은 Task (계획서 참조)
 
