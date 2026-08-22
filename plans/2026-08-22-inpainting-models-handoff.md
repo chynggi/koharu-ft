@@ -1,6 +1,9 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
-최종 갱신: 2026-08-22 (Task 0~5 구현·리뷰 완료. LaMa 기능 완결. 다음은 Task 6)
+최종 갱신: 2026-08-22 (**Task 0~6 완료. LaMa 기능 완결. 다음은 Task 7 — MI-GAN**)
+
+**중단 사유: 5시간 사용 한도 소진.** 코드 결함이나 막힌 문제 때문이 아니다.
+워킹 트리 깨끗, 모든 테스트 통과, 진행 중이던 서브에이전트 없음.
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §5의 미검증 항목은 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -66,6 +69,8 @@ libtorch·sd.cpp에 이은 **세 번째 네이티브 런타임과 두 번째 CUD
 | 4 | 기존 `koharu.toml` 무손상 | 완료 | `an_existing_file_without_a_lama_section_keeps_the_builtin_checkpoint` |
 | 5 | LaMa 설정 UI + 로케일 9종 | 완료, 리뷰 2종 + 수정 | `cd packages/koharu && bunx --bun tsc --noEmit -p tsconfig.json` |
 | 5 | `protocol.ts` 와이어 타입 정합 | 완료 | Rust 선언과 직접 대조 |
+| 6 | 전처리 헬퍼 9종을 `inpaint_ops.rs`로 추출 | 완료, 리뷰 통과 | `cargo test -p koharu-ml --lib -- --test-threads=1` → 83 passed |
+| 6+ | 공용 헬퍼 특성화 테스트 18건 | 완료 | 변조로 물림 확인 |
 
 커밋 (오래된 것부터):
 
@@ -235,15 +240,76 @@ exhaustive switch가 `TS2366`으로 깨졌다. `default: throw`로 좁게 막으
 별건으로, `sourceKind.builtin`/`localFile`이 **ko-KR을 제외한 전 로케일에서 영어**로 남아
 있다 — 이 브랜치와 무관한 기존 상태라 손대지 않았다.
 
+### Task 6 결과 (리뷰 1종 PASS — 순수성을 기계적으로 증명해 2종은 낭비였다)
+
+`ba665623` 이동, `6b458e79` 테스트 추가.
+
+**이동이 순수함을 증명했다.** diff를 정규화해(`pub(crate) ` 접두사 제거 후 제거 텍스트 대
+추가 텍스트 대조) 남은 차이는 셋뿐 — 새 모듈 doc 주석, import 조정, 승인된 `post_process`
+문맥 문자열(`"...LaMa tensor..."` → `"...output tensor..."`). **아홉 함수 본문 전부 바이트 동일.**
+`processor.rs`에 `cfg(test)`가 애초에 0건이라 흘린 테스트도 없다.
+
+계획서 누락 하나: `symmetric_indices`가 부르는 비공개 `symmetric_index`도 같이 옮겨야 한다
+(떼어낼 수 없음). 고아가 된 import는 `fast_image_resize`, `imageproc::contours`,
+`anyhow::Context`, `anyhow::anyhow`.
+
+**API가 MI-GAN에 그대로 맞는다** — 리뷰어가 계획서 Task 7 코드와 대조해 확인했다.
+시그니처 변경 불필요. `pad_img_to_modulo`가 `modulo`를 인자로 받아 LaMa의 `8`과 MI-GAN의
+`512`가 같은 함수를 쓴다.
+
+**특성화 테스트 18건을 추가했다 (`6b458e79`).** 이유가 중요하다: 유일한 수치 검증이 4K
+전체 이미지의 **평균 픽셀 델타**인데, 반사 경계 off-by-one 같은 국소 오류를 잡기엔 둔감하다.
+MI-GAN이 올라가면 같은 버그가 두 모델을 동일하게 오염시켜 모델 간 대조로도 안 드러난다.
+실용적으로는 **Task 7에서 텐서 연산이 틀어졌을 때 공용 헬퍼가 옳음을 알아야 버그를 MI-GAN
+쪽으로 좁힐 수 있다.**
+
+물림 확인: `symmetric_index`의 `length * 2 - index - 1`에서 `- 1`을 빼자 테스트 4건이 실패했다
+(`one_past_the_end_duplicates_the_last_in_range_index`,
+`the_far_end_of_the_period_reflects_back_to_the_start`,
+`symmetric_indices_pads_the_far_side_by_mirroring_inward`,
+`a_misaligned_tensor_is_padded_on_the_far_side_by_reflection`). 복원 후 통과.
+
+**주의 — 이 테스트들은 특성화(characterization)다.** 현재 동작을 고정한 것이지 "옳은 동작"을
+규정한 게 아니다. 리팩터 중 동작 변화를 잡는 것이 목적이므로, 실패하면 먼저 **의도한 변경인지**
+따질 것.
+
+**남은 문서 흠 1건:** `inpaint_ops.rs`의 doc 주석이 "used by LaMa and MI-GAN"인데 MI-GAN이
+아직 없다. Task 7이 사실로 만든다.
+
 ### 남은 Task (계획서 참조)
 
 | Task | 내용 | 모델 배정(제안) |
 |---|---|---|
-| 6 | 전처리 헬퍼를 `inpaint_ops.rs`로 추출 | sonnet |
 | 7 | MI-GAN 모듈 (텐서 연산) | opus |
 | 8 | MI-GAN 파이프라인 배선 | sonnet |
 | 9 | MI-GAN UI | sonnet |
 | 10 | 벤치 — LaMa 대비 지연 시간·VRAM | sonnet |
+
+---
+
+## 5.5 다음 세션이 할 일 (우선순위 순)
+
+1. **Task 7 — MI-GAN 모듈 (opus).** 계획서 1299~1539행. 이 계획에서 가장 무겁고,
+   **미검증 추론이 남아 있는 유일한 곳**이다. `pad_to_square` 가정을 반드시 실측으로
+   검증할 것: `resize_dimensions`가 긴 변을 512로 맞추고 modulo 512 패딩이 짧은 변을
+   512로 올려 결국 512×512가 된다는 추론이다. **출력 텐서 크기를 찍어 확인**하고,
+   틀리면 계획서를 고쳐 보고할 것. 체크포인트는 §4의 `migan_traced.pt`(26MB)이며
+   다시 받아야 한다(이전 사본은 임시 디렉터리와 함께 사라졌다).
+2. **Task 8 — MI-GAN 파이프라인 배선 (sonnet).** 계획서 1540행. Task 4와 같은 모양이다.
+   Task 4에서 걸린 두 함정을 그대로 확인할 것: 기본값을 고정하는 테스트가 있는가,
+   `validate()` 실패 경로에 테스트가 있는가. Task 4에선 둘 다 없었다.
+3. **Task 9 — MI-GAN UI (sonnet), Task 10 — 벤치 (sonnet).** Task 9 착수 시
+   `ComponentSourceField`/`emptySource`를 `Flux2KleinOptions.tsx`에서
+   `PreferenceFields.tsx`로 옮길 것 — 세 번째 소비자가 생기는 시점이다.
+
+**사용자 확인이 필요한 것 (에이전트가 못 하는 일):**
+
+- **실제 앱에서의 엔드투엔드 검증.** `bun run dev`로 LaMa를 TorchScript로 바꿔 한 페이지를
+  인페인팅. 197MB 다운로드와 데스크톱 세션이 필요해 이번 세션에서 **돌리지 못했다.**
+  타입·검증 로직 정합은 확인됐지만 네트워크 실패나 다이제스트 불일치 시의 UX는 미검증이다.
+- **번역 원어민 확인:** tr-TR "Biçim", ru-RU "Дайджест"는 기계 번역이다.
+- **별건:** `sourceKind.builtin`/`localFile`이 ko-KR을 제외한 전 로케일에서 영어로 남아
+  있다. 이 브랜치와 무관한 기존 상태라 손대지 않았다.
 
 ---
 
