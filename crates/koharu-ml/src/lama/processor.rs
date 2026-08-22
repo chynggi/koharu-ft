@@ -8,14 +8,8 @@ use anyhow::{Result, ensure};
 use image::{DynamicImage, GrayImage, RgbImage};
 use koharu_torch::{Device, Kind, Tensor};
 
-use super::{
-    backend::Backend,
-    config::{HDStrategy, InpaintRequest},
-};
-use crate::inpaint_ops::{
-    boxes_from_mask, crop_box, pad_img_to_modulo, post_process, resize_dimensions, resize_gray,
-    resize_rgb,
-};
+use super::{backend::Backend, config::InpaintRequest};
+use crate::inpaint_ops::{dispatch_hd_strategy, pad_img_to_modulo, post_process};
 
 #[derive(Debug)]
 pub(super) struct InpaintModel {
@@ -46,62 +40,9 @@ impl InpaintModel {
             "image dimensions must be non-zero"
         );
 
-        match config.hd_strategy {
-            HDStrategy::Crop
-                if image.width().max(image.height()) > config.hd_strategy_crop_trigger_size =>
-            {
-                let boxes = boxes_from_mask(mask);
-                let mut crop_results = Vec::with_capacity(boxes.len());
-                for bounding_box in boxes {
-                    let crop_box = crop_box(
-                        image.width(),
-                        image.height(),
-                        bounding_box,
-                        config.hd_strategy_crop_margin,
-                    );
-                    let [left, top, right, bottom] = crop_box;
-                    let crop_image =
-                        image::imageops::crop_imm(&image, left, top, right - left, bottom - top)
-                            .to_image();
-                    let crop_mask =
-                        image::imageops::crop_imm(mask, left, top, right - left, bottom - top)
-                            .to_image();
-                    crop_results.push((
-                        self.pad_forward(model, &crop_image, &crop_mask, config)?,
-                        crop_box,
-                    ));
-                }
-
-                let mut result = image;
-                for (crop_result, [left, top, _, _]) in crop_results {
-                    image::imageops::replace(&mut result, &crop_result, left.into(), top.into());
-                }
-                Ok(result)
-            }
-            HDStrategy::Resize
-                if image.width().max(image.height()) > config.hd_strategy_resize_limit =>
-            {
-                let (width, height) = resize_dimensions(
-                    image.width(),
-                    image.height(),
-                    config.hd_strategy_resize_limit,
-                );
-                let resized_image = resize_rgb(&image, width, height)?;
-                let resized_mask = resize_gray(mask, width, height)?;
-                let resized_result =
-                    self.pad_forward(model, &resized_image, &resized_mask, config)?;
-                let mut result = resize_rgb(&resized_result, image.width(), image.height())?;
-                for (index, value) in mask.as_raw().iter().enumerate() {
-                    if *value < 127 {
-                        let offset = index * 3;
-                        result.as_mut()[offset..offset + 3]
-                            .copy_from_slice(&image.as_raw()[offset..offset + 3]);
-                    }
-                }
-                Ok(result)
-            }
-            _ => self.pad_forward(model, &image, mask, config),
-        }
+        dispatch_hd_strategy(&image, mask, config, &|image, mask| {
+            self.pad_forward(model, image, mask, config)
+        })
     }
 
     fn pad_forward(

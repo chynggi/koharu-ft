@@ -47,6 +47,7 @@ pub mod font_detector;
 pub mod koharu_layout_rfdetr_seg_2xl;
 pub mod lama;
 pub mod llm;
+pub mod manga_inpaintor;
 pub mod manga_ocr;
 pub mod manga_text_mask;
 pub mod mi_gan;

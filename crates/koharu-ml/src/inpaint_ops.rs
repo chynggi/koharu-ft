@@ -7,6 +7,8 @@ use image::{GrayImage, RgbImage};
 use imageproc::contours::{BorderType, find_contours_with_threshold};
 use koharu_torch::{Device, Kind, Tensor};
 
+use crate::lama::{HDStrategy, InpaintRequest};
+
 pub(crate) fn resize_dimensions(width: u32, height: u32, size_limit: u32) -> (u32, u32) {
     let ratio = size_limit as f64 / width.max(height) as f64;
     (
@@ -173,6 +175,71 @@ pub(crate) fn ceil_modulo(value: u32, modulo: u32) -> u32 {
         value
     } else {
         (value / modulo + 1) * modulo
+    }
+}
+
+/// IOPaint's base-model orchestration (`base.py`'s `__call__`): pick the crop,
+/// resize, or original strategy from the request, run `pad_forward` on every
+/// region the strategy produces, and paste the results back. Shared by every
+/// model that follows the base class — LaMa and the Manga inpainter. Models
+/// with their own `__call__`, like MI-GAN, orchestrate themselves.
+pub(crate) fn dispatch_hd_strategy(
+    image: &RgbImage,
+    mask: &GrayImage,
+    config: &InpaintRequest,
+    pad_forward: &dyn Fn(&RgbImage, &GrayImage) -> Result<RgbImage>,
+) -> Result<RgbImage> {
+    match config.hd_strategy {
+        HDStrategy::Crop
+            if image.width().max(image.height()) > config.hd_strategy_crop_trigger_size =>
+        {
+            let boxes = boxes_from_mask(mask);
+            let mut crop_results = Vec::with_capacity(boxes.len());
+            for bounding_box in boxes {
+                let crop = crop_box(
+                    image.width(),
+                    image.height(),
+                    bounding_box,
+                    config.hd_strategy_crop_margin,
+                );
+                let [left, top, right, bottom] = crop;
+                let crop_image =
+                    image::imageops::crop_imm(image, left, top, right - left, bottom - top)
+                        .to_image();
+                let crop_mask =
+                    image::imageops::crop_imm(mask, left, top, right - left, bottom - top)
+                        .to_image();
+                crop_results.push((pad_forward(&crop_image, &crop_mask)?, crop));
+            }
+
+            let mut result = image.clone();
+            for (crop_result, [left, top, _, _]) in crop_results {
+                image::imageops::replace(&mut result, &crop_result, left.into(), top.into());
+            }
+            Ok(result)
+        }
+        HDStrategy::Resize
+            if image.width().max(image.height()) > config.hd_strategy_resize_limit =>
+        {
+            let (width, height) = resize_dimensions(
+                image.width(),
+                image.height(),
+                config.hd_strategy_resize_limit,
+            );
+            let resized_image = resize_rgb(image, width, height)?;
+            let resized_mask = resize_gray(mask, width, height)?;
+            let resized_result = pad_forward(&resized_image, &resized_mask)?;
+            let mut result = resize_rgb(&resized_result, image.width(), image.height())?;
+            for (index, value) in mask.as_raw().iter().enumerate() {
+                if *value < 127 {
+                    let offset = index * 3;
+                    result.as_mut()[offset..offset + 3]
+                        .copy_from_slice(&image.as_raw()[offset..offset + 3]);
+                }
+            }
+            Ok(result)
+        }
+        _ => pad_forward(image, mask),
     }
 }
 
