@@ -1,6 +1,6 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
-최종 갱신: 2026-08-22 (Task 0~4 구현·리뷰 완료. 다음은 Task 5 — UI)
+최종 갱신: 2026-08-22 (Task 0~5 구현·리뷰 완료. LaMa 기능 완결. 다음은 Task 6)
 
 **아래 표의 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 그 명령을 다시
 돌릴 것.** 특히 §5의 미검증 항목은 아직 아무도 실행해 보지 않은 코드에 대한 주장이다.
@@ -64,6 +64,8 @@ libtorch·sd.cpp에 이은 **세 번째 네이티브 런타임과 두 번째 CUD
 | 3 | **4K 실사진으로 두 경로 무회귀 실측** | 완료 | 아래 |
 | 4 | `InpaintingModel::LaMa(LaMaConfig)` 설정 배선 | 완료, 리뷰 2종 + 수정 | `cargo test -p koharu-pipeline` → 71 passed |
 | 4 | 기존 `koharu.toml` 무손상 | 완료 | `an_existing_file_without_a_lama_section_keeps_the_builtin_checkpoint` |
+| 5 | LaMa 설정 UI + 로케일 9종 | 완료, 리뷰 2종 + 수정 | `cd packages/koharu && bunx --bun tsc --noEmit -p tsconfig.json` |
+| 5 | `protocol.ts` 와이어 타입 정합 | 완료 | Rust 선언과 직접 대조 |
 
 커밋 (오래된 것부터):
 
@@ -200,11 +202,43 @@ Task 4가 같은 파일에 LaMa 설정을 배선하므로 그 모양을 본 뒤 
 `Into`로 넘기는 배선에 마찰이 없었다. 다만 그 파일 doc 헤더의 "IOPaint YAML" 설명은 이 enum에
 맞지 않으니 주석만 손볼 여지가 있다.
 
+### Task 5 리뷰 결과 (스펙·품질 모두 PASS, 후속 수정 1건)
+
+`eb367c2d` 구현, `1d792eaf` 후속. **계획서 Step 1이 틀렸다** — specta가 `protocol.ts`를
+생성하니 바인딩 생성기를 다시 돌리라고 하지만, 그 파일은 **수작업 TypeScript**다
+(헤더에 명시). 손으로 편집하는 게 맞다. 계획서 결함 7건째.
+
+**와이어 포맷이 이 태스크의 핵심 위험이었다** — TS와 Rust는 따로 컴파일되므로 serde 문자열이
+어긋나도 양쪽 다 빌드를 통과하고 런타임에 터진다. Rust 선언과 직접 대조해 확인:
+`#[serde(tag = "kind", rename_all = "snake_case")]`의 4갈래, `"safe_tensors" | "torch_script"`,
+`{ model: "lama" } & LaMaConfig`, `ProcessorConfig.lama`. 리뷰어가 UI→`models.ts`→
+`PipelineConfig` serde 봉투→`ComponentSourceConfig::Url`→서버측 다이제스트 검증까지 완주 추적.
+
+**기존 와이어 구멍 하나가 드러났다.** `protocol.ts`의 `ProcessorConfig`에 `lama` 필드가
+**이 브랜치 이전부터 없었다**(`eb367c2d^`로 확인). Rust에는 있었으므로 프론트엔드가 쓴 LaMa
+프로필 설정이 조용히 버려지고 있었다. 이번에 메웠다.
+
+**범위가 FLUX로 번졌고, 정당하다고 판정됐다.** `Url` 갈래 추가로 `Flux2KleinOptions.tsx`의
+exhaustive switch가 `TS2366`으로 깨졌다. `default: throw`로 좁게 막으면 FLUX는 3갈래로 남지만
+**LaMa 패널이 같은 위젯을 복제**해야 하고, 그건 계획서 Step 3이 금지한 것이다. FLUX가 URL
+소스를 얻은 것은 FLUX 전용 코드 0줄로 따라온 부수 효과다.
+
+**돌리지 못한 것:** 계획서 Step 5(`bun run dev`로 TorchScript 전환 후 실제 인페인팅).
+197MB 다운로드와 데스크톱 세션이 필요하다. **통과했다고 주장하지 않았다.** 타입과 검증
+로직은 정합이 확인됐으나 네트워크 실패·다이제스트 불일치 시의 UX는 미검증이다.
+
+**Task 9(MI-GAN UI)에 미룬 것:** `ComponentSourceField`/`emptySource`가 형제 기능 파일
+`Flux2KleinOptions.tsx`에 살고 있어 LaMa가 거기서 import한다. 공용 편집기의 관례적 위치는
+`PreferenceFields.tsx`다. **세 번째 소비자(MI-GAN)가 생기는 Task 9이 옮길 시점이다.**
+
+**사용자 확인이 필요한 것:** tr-TR "Biçim", ru-RU "Дайджест"는 기계 번역이다.
+별건으로, `sourceKind.builtin`/`localFile`이 **ko-KR을 제외한 전 로케일에서 영어**로 남아
+있다 — 이 브랜치와 무관한 기존 상태라 손대지 않았다.
+
 ### 남은 Task (계획서 참조)
 
 | Task | 내용 | 모델 배정(제안) |
 |---|---|---|
-| 5 | LaMa 소스·형식 UI + 9개 로케일 | sonnet |
 | 6 | 전처리 헬퍼를 `inpaint_ops.rs`로 추출 | sonnet |
 | 7 | MI-GAN 모듈 (텐서 연산) | opus |
 | 8 | MI-GAN 파이프라인 배선 | sonnet |
