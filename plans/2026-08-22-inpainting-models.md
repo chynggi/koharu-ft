@@ -53,6 +53,41 @@ LA=$(cygpath -u "$LOCALAPPDATA")
 export PATH="$LA/koharu:$LA/koharu/packages/torch/2.12.1/cpu/libtorch/lib:$PATH"
 ```
 
+### `koharu-ml` 테스트는 병렬로 돌리면 안 된다
+
+`cargo test -p koharu-ml`은 **결과를 출력하기 전에 죽는다.**
+
+```
+running 80 tests
+Key already registered with the same priority: C10
+(exit 1)
+```
+
+libtorch의 정적 레지스트리가 테스트 스레드에서 두 번 등록되며 나는
+크래시다. 치명적인 점은 **테스트 결과 줄이 아예 안 나온다**는 것 —
+"통과했다"고 오인하기 쉽고, 실제로 이 계획의 한 태스크에서 그런 오보가
+나왔다. 반드시 단일 스레드로 돌린다.
+
+```bash
+cargo test -p koharu-ml --lib -- --test-threads=1
+```
+
+**기대값 (2026-08-22 기준 baseline):**
+
+```
+test result: FAILED. 60 passed; 2 failed; 17 ignored
+```
+
+`2 failed`는 **이 작업과 무관한 기존 실패**다:
+
+- `baberu_ocr::processor::tests::bicubic_resize_stays_aligned_with_pillow`
+- `comic_onomatopoeia::recognizer::processor::tests::bicubic_resize_stays_aligned_with_pillow`
+
+둘 다 OCR 쪽 bicubic 리사이즈 테스트이고, 이 브랜치는 해당 모듈을 건드리지
+않는다(`git diff --name-only main...HEAD`로 확인). 사전 커밋
+`f7b6ed6e`에서도 동일하게 재현된다. **이 둘 외에 실패가 늘어나면 그건
+당신이 만든 회귀다.**
+
 **LaMa 전처리는 이미 TorchScript와 일치한다.** `lama/processor.rs:126-127`이
 `pad(image/255.0, 8)`과 `pad((mask>0) as f32, 8)`을 만드는데, 이는
 `lama.py`의 `norm_img(image)` + `(mask > 0) * 1`과 같다. 따라서 LaMa는
