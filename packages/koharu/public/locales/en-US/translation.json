@@ -469,6 +469,12 @@
       "modelLabel": "{{stage}} model",
       "options": {
         "bubbleThreshold": "Bubble threshold",
+        "checkpointSource": "Checkpoint source",
+        "format": "Format",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
         "maxPixels": "Max pixels",
         "negativePrompt": "Negative prompt",
         "paddingMaskCrop": "Mask crop padding",
@@ -476,20 +482,25 @@
         "prompt": "Prompt",
         "seed": "Seed",
         "source": {
+          "inpaintor": "Inpaintor",
+          "line": "Line model",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceDigest": "Digest (BLAKE3)",
         "sourceFilename": "File",
         "sourceKind": {
           "builtin": "Bundled",
           "huggingFace": "Hugging Face",
-          "localFile": "Local file"
+          "localFile": "Local file",
+          "url": "URL"
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
         "sourceRevision": "Revision (optional)",
+        "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",
         "textThreshold": "Text threshold"

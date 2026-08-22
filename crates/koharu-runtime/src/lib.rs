@@ -10,7 +10,7 @@ pub mod downloads;
 pub use device::{Backend, Device, DeviceType};
 pub use hardware::Hardware;
 pub use runtime::{Feature, Package, Runtime, Torch};
-pub use source::HuggingFaceFile;
+pub use source::{HuggingFaceFile, PinnedFile, RemoteFile};
 pub use store::Store;
 
 /// Builds the shared client used by remote APIs and long-running model requests.

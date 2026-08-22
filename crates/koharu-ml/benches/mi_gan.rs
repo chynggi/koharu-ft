@@ -2,7 +2,8 @@ use std::{hint::black_box, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use criterion::Criterion;
-use koharu_ml::lama::{InpaintRequest, LaMa};
+use koharu_ml::lama::InpaintRequest;
+use koharu_ml::mi_gan::MiGan;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,10 +18,9 @@ async fn main() -> Result<()> {
     let mask = image::open(&mask_path)?.to_luma8();
 
     koharu_ml::init().await?;
-    let model = LaMa::load(
+    let model = MiGan::load(
         koharu_ml::Device::default(),
         &koharu_ml::source::ComponentSource::Builtin,
-        koharu_ml::lama::WeightsFormat::SafeTensors,
     )
     .await?;
     let config = InpaintRequest::default();
@@ -31,11 +31,11 @@ async fn main() -> Result<()> {
         .measurement_time(Duration::from_secs(10))
         .configure_from_args();
 
-    criterion.bench_function("lama/inference/3840x2074", |bencher| {
+    criterion.bench_function("mi_gan/inference/3840x2074", |bencher| {
         bencher.iter(|| {
             let output = model
                 .inference(black_box(&image), black_box(&mask), black_box(&config))
-                .expect("LaMa inference failed");
+                .expect("MI-GAN inference failed");
             black_box(output);
         });
     });

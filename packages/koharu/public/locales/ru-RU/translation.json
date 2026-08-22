@@ -469,6 +469,12 @@
       "modelLabel": "Модель «{{stage}}»",
       "options": {
         "bubbleThreshold": "Порог пузыря",
+        "checkpointSource": "Источник контрольной точки",
+        "format": "Формат",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
         "maxPixels": "Max pixels",
         "negativePrompt": "Негативный промпт",
         "paddingMaskCrop": "Mask crop padding",
@@ -476,20 +482,25 @@
         "prompt": "Промпт",
         "seed": "Seed",
         "source": {
+          "inpaintor": "Инпейнтер",
+          "line": "Модель линий",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceDigest": "Дайджест (BLAKE3)",
         "sourceFilename": "File",
         "sourceKind": {
           "builtin": "Bundled",
           "huggingFace": "Hugging Face",
-          "localFile": "Local file"
+          "localFile": "Local file",
+          "url": "URL"
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
         "sourceRevision": "Revision (optional)",
+        "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",
         "textThreshold": "Порог текста"

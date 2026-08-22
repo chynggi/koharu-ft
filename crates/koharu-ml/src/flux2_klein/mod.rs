@@ -50,9 +50,9 @@ pub async fn resolve_paths(source: &Flux2KleinSource) -> Result<[PathBuf; 3]> {
 
 async fn resolve(source: &Flux2KleinSource) -> Result<ModelPaths> {
     let (transformer, text_encoder, vae) = tokio::try_join!(
-        source.transformer.resolve(TRANSFORMER_WEIGHTS),
-        source.text_encoder.resolve(TEXT_ENCODER_WEIGHTS),
-        source.vae.resolve(VAE_WEIGHTS),
+        source.transformer.resolve(TRANSFORMER_WEIGHTS.into()),
+        source.text_encoder.resolve(TEXT_ENCODER_WEIGHTS.into()),
+        source.vae.resolve(VAE_WEIGHTS.into()),
     )
     .context("failed to resolve FLUX.2 Klein model assets")?;
     Ok(ModelPaths {

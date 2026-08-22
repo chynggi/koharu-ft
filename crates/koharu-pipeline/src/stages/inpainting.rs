@@ -14,11 +14,12 @@ use image::{
 use imageproc::region_labelling::{Connectivity, connected_components};
 use koharu_ml::{
     aot_inpainting::AotInpainting,
-    flux2_klein::{
-        ComponentSource, Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource,
-    },
+    flux2_klein::{Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource},
     lama::{InpaintRequest, LaMa},
+    manga_inpaintor::{MangaInpaintor, MangaSource},
+    mi_gan::MiGan,
     rorem_mixed::{DEFAULT_NEGATIVE_PROMPT, DEFAULT_PROMPT, RoremMixed, RoremMixedOptions},
+    source::ComponentSource,
 };
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, BubbleRegion, EntityOrigin, Geometry, Origin,
@@ -51,6 +52,8 @@ pub enum ComponentSourceConfig {
         revision: Option<String>,
         filename: String,
     },
+    /// An arbitrary URL. `digest` is a 64-character BLAKE3 hex digest (case-insensitive).
+    Url { url: String, digest: String },
 }
 
 impl From<ComponentSourceConfig> for ComponentSource {
@@ -67,7 +70,84 @@ impl From<ComponentSourceConfig> for ComponentSource {
                 revision,
                 filename,
             },
+            ComponentSourceConfig::Url { url, digest } => Self::Url { url, digest },
         }
+    }
+}
+
+/// The format of the LaMa weights file. The config representation of
+/// `koharu_ml::lama::WeightsFormat`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WeightsFormatConfig {
+    #[default]
+    SafeTensors,
+    TorchScript,
+}
+
+impl From<WeightsFormatConfig> for koharu_ml::lama::WeightsFormat {
+    fn from(value: WeightsFormatConfig) -> Self {
+        match value {
+            WeightsFormatConfig::SafeTensors => Self::SafeTensors,
+            WeightsFormatConfig::TorchScript => Self::TorchScript,
+        }
+    }
+}
+
+/// LaMa checkpoint selection. Defaults to the `mayocream/lama-manga`
+/// safetensors checkpoint, matching the behavior before this field existed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct LaMaConfig {
+    pub source: ComponentSourceConfig,
+    pub format: WeightsFormatConfig,
+}
+
+impl LaMaConfig {
+    fn validate(&self) -> Result<()> {
+        ComponentSource::from(self.source.clone())
+            .validate()
+            .context("LaMa weights")
+    }
+}
+
+/// MI-GAN checkpoint selection. A prompt-free erase-only model, so it only
+/// carries a source.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct MiGanConfig {
+    pub source: ComponentSourceConfig,
+}
+
+impl MiGanConfig {
+    fn validate(&self) -> Result<()> {
+        ComponentSource::from(self.source.clone())
+            .validate()
+            .context("MI-GAN weights")
+    }
+}
+
+impl From<MangaInpaintorConfig> for MangaSource {
+    fn from(value: MangaInpaintorConfig) -> Self {
+        Self {
+            inpaintor: value.inpaintor.into(),
+            line: value.line.into(),
+        }
+    }
+}
+
+/// Manga inpainter checkpoint selection. The pipeline is assembled from an
+/// inpaintor and a line model, mirroring `Flux2KleinSourceConfig`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct MangaInpaintorConfig {
+    pub inpaintor: ComponentSourceConfig,
+    pub line: ComponentSourceConfig,
+}
+
+impl MangaInpaintorConfig {
+    fn validate(&self) -> Result<()> {
+        MangaSource::from(self.clone()).validate()
     }
 }
 
@@ -124,10 +204,7 @@ impl Default for Flux2KleinConfig {
 
 impl Flux2KleinConfig {
     fn validate(&self) -> Result<()> {
-        ensure!(
-            !self.prompt.contains('\0'),
-            "FLUX.2 prompt contains NUL"
-        );
+        ensure!(!self.prompt.contains('\0'), "FLUX.2 prompt contains NUL");
         ensure!(self.steps > 0, "FLUX.2 steps must be greater than zero");
         ensure!(
             self.strength > 0.0 && self.strength <= 1.0,
@@ -182,7 +259,10 @@ impl Processor {
         resources: Arc<ResourceMonitor>,
     ) -> Result<Self> {
         match &config {
-            InpaintingModel::LaMa {} | InpaintingModel::AotInpainting {} => {}
+            InpaintingModel::LaMa(settings) => settings.validate()?,
+            InpaintingModel::MiGan(settings) => settings.validate()?,
+            InpaintingModel::MangaInpaintor(settings) => settings.validate()?,
+            InpaintingModel::AotInpainting {} => {}
             InpaintingModel::Flux2Klein(settings) => settings.validate()?,
             InpaintingModel::RoremMixed(settings) => {
                 ensure!(
@@ -222,7 +302,9 @@ impl Processor {
 impl StageProcessor for Processor {
     fn model(&self) -> &'static str {
         match self.config {
-            InpaintingModel::LaMa {} => "lama",
+            InpaintingModel::LaMa(_) => "lama",
+            InpaintingModel::MiGan(_) => "mi-gan",
+            InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
@@ -270,6 +352,8 @@ impl StageProcessor for Processor {
 
 enum Model {
     LaMa(Arc<Mutex<LaMa>>),
+    MiGan(Arc<Mutex<MiGan>>),
+    MangaInpaintor(Arc<Mutex<MangaInpaintor>>),
     Aot(Arc<Mutex<AotInpainting>>),
     Flux {
         model: Arc<Mutex<Flux2KleinInpaint>>,
@@ -288,7 +372,10 @@ async fn log_weight_estimate(source: &Flux2KleinSource) {
     let Ok(paths) = koharu_ml::flux2_klein::resolve_paths(source).await else {
         return;
     };
-    let sizes = paths.iter().map(|path| crate::file_size(path)).collect::<Vec<_>>();
+    let sizes = paths
+        .iter()
+        .map(|path| crate::file_size(path))
+        .collect::<Vec<_>>();
     if sizes.iter().any(Option::is_none) {
         return;
     }
@@ -301,9 +388,20 @@ async fn log_weight_estimate(source: &Flux2KleinSource) {
 impl Model {
     async fn load(device: koharu_ml::Device, config: &InpaintingModel) -> Result<Self> {
         match config {
-            InpaintingModel::LaMa {} => {
-                Ok(Self::LaMa(Arc::new(Mutex::new(LaMa::load(device).await?))))
-            }
+            InpaintingModel::LaMa(config) => Ok(Self::LaMa(Arc::new(Mutex::new(
+                LaMa::load(
+                    device,
+                    &ComponentSource::from(config.source.clone()),
+                    config.format.into(),
+                )
+                .await?,
+            )))),
+            InpaintingModel::MiGan(config) => Ok(Self::MiGan(Arc::new(Mutex::new(
+                MiGan::load(device, &ComponentSource::from(config.source.clone())).await?,
+            )))),
+            InpaintingModel::MangaInpaintor(config) => Ok(Self::MangaInpaintor(Arc::new(
+                Mutex::new(MangaInpaintor::load(device, &config.clone().into()).await?),
+            ))),
             InpaintingModel::AotInpainting {} => Ok(Self::Aot(Arc::new(Mutex::new(
                 AotInpainting::load(device).await?,
             )))),
@@ -311,9 +409,7 @@ impl Model {
                 let source: Flux2KleinSource = config.source.clone().into();
                 log_weight_estimate(&source).await;
                 Ok(Self::Flux {
-                    model: Arc::new(Mutex::new(
-                        Flux2KleinInpaint::load(device, &source).await?,
-                    )),
+                    model: Arc::new(Mutex::new(Flux2KleinInpaint::load(device, &source).await?)),
                     config: config.clone(),
                 })
             }
@@ -358,6 +454,58 @@ impl Model {
                     })
                     .await
                     .context("LaMa task panicked")??,
+                )
+            }
+            Self::MiGan(model) => {
+                let model = model.clone();
+                (
+                    "mi-gan",
+                    tokio::task::spawn_blocking(move || -> Result<DynamicImage> {
+                        let model = model
+                            .lock()
+                            .map_err(|_| anyhow!("MI-GAN model lock is poisoned"))?;
+                        inpaint_tiled(
+                            &prepared.image,
+                            &prepared.mask,
+                            &prepared.text_mask,
+                            &prepared.flat_fill_regions,
+                            |image, mask| {
+                                Ok(DynamicImage::ImageRgb8(model.inference(
+                                    image,
+                                    mask,
+                                    &InpaintRequest::default(),
+                                )?))
+                            },
+                        )
+                    })
+                    .await
+                    .context("MI-GAN task panicked")??,
+                )
+            }
+            Self::MangaInpaintor(model) => {
+                let model = model.clone();
+                (
+                    "manga-inpaintor",
+                    tokio::task::spawn_blocking(move || -> Result<DynamicImage> {
+                        let model = model
+                            .lock()
+                            .map_err(|_| anyhow!("Manga inpainter model lock is poisoned"))?;
+                        inpaint_tiled(
+                            &prepared.image,
+                            &prepared.mask,
+                            &prepared.text_mask,
+                            &prepared.flat_fill_regions,
+                            |image, mask| {
+                                Ok(DynamicImage::ImageRgb8(model.inference(
+                                    image,
+                                    mask,
+                                    &InpaintRequest::default(),
+                                )?))
+                            },
+                        )
+                    })
+                    .await
+                    .context("Manga inpainter task panicked")??,
                 )
             }
             Self::Aot(model) => {
@@ -1118,6 +1266,26 @@ mod tests {
     }
 
     #[test]
+    fn lama_defaults_reproduce_the_previous_checkpoint() {
+        let config = LaMaConfig::default();
+        assert_eq!(config.source, ComponentSourceConfig::Builtin);
+        assert_eq!(config.format, WeightsFormatConfig::SafeTensors);
+    }
+
+    #[test]
+    fn mi_gan_defaults_are_builtin() {
+        let config = MiGanConfig::default();
+        assert_eq!(config.source, ComponentSourceConfig::Builtin);
+    }
+
+    #[test]
+    fn manga_inpaintor_defaults_are_builtin() {
+        let config = MangaInpaintorConfig::default();
+        assert_eq!(config.inpaintor, ComponentSourceConfig::Builtin);
+        assert_eq!(config.line, ComponentSourceConfig::Builtin);
+    }
+
+    #[test]
     fn a_flux_section_written_before_the_settings_existed_still_loads() {
         let config: Flux2KleinConfig =
             toml::from_str("prompt = \"Erase the text.\"").expect("legacy section deserializes");
@@ -1153,6 +1321,38 @@ mod tests {
         ] {
             assert!(config.validate().is_err(), "{config:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn an_invalid_lama_source_is_rejected() {
+        let config = LaMaConfig {
+            source: ComponentSourceConfig::LocalFile {
+                path: PathBuf::from("relative.pt"),
+            },
+            ..Default::default()
+        };
+        assert!(config.validate().is_err(), "{config:?} should be rejected");
+    }
+
+    #[test]
+    fn an_invalid_mi_gan_source_is_rejected() {
+        let config = MiGanConfig {
+            source: ComponentSourceConfig::LocalFile {
+                path: PathBuf::from("relative.pt"),
+            },
+        };
+        assert!(config.validate().is_err(), "{config:?} should be rejected");
+    }
+
+    #[test]
+    fn an_invalid_manga_inpaintor_source_is_rejected() {
+        let config = MangaInpaintorConfig {
+            inpaintor: ComponentSourceConfig::LocalFile {
+                path: PathBuf::from("relative.jit"),
+            },
+            ..Default::default()
+        };
+        assert!(config.validate().is_err(), "{config:?} should be rejected");
     }
 
     #[test]
@@ -1258,7 +1458,7 @@ mod tests {
             }),
         );
         let processor = Processor::new(
-            InpaintingModel::LaMa {},
+            InpaintingModel::LaMa(LaMaConfig::default()),
             koharu_ml::Device::cpu(),
             ResourceMonitor::new(&koharu_ml::Device::cpu()),
         )

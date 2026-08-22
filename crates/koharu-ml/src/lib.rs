@@ -22,7 +22,19 @@ macro_rules! model_repository {
     };
 }
 
+/// The URL equivalent of `model_repository!`, for checkpoints published outside
+/// Hugging Face.
+macro_rules! remote_repository {
+    ($($name:ident = $url:literal @ $digest:literal),+ $(,)?) => {
+        $(
+            const $name: koharu_runtime::RemoteFile<'static> =
+                koharu_runtime::RemoteFile::pinned($url, $digest);
+        )+
+    };
+}
+
 mod backend;
+pub(crate) mod inpaint_ops;
 
 pub mod aot_inpainting;
 pub mod baberu_ocr;
@@ -35,15 +47,19 @@ pub mod font_detector;
 pub mod koharu_layout_rfdetr_seg_2xl;
 pub mod lama;
 pub mod llm;
+pub mod manga_inpaintor;
 pub mod manga_ocr;
 pub mod manga_text_mask;
+pub mod mi_gan;
 pub mod paddle_ocr_vl;
 pub mod paddle_ocr_vl_quantized;
 pub mod pp_doclayout_v3;
 pub mod pp_ocr_v6;
 pub mod rorem_mixed;
+pub mod source;
 pub mod speech_bubble_yolo11n;
 pub mod speech_bubble_yolov8m;
+pub mod torchscript;
 
 pub use koharu_diffusion as diffusion;
 pub use koharu_llama as llama;

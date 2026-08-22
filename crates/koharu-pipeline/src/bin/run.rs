@@ -11,8 +11,8 @@ use clap::{Parser, ValueEnum};
 use koharu_config::Config;
 use koharu_pipeline::{
     Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
-    OcrModel, Operation, Pipeline, PipelineConfig, Progress, Request, RoremMixedConfig, Scope,
-    StageOutput, TranslationConfig,
+    LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel, Operation, Pipeline, PipelineConfig,
+    Progress, Request, RoremMixedConfig, Scope, StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;
@@ -79,6 +79,10 @@ enum OcrChoice {
 enum InpaintingChoice {
     #[value(name = "lama")]
     LaMa,
+    #[value(name = "mi-gan")]
+    MiGan,
+    #[value(name = "manga-inpaintor")]
+    MangaInpaintor,
     #[value(name = "aot-inpainting")]
     AotInpainting,
     #[value(name = "flux2-klein")]
@@ -115,7 +119,11 @@ impl Arguments {
                 instructions: self.translation_instructions.clone(),
             },
             inpainting: match self.inpainting {
-                InpaintingChoice::LaMa => InpaintingModel::LaMa {},
+                InpaintingChoice::LaMa => InpaintingModel::LaMa(LaMaConfig::default()),
+                InpaintingChoice::MiGan => InpaintingModel::MiGan(MiGanConfig::default()),
+                InpaintingChoice::MangaInpaintor => {
+                    InpaintingModel::MangaInpaintor(MangaInpaintorConfig::default())
+                }
                 InpaintingChoice::AotInpainting => InpaintingModel::AotInpainting {},
                 InpaintingChoice::Flux2Klein => {
                     InpaintingModel::Flux2Klein(Flux2KleinConfig::default())

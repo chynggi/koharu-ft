@@ -4931,6 +4931,7 @@ version = "0.77.5"
 dependencies = [
  "anyhow",
  "backon",
+ "blake3",
  "dirs",
  "dunce",
  "fast-glob",

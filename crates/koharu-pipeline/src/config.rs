@@ -3,7 +3,10 @@ use koharu_translator::{GenerationConfig, Language};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 
-use crate::stages::{Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, RoremMixedConfig};
+use crate::stages::{
+    Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
+    MiGanConfig, RoremMixedConfig,
+};
 
 #[derive(Clone, Debug, PartialEq, Type)]
 pub struct PipelineConfig {
@@ -65,7 +68,9 @@ impl Serialize for PipelineConfig {
             OcrModel::BaberuOcr => "baberu-ocr",
         };
         let inpainting = match &self.inpainting {
-            InpaintingModel::LaMa {} => "lama",
+            InpaintingModel::LaMa(_) => "lama",
+            InpaintingModel::MiGan(_) => "mi-gan",
+            InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
@@ -76,13 +81,24 @@ impl Serialize for PipelineConfig {
             .koharu_layout_rfdetr_seg_2xl
             .get_or_insert_with(|| config.clone());
         match &self.inpainting {
+            InpaintingModel::LaMa(config) => {
+                processor.lama.get_or_insert_with(|| config.clone());
+            }
+            InpaintingModel::MiGan(config) => {
+                processor.mi_gan.get_or_insert_with(|| config.clone());
+            }
+            InpaintingModel::MangaInpaintor(config) => {
+                processor
+                    .manga_inpaintor
+                    .get_or_insert_with(|| config.clone());
+            }
             InpaintingModel::Flux2Klein(config) => {
                 processor.flux2_klein.get_or_insert_with(|| config.clone());
             }
             InpaintingModel::RoremMixed(config) => {
                 processor.rorem_mixed.get_or_insert_with(|| config.clone());
             }
-            InpaintingModel::LaMa {} | InpaintingModel::AotInpainting {} => {}
+            InpaintingModel::AotInpainting {} => {}
         }
         PipelineFile {
             detection: ModelSelection {
@@ -131,7 +147,11 @@ impl<'de> Deserialize<'de> for PipelineConfig {
             }
         };
         let inpainting = match file.inpainting.model.as_str() {
-            "lama" => InpaintingModel::LaMa {},
+            "lama" => InpaintingModel::LaMa(file.processor.lama.clone().unwrap_or_default()),
+            "mi-gan" => InpaintingModel::MiGan(file.processor.mi_gan.clone().unwrap_or_default()),
+            "manga-inpaintor" => InpaintingModel::MangaInpaintor(
+                file.processor.manga_inpaintor.clone().unwrap_or_default(),
+            ),
             "aot-inpainting" => InpaintingModel::AotInpainting {},
             "flux2-klein" => {
                 InpaintingModel::Flux2Klein(file.processor.flux2_klein.clone().unwrap_or_default())
@@ -163,7 +183,7 @@ impl Default for PipelineConfig {
             ),
             ocr: OcrModel::PaddleOcrVl1_6,
             translation: TranslationConfig::default(),
-            inpainting: InpaintingModel::LaMa {},
+            inpainting: InpaintingModel::LaMa(LaMaConfig::default()),
             processor: ProcessorConfig::default(),
         }
     }
@@ -209,7 +229,24 @@ impl PipelineConfig {
 
     pub fn inpainting(&self) -> Result<InpaintingModel> {
         match &self.inpainting {
-            InpaintingModel::LaMa {} => Ok(InpaintingModel::LaMa {}),
+            InpaintingModel::LaMa(config) => Ok(InpaintingModel::LaMa(
+                self.processor
+                    .lama
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
+            InpaintingModel::MiGan(config) => Ok(InpaintingModel::MiGan(
+                self.processor
+                    .mi_gan
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
+            InpaintingModel::MangaInpaintor(config) => Ok(InpaintingModel::MangaInpaintor(
+                self.processor
+                    .manga_inpaintor
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
             InpaintingModel::AotInpainting {} => Ok(InpaintingModel::AotInpainting {}),
             InpaintingModel::Flux2Klein(config) => Ok(InpaintingModel::Flux2Klein(
                 self.processor
@@ -244,6 +281,12 @@ impl PipelineConfig {
 pub struct ProcessorConfig {
     #[serde(rename = "koharu-layout-rfdetr-seg-2xl")]
     pub koharu_layout_rfdetr_seg_2xl: Option<KoharuLayoutRFDetrSeg2XLConfig>,
+    #[serde(rename = "lama")]
+    pub lama: Option<LaMaConfig>,
+    #[serde(rename = "mi-gan")]
+    pub mi_gan: Option<MiGanConfig>,
+    #[serde(rename = "manga-inpaintor")]
+    pub manga_inpaintor: Option<MangaInpaintorConfig>,
     #[serde(rename = "flux2-klein")]
     pub flux2_klein: Option<Flux2KleinConfig>,
     #[serde(rename = "rorem-mixed")]
@@ -272,7 +315,11 @@ pub enum OcrModel {
 #[serde(tag = "model")]
 pub enum InpaintingModel {
     #[serde(rename = "lama")]
-    LaMa {},
+    LaMa(LaMaConfig),
+    #[serde(rename = "mi-gan")]
+    MiGan(MiGanConfig),
+    #[serde(rename = "manga-inpaintor")]
+    MangaInpaintor(MangaInpaintorConfig),
     #[serde(rename = "aot-inpainting")]
     AotInpainting {},
     #[serde(rename = "flux2-klein")]
@@ -284,6 +331,7 @@ pub enum InpaintingModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stages::WeightsFormatConfig;
 
     #[test]
     fn defaults_select_one_processor_for_each_phase() {
@@ -294,7 +342,7 @@ mod tests {
             DetectionModel::KoharuLayoutRFDetrSeg2XL(_)
         ));
         assert!(matches!(config.ocr, OcrModel::PaddleOcrVl1_6));
-        assert!(matches!(config.inpainting, InpaintingModel::LaMa {}));
+        assert!(matches!(config.inpainting, InpaintingModel::LaMa(_)));
     }
 
     #[test]
@@ -361,7 +409,7 @@ mod tests {
             DetectionModel::KoharuLayoutRFDetrSeg2XL(_)
         ));
         assert!(matches!(config.ocr, OcrModel::PaddleOcrVl1_6));
-        assert!(matches!(config.inpainting(), Ok(InpaintingModel::LaMa {})));
+        assert!(matches!(config.inpainting(), Ok(InpaintingModel::LaMa(_))));
     }
 
     #[test]
@@ -447,6 +495,76 @@ mod tests {
         assert!(matches!(
             restored.inpainting().unwrap(),
             InpaintingModel::Flux2Klein(config) if config.prompt == "Keep the line art."
+        ));
+    }
+
+    #[test]
+    fn an_existing_file_without_a_lama_section_keeps_the_builtin_checkpoint() {
+        let config: PipelineConfig = toml::from_str(
+            r#"
+            [detection]
+            model = "koharu-layout-rfdetr-seg-2xl"
+            [ocr]
+            model = "paddleocr-vl-1.6"
+            [inpainting]
+            model = "lama"
+            "#,
+        )
+        .unwrap();
+
+        let InpaintingModel::LaMa(lama) = config.inpainting().unwrap() else {
+            panic!("expected LaMa");
+        };
+        assert_eq!(lama.source, LaMaConfig::default().source);
+        assert_eq!(lama.format, WeightsFormatConfig::SafeTensors);
+    }
+
+    #[test]
+    fn a_torchscript_lama_selection_round_trips() {
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::LaMa(LaMaConfig {
+                format: WeightsFormatConfig::TorchScript,
+                ..LaMaConfig::default()
+            }),
+            ..PipelineConfig::default()
+        };
+
+        let text = toml::to_string(&config).unwrap();
+        let parsed: PipelineConfig = toml::from_str(&text).unwrap();
+
+        assert!(matches!(
+            parsed.inpainting(),
+            Ok(InpaintingModel::LaMa(config))
+                if config.format == WeightsFormatConfig::TorchScript
+        ));
+    }
+
+    #[test]
+    fn a_mi_gan_selection_round_trips() {
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::MiGan(MiGanConfig::default()),
+            ..PipelineConfig::default()
+        };
+
+        let text = toml::to_string(&config).unwrap();
+        let parsed: PipelineConfig = toml::from_str(&text).unwrap();
+
+        assert!(matches!(parsed.inpainting(), Ok(InpaintingModel::MiGan(_))));
+    }
+
+    #[test]
+    fn a_manga_inpaintor_selection_round_trips() {
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::MangaInpaintor(MangaInpaintorConfig::default()),
+            ..PipelineConfig::default()
+        };
+
+        let text = toml::to_string(&config).unwrap();
+        let parsed: PipelineConfig = toml::from_str(&text).unwrap();
+
+        assert!(matches!(
+            parsed.inpainting(),
+            Ok(InpaintingModel::MangaInpaintor(_))
         ));
     }
 }

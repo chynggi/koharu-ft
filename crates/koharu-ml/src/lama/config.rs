@@ -4,6 +4,18 @@
 //! https://github.com/advimman/lama/blob/786f5936b27fb3dacd2b1ad799e4de968ea697e7/configs/training/big-lama.yaml
 //! https://github.com/Sanster/IOPaint/blob/61a759fb3f332bacdce8b2813f4837495c9b86e0/iopaint/schema.py#L206-L214
 
+/// The format of the LaMa weights file. The two formats do not substitute for
+/// each other, so the choice is explicit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WeightsFormat {
+    /// A state_dict read through `nn::VarStore`. `mayocream/lama-manga` is one.
+    #[default]
+    SafeTensors,
+    /// A TorchScript archive read through `CModule`. The IOPaint checkpoints
+    /// are these.
+    TorchScript,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HDStrategy {
     Original,
