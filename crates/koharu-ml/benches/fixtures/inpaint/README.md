@@ -12,3 +12,22 @@ SHA-256:
 
 - `image_4k.jpg`: `1b6c0a50f8a4a5101d745bda7ee311abb3f4ee011433c71f83e71a9f718eec7a`
 - `mask_4k.png`: `53f772430d81b5ded3f0b243641b5595d921c37da3fd8f026036090a98d5bb57`
+
+## Measured: LaMa vs MI-GAN (2026-08-22)
+
+Both benchmarks ran on the same CPU device (`koharu_ml::Device::default()`)
+with the pinned builtin checkpoints, on:
+
+- CPU: Intel Core i5-10400
+- GPU: NVIDIA GeForce RTX 3060 (present but not used by these runs)
+- libtorch 2.12.1 (CPU build), criterion, 10 samples
+
+| Model | Input | Median |
+|---|---|---|
+| LaMa (safetensors) | 3840×2074 + mask | 11.919 s |
+| MI-GAN (TorchScript) | 3840×2074 + mask | 821.78 ms |
+
+MI-GAN was ~14.5× faster than LaMa on this fixture on CPU, confirming the
+"fast and light erase-only model" claim. The speedup is structural: MI-GAN
+only ever infers 512×512 crops, while LaMa pads and infers at full modulo-8
+resolution.
