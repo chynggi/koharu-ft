@@ -198,3 +198,168 @@ fn symmetric_index(index: u32, length: u32) -> u32 {
         length * 2 - index - 1
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use image::Luma;
+
+    #[test]
+    fn an_in_range_index_passes_through_unchanged() {
+        assert_eq!(symmetric_index(0, 4), 0);
+        assert_eq!(symmetric_index(2, 4), 2);
+    }
+
+    #[test]
+    fn the_last_in_range_index_is_its_own_reflection() {
+        // length - 1
+        assert_eq!(symmetric_index(3, 4), 3);
+    }
+
+    #[test]
+    fn one_past_the_end_duplicates_the_last_in_range_index() {
+        // length
+        assert_eq!(symmetric_index(4, 4), 3);
+    }
+
+    #[test]
+    fn the_far_end_of_the_period_reflects_back_to_the_start() {
+        // 2 * length - 1
+        assert_eq!(symmetric_index(7, 4), 0);
+    }
+
+    #[test]
+    fn a_full_period_wraps_back_to_the_start() {
+        // 2 * length
+        assert_eq!(symmetric_index(8, 4), 0);
+    }
+
+    #[test]
+    fn symmetric_indices_has_one_entry_per_output_position() {
+        let indices = symmetric_indices(4, 6, Device::Cpu);
+        assert_eq!(indices.size(), vec![6]);
+        assert_eq!(indices.kind(), Kind::Int64);
+    }
+
+    #[test]
+    fn symmetric_indices_pads_the_far_side_by_mirroring_inward() {
+        let indices = symmetric_indices(4, 6, Device::Cpu);
+        let values = Vec::<i64>::try_from(&indices).unwrap();
+        assert_eq!(values, vec![0, 1, 2, 3, 3, 2]);
+    }
+
+    #[test]
+    fn an_already_aligned_size_is_left_untouched() {
+        assert_eq!(ceil_modulo(16, 8), 16);
+    }
+
+    #[test]
+    fn a_misaligned_size_rounds_up_to_the_next_multiple() {
+        assert_eq!(ceil_modulo(9, 8), 16);
+        assert_eq!(ceil_modulo(1, 8), 8);
+    }
+
+    #[test]
+    fn an_already_aligned_tensor_is_returned_unpadded() {
+        let tensor = Tensor::from_slice(&[0f32, 1., 2., 3., 4., 5., 6., 7.]).view([1, 1, 2, 4]);
+        let expected = Vec::<f32>::try_from(&tensor.shallow_clone().view([-1])).unwrap();
+
+        let padded = pad_img_to_modulo(tensor, 2);
+
+        assert_eq!(padded.size(), vec![1, 1, 2, 4]);
+        let actual = Vec::<f32>::try_from(&padded.view([-1])).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn a_misaligned_tensor_is_padded_on_the_far_side_by_reflection() {
+        // 3x5, padded up to modulo 4 becomes 4x8. The bottom row and the
+        // trailing columns are mirrored back from the last real row/column,
+        // and the original 3x5 content is left untouched in the top-left.
+        let tensor = Tensor::from_slice(&[
+            0f32, 1., 2., 3., 4., //
+            10., 11., 12., 13., 14., //
+            20., 21., 22., 23., 24.,
+        ])
+        .view([1, 1, 3, 5]);
+
+        let padded = pad_img_to_modulo(tensor, 4);
+
+        assert_eq!(padded.size(), vec![1, 1, 4, 8]);
+        let actual = Vec::<f32>::try_from(&padded.view([-1])).unwrap();
+        #[rustfmt::skip]
+        let expected = vec![
+            0f32, 1., 2., 3., 4., 4., 3., 2.,
+            10., 11., 12., 13., 14., 14., 13., 12.,
+            20., 21., 22., 23., 24., 24., 23., 22.,
+            20., 21., 22., 23., 24., 24., 23., 22.,
+        ];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn a_box_in_the_middle_expands_by_the_margin_on_every_side() {
+        let box_ = crop_box(100, 100, [40, 40, 60, 60], 10);
+        assert_eq!(box_, [30, 30, 70, 70]);
+    }
+
+    #[test]
+    fn a_box_touching_the_left_edge_clamps_instead_of_going_negative() {
+        let box_ = crop_box(100, 100, [0, 40, 20, 60], 10);
+        // The full margin width is preserved by extending the opposite side.
+        assert_eq!(box_, [0, 30, 40, 70]);
+    }
+
+    #[test]
+    fn a_box_touching_the_right_edge_clamps_instead_of_overshooting() {
+        let box_ = crop_box(100, 100, [80, 40, 100, 60], 10);
+        assert_eq!(box_, [60, 30, 100, 70]);
+    }
+
+    #[test]
+    fn a_box_that_fills_the_image_stays_within_bounds_after_margin() {
+        let box_ = crop_box(50, 50, [0, 0, 50, 50], 10);
+        assert_eq!(box_, [0, 0, 50, 50]);
+    }
+
+    #[test]
+    fn an_all_black_mask_yields_no_boxes() {
+        let mask = GrayImage::new(10, 10);
+        assert_eq!(boxes_from_mask(&mask), Vec::<[u32; 4]>::new());
+    }
+
+    #[test]
+    fn a_single_white_rectangle_yields_one_box_that_contains_it() {
+        let mut mask = GrayImage::new(20, 20);
+        for y in 5..15 {
+            for x in 5..15 {
+                mask.put_pixel(x, y, Luma([255]));
+            }
+        }
+
+        let boxes = boxes_from_mask(&mask);
+
+        assert_eq!(boxes.len(), 1);
+        let [left, top, right, bottom] = boxes[0];
+        assert!(left <= 5 && top <= 5 && right >= 15 && bottom >= 15);
+        assert!(right <= mask.width() && bottom <= mask.height());
+    }
+
+    #[test]
+    fn a_mask_region_touching_the_image_edge_is_not_clipped() {
+        let mut mask = GrayImage::new(20, 20);
+        for y in 5..15 {
+            for x in 0..10 {
+                mask.put_pixel(x, y, Luma([255]));
+            }
+        }
+
+        let boxes = boxes_from_mask(&mask);
+
+        assert_eq!(boxes.len(), 1);
+        let [left, top, right, bottom] = boxes[0];
+        assert_eq!(left, 0);
+        assert!(top <= 5 && right >= 10 && bottom >= 15);
+    }
+}
