@@ -1,5 +1,46 @@
 # HANDOFF — 인페인팅 모델 확장 (`feat/inpainting-torchscript-migan`)
 
+최종 갱신: 2026-08-22 저녁 (**Task 7~10 완료. 계획의 모든 태스크 종료.**)
+
+Task 7~10은 2026-08-22 저녁 세션에서 완료됐다. 다음 네 커밋이다:
+
+- `98b15485 feat(ml): add MI-GAN inpainting` — Task 7
+- `36e4e312 feat(pipeline): select MI-GAN for inpainting` — Task 8
+- `b6ceccf6 feat(ui): expose MI-GAN as an inpainting model` — Task 9
+- `e8b70061 bench(ml): compare MI-GAN against LaMa` — Task 10
+
+## 완료 검증 (전부 이번 세션 실측)
+
+| 항목 | 결과 |
+|---|---|
+| `pad_to_square` 가정 (계획서 마지막 미해결 위험) | **실측으로 해소.** 실제 `migan_traced.pt`(MD5 `76eb3b...` IOPaint 핀값 일치)로 300×200 비정사각 입력이 512×512 패딩을 통해 모델을 통과하고 출력이 원본 크기로 돌아오며 마스크 밖 픽셀이 보존됨. `pad_forward`에 `ensure!`로 512×512 정사각을 강제해 어긋나면 명시적 실패 |
+| `cargo test -p koharu-ml --lib -- --test-threads=1` | **84 passed, 0 failed, 19 ignored** (Task 6 기준 83 + MI-GAN 신규 1) |
+| `cargo test -p koharu-ml mi_gan --lib -- --ignored --test-threads=1` (실제 체크포인트) | **1 passed** |
+| MI-GAN CLI, 4K 픽스처, 로컬 가중치, CPU | 출력 PNG 정상 생성 (14.8MB) |
+| `cargo test -p koharu-pipeline` | **74 passed, 0 failed** (기존 71 + Task 8 신규 3: 라운드트립, 기본값 고정, validate 실패 경로 — Task 4의 두 함정을 처음부터 넣음) |
+| `bunx --bun tsc --noEmit -p tsconfig.json` | 통과 |
+| `cargo bench -p koharu-ml --bench lama --bench mi_gan` | **LaMa 11.919s vs MI-GAN 821.78ms (약 14.5× 빠름)**, 둘 다 CPU(i5-10400), `benches/fixtures/inpaint/README.md`에 기록 |
+
+## 계획서 스니펫에서 발견·수정한 결함 (Task 7)
+
+계획서 경고대로("스니펫은 제안이지 성경이 아니다") 상류 원문(`mi_gan.py` 핀 커밋 61a759f)과 대조해 두 결함을 수정했다:
+
+1. **`resize_max_size`는 축소 전용이다.** 상류는 `max(h,w) > 512`일 때만 리사이즈한다. 계획 스니펫의 무조건 `resize_dimensions` 호출은 512 이하 crop을 업스케일하는 발산이었다. `call`에서 `max > SIZE`일 때만 리사이즈하도록 고쳤다.
+2. **`_pad_forward`의 `sd_keep_unmasked_area` 블렌드가 빠져 있었다.** 상류는 `result*(mask/255) + image*(1-mask/255)`를 적용한다. LaMa의 `pad_forward`와 같은 구조로 넣었다. (crop 경로에서는 외부 paste 복원이 이미 이를 대신하지만, 512×512 직행 경로와 `sd_keep_unmasked_area=false` 갈래에 영향이 있다.)
+3. (사소) `Tensor::cat`은 `&[Tensor]`를 받으므로 `erased`에서 `&`를 뗐다.
+
+Task 9의 지시대로 `ComponentSourceField`/`emptySource`를 `Flux2KleinOptions.tsx`에서 `PreferenceFields.tsx`로 옮겼다(세 번째 소비자 MI-GAN 추가 시점).
+
+## 사용자 확인이 필요한 것 (에이전트가 못 하는 일)
+
+- **실제 앱에서의 엔드투엔드 검증.** `bun run dev`로 인페인팅 모델을 MI-GAN으로 바꿔 한 페이지를 처리. 26MB 다운로드와 데스크톱 세션이 필요해 이번 세션에서는 돌리지 못했다. CLI·테스트·벤치 경로는 전부 실측 통과했지만 앱 UI 경로는 미검증이다.
+- Task 5와 마찬가지로 이 포크에는 바인딩 자동 생성 바이너리가 없으므로 `protocol.ts`는 Rust 선언과 직접 대조해 수동 갱신했다 (`InpaintingModel`의 `mi-gan` 갈래, `MiGanConfig`, `ProcessorConfig`의 `mi-gan` 필드).
+- 로케일 신규 문구는 불필요했다 — MI-GAN UI는 기존 키(`checkpointSource`, `sourceKind.*`, `format.*`)만 재사용한다.
+
+---
+
+아래는 Task 6 종료 시점의 이전 핸드오프 내용이다.
+
 최종 갱신: 2026-08-22 (**Task 0~6 완료. LaMa 기능 완결. 다음은 Task 7 — MI-GAN**)
 
 **중단 사유: 5시간 사용 한도 소진.** 코드 결함이나 막힌 문제 때문이 아니다.
