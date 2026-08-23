@@ -16,6 +16,7 @@
       {
         "label": "main",
         "create": false,
+        "url": "http://127.0.0.1:47823",
         "width": 1024,
         "height": 768,
         "minWidth": 900,
@@ -38,7 +39,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "license": "MIT OR Apache-2.0",
     "resources": ["../../LICENSE-MIT", "../../LICENSE-APACHE"]
   },

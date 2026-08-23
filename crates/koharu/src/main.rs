@@ -32,10 +32,15 @@ async fn main() {
     // can be overridden with `KOHARU_RPC_PORT`. The static frontend directory
     // defaults to the workspace's exported `packages/koharu/out` (dev
     // workflow) but can be overridden with `KOHARU_STATIC_DIR`.
-    // Must match `devUrl` in tauri.conf.json: the CEF window's initial navigation
-    // races the async browser-creation callback (window.navigate() silently no-ops
-    // if called before it), so the config-baked URL is what actually loads when
-    // KOHARU_RPC_PORT isn't overridden.
+    // Must match `devUrl` and the main window's `url` in tauri.conf.json: the
+    // CEF window's initial navigation races the async browser-creation callback
+    // (window.navigate() silently no-ops if called before it), so the
+    // config-baked URL is what actually loads when KOHARU_RPC_PORT isn't
+    // overridden. In a production build `devUrl` is ignored and the window's
+    // `url` decides; that entry keeps the window on the koharu-rpc-served UI
+    // (and its relative `/api/v1`) instead of Tauri's built-in
+    // `tauri.localhost` static server, which has no API routes and answers
+    // every `/api/v1/*` request with `index.html`.
     const DEFAULT_RPC_PORT: u16 = 47823;
     let port = std::env::var("KOHARU_RPC_PORT")
         .ok()

@@ -4,7 +4,7 @@
     "packages/*"
   ],
   "scripts": {
-    "release": "bun run ui:build && cargo build --release -p koharu -j 6",
+    "release": "bun tauri build && cargo build --release -p koharu -j 6",
     "tauri": "cargo tauri",
     "postinstall": "cargo install --git https://github.com/tauri-apps/tauri --branch feat/cef --locked tauri-cli",
     "predev": "kill-port 3000",
