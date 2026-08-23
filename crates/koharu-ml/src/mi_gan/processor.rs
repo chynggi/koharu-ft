@@ -99,7 +99,7 @@ impl Processor {
             for (index, value) in crop_mask.as_raw().iter().enumerate() {
                 if *value < 127 {
                     let offset = index * 3;
-                    restored.as_mut()[offset..offset + 3]
+                    restored.as_flat_samples_mut().samples[offset..offset + 3]
                         .copy_from_slice(&crop_image.as_raw()[offset..offset + 3]);
                 }
             }

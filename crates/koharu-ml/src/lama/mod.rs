@@ -16,14 +16,14 @@ use self::{
     backend::Backend, config::FFCResNetGeneratorConfig, model::Model, processor::InpaintModel,
 };
 
-model_repository!("mayocream/lama-manga" @ "f91c85b26913b3e83f9877867b4c336da3675238" {
+crate::model_repository!("mayocream/lama-manga" @ "f91c85b26913b3e83f9877867b4c336da3675238" {
     WEIGHTS = "lama-manga.safetensors"
 });
 
 // The TorchScript default is fetched straight from the upstream release. The
 // manga fine-tune fits this pipeline's subject better than `big-lama.pt`, so it
 // is the default; point the source at a URL to use the original.
-remote_repository! {
+crate::remote_repository! {
     TORCHSCRIPT_WEIGHTS =
         "https://github.com/Sanster/models/releases/download/AnimeMangaInpainting/anime-manga-big-lama.pt"
         @ "9213532a6e9990afcd0c9f3f31da82cc4c8c1ec86a13641e3ec37648d5e75f8b",

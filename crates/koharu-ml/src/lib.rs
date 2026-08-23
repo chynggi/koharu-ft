@@ -3,36 +3,6 @@ use koharu_llama::llama_backend::LlamaBackend;
 use koharu_runtime::{Feature, Hardware, Runtime};
 use tokio::sync::OnceCell;
 
-macro_rules! model_repository {
-    ($repository:literal @ $revision:literal { $($name:ident = $filename:literal),+ $(,)? }) => {
-        $(
-            const $name: koharu_runtime::HuggingFaceFile<'static> =
-                koharu_runtime::HuggingFaceFile::pinned(
-                    $repository,
-                    $revision,
-                    $filename,
-                );
-        )+
-    };
-    ($repository:literal { $($name:ident = $filename:literal),+ $(,)? }) => {
-        $(
-            const $name: koharu_runtime::HuggingFaceFile<'static> =
-                koharu_runtime::HuggingFaceFile::latest($repository, $filename);
-        )+
-    };
-}
-
-/// The URL equivalent of `model_repository!`, for checkpoints published outside
-/// Hugging Face.
-macro_rules! remote_repository {
-    ($($name:ident = $url:literal @ $digest:literal),+ $(,)?) => {
-        $(
-            const $name: koharu_runtime::RemoteFile<'static> =
-                koharu_runtime::RemoteFile::pinned($url, $digest);
-        )+
-    };
-}
-
 mod backend;
 pub(crate) mod inpaint_ops;
 
@@ -82,8 +52,7 @@ pub async fn init() -> anyhow::Result<()> {
     READY
         .get_or_try_init(|| async {
             let runtime = Runtime::discover([Feature::Torch, Feature::Llama, Feature::Diffusion])?;
-            let device = runtime.device().cloned().unwrap_or_else(Device::cpu);
-            runtime
+            let device = runtime
                 .initialize()
                 .await
                 .context("failed to initialize runtimes")?;
@@ -127,3 +96,31 @@ pub fn device(cpu: bool) -> Device {
 pub fn llama_backend() -> Option<&'static LlamaBackend> {
     LLAMA.get()
 }
+
+macro_rules! model_repository {
+    ($repository:literal @ $revision:literal { $($name:ident = $filename:literal),+ $(,)? }) => {
+        $(
+            const $name: koharu_runtime::HuggingFaceFile<'static> =
+                koharu_runtime::HuggingFaceFile::pinned(
+                    $repository,
+                    $revision,
+                    $filename,
+                );
+        )+
+    };
+}
+
+pub(crate) use model_repository;
+
+/// The URL equivalent of `model_repository!`, for checkpoints published outside
+/// Hugging Face.
+macro_rules! remote_repository {
+    ($($name:ident = $url:literal @ $digest:literal),+ $(,)?) => {
+        $(
+            const $name: koharu_runtime::RemoteFile<'static> =
+                koharu_runtime::RemoteFile::pinned($url, $digest);
+        )+
+    };
+}
+
+pub(crate) use remote_repository;

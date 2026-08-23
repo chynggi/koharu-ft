@@ -16,7 +16,7 @@ use crate::{
 use self::processor::Processor;
 
 // Fetched straight from the upstream release. Not mirrored.
-remote_repository! {
+crate::remote_repository! {
     WEIGHTS = "https://github.com/Sanster/models/releases/download/migan/migan_traced.pt"
         @ "fde1e5f7c6b6a48082f8eff36b9117e64b8c14ea4d1a76af508e29d357b28cbd",
 }

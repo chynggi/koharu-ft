@@ -18,7 +18,7 @@ use crate::{
 use self::processor::Processor;
 
 // Fetched straight from the upstream release. Not mirrored.
-remote_repository! {
+crate::remote_repository! {
     INPAINTOR_WEIGHTS =
         "https://github.com/Sanster/models/releases/download/manga/manga_inpaintor.jit"
             @ "dc1622dc9d96387b18f6a6391ce1a8ed10be05d99e6c01e3ca2ddb8c9a3c592b",

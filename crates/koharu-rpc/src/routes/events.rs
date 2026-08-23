@@ -33,7 +33,7 @@ async fn events(
     let mut canvas_rx = app.state::<CanvasChannel>().broadcast.subscribe();
     let mut job_rx = app.state::<JobChannel>().broadcast.subscribe();
     let mut project_rx = app.state::<ProjectChannel>().broadcast.subscribe();
-    let mut download_rx = koharu_runtime::downloads::subscribe();
+    let mut download_rx = koharu_runtime::download::subscribe();
 
     // The pipeline is the exception, and it gets its own task. It is managed
     // by `koharu_app`'s *asynchronous* initialization, which loads the ML
@@ -117,9 +117,9 @@ fn send<T: Serialize>(tx: &tokio::sync::mpsc::UnboundedSender<Event>, kind: &str
     tx.send(event).is_ok()
 }
 
-fn map_download(event: koharu_runtime::downloads::Event) -> Download {
+fn map_download(event: koharu_runtime::download::Event) -> Download {
     match event {
-        koharu_runtime::downloads::Event::Started { id, name } => Download {
+        koharu_runtime::download::Event::Started { id, name } => Download {
             id,
             state: DownloadState::Running,
             name: Some(name),
@@ -127,7 +127,7 @@ fn map_download(event: koharu_runtime::downloads::Event) -> Download {
             total: 0,
             error: None,
         },
-        koharu_runtime::downloads::Event::Progress {
+        koharu_runtime::download::Event::Progress {
             id,
             name,
             completed,
@@ -140,7 +140,7 @@ fn map_download(event: koharu_runtime::downloads::Event) -> Download {
             total,
             error: None,
         },
-        koharu_runtime::downloads::Event::Finished { id } => Download {
+        koharu_runtime::download::Event::Finished { id } => Download {
             id,
             state: DownloadState::Finished,
             name: None,
@@ -148,7 +148,7 @@ fn map_download(event: koharu_runtime::downloads::Event) -> Download {
             total: 0,
             error: None,
         },
-        koharu_runtime::downloads::Event::Failed { id, name, error } => Download {
+        koharu_runtime::download::Event::Failed { id, name, error } => Download {
             id,
             state: DownloadState::Failed,
             name: Some(name),

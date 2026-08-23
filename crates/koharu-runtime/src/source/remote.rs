@@ -14,7 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, ensure};
 
-use crate::{downloads::Transfer, store::Store};
+use crate::{download, store::Store};
 
 /// An immutable file behind a single URL.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -81,7 +81,7 @@ impl<'a> RemoteFile<'a> {
         let url = self.url.to_owned();
         let digest = self.digest.to_owned();
         Store::file(target, move |stage| async move {
-            Transfer::new()?.fetch(&url, &stage).await?;
+            download::fetch(&url, &stage).await?;
             tokio::task::spawn_blocking(move || verify(&stage, &digest))
                 .await
                 .context("digest verification task failed")?

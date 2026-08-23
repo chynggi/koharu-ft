@@ -4,8 +4,7 @@ use anyhow::{Context, Result};
 use strum::EnumProperty;
 
 use crate::{
-    Hardware, Store,
-    downloads::Transfer,
+    Hardware, Store, download,
     runtime::{
         DiscoverablePackage, Package, RuntimePackage,
         graph::Component,
@@ -111,7 +110,7 @@ impl Package for Llama {
                     "https://github.com/mayocream/koharu/releases/download/{RELEASE}/{asset}"
                 );
                 let archive = tempfile::Builder::new().suffix(".tar.gz").tempfile()?;
-                Transfer::new()?.fetch(&url, archive.path()).await?;
+                download::fetch(&url, archive.path()).await?;
                 extract(
                     archive.path(),
                     &stage,
@@ -171,7 +170,7 @@ impl RuntimePackage for Llama {
     async fn activate(self) -> Result<()> {
         let root = self.install().await?;
         for library in self.libraries() {
-            loader::load(root.join(library))
+            loader::load(root.join(library), false)
                 .with_context(|| format!("failed to activate llama library {library}"))?;
         }
         Ok(())
