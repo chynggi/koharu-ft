@@ -27,7 +27,7 @@ flowchart TB
   agent["koharu-agent"]
 
   frontend --> bridge
-  bridge -->|"生成された Tauri コマンド<br/>と型付きチャンネル"| app
+  bridge -->|"koharu-rpc への HTTP + SSE"| app
   entry --> app
   entry --> desktop
   app --> desktop
@@ -43,11 +43,11 @@ flowchart TB
 
 ## フロントエンドとアプリ
 
-`packages/koharu` はプロジェクトブラウザー、ページレール、キャンバス操作、インスペクター、設定、アクティビティ、Agent パネルを所有します。`packages/ui` は再利用可能な React 部品とスタイルを所有します。`packages/bridge` は生成された Tauri プロトコル、ブラウザーキャンバスアダプター、派生した `koharu-canvas` WASM パッケージを所有します。
+`packages/koharu` はプロジェクトブラウザー、ページレール、キャンバス操作、インスペクター、設定、アクティビティ、Agent パネルを所有します。`packages/ui` は再利用可能な React 部品とスタイルを所有します。`packages/bridge` は手書きの `koharu-rpc` プロトコルクライアント、ブラウザーキャンバスアダプター、派生した `koharu-canvas` WASM パッケージを所有します。
 
-フロントエンドは名前付き Tauri コマンドを直接呼び出し、HTTP クライアントや汎用イベント封筒を持ちません。
+フロントエンドは fetch で `koharu-rpc` を呼び出し、更新を SSE で受け取ります。
 
-`crates/koharu` はプロセス起動、診断、Tauri 設定、ビルド統合を所有し、`koharu-app` と `koharu-desktop` を構成します。`koharu-app` は Tauri 状態、プロジェクトライフサイクル、コマンド直列化、処理ジョブ、デスクトップ同期、Agent ホストを所有します。独立した型付きチャンネルが各更新を配信します。Rust 署名から `protocol.ts` を生成します。
+`crates/koharu` はプロセス起動、診断、Tauri 設定、ビルド統合を所有し、`koharu-app` と `koharu-desktop` を構成します。`koharu-app` は Tauri 状態、プロジェクトライフサイクル、コマンド直列化、処理ジョブ、デスクトップ同期、Agent ホストを所有します。独立した型付きチャンネルが各更新を配信します。`protocol.ts` は `koharu-rpc` 向けの手書きクライアントで、Rust の型に合わせて手作業で維持します。
 
 ## ドメイン、処理、描画
 

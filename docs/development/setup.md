@@ -51,15 +51,14 @@ bun run --filter @koharu/ui typecheck
 
 Do not run end-to-end tests unless the task specifically requires them.
 
-## Generated IPC bindings
+## The TypeScript protocol
 
-Rust command signatures and Specta types are authoritative. Regenerate the TypeScript binding after changing them:
+`packages/bridge/src/protocol.ts` is a hand-written client for `koharu-rpc`.
+It replaced the generated Tauri IPC bridge, and the `generate` binary that
+once produced it was removed along with the dead Specta command bindings.
 
-```bash
-cargo run -p koharu-app --bin generate
-```
-
-Do not hand-edit `packages/bridge/src/protocol.ts`.
+Rust stays authoritative for the shapes: after changing a type that crosses
+the boundary, edit `protocol.ts` to match it by hand.
 
 ## Documentation
 

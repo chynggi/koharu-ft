@@ -43,15 +43,15 @@ bun run --filter @koharu/ui typecheck
 
 `bun run build` は `tauri build --no-bundle` を使い、実行ファイルを `target/release` に出力します。インストーラー作成はリリースワークフローの責任です。E2E テストは明示的に必要な作業だけで実行します。
 
-## IPC バインディング
+## TypeScript プロトコル
 
-Rust のコマンド署名と Specta 型が正本です。
+`packages/bridge/src/protocol.ts` は `koharu-rpc` 向けの手書きクライアントです。
+生成される Tauri IPC ブリッジを置き換えたもので、これを生成していた
+`generate` バイナリは使われなくなった Specta のコマンドバインディングとともに
+削除されました。
 
-```bash
-cargo run -p koharu-app --bin generate
-```
-
-`packages/bridge/src/protocol.ts` を手編集しないでください。
+型の正本は引き続き Rust 側です。境界をまたぐ型を変更したら、`protocol.ts`
+を手作業で合わせてください。
 
 ## ドキュメント
 

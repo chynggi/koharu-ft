@@ -43,15 +43,13 @@ bun run --filter @koharu/ui typecheck
 
 `bun run build` 使用 `tauri build --no-bundle`，可执行文件写入 `target/release`。安装包由发布工作流构建。只有任务明确要求时才运行端到端测试。
 
-## IPC 绑定
+## TypeScript 协议
 
-Rust 命令签名与 Specta 类型是权威源：
+`packages/bridge/src/protocol.ts` 是为 `koharu-rpc` 手写的客户端。它取代了
+生成式的 Tauri IPC 桥接，而曾经生成它的 `generate` 二进制文件已随失效的
+Specta 命令绑定一并移除。
 
-```bash
-cargo run -p koharu-app --bin generate
-```
-
-不要手工编辑 `packages/bridge/src/protocol.ts`。
+类型仍以 Rust 为准：修改跨边界的类型后，请手工同步 `protocol.ts`。
 
 ## 文档
 

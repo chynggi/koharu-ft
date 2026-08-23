@@ -27,7 +27,7 @@ flowchart TB
   agent["koharu-agent"]
 
   frontend --> bridge
-  bridge -->|"generated direct Tauri commands<br/>and typed channels"| app
+  bridge -->|"HTTP + SSE to koharu-rpc"| app
   entry --> app
   entry --> desktop
   app --> desktop
@@ -43,15 +43,15 @@ flowchart TB
 
 ## Frontend
 
-`packages/koharu` owns product presentation and interaction state: project browser, page rail, canvas controls, inspector, settings, resource activity, and Agent panel. `packages/ui` owns reusable React primitives and styling. `packages/bridge` owns the generated Tauri protocol, browser canvas adapter, and derived `koharu-canvas` WASM package.
+`packages/koharu` owns product presentation and interaction state: project browser, page rail, canvas controls, inspector, settings, resource activity, and Agent panel. `packages/ui` owns reusable React primitives and styling. `packages/bridge` owns the hand-written `koharu-rpc` protocol client, browser canvas adapter, and derived `koharu-canvas` WASM package.
 
-The frontend invokes named Tauri commands directly. It does not maintain an HTTP client or decode a generic application event envelope.
+The frontend calls `koharu-rpc` over fetch and receives updates over SSE.
 
 ## Application
 
 `crates/koharu` owns process startup, diagnostics, Tauri configuration, and build integration. It composes `koharu-app` with `koharu-desktop`. `koharu-app` owns Tauri-managed state, project lifecycle, command serialization, processing jobs, desktop synchronization, and agent hosting. Independent typed channels publish project, canvas, job, download, preference, and resource updates.
 
-Rust signatures generate `packages/bridge/src/protocol.ts`; that file is derived output.
+`packages/bridge/src/protocol.ts` is a hand-written client for `koharu-rpc`, kept in step with the Rust types by hand.
 
 ## Domain and durability
 
