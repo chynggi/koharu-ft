@@ -38,6 +38,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     fn a_non_archive_file_fails_with_the_path_in_the_message() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("not-an-archive.pt");
@@ -56,8 +60,10 @@ mod tests {
         let device = koharu_torch::Device::Cpu;
         let model = TorchScript::load(&path, device).unwrap();
 
-        let image = koharu_torch::Tensor::zeros([1, 3, 512, 512], (koharu_torch::Kind::Float, device));
-        let mask = koharu_torch::Tensor::zeros([1, 1, 512, 512], (koharu_torch::Kind::Float, device));
+        let image =
+            koharu_torch::Tensor::zeros([1, 3, 512, 512], (koharu_torch::Kind::Float, device));
+        let mask =
+            koharu_torch::Tensor::zeros([1, 1, 512, 512], (koharu_torch::Kind::Float, device));
         let output = model.forward(&[&image, &mask]).unwrap();
 
         assert_eq!(output.size(), vec![1, 3, 512, 512]);

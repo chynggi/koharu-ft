@@ -90,6 +90,10 @@ mod tests {
     use crate::source::ComponentSource;
 
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     async fn a_non_archive_file_fails_with_the_loader_context() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("garbage.jit");

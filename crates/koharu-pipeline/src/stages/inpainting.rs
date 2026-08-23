@@ -18,6 +18,7 @@ use koharu_ml::{
     lama::{InpaintRequest, LaMa},
     manga_inpaintor::{MangaInpaintor, MangaSource},
     mi_gan::MiGan,
+    powerpaint::{PowerPaint, PowerPaintOptions, PowerPaintPaths},
     rorem_mixed::{DEFAULT_NEGATIVE_PROMPT, DEFAULT_PROMPT, RoremMixed, RoremMixedOptions},
     source::ComponentSource,
 };
@@ -245,6 +246,81 @@ impl Default for RoremMixedConfig {
     }
 }
 
+/// PowerPaint ships no pinned repository: the converted GGUF and its task
+/// embeddings are produced locally by `scripts/convert_powerpaint.py`, so both
+/// paths are required and there is no default that resolves to anything.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct PowerPaintConfig {
+    /// Named `model_path` rather than `model` because `InpaintingModel` is
+    /// internally tagged on `model`, and a same-named field would collide with
+    /// the tag when the variant is serialized.
+    pub model_path: PathBuf,
+    pub embeddings_dir: PathBuf,
+    pub mask_dilation: u8,
+    pub steps: i32,
+    pub guidance_scale: f32,
+    pub strength: f32,
+    pub seed: i64,
+}
+
+impl PowerPaintConfig {
+    fn validate(&self) -> Result<()> {
+        self.paths().validate()?;
+        let options = self.options();
+        ensure!(
+            options.num_inference_steps > 0,
+            "PowerPaint steps must be greater than zero"
+        );
+        ensure!(
+            options.strength > 0.0 && options.strength <= 1.0,
+            "PowerPaint strength must be greater than zero and at most one"
+        );
+        ensure!(
+            options.guidance_scale.is_finite() && options.guidance_scale > 0.0,
+            "PowerPaint guidance scale must be finite and greater than zero"
+        );
+        Ok(())
+    }
+
+    fn paths(&self) -> PowerPaintPaths {
+        PowerPaintPaths {
+            model: self.model_path.clone(),
+            embeddings_dir: self.embeddings_dir.clone(),
+        }
+    }
+
+    /// A zeroed field means "unset" rather than "zero", because `Default` has to
+    /// stay derivable for the `unwrap_or_default` the config loader uses.
+    fn options(&self) -> PowerPaintOptions {
+        let defaults = PowerPaintOptions::default();
+        PowerPaintOptions {
+            resolution: defaults.resolution,
+            mask_dilation: self.mask_dilation,
+            num_inference_steps: if self.steps == 0 {
+                defaults.num_inference_steps
+            } else {
+                self.steps
+            },
+            guidance_scale: if self.guidance_scale == 0.0 {
+                defaults.guidance_scale
+            } else {
+                self.guidance_scale
+            },
+            strength: if self.strength == 0.0 {
+                defaults.strength
+            } else {
+                self.strength
+            },
+            seed: if self.seed == 0 {
+                defaults.seed
+            } else {
+                self.seed
+            },
+        }
+    }
+}
+
 pub(super) struct Processor {
     config: InpaintingModel,
     device: koharu_ml::Device,
@@ -270,6 +346,7 @@ impl Processor {
                     "RORem prompt contains NUL"
                 );
             }
+            InpaintingModel::PowerPaint(settings) => settings.validate()?,
         }
 
         Ok(Self {
@@ -308,6 +385,7 @@ impl StageProcessor for Processor {
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
+            InpaintingModel::PowerPaint(_) => "powerpaint",
         }
     }
 
@@ -363,6 +441,10 @@ enum Model {
         model: Arc<Mutex<RoremMixed>>,
         config: RoremMixedConfig,
     },
+    PowerPaint {
+        model: Arc<Mutex<PowerPaint>>,
+        options: PowerPaintOptions,
+    },
 }
 
 /// FLUX exposes no size API once loaded, so the closest honest figure is the
@@ -416,6 +498,10 @@ impl Model {
             InpaintingModel::RoremMixed(config) => Ok(Self::Rorem {
                 model: Arc::new(Mutex::new(RoremMixed::load(device).await?)),
                 config: config.clone(),
+            }),
+            InpaintingModel::PowerPaint(config) => Ok(Self::PowerPaint {
+                model: Arc::new(Mutex::new(PowerPaint::load(device, &config.paths())?)),
+                options: config.options(),
             }),
         }
     }
@@ -586,6 +672,31 @@ impl Model {
                     })
                     .await
                     .context("RORem task panicked")??,
+                )
+            }
+            Self::PowerPaint { model, options } => {
+                let model = model.clone();
+                let options = options.clone();
+                (
+                    "powerpaint",
+                    tokio::task::spawn_blocking(move || -> Result<DynamicImage> {
+                        let model = model
+                            .lock()
+                            .map_err(|_| anyhow!("PowerPaint model lock is poisoned"))?;
+                        inpaint_tiled(
+                            &prepared.image,
+                            &prepared.mask,
+                            &prepared.text_mask,
+                            &prepared.flat_fill_regions,
+                            |image, mask| {
+                                Ok(DynamicImage::ImageRgb8(
+                                    model.inference(image, mask, &options)?,
+                                ))
+                            },
+                        )
+                    })
+                    .await
+                    .context("PowerPaint task panicked")??,
                 )
             }
         };

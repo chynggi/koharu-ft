@@ -479,6 +479,8 @@
         "negativePrompt": "Prompt negativo",
         "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "Limite de quadro",
+        "powerpaintEmbeddings": "Diretório de embeddings de tarefa",
+        "powerpaintModel": "Arquivo do modelo",
         "prompt": "Prompt",
         "seed": "Seed",
         "source": {

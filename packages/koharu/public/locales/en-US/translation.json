@@ -479,6 +479,8 @@
         "negativePrompt": "Negative prompt",
         "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "Panel threshold",
+        "powerpaintEmbeddings": "Task embeddings directory",
+        "powerpaintModel": "Model file",
         "prompt": "Prompt",
         "seed": "Seed",
         "source": {

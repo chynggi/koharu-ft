@@ -27,7 +27,7 @@ flowchart TB
   agent["koharu-agent"]
 
   frontend --> bridge
-  bridge -->|"生成的 Tauri 命令<br/>与类型化通道"| app
+  bridge -->|"到 koharu-rpc 的 HTTP + SSE"| app
   entry --> app
   entry --> desktop
   app --> desktop
@@ -43,11 +43,11 @@ flowchart TB
 
 ## 前端与应用
 
-`packages/koharu` 拥有项目浏览器、页面栏、画布控制、检查器、设置、活动中心和智能体面板。`packages/ui` 拥有可复用 React 组件与样式。`packages/bridge` 拥有生成的 Tauri 协议、浏览器画布适配器和派生的 `koharu-canvas` WASM 包。
+`packages/koharu` 拥有项目浏览器、页面栏、画布控制、检查器、设置、活动中心和智能体面板。`packages/ui` 拥有可复用 React 组件与样式。`packages/bridge` 拥有手写的 `koharu-rpc` 协议客户端、浏览器画布适配器和派生的 `koharu-canvas` WASM 包。
 
-前端直接调用具名 Tauri 命令，不维护 HTTP 客户端，也不解析通用应用事件信封。
+前端通过 fetch 调用 `koharu-rpc`，并以 SSE 接收更新。
 
-`crates/koharu` 拥有进程启动、诊断、Tauri 配置和构建集成，并组合 `koharu-app` 与 `koharu-desktop`。`koharu-app` 拥有 Tauri 状态、项目生命周期、命令串行化、处理任务、桌面同步和智能体宿主。独立类型化通道发布项目、画布、任务、下载、偏好和资源更新。`protocol.ts` 由 Rust 签名生成。
+`crates/koharu` 拥有进程启动、诊断、Tauri 配置和构建集成，并组合 `koharu-app` 与 `koharu-desktop`。`koharu-app` 拥有 Tauri 状态、项目生命周期、命令串行化、处理任务、桌面同步和智能体宿主。独立类型化通道发布项目、画布、任务、下载、偏好和资源更新。`protocol.ts` 是为 `koharu-rpc` 手写的客户端，需按 Rust 类型手工同步。
 
 ## 领域、处理与渲染
 

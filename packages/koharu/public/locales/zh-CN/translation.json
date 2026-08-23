@@ -479,6 +479,8 @@
         "negativePrompt": "负面提示词",
         "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "分镜阈值",
+        "powerpaintEmbeddings": "任务嵌入目录",
+        "powerpaintModel": "模型文件",
         "prompt": "提示词",
         "seed": "Seed",
         "source": {

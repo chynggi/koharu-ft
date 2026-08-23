@@ -214,6 +214,9 @@ fn remember_pipeline_profiles(config: &mut PipelineConfig) {
     if let koharu_pipeline::InpaintingModel::RoremMixed(settings) = &config.inpainting {
         config.processor.rorem_mixed = Some(settings.clone());
     }
+    if let koharu_pipeline::InpaintingModel::PowerPaint(settings) = &config.inpainting {
+        config.processor.powerpaint = Some(settings.clone());
+    }
 }
 
 #[tauri::command]
