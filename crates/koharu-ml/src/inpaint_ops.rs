@@ -303,6 +303,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     fn symmetric_indices_has_one_entry_per_output_position() {
         let indices = symmetric_indices(4, 6, Device::Cpu);
         assert_eq!(indices.size(), vec![6]);
@@ -310,6 +314,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     fn symmetric_indices_pads_the_far_side_by_mirroring_inward() {
         let indices = symmetric_indices(4, 6, Device::Cpu);
         let values = Vec::<i64>::try_from(&indices).unwrap();
@@ -328,6 +336,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     fn an_already_aligned_tensor_is_returned_unpadded() {
         let tensor = Tensor::from_slice(&[0f32, 1., 2., 3., 4., 5., 6., 7.]).view([1, 1, 2, 4]);
         let expected = Vec::<f32>::try_from(&tensor.shallow_clone().view([-1])).unwrap();
@@ -340,6 +352,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
+    )]
     fn a_misaligned_tensor_is_padded_on_the_far_side_by_reflection() {
         // 3x5, padded up to modulo 4 becomes 4x8. The bottom row and the
         // trailing columns are mirrored back from the last real row/column,
