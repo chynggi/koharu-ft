@@ -5,7 +5,7 @@ use specta::Type;
 
 use crate::stages::{
     Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
-    MiGanConfig, RoremMixedConfig,
+    MiGanConfig, PowerPaintConfig, RoremMixedConfig,
 };
 
 #[derive(Clone, Debug, PartialEq, Type)]
@@ -74,6 +74,7 @@ impl Serialize for PipelineConfig {
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
+            InpaintingModel::PowerPaint(_) => "powerpaint",
         };
         let mut processor = self.processor.clone();
         let DetectionModel::KoharuLayoutRFDetrSeg2XL(config) = &self.detection;
@@ -97,6 +98,9 @@ impl Serialize for PipelineConfig {
             }
             InpaintingModel::RoremMixed(config) => {
                 processor.rorem_mixed.get_or_insert_with(|| config.clone());
+            }
+            InpaintingModel::PowerPaint(config) => {
+                processor.powerpaint.get_or_insert_with(|| config.clone());
             }
             InpaintingModel::AotInpainting {} => {}
         }
@@ -158,6 +162,9 @@ impl<'de> Deserialize<'de> for PipelineConfig {
             }
             "rorem-mixed" => {
                 InpaintingModel::RoremMixed(file.processor.rorem_mixed.clone().unwrap_or_default())
+            }
+            "powerpaint" => {
+                InpaintingModel::PowerPaint(file.processor.powerpaint.clone().unwrap_or_default())
             }
             model => {
                 return Err(serde::de::Error::custom(format!(
@@ -260,6 +267,12 @@ impl PipelineConfig {
                     .clone()
                     .unwrap_or_else(|| config.clone()),
             )),
+            InpaintingModel::PowerPaint(config) => Ok(InpaintingModel::PowerPaint(
+                self.processor
+                    .powerpaint
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
         }
     }
 
@@ -291,6 +304,8 @@ pub struct ProcessorConfig {
     pub flux2_klein: Option<Flux2KleinConfig>,
     #[serde(rename = "rorem-mixed")]
     pub rorem_mixed: Option<RoremMixedConfig>,
+    #[serde(rename = "powerpaint")]
+    pub powerpaint: Option<PowerPaintConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
@@ -326,6 +341,8 @@ pub enum InpaintingModel {
     Flux2Klein(Flux2KleinConfig),
     #[serde(rename = "rorem-mixed")]
     RoremMixed(RoremMixedConfig),
+    #[serde(rename = "powerpaint")]
+    PowerPaint(PowerPaintConfig),
 }
 
 #[cfg(test)]
@@ -376,6 +393,56 @@ mod tests {
                 if config.prompt == "Remove the lettering."
                     && config.negative_prompt == "letters, words"
         ));
+    }
+
+    #[test]
+    fn parses_powerpaint_paths_and_survives_a_round_trip() {
+        let config: PipelineConfig = toml::from_str(
+            r#"
+                [inpainting]
+                model = "powerpaint"
+
+                [processor."powerpaint"]
+                model_path = "/models/powerpaint-v1.gguf"
+                embeddings_dir = "/models/embeddings"
+                steps = 24
+            "#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.inpainting(),
+            Ok(InpaintingModel::PowerPaint(settings))
+                if settings.model_path == std::path::Path::new("/models/powerpaint-v1.gguf")
+                    && settings.embeddings_dir == std::path::Path::new("/models/embeddings")
+                    && settings.steps == 24
+        ));
+
+        // Serializing backfills the detection slot, so only the PowerPaint
+        // halves are compared rather than the whole config.
+        let reparsed: PipelineConfig = toml::from_str(&toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(reparsed.inpainting, config.inpainting);
+        assert_eq!(reparsed.processor.powerpaint, config.processor.powerpaint);
+    }
+
+    /// `InpaintingModel` is internally tagged on `model`, so a variant config
+    /// carrying a field of that name would overwrite the tag and make the
+    /// variant unreadable. PowerPaint is the only one that names a path, so it
+    /// is the one that has to keep calling it `model_path`.
+    #[test]
+    fn a_variant_config_never_shadows_the_model_tag() {
+        let serialized = toml::Value::try_from(InpaintingModel::PowerPaint(PowerPaintConfig {
+            model_path: "/models/powerpaint-v1.gguf".into(),
+            embeddings_dir: "/models/embeddings".into(),
+            ..PowerPaintConfig::default()
+        }))
+        .unwrap();
+
+        assert_eq!(serialized["model"].as_str(), Some("powerpaint"));
+        assert_eq!(
+            serialized["model_path"].as_str(),
+            Some("/models/powerpaint-v1.gguf")
+        );
     }
 
     #[test]

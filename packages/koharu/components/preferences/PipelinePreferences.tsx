@@ -7,6 +7,7 @@ import { Flux2KleinOptions } from '@/components/preferences/Flux2KleinOptions'
 import { LaMaOptions } from '@/components/preferences/LaMaOptions'
 import { MangaInpaintorOptions } from '@/components/preferences/MangaInpaintorOptions'
 import { MiGanOptions } from '@/components/preferences/MiGanOptions'
+import { PowerPaintOptions } from '@/components/preferences/PowerPaintOptions'
 import {
   defaultModel,
   modelNames,
@@ -154,6 +155,13 @@ function ModelOptions({
     case 'manga-inpaintor':
       return (
         <MangaInpaintorOptions
+          value={model}
+          onChange={(changes) => onChange({ ...model, ...changes })}
+        />
+      )
+    case 'powerpaint':
+      return (
+        <PowerPaintOptions
           value={model}
           onChange={(changes) => onChange({ ...model, ...changes })}
         />

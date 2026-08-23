@@ -611,7 +611,7 @@ export type InpaintingModel = {
 	model: "lama",
 } & LaMaConfig | { model: "mi-gan" } & MiGanConfig | { model: "manga-inpaintor" } & MangaInpaintorConfig | { model: "aot-inpainting" } | {
 	model: "flux2-klein",
-} & Flux2KleinConfig | {
+} & Flux2KleinConfig | { model: "powerpaint" } & PowerPaintConfig | {
 	model: "rorem-mixed",
 } & RoremMixedConfig;
 
@@ -845,6 +845,21 @@ export type Preferences = {
 	languages: LanguageChoice[],
 };
 
+/**
+ *  PowerPaint V1 inpainting. The converted GGUF and its task embeddings are
+ *  produced locally by `scripts/convert_powerpaint.py`, so both paths are
+ *  required and there is no pinned repository to fall back to.
+ */
+export type PowerPaintConfig = {
+	model_path?: string,
+	embeddings_dir?: string,
+	mask_dilation?: number,
+	steps?: number,
+	guidance_scale?: number,
+	seed?: number,
+	strength?: number,
+};
+
 export type ProcessorConfig = {
 	"koharu-layout-rfdetr-seg-2xl"?: KoharuLayoutRFDetrSeg2XLConfig | null,
 	lama?: LaMaConfig | null,
@@ -852,6 +867,7 @@ export type ProcessorConfig = {
 	"manga-inpaintor"?: MangaInpaintorConfig | null,
 	"flux2-klein"?: Flux2KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
+	powerpaint?: PowerPaintConfig | null,
 };
 
 export type ProjectInfo = {

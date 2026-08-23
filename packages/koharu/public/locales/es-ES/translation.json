@@ -479,6 +479,8 @@
         "negativePrompt": "Indicación negativa",
         "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "Umbral de viñeta",
+        "powerpaintEmbeddings": "Directorio de incrustaciones de tarea",
+        "powerpaintModel": "Archivo del modelo",
         "prompt": "Indicación",
         "seed": "Seed",
         "source": {

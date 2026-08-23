@@ -12,7 +12,7 @@ use koharu_config::Config;
 use koharu_pipeline::{
     Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
     LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel, Operation, Pipeline, PipelineConfig,
-    Progress, Request, RoremMixedConfig, Scope, StageOutput, TranslationConfig,
+    PowerPaintConfig, Progress, Request, RoremMixedConfig, Scope, StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;
@@ -89,6 +89,8 @@ enum InpaintingChoice {
     Flux2Klein,
     #[value(name = "rorem-mixed")]
     RoremMixed,
+    #[value(name = "powerpaint")]
+    PowerPaint,
 }
 
 impl Arguments {
@@ -130,6 +132,9 @@ impl Arguments {
                 }
                 InpaintingChoice::RoremMixed => {
                     InpaintingModel::RoremMixed(RoremMixedConfig::default())
+                }
+                InpaintingChoice::PowerPaint => {
+                    InpaintingModel::PowerPaint(PowerPaintConfig::default())
                 }
             },
             processor: Default::default(),

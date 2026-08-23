@@ -53,6 +53,7 @@ pub mod manga_text_mask;
 pub mod mi_gan;
 pub mod paddle_ocr_vl;
 pub mod paddle_ocr_vl_quantized;
+pub mod powerpaint;
 pub mod pp_doclayout_v3;
 pub mod pp_ocr_v6;
 pub mod rorem_mixed;

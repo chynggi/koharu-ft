@@ -20,6 +20,7 @@ export const modelOptions = {
     'aot-inpainting',
     'flux2-klein',
     'rorem-mixed',
+    'powerpaint',
   ],
 } satisfies Record<ModelStage, ModelName[]>
 
@@ -34,6 +35,7 @@ export const modelNames: Record<ModelName, string> = {
   'aot-inpainting': 'AOT Inpainting',
   'flux2-klein': 'FLUX.2 Klein',
   'rorem-mixed': 'RORem Mixed',
+  powerpaint: 'PowerPaint',
 }
 
 export function defaultModel(model: ModelName): PipelineModel {
@@ -52,6 +54,8 @@ export function defaultModel(model: ModelName): PipelineModel {
       return { model, prompt: 'Remove the text and reconstruct the background.' }
     case 'rorem-mixed':
       return { model }
+    case 'powerpaint':
+      return { model, model_path: undefined } as PipelineModel
   }
 }
 
@@ -117,6 +121,15 @@ export function replaceStage(
                 'rorem-mixed': {
                   prompt: model.prompt ?? undefined,
                   negative_prompt: model.negative_prompt ?? undefined,
+                },
+              }
+            : {}),
+          ...(model.model === 'powerpaint'
+            ? {
+                powerpaint: {
+                  model_path: model.model_path ?? undefined,
+                  embeddings_dir: model.embeddings_dir ?? undefined,
+                  steps: model.steps ?? undefined,
                 },
               }
             : {}),

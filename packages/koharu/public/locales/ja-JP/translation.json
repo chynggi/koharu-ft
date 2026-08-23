@@ -479,6 +479,8 @@
         "negativePrompt": "ネガティブプロンプト",
         "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "コマしきい値",
+        "powerpaintEmbeddings": "タスク埋め込みディレクトリ",
+        "powerpaintModel": "モデルファイル",
         "prompt": "プロンプト",
         "seed": "Seed",
         "source": {
