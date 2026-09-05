@@ -1,4 +1,4 @@
-﻿use koharu_renderer::{
+use koharu_renderer::{
     FontFamily as RenderFontFamily, FontRange as RenderFontRange, FontSource as RenderFontSource,
     FontStyle as RenderFontStyle,
 };
@@ -61,9 +61,7 @@ impl IpcResponse for FontPreviewBytes {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_fonts(
-    desktop: State<'_, Desktop>,
-) -> std::result::Result<Vec<FontFamily>, Error> {
+pub async fn get_fonts(desktop: State<'_, Desktop>) -> std::result::Result<Vec<FontFamily>, Error> {
     Ok(desktop
         .renderer()
         .available_fonts()

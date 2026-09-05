@@ -12,8 +12,8 @@ use crate::{
     source::extract,
 };
 
-pub(crate) const VERSION: &str = "7.14.0";
-pub(crate) const INDEX: &str = "https://repo.amd.com/rocm/whl-multi-arch";
+pub(crate) const VERSION: &str = "10.0.0";
+pub(crate) const INDEX: &str = "https://stable.repo.amd.com/rocm/core/whl-next";
 
 #[cfg(target_os = "windows")]
 #[derive(Clone, Copy, strum::Display, strum::EnumIter)]
@@ -26,20 +26,22 @@ enum Library {
     OpenBlas,
     #[strum(serialize = "_rocm_sdk_core/bin/amdhip64_7.dll")]
     Hip,
-    #[strum(serialize = "_rocm_sdk_core/bin/hiprtc-builtins0714.dll")]
+    #[strum(serialize = "_rocm_sdk_core/bin/hiprtc-builtins0715.dll")]
     HipRtcBuiltins,
-    #[strum(serialize = "_rocm_sdk_core/bin/hiprtc0714.dll")]
+    #[strum(serialize = "_rocm_sdk_core/bin/hiprtc0715.dll")]
     HipRtc,
     #[strum(serialize = "_rocm_sdk_libraries/bin/rocrand.dll")]
     RocRand,
     #[strum(serialize = "_rocm_sdk_libraries/bin/hiprand.dll")]
     HipRand,
+    #[strum(serialize = "_rocm_sdk_libraries/bin/origami.dll")]
+    Origami,
+    #[strum(serialize = "_rocm_sdk_libraries/bin/libhipblaslt.dll")]
+    HipBlasLt,
     #[strum(serialize = "_rocm_sdk_libraries/bin/rocblas.dll")]
     RocBlas,
     #[strum(serialize = "_rocm_sdk_libraries/bin/hipblas.dll")]
     HipBlas,
-    #[strum(serialize = "_rocm_sdk_libraries/bin/libhipblaslt.dll")]
-    HipBlasLt,
     #[strum(serialize = "_rocm_sdk_libraries/bin/rocfft.dll")]
     RocFft,
     #[strum(serialize = "_rocm_sdk_libraries/bin/hipfft.dll")]
@@ -85,12 +87,16 @@ enum Library {
     OpenBlas,
     #[strum(serialize = "_rocm_sdk_core/lib/librocm_smi64.so.1")]
     RocmSmi,
+    #[strum(serialize = "_rocm_sdk_libraries/lib/librocroller.so.1")]
+    RocRoller,
+    #[strum(serialize = "_rocm_sdk_libraries/lib/liborigami.so.1")]
+    Origami,
+    #[strum(serialize = "_rocm_sdk_libraries/lib/libhipblaslt.so.1")]
+    HipBlasLt,
     #[strum(serialize = "_rocm_sdk_libraries/lib/librocblas.so.5")]
     RocBlas,
     #[strum(serialize = "_rocm_sdk_libraries/lib/libhipblas.so.3")]
     HipBlas,
-    #[strum(serialize = "_rocm_sdk_libraries/lib/libhipblaslt.so.1")]
-    HipBlasLt,
     #[strum(serialize = "_rocm_sdk_libraries/lib/librocfft.so.0")]
     RocFft,
     #[strum(serialize = "_rocm_sdk_libraries/lib/libhipfft.so.0")]
@@ -135,6 +141,18 @@ pub(crate) fn wheel_platform() -> Result<&'static str> {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, strum::Display, strum::EnumString)]
 pub(crate) enum Rocm {
+    #[cfg(target_os = "linux")]
+    #[strum(serialize = "gfx908")]
+    Gfx908,
+    #[cfg(target_os = "linux")]
+    #[strum(serialize = "gfx90a")]
+    Gfx90a,
+    #[cfg(target_os = "linux")]
+    #[strum(serialize = "gfx942")]
+    Gfx942,
+    #[cfg(target_os = "linux")]
+    #[strum(serialize = "gfx950")]
+    Gfx950,
     #[strum(serialize = "gfx1010")]
     Gfx1010,
     #[strum(serialize = "gfx1011")]
@@ -161,6 +179,7 @@ pub(crate) enum Rocm {
     Gfx1101,
     #[strum(serialize = "gfx1102")]
     Gfx1102,
+    #[cfg(target_os = "windows")]
     #[strum(serialize = "gfx1103")]
     Gfx1103,
     #[strum(serialize = "gfx1150")]
@@ -169,16 +188,13 @@ pub(crate) enum Rocm {
     Gfx1151,
     #[strum(serialize = "gfx1152")]
     Gfx1152,
+    #[cfg(target_os = "windows")]
     #[strum(serialize = "gfx1153")]
     Gfx1153,
     #[strum(serialize = "gfx1200")]
     Gfx1200,
     #[strum(serialize = "gfx1201")]
     Gfx1201,
-    #[strum(serialize = "gfx908")]
-    Gfx908,
-    #[strum(serialize = "gfx90a")]
-    Gfx90a,
 }
 
 impl Rocm {
@@ -188,21 +204,6 @@ impl Rocm {
             .context("no ROCm device was discovered")?
             .parse()
             .context("ROCm device is unsupported")
-    }
-
-    pub(crate) fn torch_family(self) -> Option<&'static str> {
-        match self {
-            Self::Gfx1100
-            | Self::Gfx1101
-            | Self::Gfx1102
-            | Self::Gfx1103
-            | Self::Gfx1150
-            | Self::Gfx1151
-            | Self::Gfx1152
-            | Self::Gfx1153 => Some("gfx11"),
-            Self::Gfx1200 | Self::Gfx1201 => Some("gfx12_0"),
-            _ => None,
-        }
     }
 
     pub(crate) async fn probe(self) -> Result<usize> {
@@ -276,11 +277,35 @@ impl Rocm {
     }
 
     fn complete(self, path: &Path) -> bool {
-        Library::iter().all(|library| path.join(library.to_string()).is_file())
-            && path
-                .join("_rocm_sdk_libraries/.kpack")
-                .join(format!("blas_lib_{self}.kpack"))
-                .is_file()
+        #[cfg(target_os = "windows")]
+        let device_library = path
+            .join("_rocm_sdk_libraries/.kpack")
+            .join(format!("blas_lib_{self}.kpack"))
+            .is_file();
+        #[cfg(target_os = "linux")]
+        let device_library = {
+            let root = path.join("_rocm_sdk_libraries/lib/rocblas/library");
+            match self {
+                Self::Gfx90a => {
+                    let root = root.join("gfx90a");
+                    root.join("Kernels.so-000-gfx90a-xnack+.hsaco").is_file()
+                        && root.join("Kernels.so-000-gfx90a-xnack-.hsaco").is_file()
+                }
+                Self::Gfx908
+                | Self::Gfx942
+                | Self::Gfx950
+                | Self::Gfx1150
+                | Self::Gfx1151
+                | Self::Gfx1152 => root
+                    .join(self.to_string())
+                    .join(format!("Kernels.so-000-{self}.hsaco"))
+                    .is_file(),
+                _ => root.join(format!("Kernels.so-000-{self}.hsaco")).is_file(),
+            }
+        };
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        let device_library = false;
+        Library::iter().all(|library| path.join(library.to_string()).is_file()) && device_library
     }
 }
 
@@ -299,15 +324,21 @@ impl Package for Rocm {
             move |stage| async move {
                 for (url, pattern) in [
                     (
-                        format!("{INDEX}/rocm_sdk_core-{VERSION}-py3-none-{platform}.whl"),
+                        format!(
+                            "{INDEX}/rocm-sdk-core/rocm_sdk_core-{VERSION}-py3-none-{platform}.whl"
+                        ),
                         "_rocm_sdk_core/**/*",
                     ),
                     (
-                        format!("{INDEX}/rocm_sdk_libraries-{VERSION}-py3-none-{platform}.whl"),
+                        format!(
+                            "{INDEX}/rocm-sdk-libraries/rocm_sdk_libraries-{VERSION}-py3-none-{platform}.whl"
+                        ),
                         "_rocm_sdk_libraries/**/*",
                     ),
                     (
-                        format!("{INDEX}/rocm_sdk_device_{self}-{VERSION}-py3-none-{platform}.whl"),
+                        format!(
+                            "{INDEX}/rocm-sdk-device-{self}/rocm_sdk_device_{self}-{VERSION}-py3-none-{platform}.whl"
+                        ),
                         "_rocm_sdk_libraries/**/*",
                     ),
                 ] {
@@ -327,18 +358,6 @@ impl RuntimePackage for Rocm {
 
     async fn activate(self) -> Result<()> {
         let root = self.install().await?;
-        if cfg!(target_os = "windows") && self == Self::Gfx1032 {
-            // The ROCm 7.14 package's MIOpen 3.5.2 selects F3x2 and F2x3 Winograd assembly kernels
-            // that COMGR cannot build for gfx1032 on Windows. Disable only those solvers while
-            // preserving other Winograd paths.
-            // SAFETY: ROCm activation is restricted to Windows, where changing the process
-            // environment is safe even in a multithreaded process.
-            unsafe {
-                std::env::set_var("MIOPEN_DEBUG_AMD_WINOGRAD_RXS_F3X2", "0");
-                std::env::set_var("MIOPEN_DEBUG_AMD_WINOGRAD_RXS_F2X3_G1", "0");
-            }
-        }
-
         if !cfg!(any(target_os = "windows", target_os = "linux")) {
             anyhow::bail!("ROCm packages support only Windows and Linux")
         }
@@ -355,7 +374,21 @@ mod tests {
 
     #[test]
     fn parses_supported_targets() {
+        assert_eq!("gfx1010".parse(), Ok(Rocm::Gfx1010));
+        assert_eq!("gfx1036".parse(), Ok(Rocm::Gfx1036));
         assert_eq!("gfx1201".parse(), Ok(Rocm::Gfx1201));
-        assert!("gfx1250".parse::<Rocm>().is_err());
+        #[cfg(target_os = "linux")]
+        assert_eq!("gfx908".parse(), Ok(Rocm::Gfx908));
+        #[cfg(not(target_os = "linux"))]
+        assert!("gfx908".parse::<Rocm>().is_err());
+        #[cfg(target_os = "windows")]
+        assert_eq!("gfx1103".parse(), Ok(Rocm::Gfx1103));
+        #[cfg(not(target_os = "windows"))]
+        assert!("gfx1103".parse::<Rocm>().is_err());
+        #[cfg(target_os = "windows")]
+        assert_eq!("gfx1153".parse(), Ok(Rocm::Gfx1153));
+        #[cfg(not(target_os = "windows"))]
+        assert!("gfx1153".parse::<Rocm>().is_err());
+        assert!("gfx1251".parse::<Rocm>().is_err());
     }
 }

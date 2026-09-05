@@ -328,10 +328,11 @@ describe('greenfield editor', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Help' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'GitHub' }))
     expect(openSpy).toHaveBeenLastCalledWith(
-      'https://github.com/mayocream/koharu',
+      'https://github.com/koharu-rs/koharu',
       '_blank',
       'noopener,noreferrer',
     )
+
   })
 
   it('shows the current version and author in About', async () => {
@@ -1144,7 +1145,7 @@ describe('greenfield editor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pipeline' }))
     expect(screen.getByRole('heading', { level: 2, name: 'Pipeline' })).toBeInTheDocument()
-    expect(screen.getAllByRole('combobox')).toHaveLength(3)
+    expect(screen.getAllByRole('combobox')).toHaveLength(5)
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Text threshold' }), {
       target: { value: '0.42' },
     })

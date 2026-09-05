@@ -4,7 +4,7 @@ default-members = ["crates/koharu"]
 resolver = "3"
 
 [workspace.package]
-version = "0.78.1"
+version = "0.81.7"
 edition = "2024"
 description = "Manga translation tools"
 license = "MIT OR Apache-2.0"
@@ -14,7 +14,7 @@ authors = [
 ]
 readme = "README.md"
 homepage = "https://koharu.rs"
-repository = "https://github.com/mayocream/koharu"
+repository = "https://github.com/koharu-rs/koharu"
 keywords = ["manga", "ocr", "translation", "deep_learning", "computer_vision"]
 publish = false
 
@@ -123,7 +123,7 @@ jieba-rs = "0.10.3"
 fontique = "0.11.0"
 pollster = "1.0.1"
 vello = "0.10.0"
-tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef", default-features = false, features = [
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54", default-features = false, features = [
     "cef",
     "compression",
     "dbus",
@@ -133,13 +133,13 @@ tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef", defa
     "x11",
     "devtools",
 ] }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
-tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
-tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
-tauri-plugin-single-instance = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
-tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
-tauri-plugin-window-state = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "feat/cef" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
+tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
+tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
+tauri-plugin-single-instance = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
+tauri-plugin-window-state = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "1423992771e0b57582ca3b06a6adc46ec26aa784" }
 schemars = { version = "1.2.2", features = ["chrono04", "indexmap2", "uuid1"] }
 uuid = { version = "1.24.1", features = ["v4", "v7", "serde"] }
 atomicwrites = "0.4.4"
@@ -168,7 +168,6 @@ serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "0.2.127"
 wasm-bindgen-futures = "0.4.77"
 web-sys = "0.3.104"
-cmake = "0.1.58"
 bindgen = "0.72.1"
 prettyplease = "0.3.0"
 proc-macro2 = "1.0.107"
@@ -178,13 +177,13 @@ libc = "0.2.189"
 memmap2 = "0.9.11"
 
 [patch.crates-io]
-tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-plugin = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "feat/cef" }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "6f34826405b5908cd5c6fea7f38e33badb69ad54" }
 
 [patch."https://github.com/tauri-apps/tauri"]
 tauri-runtime-cef = { path = "vendor/tauri-runtime-cef" }

@@ -15,7 +15,9 @@ const FORBIDDEN: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 enum Piece {
     Literal(String),
     /// `{index}`는 width 0, `{index:04}`는 width 4.
-    Index { width: usize },
+    Index {
+        width: usize,
+    },
     Label,
 }
 

@@ -1,4 +1,4 @@
-﻿use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result};
 use koharu_desktop::{CanvasState, Desktop};
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, PageDraft};
 use parking_lot::Mutex;
@@ -326,10 +326,7 @@ pub async fn create_project(
 )]
 #[tauri::command]
 #[specta::specta]
-pub async fn open_project(
-    name: String,
-    handle: AppHandle<Cef>,
-) -> std::result::Result<(), Error> {
+pub async fn open_project(name: String, handle: AppHandle<Cef>) -> std::result::Result<(), Error> {
     let library = handle.state::<ProjectLibrary>().inner().clone();
     let opened = library.open(&name).await?;
     replace_project(&handle, opened).await?;

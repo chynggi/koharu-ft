@@ -1,4 +1,4 @@
-﻿use std::{collections::HashSet, io::Cursor, path::PathBuf};
+use std::{collections::HashSet, io::Cursor, path::PathBuf};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
@@ -470,11 +470,7 @@ impl Project {
         ))
     }
 
-    pub async fn set_source_text(
-        &mut self,
-        layer: EntityId,
-        text: String,
-    ) -> Result<Commit> {
+    pub async fn set_source_text(&mut self, layer: EntityId, text: String) -> Result<Commit> {
         let snapshot = self.snapshot();
         let content = Self::text_content(&snapshot, layer)?;
         let language = snapshot
@@ -521,10 +517,7 @@ impl Project {
         self.commit(patch).await
     }
 
-    pub async fn set_typography(
-        &mut self,
-        updates: Vec<TypographyUpdate>,
-    ) -> Result<Commit> {
+    pub async fn set_typography(&mut self, updates: Vec<TypographyUpdate>) -> Result<Commit> {
         let snapshot = self.snapshot();
         let updates = updates
             .into_iter()
@@ -894,10 +887,7 @@ impl Project {
         }
     }
 
-    pub async fn commit_rebased(
-        &mut self,
-        patch: koharu_scene::Patch,
-    ) -> Result<Option<Commit>> {
+    pub async fn commit_rebased(&mut self, patch: koharu_scene::Patch) -> Result<Option<Commit>> {
         let current = self.snapshot();
         let patch = match patch.rebase_on(&current) {
             Ok(patch) => patch,

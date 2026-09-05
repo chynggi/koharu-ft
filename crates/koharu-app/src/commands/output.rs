@@ -1,4 +1,4 @@
-﻿use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use image::{
     ExtendedColorType, ImageEncoder as _,
@@ -352,7 +352,11 @@ pub async fn start_export(
         model: None,
         error: None,
     };
-    handle.state::<Processing>().jobs.lock().insert(id, job.clone());
+    handle
+        .state::<Processing>()
+        .jobs
+        .lock()
+        .insert(id, job.clone());
     handle.state::<JobChannel>().publish(job);
 
     let task_handle = handle.clone();

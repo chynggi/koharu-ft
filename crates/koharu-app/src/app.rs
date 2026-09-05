@@ -65,20 +65,22 @@ pub(crate) async fn initialize(handle: AppHandle<Cef>) -> Result<()> {
 }
 
 pub fn run(context: tauri::Context<Cef>, frontend_url: tauri::Url) -> Result<()> {
-    let builder = tauri::Builder::<Cef>::default()
-        .command_line_args::<_, &str>([("--hide-chrome-bubbles", None)]);
+    let attrs = tauri::CefRuntimeAttributes::default();
+
     #[cfg(debug_assertions)]
-    let builder = builder.command_line_args([
+    let attrs = attrs.command_line_args([
         ("remote-debugging-port", Some("4000")),
         ("--use-mock-keychain", None),
     ]);
     #[cfg(target_os = "linux")]
-    let builder = builder.command_line_args([
-        ("enable-unsafe-webgpu", None),
+    let attrs = attrs.command_line_args([
+        ("--no-first-run", None),
+        ("--enable-unsafe-webgpu", None),
         ("enable-features", Some("Vulkan,VulkanFromANGLE")),
         ("use-angle", Some("vulkan")),
     ]);
-    builder
+    tauri::Builder::<Cef>::default()
+        .runtime_init_attrs(attrs)
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)

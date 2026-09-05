@@ -51,9 +51,10 @@ impl LocalConfig {
     /// settings.
     #[must_use]
     pub(crate) fn runtime_for(&self, model: &str) -> LlmRuntimeConfig {
-        self.profiles
-            .get(model)
-            .map_or_else(|| self.runtime.clone(), |profile| self.runtime.overlay(profile))
+        self.profiles.get(model).map_or_else(
+            || self.runtime.clone(),
+            |profile| self.runtime.overlay(profile),
+        )
     }
 
     /// Rejects configuration that llama.cpp would only fail on later, and ids
@@ -177,10 +178,7 @@ impl LlmRuntimeConfig {
         options.n_threads_batch = self.n_threads_batch;
         options.kv_cache_type_k = self.kv_cache_type_k.map(KvCacheChoice::into_llama);
         options.kv_cache_type_v = self.kv_cache_type_v.map(KvCacheChoice::into_llama);
-        options.flash_attention = self
-            .flash_attention
-            .unwrap_or_default()
-            .into_llama();
+        options.flash_attention = self.flash_attention.unwrap_or_default().into_llama();
     }
 }
 
@@ -263,7 +261,9 @@ impl ContextMode {
 pub enum GpuLayers {
     #[default]
     All,
-    Custom { layers: u32 },
+    Custom {
+        layers: u32,
+    },
 }
 
 impl GpuLayers {

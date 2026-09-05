@@ -191,6 +191,7 @@ function ModelOptions({
     case 'paddleocr-vl-1.6':
     case 'manga-ocr':
     case 'baberu-ocr':
+    case 'hayai-ocr':
     case 'aot-inpainting':
       return null
   }

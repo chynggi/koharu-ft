@@ -1,4 +1,4 @@
-﻿mod host;
+mod host;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -39,9 +39,19 @@ impl AgentState {
     }
 
     async fn status(&self) -> Result<AgentStatus> {
-        let account = self.agent.codex().account()?;
+        let mut account = self.agent.codex().account()?;
         let models = if account.is_some() {
-            self.agent.models().await?
+            match self.agent.models().await {
+                Ok(models) => models,
+                Err(error) => {
+                    account = self.agent.codex().account()?;
+                    if account.is_some() {
+                        return Err(error);
+                    }
+                    self.agent.clear().await;
+                    Vec::new()
+                }
+            }
         } else {
             Vec::new()
         };
@@ -136,9 +146,7 @@ pub async fn login_agent(
 )]
 #[tauri::command]
 #[specta::specta]
-pub async fn logout_agent(
-    state: State<'_, AgentState>,
-) -> std::result::Result<AgentStatus, Error> {
+pub async fn logout_agent(state: State<'_, AgentState>) -> std::result::Result<AgentStatus, Error> {
     state.reset().await;
     state.agent.codex().logout()?;
     Ok(state.status().await?)

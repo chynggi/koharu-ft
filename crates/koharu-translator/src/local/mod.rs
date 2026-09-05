@@ -8,11 +8,11 @@ mod registry;
 
 use catalog::LocalModelDescriptor;
 pub(crate) use catalog::{DEFAULT_MODEL, DEFAULT_QUANTIZATION};
+use registry::LocalModel;
 pub use registry::{
     ContextMode, CustomModel, FlashAttentionMode, GpuLayers, KvCacheChoice, LlmRuntimeConfig,
     LocalConfig,
 };
-use registry::LocalModel;
 
 use crate::{
     Device, Error, GenerationConfig, Model, ModelSelection, Provider, Quantization, Result,

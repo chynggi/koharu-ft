@@ -232,7 +232,8 @@ export function TitleBar() {
               </MenubarItem>
               <MenubarItem
                 onClick={() =>
-                  window.open('https://github.com/mayocream/koharu', '_blank', 'noopener,noreferrer')
+                  window.open('https://github.com/koharu-rs/koharu', '_blank', 'noopener,noreferrer')
+
                 }
               >
                 {t('menu.github')}

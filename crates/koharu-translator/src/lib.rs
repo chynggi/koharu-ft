@@ -2,7 +2,6 @@
 
 mod backend;
 mod error;
-mod json;
 mod language;
 mod local;
 mod model;
@@ -19,11 +18,11 @@ use local::LocalTranslator;
 
 pub use backend::{TranslationContext, TranslationRequest};
 pub use language::Language;
+use local::LoadSignature;
 pub use local::{
     ContextMode, CustomModel, FlashAttentionMode, GpuLayers, KvCacheChoice, LlmRuntimeConfig,
     LocalConfig,
 };
-use local::LoadSignature;
 pub use model::{GenerationConfig, Model, ModelSelection, Quantization};
 pub(crate) use model::{ModelGeneration, QuantizationDefinition, display_name};
 pub use provider::{Provider, ProviderConfig, ProvidersConfig};
@@ -70,12 +69,16 @@ impl Translator {
     }
 
     #[must_use]
-    pub fn supports_vision(&self, selection: &ModelSelection, generation: &GenerationConfig) -> bool {
+    pub fn supports_vision(
+        &self,
+        selection: &ModelSelection,
+        generation: &GenerationConfig,
+    ) -> bool {
         generation.vision.unwrap_or(false)
             && (selection.provider != Provider::Local
-                || self.local_config().is_ok_and(|config| {
-                    local::supports_vision(selection, &config)
-                }))
+                || self
+                    .local_config()
+                    .is_ok_and(|config| local::supports_vision(selection, &config)))
     }
 
     #[must_use]

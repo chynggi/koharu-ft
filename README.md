@@ -3,15 +3,15 @@
 <p align="center">ML-powered manga translator, written in <b>Rust</b>.</p>
 
 <p align="center">
-<a href="https://github.com/mayocream/koharu/releases/latest" target="_blank"><img alt="GitHub Downloads (all assets, all releases)" src="https://img.shields.io/github/downloads/mayocream/koharu/total?style=for-the-badge&link=https%3A%2F%2Fgithub.com%2Fmayocream%2Fkoharu%2Freleases%2Flatest"></a>
+<a href="https://github.com/koharu-rs/koharu/releases/latest" target="_blank"><img alt="GitHub Downloads (all assets, all releases)" src="https://img.shields.io/github/downloads/koharu-rs/koharu/total?style=for-the-badge&link=https%3A%2F%2Fgithub.com%2Fkoharu-rs%2Fkoharu%2Freleases%2Flatest"></a>
 </p>
 
 <p align="center">
-<a href="https://trendshift.io/repositories/20649" target="_blank"><img src="https://trendshift.io/api/badge/repositories/20649" alt="mayocream%2Fkoharu | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/20649" target="_blank"><img src="https://trendshift.io/api/badge/repositories/20649" alt="koharu-rs%2Fkoharu | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
 <p align="center">
-<a href="https://koharu.rs/getting-started/install/" target="_blank">Getting Started</a> · <a href="https://koharu.rs/" target="_blank">Docs</a> · <a href="https://github.com/mayocream/koharu/issues" target="_blank">Bug reports</a> · <a href="https://discord.gg/mHvHkxGnUY" target="_blank">Discord</a>
+<a href="https://koharu.rs/getting-started/install/" target="_blank">Getting Started</a> · <a href="https://koharu.rs/" target="_blank">Docs</a> · <a href="https://github.com/koharu-rs/koharu/issues" target="_blank">Bug reports</a> · <a href="https://discord.gg/mHvHkxGnUY" target="_blank">Discord</a>
 </p>
 
 <p align="center">
@@ -46,19 +46,19 @@ Koharu introduces a local-first workflow for manga translation, utilizing the po
 
 ## Hardware Acceleration
 
-Koharu supports GPU acceleration with CUDA and ROCm / HIP on Windows and Linux, Metal on Apple silicon, and Vulkan on Windows and Linux. [Runtime and hardware requirements](https://koharu.rs/getting-started/runtime-models-and-hardware/) vary by backend and operating system.
+Koharu supports CUDA and ROCm / HIP on Windows and Linux, Metal on Apple silicon, and Vulkan on Windows and Linux. Keep your graphics driver current; a full CUDA or ROCm SDK installation is not required. See [Runtime and hardware requirements](https://koharu.rs/getting-started/runtime-models-and-hardware/) for model-specific guidance.
 
 ### CUDA
 
-The CUDA backend targets CUDA 13.0 on Windows and Linux. Make sure to install the [latest NVIDIA driver](https://www.nvidia.com/en-us/drivers/). [CUDA 13.0 requires R580 or newer](https://docs.nvidia.com/cuda/archive/13.0.0/cuda-toolkit-release-notes/index.html#cuda-driver).
+CUDA 13.0 requires an NVIDIA Turing-class or newer GPU and an R580 or newer driver. Check NVIDIA's official [CUDA toolkit, driver, and architecture matrix](https://docs.nvidia.com/datacenter/tesla/drivers/cuda-toolkit-driver-and-architecture-matrix.html) and install the [latest NVIDIA driver](https://www.nvidia.com/en-us/drivers/).
 
 ### ROCm / HIP
 
-ROCm / HIP is available for AMD GPUs on Windows and Linux. Make sure to install the official [ROCm Core SDK with HIP](https://rocm.docs.amd.com/projects/HIP/en/latest/install/install.html).
+ROCm 10.0 support depends on the exact AMD GPU, operating system, and driver combination. Check AMD's official [ROCm 10.0.0 compatibility matrix](https://rocm.docs.amd.com/en/docs-10.0.0/compatibility/compatibility-matrix.html) and install a compatible [AMD driver](https://www.amd.com/en/support).
 
 ### Metal
 
-Metal is used on Apple silicon Macs.
+Metal is available on Apple silicon Macs.
 
 ### Vulkan
 
@@ -66,11 +66,11 @@ Vulkan is available on Windows and Linux as an alternative to CUDA and ROCm / HI
 
 ### WebGPU
 
-The editor canvas uses WebGPU inside the embedded CEF webview. WebGPU requires a current graphics driver even when inference runs on the CPU.
+The editor canvas uses WebGPU and requires a current graphics driver even when inference runs on the CPU.
 
 ### CPU
 
-Koharu uses the CPU when no accelerator is available or initialization fails. No GPU SDK is required, but inference is slower.
+CPU inference is available for supported workloads but is substantially slower.
 
 ## Machine Learning Models
 
@@ -93,6 +93,7 @@ OCR reads source text from detected regions.
 - [PaddleOCR VL 1.6](https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6)
 - [Manga OCR](https://huggingface.co/mayocream/manga-ocr)
 - [Baberu OCR](https://huggingface.co/genshiai-daichi/baberu-ocr)
+- [Hayai OCR](https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2)
 
 #### Inpainting
 
@@ -137,7 +138,7 @@ OpenAI-compatible endpoints are also supported.
 
 ## Installation
 
-Download release builds from the [releases page](https://github.com/mayocream/koharu/releases/latest). [Installation requirements and first launch](https://koharu.rs/getting-started/install/) vary by operating system.
+Download release builds from the [releases page](https://github.com/koharu-rs/koharu/releases/latest). [Installation requirements and first launch](https://koharu.rs/getting-started/install/) vary by operating system.
 
 Builds are available for Windows, macOS, and Linux.
 
@@ -212,8 +213,8 @@ If Koharu is useful in your workflow, consider sponsoring the project.
 
 Thanks to all the contributors who have helped make Koharu better!
 
-<a href="https://github.com/mayocream/koharu/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=mayocream/koharu" />
+<a href="https://github.com/koharu-rs/koharu/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=koharu-rs/koharu" />
 </a>
 
 ## License

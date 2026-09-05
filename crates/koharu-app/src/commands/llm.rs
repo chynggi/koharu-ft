@@ -49,7 +49,8 @@ pub async fn get_llm_capabilities() -> std::result::Result<LlmCapabilities, Erro
     // Mirrors the condition koharu-ml applies when building model params: an
     // accelerator is only used when the loaded llama.cpp build can offload to it.
     let gpu_offload = accelerated
-        && koharu_ml::llama_backend().is_some_and(koharu_ml::llama::llama_backend::LlamaBackend::supports_gpu_offload);
+        && koharu_ml::llama_backend()
+            .is_some_and(koharu_ml::llama::llama_backend::LlamaBackend::supports_gpu_offload);
 
     let mut deferred = vec![
         DeferredCapability {
