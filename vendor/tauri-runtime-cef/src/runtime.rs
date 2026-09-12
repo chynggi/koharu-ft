@@ -76,22 +76,66 @@ use winit::platform::x11::EventLoopBuilderExtX11;
 /// in minor releases when a known breaking change is discovered.
 pub use cef;
 
-/// Platform-specific runtime init attributes.
-#[derive(Clone, Debug)]
-pub enum RuntimeInitAttribute {
-  /// Command line arguments passed to CEF.
-  CommandLineArgs { args: Vec<(String, Option<String>)> },
-  /// Deep link schemes.
-  DeepLinkSchemes { schemes: Vec<String> },
+/// CEF runtime initialization attributes.
+#[derive(Clone, Debug, Default)]
+pub struct RuntimeInitAttrs {
+  command_line_args: Vec<(String, Option<String>)>,
+  deep_link_schemes: Vec<String>,
+  cache_path: Option<PathBuf>,
+}
+
+impl RuntimeInitAttrs {
+  /// Appends one command line argument passed to CEF.
+  #[must_use]
+  pub fn command_line_arg<K: Into<String>, V: Into<String>>(
+    mut self,
+    key: K,
+    value: Option<V>,
+  ) -> Self {
+    self
+      .command_line_args
+      .push((key.into(), value.map(Into::into)));
+    self
+  }
+
+  /// Appends a list of command line arguments passed to CEF.
+  #[must_use]
+  pub fn command_line_args<K: Into<String>, V: Into<String>>(
+    mut self,
+    args: impl IntoIterator<Item = (K, Option<V>)>,
+  ) -> Self {
+    self
+      .command_line_args
+      .extend(args.into_iter().map(|(k, v)| (k.into(), v.map(Into::into))));
+    self
+  }
+
+  /// Appends a list of deep link schemes detected by CEF's on_already_running_app_relaunch hook.
+  ///
+  /// Deep links defined by the core deep-link plugin on the Tauri configuration are automatically added.
+  #[must_use]
+  pub fn deep_link_schemes<S: Into<String>>(
+    mut self,
+    schemes: impl IntoIterator<Item = S>,
+  ) -> Self {
+    self
+      .deep_link_schemes
+      .extend(schemes.into_iter().map(Into::into));
+    self
+  }
+
   /// Directory used for CEF disk cache (`Settings::cache_path`).
   ///
   /// If unspecified, defaults to `{user cache}/{app identifier}/cef`.
-  CachePath { path: PathBuf },
+  #[must_use]
+  pub fn root_cache_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
+    self.cache_path = Some(path.as_ref().to_path_buf());
+    self
+  }
 }
 
-impl tauri_runtime::InitAttribute for RuntimeInitAttribute {
-  fn new(config: &tauri_utils::config::Config) -> Result<Vec<Self>> {
-    let mut attrs = Vec::new();
+impl tauri_runtime::RuntimeSpecificInitAttrs for RuntimeInitAttrs {
+  fn apply_config(&mut self, config: &tauri_utils::config::Config) -> Result<()> {
     if let Some(plugin_config) = config
       .plugins
       .0
@@ -115,9 +159,9 @@ impl tauri_runtime::InitAttribute for RuntimeInitAttribute {
           .collect(),
       };
 
-      attrs.push(RuntimeInitAttribute::DeepLinkSchemes { schemes });
+      self.deep_link_schemes.extend(schemes);
     }
-    Ok(attrs)
+    Ok(())
   }
 }
 
@@ -1170,11 +1214,11 @@ impl<T: UserEvent> RuntimeHandle<T> for CefRuntimeHandle<T> {
     Ok(unsafe { DisplayHandle::borrow_raw(raw.0) })
   }
 
-  fn primary_monitor(&self) -> Option<Monitor> {
-    event_loop_getter!(self, PrimaryMonitor).ok().flatten()
+  fn primary_monitor(&self) -> Result<Option<Monitor>> {
+    event_loop_getter!(self, PrimaryMonitor)
   }
 
-  fn monitor_from_point(&self, x: f64, y: f64) -> Option<Monitor> {
+  fn monitor_from_point(&self, x: f64, y: f64) -> Result<Option<Monitor>> {
     let (tx, rx) = mpsc::channel();
     self
       .context
@@ -1182,12 +1226,10 @@ impl<T: UserEvent> RuntimeHandle<T> for CefRuntimeHandle<T> {
         tx, x, y,
       )))
       .and_then(|_| rx.recv().map_err(|_| Error::FailedToReceiveMessage))
-      .ok()
-      .flatten()
   }
 
-  fn available_monitors(&self) -> Vec<Monitor> {
-    event_loop_getter!(self, AvailableMonitors).unwrap_or_default()
+  fn available_monitors(&self) -> Result<Vec<Monitor>> {
+    event_loop_getter!(self, AvailableMonitors)
   }
 
   fn cursor_position(&self) -> Result<PhysicalPosition<f64>> {
@@ -1318,7 +1360,7 @@ impl TerminationSignals {
 impl<T: UserEvent> CefRuntime<T> {
   fn init(
     mut event_loop_builder: EventLoopBuilder,
-    runtime_args: RuntimeInitArgs<RuntimeInitAttribute>,
+    runtime_args: RuntimeInitArgs<RuntimeInitAttrs>,
   ) -> Result<Self> {
     // Snapshot before CEF can touch anything, so we can tell an embedder's own
     // signal policy apart from the handlers CEF installs in `cef::initialize`.
@@ -1387,16 +1429,11 @@ impl<T: UserEvent> CefRuntime<T> {
       std::process::exit(ret.max(0));
     }
 
-    let mut command_line_args = Vec::new();
-    let mut deep_link_schemes = Vec::new();
-    let mut cache_path_override = None::<PathBuf>;
-    for arg in runtime_args.platform_specific_attributes {
-      match arg {
-        RuntimeInitAttribute::CommandLineArgs { args } => command_line_args.extend(args),
-        RuntimeInitAttribute::DeepLinkSchemes { schemes } => deep_link_schemes.extend(schemes),
-        RuntimeInitAttribute::CachePath { path } => cache_path_override = Some(path),
-      }
-    }
+    let RuntimeInitAttrs {
+      mut command_line_args,
+      deep_link_schemes,
+      cache_path: cache_path_override,
+    } = runtime_args.runtime_init_attrs;
 
     let cache_path = cache_path_override.unwrap_or_else(|| {
       let cache_base = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
@@ -1577,10 +1614,10 @@ impl<T: UserEvent> Runtime<T> for CefRuntime<T> {
   type EventLoopProxy = EventProxy<T>;
   type PlatformSpecificWebviewAttribute = WebviewAtribute;
   type Webview = Webview;
-  type PlatformSpecificInitAttribute = RuntimeInitAttribute;
+  type RuntimeInitAttrs = RuntimeInitAttrs;
   type WindowOpener = NewWindowOpener;
 
-  fn new(args: RuntimeInitArgs<Self::PlatformSpecificInitAttribute>) -> Result<Self> {
+  fn new(args: RuntimeInitArgs<Self::RuntimeInitAttrs>) -> Result<Self> {
     Self::init(EventLoopBuilder::default(), args)
   }
 
@@ -1592,7 +1629,7 @@ impl<T: UserEvent> Runtime<T> for CefRuntime<T> {
     target_os = "netbsd",
     target_os = "openbsd"
   ))]
-  fn new_any_thread(args: RuntimeInitArgs<Self::PlatformSpecificInitAttribute>) -> Result<Self> {
+  fn new_any_thread(args: RuntimeInitArgs<Self::RuntimeInitAttrs>) -> Result<Self> {
     let mut event_loop_builder = EventLoopBuilder::default();
     event_loop_builder.with_any_thread(true);
     Self::init(event_loop_builder, args)

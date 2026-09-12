@@ -116,8 +116,8 @@ pub fn run(context: tauri::Context<Cef>, frontend_url: tauri::Url) -> Result<()>
             koharu_runtime::Store::configure(
                 application
                     .path()
-                    .resource_dir()
-                    .context("failed to locate Koharu's installation directory")?
+                    .app_local_data_dir()
+                    .context("failed to locate Koharu's local data directory")?
                     .join("store"),
             )?;
 

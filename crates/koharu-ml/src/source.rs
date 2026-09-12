@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use koharu_runtime::{HuggingFaceFile, PinnedFile};
 
 /// Where one model component comes from.
@@ -20,8 +20,8 @@ pub enum ComponentSource {
     Builtin,
     /// A file already on disk. Nothing is downloaded and the file is only read.
     LocalFile(PathBuf),
-    /// Any Hugging Face repository. Without a revision the repository head is
-    /// resolved once per process.
+    /// Any Hugging Face repository, pinned by revision. The revision is
+    /// required: a moving head would silently change which file is loaded.
     HuggingFace {
         repository: String,
         revision: Option<String>,
@@ -46,12 +46,12 @@ impl ComponentSource {
                 filename,
             } => {
                 self.validate()?;
-                match revision {
-                    Some(revision) => HuggingFaceFile::pinned(repository, revision, filename),
-                    None => HuggingFaceFile::latest(repository, filename),
-                }
-                .resolve()
-                .await
+                let revision = revision
+                    .as_deref()
+                    .with_context(|| format!("Hugging Face revision is required: {repository}"))?;
+                HuggingFaceFile::pinned(repository, revision, filename)
+                    .resolve()
+                    .await
             }
             Self::Url { url, digest } => {
                 self.validate()?;
@@ -89,12 +89,13 @@ impl ComponentSource {
                     "Hugging Face repository must be owner/name: {repository}"
                 );
                 ensure!(!filename.is_empty(), "Hugging Face filename is empty");
-                if let Some(revision) = revision {
-                    ensure!(
-                        revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
-                        "revision must be a full commit hash: {revision}"
-                    );
-                }
+                let revision = revision
+                    .as_deref()
+                    .with_context(|| format!("Hugging Face revision is required: {repository}"))?;
+                ensure!(
+                    revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                    "revision must be a full commit hash: {revision}"
+                );
                 Ok(())
             }
             Self::Url { url, digest } => {
@@ -135,22 +136,20 @@ mod tests {
     fn a_hugging_face_override_is_checked_before_the_network() {
         let repository = |repository: &str| ComponentSource::HuggingFace {
             repository: repository.to_owned(),
-            revision: None,
+            revision: Some("0".repeat(40)),
             filename: "model.gguf".to_owned(),
         };
         assert!(repository("unsloth").validate().is_err());
         assert!(repository("a/b/c").validate().is_err());
         repository("unsloth/FLUX.2-klein-4B-GGUF").validate().unwrap();
 
-        assert!(
-            ComponentSource::HuggingFace {
-                repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),
-                revision: Some("main".to_owned()),
-                filename: "model.gguf".to_owned(),
-            }
-            .validate()
-            .is_err()
-        );
+        let revision = |revision: Option<&str>| ComponentSource::HuggingFace {
+            repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),
+            revision: revision.map(ToOwned::to_owned),
+            filename: "model.gguf".to_owned(),
+        };
+        assert!(revision(None).validate().is_err());
+        assert!(revision(Some("main")).validate().is_err());
     }
 
     #[test]
