@@ -1,3 +1,60 @@
+## [0.82.1](https://github.com/koharu-rs/koharu/compare/0.82.0..0.82.1) - 2026-09-11
+
+### 🐛 Bug Fixes
+
+- *(ci)* Pin AppImage helper source URL - ([a7431c5](https://github.com/koharu-rs/koharu/commit/a7431c5a5e7517cb7413309e4e4da5679efa20b1))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(app)* Default the processing scope to the selection ([#1088](https://github.com/koharu-rs/koharu/issues/1088)) - ([767e4d0](https://github.com/koharu-rs/koharu/commit/767e4d0441f986c18e55fc4e1af42f3dddfd860e))
+
+
+## [0.82.0](https://github.com/koharu-rs/koharu/compare/0.81.10..0.82.0) - 2026-09-11
+
+### ⛰️  Features
+
+- *(runtime)* Update native runtimes and CUDA 13.3 - ([67d507b](https://github.com/koharu-rs/koharu/commit/67d507b4cf3959208e87201f62b03ba771d3f372))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(scripts)* Add Kindle JP downloader - ([8ccfe9f](https://github.com/koharu-rs/koharu/commit/8ccfe9ffafd8037e06c8999213dd55a78a6f7b37))
+
+
+## [0.81.9](https://github.com/koharu-rs/koharu/compare/0.81.8..0.81.9) - 2026-09-08
+
+### 🐛 Bug Fixes
+
+- *(runtime)* Update Torch to v2.13.0.6 - ([7a6884a](https://github.com/koharu-rs/koharu/commit/7a6884a67b3c0a4b1f48f69eb59dd2230292b0c7))
+
+### 🚜 Refactor
+
+- *(runtime)* Simplify accelerator discovery - ([087b40a](https://github.com/koharu-rs/koharu/commit/087b40aabc9d26c1f0195916963f1980ac7d6f09))
+
+### ⚙️ Miscellaneous Tasks
+
+- Align contribution template wording with OSS conventions - ([edfbf84](https://github.com/koharu-rs/koharu/commit/edfbf8428d33e726ba8530c6b9ca9610015b62a5))
+- Shorten issue template filenames - ([7f046cb](https://github.com/koharu-rs/koharu/commit/7f046cb7f59d9ff18103696f7d80ed5b34c8c9d3))
+- Simplify contribution templates and use issue types - ([e29860a](https://github.com/koharu-rs/koharu/commit/e29860a75f551f1e0d5d4384eda8dc98aba97d73))
+
+
+## [0.81.8](https://github.com/koharu-rs/koharu/compare/0.81.7..0.81.8) - 2026-09-08
+
+### 🐛 Bug Fixes
+
+- *(app)* Disable devtools to prevent F12 crash ([#1042](https://github.com/koharu-rs/koharu/issues/1042)) ([#1044](https://github.com/koharu-rs/koharu/issues/1044)) - ([fa9d907](https://github.com/koharu-rs/koharu/commit/fa9d90727c8187c965951e0c3762a548e5497250))
+- *(runtime)* Skip unsupported Linux ROCm targets - ([e460a9b](https://github.com/koharu-rs/koharu/commit/e460a9bfd3b02ea2bbdb6701f956bb0df3cbd0b8))
+
+### 📚 Documentation
+
+- Align documentation with implementation - ([4f8216a](https://github.com/koharu-rs/koharu/commit/4f8216aec1e948c53aef6e63b0dcb7ff83142c2e))
+- Migrate site to Mintlify ([#1049](https://github.com/koharu-rs/koharu/issues/1049)) - ([15ab5a6](https://github.com/koharu-rs/koharu/commit/15ab5a651916c9a0801ca612fda851cf74079866))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(editor)* Change default brush color to pure white ([#1053](https://github.com/koharu-rs/koharu/issues/1053)) - ([6bdac20](https://github.com/koharu-rs/koharu/commit/6bdac20428388918564294cf8e8b98dcecf74c6c))
+- Update feature request template name and label - ([fb1071a](https://github.com/koharu-rs/koharu/commit/fb1071a8e701128738de9b29b17d45034fd3dd54))
+
+
 ## [0.81.7](https://github.com/koharu-rs/koharu/compare/0.81.6..0.81.7) - 2026-09-05
 
 ### 🐛 Bug Fixes

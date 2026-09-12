@@ -268,7 +268,7 @@ async fn export_dialog(
 fn require_local_window(
     app: &AppState,
     peer: SocketAddr,
-) -> ApiResult<tauri::WebviewWindow<tauri::Cef>> {
+) -> ApiResult<tauri::WebviewWindow<tauri_runtime_cef::CefRuntime>> {
     if !peer.ip().is_loopback() {
         return Err(anyhow::anyhow!(
             "a native dialog can only be opened for a caller on this machine"

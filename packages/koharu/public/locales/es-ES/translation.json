@@ -14,6 +14,7 @@
     "exportFailed": "Error al exportar.",
     "exporting": "Exportando",
     "modelDownload": "Descarga del modelo",
+    "pageLabel": "Página {{number}}: {{label}}",
     "processing": "Procesando",
     "processingFailed": "Error de procesamiento.",
     "stop": "Detener",

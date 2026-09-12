@@ -12,7 +12,8 @@ use koharu_scene::{AssetRole, EntityId, Snapshot};
 use serde::Deserialize;
 use specta::Type;
 use std::sync::Arc;
-use tauri::{AppHandle, Cef, Manager as _, State, WebviewWindow, ipc::IpcResponse};
+use tauri::{AppHandle, Manager as _, State, WebviewWindow, ipc::IpcResponse};
+use tauri_runtime_cef::CefRuntime;
 
 use super::processing::{Job, JobChannel, JobId, JobKind, JobState, Processing};
 use super::{Error, project::CurrentProject};
@@ -88,7 +89,7 @@ impl ExportOptions {
 #[tauri::command]
 #[specta::specta]
 pub async fn export_pages(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     pages: Vec<EntityId>,
     options: ExportOptions,
 ) -> std::result::Result<Option<JobId>, Error> {
@@ -322,7 +323,7 @@ async fn rasterize(
 /// 둘 다 GPU를 많이 쓰므로 동시에 돌 이유가 없고, 이 제약 덕분에 스테이징
 /// 디렉터리도 한 번에 하나만 존재한다.
 pub async fn start_export(
-    handle: AppHandle<Cef>,
+    handle: AppHandle<CefRuntime>,
     directory: std::path::PathBuf,
     pages: Vec<EntityId>,
     options: ExportOptions,

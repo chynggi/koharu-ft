@@ -6,16 +6,13 @@ use strum::EnumProperty;
 use crate::{
     Hardware, Store, download,
     runtime::{
-        DiscoverablePackage, Package, RuntimePackage,
-        graph::Component,
-        loader,
-        packages::{Cuda, Rocm},
+        DiscoverablePackage, Package, RuntimePackage, graph::Component, loader, packages::Cuda,
         sealed,
     },
     source::extract,
 };
 
-const RELEASE: &str = "b10752";
+const RELEASE: &str = "b10903";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, strum::Display, strum::EnumProperty)]
 pub(crate) enum Llama {
@@ -130,7 +127,7 @@ impl DiscoverablePackage for Llama {
             if hardware.supports_cuda() {
                 return Some(Self::WindowsCuda);
             }
-            if Rocm::discover(hardware).is_ok() {
+            if hardware.supports_rocm() {
                 return Some(Self::WindowsHip);
             }
             if hardware.supports_vulkan() {
@@ -164,9 +161,7 @@ impl RuntimePackage for Llama {
                 Component::Cuda(Cuda::Runtime13),
                 Component::Cuda(Cuda::Blas13),
             ]),
-            Self::WindowsHip | Self::LinuxHip => {
-                Ok(vec![Component::Rocm(Rocm::discover(hardware)?)])
-            }
+            Self::WindowsHip | Self::LinuxHip => Ok(vec![Component::Rocm(hardware.rocm_target()?)]),
             Self::WindowsVulkan | Self::LinuxVulkan | Self::MacosMetal => Ok(Vec::new()),
         }
     }

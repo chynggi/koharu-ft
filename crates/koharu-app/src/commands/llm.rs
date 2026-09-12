@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use koharu_ml::{Backend, DeviceType};
 use serde::Serialize;
 use specta::Type;
-use tauri::{Cef, WebviewWindow};
+use tauri::WebviewWindow;
+use tauri_runtime_cef::CefRuntime;
 
 use super::Error;
 
@@ -90,7 +91,7 @@ pub async fn get_llm_capabilities() -> std::result::Result<LlmCapabilities, Erro
 #[tauri::command]
 #[specta::specta]
 pub async fn pick_gguf_file(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
 ) -> std::result::Result<Option<PathBuf>, Error> {
     Ok(rfd::AsyncFileDialog::new()
         .add_filter("GGUF model", &["gguf"])

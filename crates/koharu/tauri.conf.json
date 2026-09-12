@@ -1,11 +1,11 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/6f34826405b5908cd5c6fea7f38e33badb69ad54/crates/tauri-schema-generator/schemas/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/fe0e5155c12459f3250dd9ae5867dd627d7c8286/crates/tauri-schema-generator/schemas/config.schema.json",
   "identifier": "Koharu",
   "build": {
     "devUrl": "http://127.0.0.1:47823",
     "frontendDist": "../../packages/koharu/out",
-    "beforeDevCommand": "bun run ui:dev",
-    "beforeBuildCommand": "bun run ui:build"
+    "beforeDevCommand": "bun run --filter @koharu/bridge build && bun run --parallel --filter @koharu/bridge --filter @koharu/app dev",
+    "beforeBuildCommand": "bun run --filter @koharu/bridge build && bun run --filter @koharu/app build"
   },
   "app": {
     "macOSPrivateApi": true,

@@ -12,11 +12,12 @@ pub mod routes;
 
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Cef};
+use tauri::AppHandle;
+use tauri_runtime_cef::CefRuntime;
 use tauri::Manager as _;
 
 /// Axum state: the live Tauri application handle.
-pub type AppState = AppHandle<Cef>;
+pub type AppState = AppHandle<CefRuntime>;
 
 /// Serve the API (and, if `static_dir` is given, the exported frontend) on
 /// `{host}:{port}`. Binds the listener synchronously so the port is
@@ -30,7 +31,7 @@ pub type AppState = AppHandle<Cef>;
 /// to a non-loopback `host` without a token exposes the API, including
 /// provider secrets handled by the config routes, to anyone who can reach it.
 pub fn serve(
-    app: AppHandle<Cef>,
+    app: AppHandle<CefRuntime>,
     host: &str,
     port: u16,
     static_dir: Option<PathBuf>,
