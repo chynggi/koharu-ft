@@ -141,6 +141,34 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
                 hook(handle.clone());
             }
 
+            // The production window is served by koharu-rpc over HTTP, so Tauri
+            // resolves its origin as remote (`frontendDist` is a directory, so
+            // `is_local_url` compares against `tauri.localhost`) and the static
+            // `default` capability, which only covers local URLs, leaves every
+            // IPC call denied. Grant the window chrome its commands on the exact
+            // origin the window is navigated to, so the frameless title bar keeps
+            // working whatever KOHARU_RPC_PORT resolved to.
+            application
+                .add_capability(
+                    tauri::ipc::CapabilityBuilder::new("koharu-rpc-window")
+                        .local(false)
+                        .remote(format!(
+                            "{}/*",
+                            frontend_url.origin().ascii_serialization()
+                        ))
+                        .window("main")
+                        .permission("core:window:allow-close")
+                        .permission("core:window:allow-minimize")
+                        .permission("core:window:allow-is-maximized")
+                        .permission("core:window:allow-toggle-maximize")
+                        .permission("core:window:allow-internal-toggle-maximize")
+                        .permission("core:window:allow-start-dragging")
+                        .permission("core:window:allow-start-resize-dragging")
+                        .permission("core:event:allow-listen")
+                        .permission("core:event:allow-unlisten"),
+                )
+                .context("failed to grant window controls to the koharu-rpc origin")?;
+
             let window_config = application
                 .config()
                 .app
