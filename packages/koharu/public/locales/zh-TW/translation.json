@@ -271,7 +271,7 @@
     "fit": "適應視窗",
     "github": "GitHub",
     "help": "說明",
-    "importPages": "匯入頁面…",
+    "import": "匯入頁面",
     "process": "處理",
     "processLayers": "處理所選圖層",
     "processPages": "處理所選頁面",
@@ -317,7 +317,8 @@
     "pages": "頁面",
     "rename": "重新命名",
     "renameDescription": "為此頁面選擇新名稱。",
-    "renameTitle": "重新命名頁面"
+    "renameTitle": "重新命名頁面",
+    "selected": "已選擇 {{count}}"
   },
   "outputPicker": {
     "instructions": "翻譯指示",
@@ -338,7 +339,6 @@
     "translation": "將原文翻譯為目標語言。"
   },
   "providerDescriptions": {
-    "atlas-cloud": "由 Atlas 託管的語言模型。",
     "caiyun": "Caiyun 翻譯 API。",
     "claude": "Anthropic Claude 模型。",
     "deepl": "DeepL 翻譯 API。",

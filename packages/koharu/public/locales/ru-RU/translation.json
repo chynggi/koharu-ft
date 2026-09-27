@@ -271,7 +271,7 @@
     "fit": "Вписать в окно",
     "github": "GitHub",
     "help": "Справка",
-    "importPages": "Импортировать страницы…",
+    "import": "Импортировать страницы",
     "process": "Обработка",
     "processLayers": "Обработать выбранные слои",
     "processPages": "Обработать выбранные страницы",
@@ -317,7 +317,8 @@
     "pages": "Страницы",
     "rename": "Переименовать",
     "renameDescription": "Выберите новое имя для страницы.",
-    "renameTitle": "Переименовать страницу"
+    "renameTitle": "Переименовать страницу",
+    "selected": "Выбрано: {{count}}"
   },
   "outputPicker": {
     "instructions": "Инструкции по переводу",
@@ -338,7 +339,6 @@
     "translation": "Переводит исходный текст на целевой язык."
   },
   "providerDescriptions": {
-    "atlas-cloud": "Языковые модели, размещённые в Atlas.",
     "caiyun": "API перевода Caiyun.",
     "claude": "Модели Anthropic Claude.",
     "deepl": "API перевода DeepL.",

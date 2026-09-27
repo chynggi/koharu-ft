@@ -354,8 +354,6 @@ export type AnalysisRegion = {
 	label: string | null,
 };
 
-export type AtlasCloudConfig = Record<string, never>;
-
 export type Bounds = {
 	x: number,
 	y: number,
@@ -662,7 +660,7 @@ export type LanguageChoice = {
 	name: string,
 };
 
-export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
+export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
 
 export type LayerCommit = {
 	revision: Revision,
@@ -882,9 +880,9 @@ export type ProjectSummary = {
 	name: string,
 };
 
-export type Provider = "local" | "atlas-cloud" | "openai" | "gemini" | "claude" | "grok" | "minimax" | "deepseek" | "openai-compatible" | "openrouter" | "lm-studio" | "deepl" | "google-cloud-translation" | "caiyun";
+export type Provider = "local" | "openai" | "gemini" | "claude" | "grok" | "minimax" | "deepseek" | "openai-compatible" | "openrouter" | "lm-studio" | "deepl" | "google-cloud-translation" | "caiyun";
 
-export type ProviderConfig = { provider: "local"; settings: LocalConfig } | { provider: "atlas-cloud"; settings: AtlasCloudConfig } | { provider: "openai"; settings: OpenAiConfig } | { provider: "gemini"; settings: GeminiConfig } | { provider: "claude"; settings: ClaudeConfig } | { provider: "grok"; settings: GrokConfig } | { provider: "minimax"; settings: MiniMaxConfig } | { provider: "deepseek"; settings: DeepSeekConfig } | { provider: "openai-compatible"; settings: OpenAiCompatibleConfig } | { provider: "openrouter"; settings: OpenRouterConfig } | { provider: "lm-studio"; settings: LmStudioConfig } | { provider: "deepl"; settings: DeepLConfig } | { provider: "google-cloud-translation"; settings: GoogleCloudConfig } | { provider: "caiyun"; settings: CaiyunConfig };
+export type ProviderConfig = { provider: "local"; settings: LocalConfig } | { provider: "openai"; settings: OpenAiConfig } | { provider: "gemini"; settings: GeminiConfig } | { provider: "claude"; settings: ClaudeConfig } | { provider: "grok"; settings: GrokConfig } | { provider: "minimax"; settings: MiniMaxConfig } | { provider: "deepseek"; settings: DeepSeekConfig } | { provider: "openai-compatible"; settings: OpenAiCompatibleConfig } | { provider: "openrouter"; settings: OpenRouterConfig } | { provider: "lm-studio"; settings: LmStudioConfig } | { provider: "deepl"; settings: DeepLConfig } | { provider: "google-cloud-translation"; settings: GoogleCloudConfig } | { provider: "caiyun"; settings: CaiyunConfig };
 
 export type ProviderPreference = {
 	name: string,
@@ -899,6 +897,7 @@ export type ProviderPreferences = {
 export type Quantization = {
 	id: string,
 	name: string,
+	downloaded: boolean,
 };
 
 export type RasterLayerKind = "cleanup" | "paint";

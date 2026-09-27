@@ -271,7 +271,7 @@
     "fit": "Ajustar a la ventana",
     "github": "GitHub",
     "help": "Ayuda",
-    "importPages": "Importar páginas…",
+    "import": "Importar páginas",
     "process": "Procesar",
     "processLayers": "Procesar capas seleccionadas",
     "processPages": "Procesar páginas seleccionadas",
@@ -317,7 +317,8 @@
     "pages": "Páginas",
     "rename": "Cambiar nombre",
     "renameDescription": "Elige un nombre nuevo para esta página.",
-    "renameTitle": "Cambiar nombre de página"
+    "renameTitle": "Cambiar nombre de página",
+    "selected": "{{count}} seleccionadas"
   },
   "outputPicker": {
     "instructions": "Instrucciones de traducción",
@@ -338,7 +339,6 @@
     "translation": "Convierte el texto original al idioma de destino."
   },
   "providerDescriptions": {
-    "atlas-cloud": "Modelos de lenguaje alojados en Atlas.",
     "caiyun": "API de traducción de Caiyun.",
     "claude": "Modelos Claude de Anthropic.",
     "deepl": "API de traducción de DeepL.",

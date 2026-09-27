@@ -158,6 +158,9 @@ fn builtin_model(descriptor: &LocalModelDescriptor) -> Model {
             .map(|quantization| Quantization {
                 id: quantization.id.to_owned(),
                 name: quantization.name.to_owned(),
+                downloaded: std::iter::once(quantization.filename)
+                    .chain(descriptor.projector)
+                    .all(|filename| descriptor.file(filename).exists()),
             })
             .collect(),
         vision: descriptor.projector.is_some(),

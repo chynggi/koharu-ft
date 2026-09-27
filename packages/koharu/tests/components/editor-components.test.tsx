@@ -1,5 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render as testingRender, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render as testingRender,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from 'next-themes'
 import { StrictMode, type ReactNode } from 'react'
@@ -23,6 +30,7 @@ import {
   preparedPageKey,
   projectKey,
   queryClient,
+  useCommand,
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
 import * as canvasRuntime from '@koharu/bridge/canvas'
@@ -56,6 +64,7 @@ const emptyCredential = () => ({
 
 const textLayer: Layer = {
   type: 'text',
+  angle_degrees: 0,
   id: 'element',
   parent: 'page',
   geometry: {
@@ -325,16 +334,18 @@ describe('greenfield editor', () => {
       <>
         <TitleBar />
         <PageRail />
+        <ActivityCenter />
       </>,
     )
 
     expect(screen.getByText('/')).toHaveClass('mx-2')
     expect(screen.queryByRole('button', { name: 'Import pages' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('menuitem', { name: 'File' }))
-    await user.hover(await screen.findByRole('menuitem', { name: 'Import Pages…' }))
+    await user.hover(await screen.findByRole('menuitem', { name: 'Import Pages' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Files…' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Importing pages…')
+    expect(screen.getByRole('complementary', { name: 'Activity' })).toBeInTheDocument()
     expect(importPages).toHaveBeenCalledTimes(1)
 
     await user.click(screen.getByRole('menuitem', { name: 'File' }))
@@ -385,6 +396,26 @@ describe('greenfield editor', () => {
     expect(await screen.findByText('0.62.0')).toBeInTheDocument()
     expect(screen.getByText('Mayo Takanashi')).toBeInTheDocument()
     expect(getMeta).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows how many pages are selected above the filter', async () => {
+    installProject()
+    act(() => {
+      useKoharuStore.setState({ selectedPages: ['page-1'] })
+    })
+    render(<PageRail />)
+
+    // One page behaves like acting on the active page, so it is not worth
+    // announcing.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+    act(() => {
+      useKoharuStore.setState({ selectedPages: ['page-1', 'page-2', 'page-3'] })
+    })
+
+    // A status region, so the count reaches assistive technology when it
+    // changes rather than only being visible.
+    expect(await screen.findByRole('status')).toHaveTextContent('3 selected')
   })
 
   it('loads page thumbnails into the filmstrip', async () => {
@@ -1728,6 +1759,43 @@ describe('greenfield editor', () => {
     expect(
       await screen.findByText('6.0/16.0 GB VRAM · this device, all applications'),
     ).toBeInTheDocument()
+  })
+
+  it('tracks arbitrary concurrent commands until each one settles', async () => {
+    const first = Promise.withResolvers<string>()
+    const second = Promise.withResolvers<string>()
+    const command = vi
+      .fn<(name: string, count: number) => Promise<string>>()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const { result } = renderHook(
+      () => useCommand(['rebuild-index'], command, 'Rebuilding index…'),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    )
+    render(<ActivityCenter />)
+
+    act(() => {
+      result.current.run('first', 2)
+      result.current.run('second', 3)
+    })
+    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(2))
+    expect(screen.getAllByText('Rebuilding index…')).toHaveLength(2)
+    expect(command).toHaveBeenNthCalledWith(1, 'first', 2)
+    expect(command).toHaveBeenNthCalledWith(2, 'second', 3)
+    expect(result.current.busy).toBe(true)
+
+    await act(async () => first.resolve('done'))
+    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(1))
+    expect(result.current.busy).toBe(true)
+
+    await act(async () => second.reject(new Error('Index failed')))
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    expect(result.current.busy).toBe(false)
+    expect(screen.queryByRole('complementary', { name: 'Activity' })).not.toBeInTheDocument()
   })
 
   it('keeps running work visible and stoppable', async () => {

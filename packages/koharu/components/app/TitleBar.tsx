@@ -91,7 +91,7 @@ export function TitleBar() {
                   className='min-h-8 gap-1.5 px-2 py-1 text-xs'
                 >
                   {importing && <LoaderCircle className='animate-spin' aria-hidden='true' />}
-                  {importing ? t('navigator.importing') : t('menu.importPages')}
+                  {importing ? t('navigator.importing') : t('menu.import')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
                   <MenubarItem disabled={importing} onClick={() => importPages('files')}>

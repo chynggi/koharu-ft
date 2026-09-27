@@ -6,9 +6,9 @@ use strum::{Display, EnumIter, EnumString, IntoStaticStr, VariantArray};
 use crate::{
     local::LocalConfig,
     remote::{
-        AtlasCloudConfig, CaiyunConfig, ClaudeConfig, DeepLConfig, DeepSeekConfig, GeminiConfig,
-        GoogleCloudConfig, GrokConfig, LmStudioConfig, MiniMaxConfig, OpenAiCompatibleConfig,
-        OpenAiConfig, OpenRouterConfig,
+        CaiyunConfig, ClaudeConfig, DeepLConfig, DeepSeekConfig, GeminiConfig, GoogleCloudConfig,
+        GrokConfig, LmStudioConfig, MiniMaxConfig, OpenAiCompatibleConfig, OpenAiConfig,
+        OpenRouterConfig,
     },
 };
 
@@ -121,12 +121,6 @@ define_providers! {
         field: local,
         config: LocalConfig,
     }
-    AtlasCloud {
-        id: "atlas-cloud",
-        name: "Atlas Cloud",
-        field: atlas_cloud,
-        config: AtlasCloudConfig,
-    }
     OpenAi {
         id: "openai",
         name: "OpenAI",
@@ -206,7 +200,6 @@ impl Provider {
     pub const fn secret_key(self) -> Option<koharu_secrets::SecretKey<'static>> {
         let (name, variable) = match self {
             Self::Local => return None,
-            Self::AtlasCloud => ("atlas-cloud", "ATLASCLOUD_API_KEY"),
             Self::OpenAi => ("openai", "OPENAI_API_KEY"),
             Self::Gemini => ("gemini", "GEMINI_API_KEY"),
             Self::Claude => ("claude", "ANTHROPIC_API_KEY"),
@@ -242,7 +235,6 @@ mod tests {
     #[test]
     fn provider_credentials_use_canonical_environment_variables() {
         let expected = [
-            (Provider::AtlasCloud, "ATLASCLOUD_API_KEY", true),
             (Provider::OpenAi, "OPENAI_API_KEY", true),
             (Provider::Gemini, "GEMINI_API_KEY", true),
             (Provider::Claude, "ANTHROPIC_API_KEY", true),

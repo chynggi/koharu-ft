@@ -78,6 +78,7 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         .command_line_args([
             ("--enable-unsafe-webgpu", None),
             ("use-angle", Some("vulkan")),
+            ("--ozone-platform", Some("x11")),
         ]);
     tauri::Builder::<CefRuntime>::new()
         .runtime(cef)
@@ -112,7 +113,7 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |application| {
-            #[cfg(target_os = "windows")]
+            #[cfg(all(target_os = "windows", not(debug_assertions)))]
             koharu_runtime::Store::configure(
                 application
                     .path()
