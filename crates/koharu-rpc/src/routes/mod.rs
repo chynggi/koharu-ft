@@ -13,6 +13,7 @@ pub mod meta;
 pub mod operations;
 pub mod pages;
 pub mod projects;
+pub mod window;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -27,4 +28,5 @@ pub fn router() -> Router<AppState> {
         .merge(layers::router())
         .merge(agent::router())
         .merge(events::router())
+        .merge(window::router())
 }

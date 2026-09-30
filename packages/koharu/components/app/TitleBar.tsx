@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { AboutDialog } from '@/components/app/AboutDialog'
 import { ExportDialog } from '@/components/app/ExportDialog'
-import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
+import { startWindowDrag, useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call } from '@/lib/backend'
 import { selectableLayer } from '@/lib/geometry'
 import {
@@ -63,6 +63,7 @@ export function TitleBar() {
     <>
       <header
         data-tauri-drag-region='deep'
+        onMouseDownCapture={startWindowDrag}
         className='relative flex h-10 shrink-0 items-center bg-[var(--surface-titlebar)] text-[12px]'
       >
         {macOS ? (

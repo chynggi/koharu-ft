@@ -177,6 +177,10 @@ export const commands = {
 	openProject: (name: string) => post<null>(`/projects/${encodeURIComponent(name)}/open`),
 	deleteProject: (name: string) => del<null>(`/projects/${encodeURIComponent(name)}`),
 	closeProject: () => post<null>("/project/close"),
+	// Linux desktop only: hands an interactive move (no direction) or resize of
+	// the window to the window manager for the pointer button being held.
+	startWindowMoveResize: (direction?: ResizeDirection) =>
+		post<null>("/window/move-resize", { direction: direction ?? null }),
 	// Server-side paths. Only meaningful when the caller can name files the
 	// server can open — that is, the desktop window. A browser cannot, and must
 	// use `importPagesUpload` instead; see the note there.
@@ -333,6 +337,16 @@ export function openEventStream(handlers: {
 }
 
 /* Types */
+export type ResizeDirection =
+	| "North"
+	| "NorthEast"
+	| "East"
+	| "SouthEast"
+	| "South"
+	| "SouthWest"
+	| "West"
+	| "NorthWest";
+
 export type Account = {
 	id: string,
 	email: string | null,

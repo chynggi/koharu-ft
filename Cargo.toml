@@ -177,6 +177,7 @@ syn = { version = "3.0.5", features = ["full"] }
 libc = "0.2.189"
 memmap2 = "0.9.11"
 x11-dl = "2.21.0"
+raw-window-handle = "0.6.2"
 
 [patch.crates-io]
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "d05973d48957343599889030400ec1a79e7d0363" }

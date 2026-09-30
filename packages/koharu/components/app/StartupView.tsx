@@ -4,7 +4,7 @@ import { LoaderCircle } from 'lucide-react'
 import Image from 'next/image'
 import { useTranslation } from 'react-i18next'
 
-import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
+import { startWindowDrag, useMacOS, WindowControls } from '@/components/app/WindowChrome'
 
 export function StartupView() {
   const { t } = useTranslation()
@@ -14,6 +14,7 @@ export function StartupView() {
     <div className='relative flex h-screen w-screen flex-col overflow-hidden bg-[var(--surface-titlebar)] text-foreground'>
       <header
         data-tauri-drag-region='deep'
+        onMouseDownCapture={startWindowDrag}
         className='grid h-10 shrink-0 grid-cols-[132px_1fr_132px] items-center border-b border-border/80 bg-[var(--surface-titlebar)] shadow-[var(--shadow-titlebar)]'
       >
         <div className='flex h-full items-center'>

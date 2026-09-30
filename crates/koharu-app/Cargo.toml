@@ -59,4 +59,5 @@ zip = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cef = { workspace = true }
+raw-window-handle = { workspace = true }
 x11-dl = { workspace = true }

@@ -1,8 +1,15 @@
 'use client'
 
+import { commands, type ResizeDirection } from '@koharu/bridge/protocol'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Copy, Minus, Square, X } from 'lucide-react'
-import { useEffect, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 const resizeHandles = [
@@ -31,6 +38,58 @@ export function useMacOS() {
 
 function isEmbedded(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+// On Linux the runtime's own window dragging never sees the pointer press,
+// which lands on the CEF window, so koharu-rpc hands the move or resize to the
+// window manager instead.
+function isLinux(): boolean {
+  return navigator.userAgent.includes('Linux') && !navigator.userAgent.includes('Android')
+}
+
+const CLICKABLE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY'])
+const INTERACTIVE_ROLES = new Set([
+  'button',
+  'link',
+  'menuitem',
+  'tab',
+  'checkbox',
+  'radio',
+  'switch',
+  'option',
+])
+
+/**
+ * Capture-phase mouse-down handler for `data-tauri-drag-region='deep'`
+ * elements. It has to run in the capture phase: Tauri's drag script listens on
+ * the document, which is also React's root here, and stops the event before
+ * React's bubble listener sees it. That script still handles double-click
+ * maximizing; this only starts the move on Linux, skipping the same
+ * interactive descendants that script skips.
+ */
+export function startWindowDrag(event: ReactMouseEvent<HTMLElement>) {
+  if (event.button !== 0 || event.detail !== 1 || !isEmbedded() || !isLinux()) return
+  for (
+    let element = event.target as HTMLElement | null;
+    element && element !== event.currentTarget;
+    element = element.parentElement
+  ) {
+    const clickable =
+      CLICKABLE_TAGS.has(element.tagName) ||
+      (element.hasAttribute('contenteditable') &&
+        element.getAttribute('contenteditable') !== 'false') ||
+      (element.hasAttribute('tabindex') && element.getAttribute('tabindex') !== '-1') ||
+      INTERACTIVE_ROLES.has(element.getAttribute('role') ?? '')
+    if (clickable || element.getAttribute('data-tauri-drag-region') === 'false') return
+  }
+  void commands.startWindowMoveResize().catch(() => undefined)
+}
+
+function startWindowResize(direction: ResizeDirection) {
+  const request = isLinux()
+    ? commands.startWindowMoveResize(direction)
+    : getCurrentWindow().startResizeDragging(direction)
+  void request.catch(() => undefined)
 }
 
 export function WindowControls() {
@@ -105,9 +164,7 @@ function WindowResizeHandles() {
       if (event.button !== 0) return
       event.preventDefault()
       event.stopPropagation()
-      void getCurrentWindow()
-        .startResizeDragging(direction)
-        .catch(() => undefined)
+      startWindowResize(direction)
     }
 
   return resizeHandles.map(({ direction, className }) => (

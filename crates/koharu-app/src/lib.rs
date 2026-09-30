@@ -5,6 +5,8 @@ use tauri_runtime_cef::CefRuntime;
 
 mod app;
 pub mod commands;
+#[cfg(target_os = "linux")]
+pub mod linux_window;
 
 pub use app::run;
 
