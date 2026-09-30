@@ -88,24 +88,34 @@ impl<'a> SecretKey<'a> {
     }
 }
 
+/// Environment variable that switches every secret to read-only, environment-only storage.
+///
+/// Container deployments set it to `environment`: Docker's default seccomp profile blocks the
+/// keyring syscalls, and provider credentials are injected at run time instead. Desktops leave it
+/// unset and keep the platform credential store.
+const MODE_VARIABLE: &str = "KOHARU_SECRETS";
+
+/// Whether secrets come only from environment variables and cannot be changed from Koharu.
 #[must_use]
-pub const fn is_read_only() -> bool {
-    cfg!(target_os = "linux")
+pub fn is_read_only() -> bool {
+    environment_only(std::env::var_os(MODE_VARIABLE))
 }
 
-#[cfg(target_os = "linux")]
-pub fn get(key: SecretKey<'_>) -> anyhow::Result<Option<SecretString>> {
-    let variable = key.environment_variable().ok_or_else(|| {
-        anyhow::anyhow!(
-            "secret '{}' is unavailable on Linux; this deployment uses read-only environment credentials",
-            key.name()
-        )
-    })?;
-    environment_secret(variable, std::env::var_os(variable))
+fn environment_only(mode: Option<std::ffi::OsString>) -> bool {
+    mode.is_some_and(|mode| mode == "environment")
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Load a secret. A non-blank environment variable mapped to the key wins over the credential
+/// store, so injected credentials work in both modes.
 pub fn get(key: SecretKey<'_>) -> anyhow::Result<Option<SecretString>> {
+    if let Some(variable) = key.environment_variable()
+        && let Some(secret) = environment_secret(variable, std::env::var_os(variable))?
+    {
+        return Ok(Some(secret));
+    }
+    if is_read_only() {
+        return Ok(None);
+    }
     match entry(key.name())?.get_password() {
         Ok(value) => Ok(Some(SecretString::from(value))),
         Err(keyring_core::Error::NoEntry) => Ok(None),
@@ -113,39 +123,32 @@ pub fn get(key: SecretKey<'_>) -> anyhow::Result<Option<SecretString>> {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub fn set(key: SecretKey<'_>, _secret: &SecretString) -> anyhow::Result<()> {
-    anyhow::bail!(
-        "secret '{}' is managed by {} on Linux and cannot be changed from Koharu",
-        key.name(),
-        key.environment_variable().unwrap_or("the environment")
-    )
-}
-
-#[cfg(not(target_os = "linux"))]
 pub fn set(key: SecretKey<'_>, secret: &SecretString) -> anyhow::Result<()> {
+    if is_read_only() {
+        anyhow::bail!(
+            "secret '{}' is managed by {} and cannot be changed from Koharu",
+            key.name(),
+            key.environment_variable().unwrap_or("the environment")
+        );
+    }
     entry(key.name())?.set_password(secret.expose_secret())?;
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
 pub fn delete(key: SecretKey<'_>) -> anyhow::Result<()> {
-    anyhow::bail!(
-        "secret '{}' is managed by {} on Linux and cannot be cleared from Koharu",
-        key.name(),
-        key.environment_variable().unwrap_or("the environment")
-    )
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn delete(key: SecretKey<'_>) -> anyhow::Result<()> {
+    if is_read_only() {
+        anyhow::bail!(
+            "secret '{}' is managed by {} and cannot be cleared from Koharu",
+            key.name(),
+            key.environment_variable().unwrap_or("the environment")
+        );
+    }
     match entry(key.name())?.delete_credential() {
         Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
 
-#[cfg(target_os = "linux")]
 fn environment_secret(
     variable: &str,
     value: Option<std::ffi::OsString>,
@@ -159,13 +162,30 @@ fn environment_secret(
     Ok((!value.trim().is_empty()).then(|| SecretString::from(value)))
 }
 
-#[cfg(not(target_os = "linux"))]
+const SERVICE: &str = "koharu";
+
+// Linux has no default keyring store; register Keyutils once, on first use, so the
+// environment-only mode never touches the keyring syscalls.
+#[cfg(target_os = "linux")]
+static LINUX_STORE: std::sync::LazyLock<Result<(), String>> = std::sync::LazyLock::new(|| {
+    linux_keyutils_keyring_store::Store::new()
+        .map(|store| keyring_core::set_default_store(store))
+        .map_err(|error| error.to_string())
+});
+
 fn entry(key: &str) -> anyhow::Result<keyring_core::Entry> {
-    const SERVICE: &str = "koharu";
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(error) = &*LINUX_STORE {
+            anyhow::bail!("failed to initialize Linux Keyutils: {error}");
+        }
+        Ok(keyring_core::Entry::new(SERVICE, key)?)
+    }
+    #[cfg(not(target_os = "linux"))]
     Ok(keyring::Entry::new(SERVICE, key)?.inner)
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -189,9 +209,9 @@ mod tests {
     }
 
     #[test]
-    fn linux_secret_storage_is_read_only() {
-        let key = SecretKey::environment("openai", "OPENAI_API_KEY");
-        assert!(set(key, &SecretString::from("secret")).is_err());
-        assert!(delete(key).is_err());
+    fn only_the_environment_mode_is_read_only() {
+        assert!(environment_only(Some("environment".into())));
+        assert!(!environment_only(None));
+        assert!(!environment_only(Some("keyring".into())));
     }
 }

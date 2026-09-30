@@ -122,6 +122,9 @@ WORKDIR /home/koharu
 # ~/Documents instead of failing app setup entirely.
 RUN xdg-user-dirs-update
 
+# Provider credentials come only from run-time environment variables: Docker's
+# default seccomp profile blocks the keyring syscalls the desktop store uses.
+ENV KOHARU_SECRETS=environment
 ENV KOHARU_RPC_HOST=0.0.0.0
 ENV KOHARU_RPC_PORT=${KOHARU_RPC_PORT}
 EXPOSE 47823

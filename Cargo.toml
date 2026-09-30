@@ -153,6 +153,7 @@ unicode-bidi = "0.3.18"
 criterion = { version = "0.8.2", features = ["html_reports"] }
 keyring = { version = "4.2.0", features = ["linux-keyutils-keyring-store"] }
 keyring-core = "1.0.0"
+linux-keyutils-keyring-store = "1.0.0"
 llguidance = "1.8.0"
 sentry = { version = "0.49.2", features = ["tracing"] }
 fast-glob = "1.1.1"

@@ -1,10 +1,8 @@
-#[cfg(not(target_os = "linux"))]
 use std::env;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use koharu_config::Config;
-#[cfg(not(target_os = "linux"))]
 use koharu_secrets::{ExposeSecret, SecretString};
 use koharu_translator::{
     GenerationConfig, Language, ModelSelection, Provider, ProvidersConfig, TranslationRequest,
@@ -114,36 +112,33 @@ fn prepare_secret(args: &Args, provider: Provider) -> Result<()> {
         .environment_variable()
         .expect("translation provider credentials define an environment variable");
 
-    #[cfg(target_os = "linux")]
-    {
+    if koharu_secrets::is_read_only() {
         if args
             .api_key
             .as_deref()
             .is_some_and(|key| !key.trim().is_empty())
         {
             anyhow::bail!(
-                "--api-key is unavailable on Linux; set {variable} before starting Koharu"
+                "--api-key is unavailable with environment-only secrets; set {variable} before starting Koharu"
             );
         }
         if provider.credential_required() && koharu_secrets::get(key)?.is_none() {
             anyhow::bail!("{variable} is required");
         }
+        return Ok(());
     }
 
-    #[cfg(not(target_os = "linux"))]
+    let value = args
+        .api_key
+        .clone()
+        .filter(|key| !key.trim().is_empty())
+        .or_else(|| env::var(variable).ok().filter(|key| !key.trim().is_empty()));
+    if let Some(value) = value {
+        koharu_secrets::set(key, &SecretString::from(value))?;
+    } else if provider.credential_required()
+        && koharu_secrets::get(key)?.is_none_or(|value| value.expose_secret().trim().is_empty())
     {
-        let value = args
-            .api_key
-            .clone()
-            .filter(|key| !key.trim().is_empty())
-            .or_else(|| env::var(variable).ok().filter(|key| !key.trim().is_empty()));
-        if let Some(value) = value {
-            koharu_secrets::set(key, &SecretString::from(value))?;
-        } else if provider.credential_required()
-            && koharu_secrets::get(key)?.is_none_or(|value| value.expose_secret().trim().is_empty())
-        {
-            anyhow::bail!("--api-key, {variable}, or a stored API key is required");
-        }
+        anyhow::bail!("--api-key, {variable}, or a stored API key is required");
     }
 
     Ok(())

@@ -53,9 +53,9 @@ impl Codex {
     }
 
     pub fn account(&self) -> Result<Option<Account>> {
-        #[cfg(target_os = "linux")]
-        return Ok(None);
-        #[cfg(not(target_os = "linux"))]
+        if koharu_secrets::is_read_only() {
+            return Ok(None);
+        }
         self.auth.account()
     }
 
@@ -64,31 +64,28 @@ impl Codex {
     where
         F: FnMut(LoginEvent),
     {
-        #[cfg(target_os = "linux")]
-        {
-            let _ = (control, publish);
+        if koharu_secrets::is_read_only() {
             bail!(
-                "Codex authentication is unavailable on Linux because environment credentials are read-only"
-            )
+                "Codex authentication is unavailable because environment credentials are read-only"
+            );
         }
-        #[cfg(not(target_os = "linux"))]
         self.auth.login_device(control, publish).await
     }
 
     pub fn logout(&self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        bail!(
-            "Codex authentication is unavailable on Linux because environment credentials are read-only"
-        );
-        #[cfg(not(target_os = "linux"))]
+        if koharu_secrets::is_read_only() {
+            bail!(
+                "Codex authentication is unavailable because environment credentials are read-only"
+            );
+        }
         self.auth.logout()
     }
 
     #[tracing::instrument(skip_all)]
     pub async fn models(&self) -> Result<Vec<CodexModel>> {
-        #[cfg(target_os = "linux")]
-        return Ok(Vec::new());
-        #[cfg(not(target_os = "linux"))]
+        if koharu_secrets::is_read_only() {
+            return Ok(Vec::new());
+        }
         catalog::models(&self.client, &self.auth).await
     }
 
@@ -101,30 +98,25 @@ impl Codex {
     where
         F: FnMut(Delta),
     {
-        #[cfg(target_os = "linux")]
-        {
-            let _ = (request, control, publish);
+        if koharu_secrets::is_read_only() {
             bail!(
-                "Codex is unavailable on Linux because environment credentials cannot persist OAuth refresh tokens"
-            )
+                "Codex is unavailable because environment credentials cannot persist OAuth refresh tokens"
+            );
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            control.ensure_running()?;
-            let session = self.auth.session().await?;
-            let mut response = self.send(request, &session, control).await?;
-            if response.status() == StatusCode::UNAUTHORIZED {
-                let session = self.auth.force_refresh().await?;
-                response = self.send(request, &session, control).await?;
-            }
-            if !response.status().is_success() {
-                let status = response.status();
-                let mut body = response.text().await.unwrap_or_default();
-                body.truncate(16 * 1024);
-                bail!("Codex returned {status}: {body}");
-            }
-            stream::read(response, control, publish).await
+        control.ensure_running()?;
+        let session = self.auth.session().await?;
+        let mut response = self.send(request, &session, control).await?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let session = self.auth.force_refresh().await?;
+            response = self.send(request, &session, control).await?;
         }
+        if !response.status().is_success() {
+            let status = response.status();
+            let mut body = response.text().await.unwrap_or_default();
+            body.truncate(16 * 1024);
+            bail!("Codex returned {status}: {body}");
+        }
+        stream::read(response, control, publish).await
     }
 
     async fn send(
