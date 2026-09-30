@@ -72,14 +72,15 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         port: 4000,
         allowed_origins: Vec::new(),
     });
+    // `VulkanFromANGLE` is left off: since CEF 151.8 ANGLE's Vulkan instance
+    // lacks VK_KHR_surface, so the GPU process fails to bind
+    // vkDestroySurfaceKHR, drops Vulkan and WebGPU finds no adapter.
     #[cfg(target_os = "linux")]
-    let cef = cef
-        .enable_features(["Vulkan", "VulkanFromANGLE"])
-        .command_line_args([
-            ("--enable-unsafe-webgpu", None),
-            ("use-angle", Some("vulkan")),
-            ("--ozone-platform", Some("x11")),
-        ]);
+    let cef = cef.enable_features(["Vulkan"]).command_line_args([
+        ("--enable-unsafe-webgpu", None),
+        ("use-angle", Some("vulkan")),
+        ("--ozone-platform", Some("x11")),
+    ]);
     tauri::Builder::<CefRuntime>::new()
         .runtime(cef)
         .plugin(
