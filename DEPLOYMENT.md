@@ -20,7 +20,7 @@ openssl rand -hex 32
 # 출력값을 .env의 KOHARU_API_TOKEN에 입력
 ```
 
-image는 `KOHARU_SECRETS=environment`로 실행되어 provider credential을 환경변수로만 읽습니다(Docker 기본 seccomp profile이 keyring syscall을 막기 때문). Settings는 설정 여부와 변수명을 표시하지만 값을 변경하거나 삭제하지 않습니다. 값을 바꾸면 container를 재시작하거나 Vast.ai instance를 재배포해야 합니다. 이 변수가 없는 데스크톱 실행은 OS credential store(Linux는 Keyutils)에 저장하고 Settings에서 입력할 수 있으며, 아래 환경변수가 설정되어 있으면 그 값이 우선합니다.
+image는 `KOHARU_SECRETS=environment`로 실행되어 provider credential을 환경변수로만 읽습니다(Docker 기본 seccomp profile이 keyring syscall을 막기 때문). Settings는 설정 여부와 변수명을 표시하지만 값을 변경하거나 삭제하지 않습니다. 값을 바꾸면 container를 재시작하거나 Vast.ai instance를 재배포해야 합니다. 이 변수가 없는 데스크톱 실행은 OS credential store(Linux는 Secret Service: GNOME Keyring 또는 KWallet)에 저장하고 Settings에서 입력할 수 있으며, 아래 환경변수가 설정되어 있으면 그 값이 우선합니다.
 
 | Provider | Environment variable |
 |---|---|

@@ -19,7 +19,7 @@ secrecy = { workspace = true }
 serde = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-linux-keyutils-keyring-store = { workspace = true }
+zbus-secret-service-keyring-store = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { workspace = true, features = ["windows-native-keyring-store"] }

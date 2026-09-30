@@ -5126,10 +5126,10 @@ dependencies = [
  "anyhow",
  "keyring",
  "keyring-core",
- "linux-keyutils-keyring-store",
  "secrecy",
  "serde",
  "serde_json",
+ "zbus-secret-service-keyring-store",
 ]
 
 [[package]]

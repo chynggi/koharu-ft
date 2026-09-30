@@ -164,11 +164,12 @@ fn environment_secret(
 
 const SERVICE: &str = "koharu";
 
-// Linux has no default keyring store; register Keyutils once, on first use, so the
-// environment-only mode never touches the keyring syscalls.
+// Linux has no default credential store. Secret Service (GNOME Keyring, KWallet) keeps secrets
+// in the user's login keyring on disk. It is registered on first use, so the environment-only
+// mode never connects to the session bus.
 #[cfg(target_os = "linux")]
 static LINUX_STORE: std::sync::LazyLock<Result<(), String>> = std::sync::LazyLock::new(|| {
-    linux_keyutils_keyring_store::Store::new()
+    zbus_secret_service_keyring_store::Store::new()
         .map(|store| keyring_core::set_default_store(store))
         .map_err(|error| error.to_string())
 });
@@ -177,7 +178,7 @@ fn entry(key: &str) -> anyhow::Result<keyring_core::Entry> {
     #[cfg(target_os = "linux")]
     {
         if let Err(error) = &*LINUX_STORE {
-            anyhow::bail!("failed to initialize Linux Keyutils: {error}");
+            anyhow::bail!("failed to connect to the Secret Service: {error}");
         }
         Ok(keyring_core::Entry::new(SERVICE, key)?)
     }
