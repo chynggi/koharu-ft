@@ -132,6 +132,8 @@ tauri = { git = "https://github.com/tauri-apps/tauri", rev = "d05973d48957343599
 ] }
 tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "d05973d48957343599889030400ec1a79e7d0363" }
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "d05973d48957343599889030400ec1a79e7d0363", features = ["macos-private-api"] }
+# Must match the version tauri-runtime-cef pins.
+cef = "=152.3.0"
 tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "0163bbaca5d42de292e11cfbdd6464220be9051b" }
 tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "0163bbaca5d42de292e11cfbdd6464220be9051b" }
 tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "0163bbaca5d42de292e11cfbdd6464220be9051b" }
@@ -174,6 +176,7 @@ quote = "1.0.47"
 syn = { version = "3.0.5", features = ["full"] }
 libc = "0.2.189"
 memmap2 = "0.9.11"
+x11-dl = "2.21.0"
 
 [patch.crates-io]
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "d05973d48957343599889030400ec1a79e7d0363" }

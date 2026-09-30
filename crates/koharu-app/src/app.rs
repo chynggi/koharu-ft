@@ -291,6 +291,12 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(target_os = "linux")]
+            if matches!(event, WindowEvent::Focused(true)) {
+                for webview in window.webviews() {
+                    let _ = webview.with_webview(|webview| focus_cef_x11_window(&webview.browser()));
+                }
+            }
             if matches!(
                 event,
                 WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
@@ -314,4 +320,40 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         })
         .run(context)?;
     Ok(())
+}
+
+/// Moves the X input focus onto the browser's native window.
+///
+/// tauri-runtime-cef hosts CEF as foreign X11 children of a GTK4 toplevel. On
+/// activation GDK puts the X input focus on its own focus window, which is not
+/// an ancestor of the CEF windows, so no key event reaches the page
+/// (koharu-rs/koharu#1147). `BrowserHost::set_focus` only updates Chromium's
+/// focus state here and leaves the X focus with GDK, hence the direct request.
+#[cfg(target_os = "linux")]
+fn focus_cef_x11_window(browser: &cef::Browser) {
+    use cef::{ImplBrowser as _, ImplBrowserHost as _};
+    use x11_dl::xlib;
+
+    let Some(host) = browser.host() else {
+        return;
+    };
+    let window = host.window_handle();
+    let Ok(xlib) = xlib::Xlib::open() else {
+        return;
+    };
+    // SAFETY: the display is opened, used and closed within this block. Focus
+    // is only requested for a viewable window, which X requires.
+    unsafe {
+        let display = (xlib.XOpenDisplay)(std::ptr::null());
+        if display.is_null() {
+            return;
+        }
+        let mut attributes: xlib::XWindowAttributes = std::mem::zeroed();
+        if (xlib.XGetWindowAttributes)(display, window, &mut attributes) != 0
+            && attributes.map_state == xlib::IsViewable
+        {
+            (xlib.XSetInputFocus)(display, window, xlib::RevertToParent, xlib::CurrentTime);
+        }
+        (xlib.XCloseDisplay)(display);
+    }
 }
