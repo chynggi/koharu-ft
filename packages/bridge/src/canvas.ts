@@ -180,7 +180,27 @@ export async function createCanvas(
   }
 }
 
+// Chromium on Linux may answer a default adapter request with only the CPU
+// fallback (SwiftShader) while a hardware adapter is available at the
+// compatibility feature level (the desktop runtime selects Dawn's OpenGLES
+// backend for this). wgpu cannot ask for a feature level, so its request is
+// retried at that level whenever the default one yields the fallback.
+let hardwareAdapterPreferred = false
+
+function preferHardwareAdapter() {
+  if (hardwareAdapterPreferred || typeof GPU === 'undefined') return
+  hardwareAdapterPreferred = true
+  const request = GPU.prototype.requestAdapter
+  GPU.prototype.requestAdapter = async function (options) {
+    const adapter = await request.call(this, options)
+    if (!adapter?.info.isFallbackAdapter) return adapter
+    const compatibility = await request.call(this, { ...options, featureLevel: 'compatibility' })
+    return compatibility && !compatibility.info.isFallbackAdapter ? compatibility : adapter
+  }
+}
+
 function loadCanvasModule(): Promise<CanvasModule> {
+  preferHardwareAdapter()
   // @ts-ignore -- wasm-pack output is created by bridge build tasks and absent in clean checkouts.
   modulePromise ??= import('./wasm/koharu_canvas.js')
     .then(async (module) => {

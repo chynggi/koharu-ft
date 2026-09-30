@@ -72,13 +72,17 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         port: 4000,
         allowed_origins: Vec::new(),
     });
-    // `VulkanFromANGLE` is left off: since CEF 151.8 ANGLE's Vulkan instance
-    // lacks VK_KHR_surface, so the GPU process fails to bind
-    // vkDestroySurfaceKHR, drops Vulkan and WebGPU finds no adapter.
+    // Chromium's Linux WebGPU no longer reaches the GPU through Vulkan here: with
+    // `VulkanFromANGLE` (CEF 151.8+) the GPU process fails to bind
+    // vkDestroySurfaceKHR and drops Vulkan, and without it Dawn exposes only the
+    // SwiftShader fallback, which runs the canvas on the CPU and stalls the
+    // window for seconds. The GL compositor plus Dawn's OpenGLES backend yields
+    // a hardware compatibility adapter; the canvas asks for it when the default
+    // request only returns the fallback (see `@koharu/bridge/canvas`).
     #[cfg(target_os = "linux")]
-    let cef = cef.enable_features(["Vulkan"]).command_line_args([
+    let cef = cef.command_line_args([
         ("--enable-unsafe-webgpu", None),
-        ("use-angle", Some("vulkan")),
+        ("--use-webgpu-adapter", Some("opengles")),
         ("--ozone-platform", Some("x11")),
     ]);
     tauri::Builder::<CefRuntime>::new()
