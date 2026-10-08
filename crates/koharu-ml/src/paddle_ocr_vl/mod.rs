@@ -1,6 +1,7 @@
 //! PaddleOCR-VL-1.6 element recognition backed by the checkpoint revision
 //! `66317acc4c9fc17bd154591ce650735cd2855f3e`.
 
+mod adapter;
 mod config;
 mod model;
 mod processor;
@@ -12,6 +13,7 @@ use koharu_torch::Device;
 use crate::backend::TryIntoDevice;
 
 pub use self::{
+    adapter::PaddleOCRVLAdapter,
     config::{PaddleOCRVLConfig, PaddleOCRVisionConfig, RopeScaling},
     processor::{PaddleOCRVLImageProcessor, PaddleOCRVLResult, PaddleOCRVLTask},
 };
@@ -36,7 +38,12 @@ pub struct PaddleOCRVL {
 }
 
 impl PaddleOCRVL {
-    pub async fn load(device: crate::Device) -> Result<Self> {
+    /// Loads the port, optionally with a fine-tuned adapter applied on top of
+    /// the published checkpoint.
+    pub async fn load(
+        device: crate::Device,
+        adapter: Option<&PaddleOCRVLAdapter>,
+    ) -> Result<Self> {
         let device: Device = device.try_into_device()?;
         let config_path = CONFIG
             .resolve()
@@ -63,6 +70,12 @@ impl PaddleOCRVL {
         model
             .load(&weights_path)
             .with_context(|| format!("failed to load {}", weights_path.display()))?;
+        if let Some(adapter) = adapter {
+            model
+                .apply_adapter(adapter)
+                .await
+                .context("failed to apply the PaddleOCR-VL adapter")?;
+        }
 
         Ok(Self {
             device,

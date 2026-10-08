@@ -13,6 +13,7 @@ use koharu_torch::{
 
 use super::{
     REPETITION_PENALTY,
+    adapter::PaddleOCRVLAdapter,
     config::{PaddleOCRVLConfig, PaddleOCRVisionConfig},
 };
 
@@ -60,6 +61,10 @@ impl Model {
         self.vs.load(path)?;
         crate::backend::set_precision(&mut self.vs);
         Ok(())
+    }
+
+    pub(super) async fn apply_adapter(&mut self, adapter: &PaddleOCRVLAdapter) -> Result<()> {
+        adapter.apply(&mut self.vs).await
     }
 
     pub(super) fn forward(
