@@ -12,7 +12,13 @@ export type ModelName = PipelineModel['model']
 
 export const modelOptions = {
   detection: ['koharu-layout-rfdetr-seg-2xl'],
-  ocr: ['paddleocr-vl-1.6', 'manga-ocr', 'baberu-ocr', 'hayai-ocr'],
+  ocr: [
+    'paddleocr-vl-1.6',
+    'paddleocr-vl-1.6-manga-lora',
+    'manga-ocr',
+    'baberu-ocr',
+    'hayai-ocr',
+  ],
   inpainting: [
     'lama',
     'mi-gan',
@@ -27,6 +33,7 @@ export const modelOptions = {
 export const modelNames: Record<ModelName, string> = {
   'koharu-layout-rfdetr-seg-2xl': 'Koharu Layout RF-DETR Seg 2XL',
   'paddleocr-vl-1.6': 'PaddleOCR-VL 1.6',
+  'paddleocr-vl-1.6-manga-lora': 'PaddleOCR-VL 1.6 Manga LoRA',
   'manga-ocr': 'Manga OCR',
   'baberu-ocr': 'Baberu OCR',
   'hayai-ocr': 'Hayai OCR',
@@ -44,6 +51,7 @@ export function defaultModel(model: ModelName): PipelineModel {
     case 'koharu-layout-rfdetr-seg-2xl':
       return { model, text_threshold: null, bubble_threshold: null, panel_threshold: null }
     case 'paddleocr-vl-1.6':
+    case 'paddleocr-vl-1.6-manga-lora':
     case 'manga-ocr':
     case 'baberu-ocr':
     case 'hayai-ocr':
@@ -94,7 +102,22 @@ export function replaceStage(
         },
       }
     case 'ocr':
-      return { ...config, ocr: model as OcrModel }
+      return {
+        ...config,
+        ocr: model as OcrModel,
+        processor: {
+          ...config.processor,
+          ...(model.model === 'paddleocr-vl-1.6-manga-lora'
+            ? {
+                'paddleocr-vl-1.6-manga-lora': {
+                  lora: model.lora ?? undefined,
+                  projector: model.projector ?? undefined,
+                  scale: model.scale ?? undefined,
+                },
+              }
+            : {}),
+        },
+      }
     case 'inpainting':
       return {
         ...config,

@@ -21,7 +21,7 @@ use koharu_llama::{
     },
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
-    model::{AddBos, LlamaModel, params::LlamaModelParams},
+    model::{AddBos, LlamaLoraAdapter, LlamaModel, params::LlamaModelParams},
     mtmd::{MtmdBitmap, MtmdContext, MtmdContextParams, MtmdInputChunks, MtmdInputText},
     sampling::LlamaSampler,
     token::LlamaToken,
@@ -42,6 +42,10 @@ const CHAT_TEMPLATE_NAME: &str = "chat";
 
 pub(super) struct Model {
     backend: &'static LlamaBackend,
+    /// Owned here so it outlives every context created per inference. Declared
+    /// before `model`: struct fields drop in declaration order, so the adapter
+    /// is freed before the model it was initialized from.
+    lora: Option<(LlamaLoraAdapter, f32)>,
     model: LlamaModel,
     mtmd: Option<Mutex<MtmdContext>>,
     capabilities: Capabilities,
@@ -198,8 +202,28 @@ impl Model {
             audio = capabilities.audio,
             "loaded llama.cpp model"
         );
+
+        // The adapter is initialized once and re-applied after every
+        // `new_context` call below, because inference creates a fresh context.
+        let lora = match options.lora {
+            Some(options) => {
+                ensure_file(&options.adapter_path, "LoRA adapter")?;
+                let adapter = model.lora_adapter_init(&options.adapter_path).with_context(
+                    || {
+                        format!(
+                            "failed to initialize LoRA adapter {}",
+                            options.adapter_path.display()
+                        )
+                    },
+                )?;
+                Some((adapter, options.scale))
+            }
+            None => None,
+        };
+
         Ok(Self {
             backend,
+            lora,
             model,
             mtmd,
             capabilities,
@@ -270,6 +294,11 @@ impl Model {
             .model
             .new_context(self.backend, context_config.params)
             .context("failed to create llama.cpp context")?;
+        if let Some((adapter, scale)) = &self.lora {
+            context
+                .lora_adapter_set(adapter, *scale)
+                .context("failed to apply the LoRA adapter to the context")?;
+        }
         let mut sampler = self.build_sampler(options, json_schema, &prepared.history_tokens)?;
 
         let prompt_start = Instant::now();

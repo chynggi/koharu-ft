@@ -335,7 +335,7 @@ impl<'model> LlamaContext<'model> {
     /// See [`LlamaLoraAdapterSetError`] for more information.
     pub fn lora_adapter_set(
         &self,
-        adapter: &mut LlamaLoraAdapter,
+        adapter: &LlamaLoraAdapter,
         scale: f32,
     ) -> Result<(), LlamaLoraAdapterSetError> {
         let mut adapters = [adapter.lora_adapter.as_ptr()];

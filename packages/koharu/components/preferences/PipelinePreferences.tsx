@@ -189,6 +189,7 @@ function ModelOptions({
         </div>
       )
     case 'paddleocr-vl-1.6':
+    case 'paddleocr-vl-1.6-manga-lora':
     case 'manga-ocr':
     case 'baberu-ocr':
     case 'hayai-ocr':

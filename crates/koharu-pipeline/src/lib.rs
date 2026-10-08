@@ -33,7 +33,8 @@ pub use scope::{Bounds, Scope};
 pub use stage::Stage;
 pub use stages::{
     Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
-    MiGanConfig, PowerPaintConfig, RoremMixedConfig, WeightsFormatConfig,
+    MiGanConfig, PaddleOcrVl1_6MangaLoraConfig, PowerPaintConfig, RoremMixedConfig,
+    WeightsFormatConfig,
 };
 
 use images::ImageCache;

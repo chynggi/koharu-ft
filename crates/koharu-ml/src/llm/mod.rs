@@ -152,6 +152,8 @@ pub struct LoadOptions {
     pub eos_token_id: Option<i32>,
     /// Optional multimodal projector configuration.
     pub mtmd: Option<MtmdOptions>,
+    /// Optional LoRA adapter applied to every context this model creates.
+    pub lora: Option<LoraOptions>,
 }
 
 impl Default for LoadOptions {
@@ -161,7 +163,35 @@ impl Default for LoadOptions {
             load_mode: LlamaLoadMode::Auto,
             eos_token_id: None,
             mtmd: None,
+            lora: None,
         }
+    }
+}
+
+/// A LoRA adapter attached to the language model.
+///
+/// The adapter is initialized once per model and re-applied after every context
+/// creation, because `Model::inference` builds a fresh context per call.
+#[derive(Debug, Clone)]
+pub struct LoraOptions {
+    pub adapter_path: PathBuf,
+    /// Multiplier on the adapter's contribution. `1.0` is the llama.cpp default.
+    pub scale: f32,
+}
+
+impl LoraOptions {
+    #[must_use]
+    pub fn new(adapter_path: impl Into<PathBuf>) -> Self {
+        Self {
+            adapter_path: adapter_path.into(),
+            scale: 1.0,
+        }
+    }
+
+    #[must_use]
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
     }
 }
 
@@ -493,6 +523,18 @@ mod tests {
     #[test]
     fn load_options_do_not_override_eos_by_default() {
         assert_eq!(LoadOptions::default().eos_token_id, None);
+    }
+
+    #[test]
+    fn load_options_attach_no_lora_by_default() {
+        assert!(LoadOptions::default().lora.is_none());
+    }
+
+    #[test]
+    fn lora_options_default_to_unit_scale() {
+        let options = LoraOptions::new("adapter.gguf");
+        assert_eq!(options.scale, 1.0);
+        assert_eq!(options.with_scale(2.5).scale, 2.5);
     }
 
     #[test]

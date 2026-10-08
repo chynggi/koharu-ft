@@ -1,11 +1,11 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use koharu_translator::{GenerationConfig, Language};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 
 use crate::stages::{
     Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
-    MiGanConfig, PowerPaintConfig, RoremMixedConfig,
+    MiGanConfig, PaddleOcrVl1_6MangaLoraConfig, PowerPaintConfig, RoremMixedConfig,
 };
 
 #[derive(Clone, Debug, PartialEq, Type)]
@@ -64,6 +64,7 @@ impl Serialize for PipelineConfig {
         };
         let ocr = match &self.ocr {
             OcrModel::PaddleOcrVl1_6 => "paddleocr-vl-1.6",
+            OcrModel::PaddleOcrVl1_6MangaLora(_) => "paddleocr-vl-1.6-manga-lora",
             OcrModel::MangaOcr => "manga-ocr",
             OcrModel::BaberuOcr => "baberu-ocr",
             OcrModel::HayaiOcr => "hayai-ocr",
@@ -82,6 +83,14 @@ impl Serialize for PipelineConfig {
         processor
             .koharu_layout_rfdetr_seg_2xl
             .get_or_insert_with(|| config.clone());
+        match &self.ocr {
+            OcrModel::PaddleOcrVl1_6MangaLora(config) => {
+                processor
+                    .paddleocr_vl_1_6_manga_lora
+                    .get_or_insert_with(|| config.clone());
+            }
+            _ => {}
+        }
         match &self.inpainting {
             InpaintingModel::LaMa(config) => {
                 processor.lama.get_or_insert_with(|| config.clone());
@@ -143,6 +152,12 @@ impl<'de> Deserialize<'de> for PipelineConfig {
         };
         let ocr = match file.ocr.model.as_str() {
             "paddleocr-vl-1.6" => OcrModel::PaddleOcrVl1_6,
+            "paddleocr-vl-1.6-manga-lora" => OcrModel::PaddleOcrVl1_6MangaLora(
+                file.processor
+                    .paddleocr_vl_1_6_manga_lora
+                    .clone()
+                    .unwrap_or_default(),
+            ),
             "manga-ocr" => OcrModel::MangaOcr,
             "baberu-ocr" => OcrModel::BaberuOcr,
             "hayai-ocr" => OcrModel::HayaiOcr,
@@ -278,17 +293,24 @@ impl PipelineConfig {
         }
     }
 
+    pub fn ocr(&self) -> Result<OcrModel> {
+        match &self.ocr {
+            OcrModel::PaddleOcrVl1_6MangaLora(config) => Ok(OcrModel::PaddleOcrVl1_6MangaLora(
+                self.processor
+                    .paddleocr_vl_1_6_manga_lora
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
+            ocr => Ok(ocr.clone()),
+        }
+    }
+
     pub fn validate(&self) -> Result<()> {
         let _ = self.detection()?;
+        let _ = self.ocr()?;
         let _ = self.inpainting()?;
-        if !matches!(
-            self.ocr,
-            OcrModel::PaddleOcrVl1_6
-                | OcrModel::MangaOcr
-                | OcrModel::BaberuOcr
-                | OcrModel::HayaiOcr
-        ) {
-            bail!("unsupported OCR model")
+        if let OcrModel::PaddleOcrVl1_6MangaLora(config) = self.ocr()? {
+            config.validate()?;
         }
         Ok(())
     }
@@ -299,6 +321,8 @@ impl PipelineConfig {
 pub struct ProcessorConfig {
     #[serde(rename = "koharu-layout-rfdetr-seg-2xl")]
     pub koharu_layout_rfdetr_seg_2xl: Option<KoharuLayoutRFDetrSeg2XLConfig>,
+    #[serde(rename = "paddleocr-vl-1.6-manga-lora")]
+    pub paddleocr_vl_1_6_manga_lora: Option<PaddleOcrVl1_6MangaLoraConfig>,
     #[serde(rename = "lama")]
     pub lama: Option<LaMaConfig>,
     #[serde(rename = "mi-gan")]
@@ -325,6 +349,8 @@ pub enum DetectionModel {
 pub enum OcrModel {
     #[serde(rename = "paddleocr-vl-1.6")]
     PaddleOcrVl1_6,
+    #[serde(rename = "paddleocr-vl-1.6-manga-lora")]
+    PaddleOcrVl1_6MangaLora(PaddleOcrVl1_6MangaLoraConfig),
     #[serde(rename = "manga-ocr")]
     MangaOcr,
     #[serde(rename = "baberu-ocr")]
@@ -399,6 +425,35 @@ mod tests {
             Ok(InpaintingModel::RoremMixed(config))
                 if config.prompt == "Remove the lettering."
                     && config.negative_prompt == "letters, words"
+        ));
+    }
+
+    #[test]
+    fn parses_the_manga_lora_ocr_variant_with_a_local_adapter() {
+        let config: PipelineConfig = toml::from_str(
+            r#"
+                [ocr]
+                model = "paddleocr-vl-1.6-manga-lora"
+
+                [processor."paddleocr-vl-1.6-manga-lora"]
+                scale = 2.0
+
+                [processor."paddleocr-vl-1.6-manga-lora".lora]
+                kind = "local_file"
+                path = "/models/manga-lora.gguf"
+            "#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.ocr(),
+            Ok(OcrModel::PaddleOcrVl1_6MangaLora(settings))
+                if settings.scale == 2.0
+                    && matches!(
+                        settings.lora,
+                        crate::stages::ComponentSourceConfig::LocalFile { ref path }
+                            if path == std::path::Path::new("/models/manga-lora.gguf")
+                    )
         ));
     }
 

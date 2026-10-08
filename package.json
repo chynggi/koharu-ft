@@ -10,6 +10,7 @@
     "predev": "kill-port 3000",
     "dev": "cargo tauri dev",
     "build": "cargo tauri build --no-bundle",
+    "build:linux": "bash scripts/build-linux.sh",
     "docs": "bun run --filter @koharu/docs dev",
     "lint": "bun run --filter '@koharu/*' lint",
     "test": "bun run --filter @koharu/app test",

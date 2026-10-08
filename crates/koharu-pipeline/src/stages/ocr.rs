@@ -1,20 +1,77 @@
 use std::sync::{Arc, Mutex};
 
-use super::{StageInput, StageProcessor, finish, generation};
+use super::{ComponentSourceConfig, StageInput, StageProcessor, finish, generation};
 use crate::{ModelCell, OcrModel, scope::geometry_extents};
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use async_trait::async_trait;
 use image::DynamicImage;
 use koharu_ml::{
     baberu_ocr::BaberuOcr, hayai_ocr::HayaiOcr, manga_ocr::MangaOcr,
-    paddle_ocr_vl::PaddleOCRVLTask, paddle_ocr_vl_quantized::PaddleOCRVLQuantized,
+    paddle_ocr_vl::PaddleOCRVLTask,
+    paddle_ocr_vl_quantized::{LoraSource, PaddleOCRVLQuantized, PaddleOCRVLQuantizedSource},
+    source::ComponentSource,
 };
 use koharu_scene::{
     Authored, EntityId, Geometry, LanguageTag, OcrAnalysis, Origin, RecognizedFrom, Region,
     RegionSpec, SourceText, TextDirection, TextRegion,
 };
+use serde::{Deserialize, Serialize};
+use specta::Type;
 
 const PRODUCER: &str = "dev.koharu.pipeline.ocr";
+
+/// The manga reader variant of quantized PaddleOCR-VL-1.6: the fine-tuned
+/// vision tower projector plus the peft LoRA, both converted to GGUF (see
+/// `scripts/convert_paddleocr_vl_manga_lora.py`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct PaddleOcrVl1_6MangaLoraConfig {
+    /// The LoRA adapter GGUF. Defaults to the converted `manga-lora.gguf`.
+    pub lora: ComponentSourceConfig,
+    /// The projector built from the fine-tuned vision tower. Defaults to the
+    /// converted `manga-mmproj.gguf`.
+    pub projector: ComponentSourceConfig,
+    /// Multiplier on the adapter's contribution. `1.0` is the llama.cpp default.
+    pub scale: f32,
+}
+
+impl Default for PaddleOcrVl1_6MangaLoraConfig {
+    fn default() -> Self {
+        Self {
+            lora: ComponentSourceConfig::Builtin,
+            projector: ComponentSourceConfig::Builtin,
+            scale: 1.0,
+        }
+    }
+}
+
+impl PaddleOcrVl1_6MangaLoraConfig {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.scale.is_finite() && self.scale >= 0.0,
+            "PaddleOCR-VL manga LoRA scale must be finite and non-negative"
+        );
+        let source = PaddleOCRVLQuantizedSource::from(self.clone());
+        source.validate().context("PaddleOCR-VL manga LoRA source")
+    }
+
+    pub fn source(&self) -> PaddleOCRVLQuantizedSource {
+        self.clone().into()
+    }
+}
+
+impl From<PaddleOcrVl1_6MangaLoraConfig> for PaddleOCRVLQuantizedSource {
+    fn from(value: PaddleOcrVl1_6MangaLoraConfig) -> Self {
+        Self {
+            model: ComponentSource::Builtin,
+            projector: value.projector.into(),
+            lora: Some(LoraSource {
+                adapter: value.lora.into(),
+                scale: value.scale,
+            }),
+        }
+    }
+}
 
 pub(super) struct Processor {
     config: OcrModel,
@@ -40,6 +97,7 @@ impl StageProcessor for Processor {
             OcrModel::BaberuOcr => "baberu-ocr",
             OcrModel::HayaiOcr => "hayai-ocr",
             OcrModel::PaddleOcrVl1_6 => "paddleocr-vl-1.6",
+            OcrModel::PaddleOcrVl1_6MangaLora(_) => "paddleocr-vl-1.6-manga-lora",
         }
     }
 
@@ -68,7 +126,9 @@ enum Model {
     Manga(Arc<Mutex<MangaOcr>>),
     Baberu(Arc<Mutex<BaberuOcr>>),
     Hayai(Arc<Mutex<HayaiOcr>>),
-    Paddle(Arc<Mutex<PaddleOCRVLQuantized>>),
+    /// The quantized PaddleOCR-VL family shares one runtime; the name records
+    /// which variant produced a result.
+    Paddle(Arc<Mutex<PaddleOCRVLQuantized>>, &'static str),
 }
 
 impl Model {
@@ -83,9 +143,19 @@ impl Model {
             OcrModel::HayaiOcr => Ok(Self::Hayai(Arc::new(Mutex::new(
                 HayaiOcr::load(device).await?,
             )))),
-            OcrModel::PaddleOcrVl1_6 => Ok(Self::Paddle(Arc::new(Mutex::new(
-                PaddleOCRVLQuantized::load(device).await?,
-            )))),
+            OcrModel::PaddleOcrVl1_6 => Ok(Self::Paddle(
+                Arc::new(Mutex::new(PaddleOCRVLQuantized::load(device).await?)),
+                "paddleocr-vl-1.6",
+            )),
+            OcrModel::PaddleOcrVl1_6MangaLora(config) => {
+                config.validate()?;
+                Ok(Self::Paddle(
+                    Arc::new(Mutex::new(
+                        PaddleOCRVLQuantized::load_with_source(device, config.source()).await?,
+                    )),
+                    "paddleocr-vl-1.6-manga-lora",
+                ))
+            }
         }
     }
 
@@ -94,7 +164,7 @@ impl Model {
             Self::Manga(_) => "manga-ocr",
             Self::Baberu(_) => "baberu-ocr",
             Self::Hayai(_) => "hayai-ocr",
-            Self::Paddle(_) => "paddleocr-vl-1.6",
+            Self::Paddle(_, name) => name,
         };
         let page = input.page;
         let mut targets = Vec::new();
@@ -159,7 +229,7 @@ impl Model {
                 })
                 .await?
             }
-            Self::Paddle(model) => {
+            Self::Paddle(model, _) => {
                 infer_text(model.clone(), targets, |model, image| {
                     Ok(model.inference(image, PaddleOCRVLTask::Ocr)?.text)
                 })

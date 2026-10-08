@@ -11,8 +11,9 @@ use clap::{Parser, ValueEnum};
 use koharu_config::Config;
 use koharu_pipeline::{
     Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
-    LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel, Operation, Pipeline, PipelineConfig,
-    PowerPaintConfig, Progress, Request, RoremMixedConfig, Scope, StageOutput, TranslationConfig,
+    LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel, Operation, PaddleOcrVl1_6MangaLoraConfig,
+    Pipeline, PipelineConfig, PowerPaintConfig, Progress, Request, RoremMixedConfig, Scope,
+    StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;
@@ -69,6 +70,8 @@ enum DetectionChoice {
 enum OcrChoice {
     #[value(name = "paddleocr-vl-1.6")]
     PaddleOcrVl1_6,
+    #[value(name = "paddleocr-vl-1.6-manga-lora")]
+    PaddleOcrVl1_6MangaLora,
     #[value(name = "manga-ocr")]
     MangaOcr,
     #[value(name = "baberu-ocr")]
@@ -107,6 +110,9 @@ impl Arguments {
             },
             ocr: match self.ocr {
                 OcrChoice::PaddleOcrVl1_6 => OcrModel::PaddleOcrVl1_6,
+                OcrChoice::PaddleOcrVl1_6MangaLora => OcrModel::PaddleOcrVl1_6MangaLora(
+                    PaddleOcrVl1_6MangaLoraConfig::default(),
+                ),
                 OcrChoice::MangaOcr => OcrModel::MangaOcr,
                 OcrChoice::BaberuOcr => OcrModel::BaberuOcr,
                 OcrChoice::HayaiOcr => OcrModel::HayaiOcr,

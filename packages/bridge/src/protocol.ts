@@ -788,7 +788,26 @@ export type ModelSelection = {
 	reasoning?: boolean,
 };
 
-export type OcrModel = { model: "paddleocr-vl-1.6" } | { model: "manga-ocr" } | { model: "baberu-ocr" } | { model: "hayai-ocr" };
+export type OcrModel = { model: "paddleocr-vl-1.6" } | {
+	model: "paddleocr-vl-1.6-manga-lora",
+} & PaddleOcrVl1_6MangaLoraConfig | { model: "manga-ocr" } | { model: "baberu-ocr" } | { model: "hayai-ocr" };
+
+/**
+ *  The manga reader variant of quantized PaddleOCR-VL-1.6: the fine-tuned
+ *  vision tower projector plus the peft LoRA, both converted to GGUF (see
+ *  `scripts/convert_paddleocr_vl_manga_lora.py`).
+ */
+export type PaddleOcrVl1_6MangaLoraConfig = {
+	/**  The LoRA adapter GGUF. Defaults to the converted `manga-lora.gguf`. */
+	lora?: ComponentSourceConfig,
+	/**
+	 *  The projector built from the fine-tuned vision tower. Defaults to the
+	 *  converted `manga-mmproj.gguf`.
+	 */
+	projector?: ComponentSourceConfig,
+	/**  Multiplier on the adapter's contribution. `1.0` is the llama.cpp default. */
+	scale?: number,
+};
 
 export type OpenAiCompatibleConfig = {
 	base_url?: string | null,
@@ -874,6 +893,7 @@ export type PowerPaintConfig = {
 
 export type ProcessorConfig = {
 	"koharu-layout-rfdetr-seg-2xl"?: KoharuLayoutRFDetrSeg2XLConfig | null,
+	"paddleocr-vl-1.6-manga-lora"?: PaddleOcrVl1_6MangaLoraConfig | null,
 	lama?: LaMaConfig | null,
 	"mi-gan"?: MiGanConfig | null,
 	"manga-inpaintor"?: MangaInpaintorConfig | null,

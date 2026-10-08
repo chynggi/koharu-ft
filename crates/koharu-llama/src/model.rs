@@ -36,11 +36,27 @@ impl std::fmt::Debug for LlamaModel {
 }
 
 /// A safe wrapper around `llama_lora_adapter`.
+///
+/// The adapter is independent of any context after initialization and must
+/// outlive every context it is set on. Ownership belongs to the model: a
+/// context is created and dropped per inference while the model lives longer.
 #[derive(Debug)]
 #[repr(transparent)]
 #[allow(clippy::module_name_repetitions)]
 pub struct LlamaLoraAdapter {
     pub(crate) lora_adapter: NonNull<koharu_llama_sys::llama_adapter_lora>,
+}
+
+// Same ownership story as `LlamaModel`: an opaque llama.cpp handle that is only
+// accessed through the safe methods here.
+unsafe impl Send for LlamaLoraAdapter {}
+
+unsafe impl Sync for LlamaLoraAdapter {}
+
+impl Drop for LlamaLoraAdapter {
+    fn drop(&mut self) {
+        unsafe { koharu_llama_sys::llama_adapter_lora_free(self.lora_adapter.as_ptr()) }
+    }
 }
 
 /// A performance-friendly wrapper around [`LlamaModel::chat_template`] which is then
