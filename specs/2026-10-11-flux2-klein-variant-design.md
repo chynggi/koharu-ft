@@ -1,6 +1,7 @@
 # FLUX.2 Klein 변형(9B) 선택기 설계
 
 작성일: 2026-10-11
+개정: 2026-10-11 — 12GB 타깃 모델 조사 결과 반영(9B VRAM 근거 정정, 라이선스 고지 추가)
 
 ## 배경
 
@@ -25,15 +26,38 @@ Rust 소스를 읽어서는 답할 수 없는 **백엔드 빌드의 속성**이�
 
 ## 확인된 외부 사실
 
-조사 시점 기준으로 다음을 확인했다.
+조사 시점 기준으로 다음을 확인했다. 근거와 전체 수치는
+`specs/2026-10-11-12gb-inpainting-model-survey.md`에 있다.
 
 - `unsloth/FLUX.2-klein-9B-GGUF`가 Hugging Face에 존재하며
   `flux-2-klein-9b-Q4_K_M.gguf`(및 Q4_0/Q8_0 변형)를 배포한다.
 - 9B 모델 카드는 "9B flow model with **8B Qwen3 text embedder**"라고 명시한다.
   즉 9B 변형은 transformer뿐 아니라 **텍스트 인코더도 4B와 다르다**:
   4B는 Qwen3-4B, 9B는 Qwen3-8B(`unsloth/Qwen3-8B-GGUF`).
-- 커뮤니티 논의는 GGUF 변환기를 쓸 때 텍스트 인코더도 GGUF로 맞출 것을 권고한다.
-- VRAM 실측 보고 기준 9B Q4급은 약 16GB, 4B는 약 12GB 수준이다.
+- **최신 stable-diffusion.cpp는 FLUX.2 klein 9B를 공식 지원한다**
+  (`docs/flux2.md`에 9B 항목과 `-r` 편집 예제, `leejet/FLUX.2-klein-9B-GGUF`).
+  즉 "백엔드가 9B를 아는가"는 해소됐고, 남은 것은 우리 빌드 최신화와 실측이다.
+- **VRAM:** 4B 스택 가중치 합은 5.35GB, 9B 스택은 ~11.2GB다. 9B는 활성화/KV를
+  포함하면 12GB를 초과한다.
+- **라이선스:** 4B는 Apache 2.0(상용 가능), **9B는 FLUX 비상용 라이선스**다.
+- **저비트 기준선은 Q4_K_M이다.** Q4_0/Q3 이하는 마스크 기반 제거 작업에서
+  디테일 손실이 보고된다.
+- **혼합 포맷 주의:** GGUF 변환기 + 비-GGUF 텍스트 인코더 조합은 아티팩트가
+  보고된다. 변환기와 텍스트 인코더를 같은 계열·같은 GGUF로 맞추는 것이 안전하다.
+
+### 12GB 타깃 모델 선정 결론
+
+| 후보 | 판정 |
+|---|---|
+| FLUX.2 klein 4B (현행) | **채택** — ~7–8GB로 여유 있게 fit, Apache 2.0 |
+| Qwen-Image-2.1 | 기각 — 12GB에서 경계형(편집 시 초과), Qwen Research License(연구 전용) |
+| FLUX.2 klein 9B | 12GB 부적합(~11.2GB 가중치, 초과) + 비상용 → 16GB+ 전용 선택지로만 유지 |
+| Z-Image-Turbo | 기각 — T2I 전용, 텍스트 제거·배경 재구성 역할 대체 불가 |
+| Qwen-Image 20B / SDXL 인페인팅 | 기각 — 메모리 초과 / 품질 구세대 |
+
+4B의 기본 quant는 **Q4_K_M을 유지한다.** 이는 조사가 밝힌 최저 합리선이고, 상향
+(Q6_K 변환기 + Q5_K_M 텍스트 인코더, ~8.5–9.5GB)은 기존 컴포넌트 오버라이드로
+이미 가능하다.
 
 ## 결정 사항
 
@@ -42,8 +66,9 @@ Rust 소스를 읽어서는 답할 수 없는 **백엔드 빌드의 속성**이�
 | D1 | 변형 선택기를 **FLUX.2 Klein 설정 내부**에 둔다 (인페인팅 모델 목록에 별도 엔트리를 만들지 않는다) | 모델 목록 엔트리는 "이 체크포인트가 동작한다"는 별도 주장이 되고, 설정·프로세서 미러링이 한 벌 더 늘어난다 |
 | D2 | **순차 진행**: sdcpp 최신화 → 9B 검증 → 이 증분 구현·출시 | 경로 스왑만으로 지원을 주장하지 않는다는 기존 원칙 유지 |
 | D3 | 변형은 **기본값을 소유하는 열거형**으로 구현하고, 컴포넌트별 오버라이드는 그 위에 적용 | "기본값과 제공자별 동작은 그것을 소유한 컴포넌트가 갖는다" — 저장소 규칙과 일치 |
-| D4 | 변형과 다른 컴포넌트 소스를 쓰면 **경고만** 하고 차단하지 않는다 | 사용자가 명시적으로 만든 조합을 막을 근거가 없다. 불일치는 stable-diffusion.cpp 오류로 드러난다 |
+| D4 | 변형과 다른 컴포넌트 소스를 쓰면 **경고만** 하고 차단하지 않는다 | 사용자가 명시적으로 만든 조합을 막을 근거가 없다. 혼합 조합의 아티팩트 보고가 있어 경고의 실효성이 있다 |
 | D5 | 12GB는 **GPU 상주 기준**이며 CPU offload는 성능상 배제한다 | offload 경로는 실사용에서 너무 느리다 |
+| D6 | 9B 선택지에 **VRAM 요건과 비상용 라이선스를 UI 라벨로 고지**한다. 4B 기본값(Q4_K_M)은 변경하지 않는다 | 9B는 12GB에서 실행 불가이고 비상용이다. 그 사실이 선택기에 드러나야 한다 |
 
 ### `fork/PHASE-2-NOTES.md` D3와의 관계
 
@@ -79,12 +104,10 @@ pub enum Flux2KleinVariantConfig {
 
 **변형별 기본값** (9B 저장소의 커밋 핀은 구현 시점에 40자 해시로 고정한다)
 
-| 변형 | transformer | text encoder | VAE |
-|---|---|---|---|
-| `klein_4b` (기본) | `unsloth/FLUX.2-klein-4B-GGUF` / `flux-2-klein-4b-Q4_K_M.gguf` | `unsloth/Qwen3-4B-GGUF` / `Qwen3-4B-Q4_K_M.gguf` | `black-forest-labs/FLUX.2-small-decoder` |
-| `klein_9b` | `unsloth/FLUX.2-klein-9B-GGUF` / `flux-2-klein-9b-Q4_K_M.gguf` | `unsloth/Qwen3-8B-GGUF` / `Qwen3-8B-Q4_K_M.gguf` | 동일 |
-
-quant 레벨은 병행 조사 결과에 따라 상향될 수 있다 (예: `Q4_K_M` → `Q5_K_M`).
+| 변형 | transformer | text encoder | VAE | 라이선스 |
+|---|---|---|---|---|
+| `klein_4b` (기본) | `unsloth/FLUX.2-klein-4B-GGUF` / `flux-2-klein-4b-Q4_K_M.gguf` | `unsloth/Qwen3-4B-GGUF` / `Qwen3-4B-Q4_K_M.gguf` | `black-forest-labs/FLUX.2-small-decoder` | Apache 2.0 |
+| `klein_9b` | `unsloth/FLUX.2-klein-9B-GGUF` / `flux-2-klein-9b-Q4_K_M.gguf` | `unsloth/Qwen3-8B-GGUF` / `Qwen3-8B-Q4_K_M.gguf` | 동일 | FLUX 비상용 |
 
 ## 백엔드 구조
 
@@ -124,11 +147,11 @@ quant 레벨은 병행 조사 결과에 따라 상향될 수 있다 (예: `Q4_K_
 ### 변형 선택기
 
 `packages/koharu/components/preferences/Flux2KleinOptions.tsx` 상단에 기존 `Select`
-컴포넌트로 변형 선택을 추가한다. 라벨에 VRAM 요건을 표기한다 (수치는 조사 결과로 확정).
+컴포넌트로 변형 선택을 추가한다. 라벨은 D6에 따라 VRAM 요건과 라이선스를 고지한다.
 
 ```
 4B — 12GB급 (기본)
-9B — 16GB+ 권장
+9B — 16GB+ 전용, 비상용
 ```
 
 ### 불일치 경고
@@ -159,25 +182,29 @@ quant 레벨은 병행 조사 결과에 따라 상향될 수 있다 (예: `Q4_K_
 ## 검증 게이트와 출시 순서
 
 1. **stable-diffusion.cpp 최신화** (별도 task)
-2. **9B 검증** — 디버그 바이너리로 `--variant klein-9b` 실행: 컨텍스트 생성 성공 여부,
-   `FLUX.2-small-decoder` latent 정합, 16GB+ GPU에서의 실제 인페인팅 결과
+2. **9B 검증** — 디버그 바이너리로 `--variant klein-9b` 실행: 컨텍스트 생성 성공
+   여부, `FLUX.2-small-decoder` latent 정합, 16GB+ GPU에서의 실제 인페인팅 결과.
+   아키텍처 지원 자체는 upstream 문서로 확인됐으나, 마스크 고정 인페인팅 경로가
+   9B에서도 동일하게 동작하는지는 실측으로 확인한다.
 3. **이 증분 구현·출시**
 
 2단계가 실패하면 9B 항목만 빠지고 스키마·경고·UI 구조는 그대로 4B 단일 변형으로
 성립한다. 검증을 통과하기 전에는 9B 프리셋, 문서 주장, 기본값 변경을 출시하지 않는다.
 
-## 범위 밖 (열린 항목)
+## 범위 밖
 
 | 항목 | 사유 |
 |---|---|
-| 12GB 타깃 챔피언 모델 조사 | "Klein의 역할을 하면서 GGUF로 12GB에 확실히 fit하고 저비트 품질 손실을 피하는 모델 + quant" 선정 조사가 병행 중. 결과는 ① 기본 quant 레벨 확정, ② Klein가 아닌 모델이 뽑힐 경우의 후속(변형 추가 vs 별도 인페인팅 모델 엔트리)에 반영한다 |
+| Qwen-Image-2.1 도입 | 12GB 경계형(편집 시 초과) + Qwen Research License(연구 전용) → 기각. 근거: 조사 문서 §5 |
+| Z-Image-Turbo, Qwen-Image 20B, SDXL 인페인팅 | T2I 전용 / 메모리 초과 / 품질 구세대 |
+| 4B 기본 quant 상향 | Q4_K_M이 저비트 기준선이며, 상향은 기존 오버라이드로 가능. 기본값 변경은 기존 사용자 재다운로드를 유발한다 |
 | 12GB에서의 파라미터 상주 정책 | `flux2_klein/model.rs:56`이 `memory_free >= 20GiB`일 때만 VRAM 상주로 두고 그 미만은 RAM 상주 경로로 떨어뜨린다(반복 전송으로 느려짐). D5의 "CPU offload 배제" 정책과 충돌하는 지점이나, 이전에 이관된 VRAM 관리 증분이 소유한다 |
 | 비-인페인트 FLUX.2 설정의 UI 노출 | `Flux2Klein`(생성)은 현재 디버그 바이너리에서만 도달 가능 |
 | Text CFG / scheduler / sample method | diffusers 참조 파이프라인의 아키텍처 선택이며 사용자 취향이 아니다 |
 
 ## 참고
 
-- `unsloth/FLUX.2-klein-9B-GGUF` (모델 카드: 9B flow model + 8B Qwen3 text embedder)
-- `unsloth/Qwen3-8B-GGUF`
+- `specs/2026-10-11-12gb-inpainting-model-survey.md` — 12GB 타깃 모델 조사 기록
+- `unsloth/FLUX.2-klein-9B-GGUF`, `unsloth/Qwen3-8B-GGUF`
 - `fork/PHASE-2-NOTES.md` (D1~D6, Klein 9B 미출시 사유)
 - `fork/ARCHITECTURE.md` §5 (FLUX.2 Klein 하드코딩 지점)
