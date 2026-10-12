@@ -321,6 +321,31 @@ impl PowerPaintConfig {
     }
 }
 
+impl InpaintingModel {
+    /// 디스크·네트워크를 건드리지 않고 알 수 있는 설정 오류를 모은다.
+    ///
+    /// 저장 시점(`PipelineConfig::validate`)과 모델을 만들기 직전(`Processor::new`)이
+    /// 같은 규칙을 보도록 한곳에 둔다. 리비전 없는 Hugging Face 오버라이드처럼
+    /// 나중에야 드러나는 실수를 저장할 때 알려주려는 것이다.
+    pub(crate) fn validate(&self) -> Result<()> {
+        match self {
+            Self::LaMa(settings) => settings.validate()?,
+            Self::MiGan(settings) => settings.validate()?,
+            Self::MangaInpaintor(settings) => settings.validate()?,
+            Self::AotInpainting {} => {}
+            Self::Flux2Klein(settings) => settings.validate()?,
+            Self::RoremMixed(settings) => {
+                ensure!(
+                    !settings.prompt.contains('\0') && !settings.negative_prompt.contains('\0'),
+                    "RORem prompt contains NUL"
+                );
+            }
+            Self::PowerPaint(settings) => settings.validate()?,
+        }
+        Ok(())
+    }
+}
+
 pub(super) struct Processor {
     config: InpaintingModel,
     device: koharu_ml::Device,
@@ -334,20 +359,7 @@ impl Processor {
         device: koharu_ml::Device,
         resources: Arc<ResourceMonitor>,
     ) -> Result<Self> {
-        match &config {
-            InpaintingModel::LaMa(settings) => settings.validate()?,
-            InpaintingModel::MiGan(settings) => settings.validate()?,
-            InpaintingModel::MangaInpaintor(settings) => settings.validate()?,
-            InpaintingModel::AotInpainting {} => {}
-            InpaintingModel::Flux2Klein(settings) => settings.validate()?,
-            InpaintingModel::RoremMixed(settings) => {
-                ensure!(
-                    !settings.prompt.contains('\0') && !settings.negative_prompt.contains('\0'),
-                    "RORem prompt contains NUL"
-                );
-            }
-            InpaintingModel::PowerPaint(settings) => settings.validate()?,
-        }
+        config.validate()?;
 
         Ok(Self {
             config,
@@ -435,7 +447,9 @@ enum Model {
     Aot(Arc<Mutex<AotInpainting>>),
     Flux {
         model: Arc<Mutex<Flux2KleinInpaint>>,
-        config: Flux2KleinConfig,
+        /// 다른 변형은 로더 핸들만 들고 있어서, 이 설정만 상자에 넣어 열거형
+        /// 크기를 핸들 크기로 맞춘다.
+        config: Box<Flux2KleinConfig>,
     },
     Rorem {
         model: Arc<Mutex<RoremMixed>>,
@@ -492,7 +506,7 @@ impl Model {
                 log_weight_estimate(&source).await;
                 Ok(Self::Flux {
                     model: Arc::new(Mutex::new(Flux2KleinInpaint::load(device, &source).await?)),
-                    config: config.clone(),
+                    config: Box::new(config.clone()),
                 })
             }
             InpaintingModel::RoremMixed(config) => Ok(Self::Rorem {
@@ -1491,7 +1505,8 @@ mod tests {
             source: Flux2KleinSourceConfig {
                 transformer: ComponentSourceConfig::HuggingFace {
                     repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),
-                    revision: None,
+                    // 리비전은 필수다. 헤드는 조용히 다른 파일을 가리킬 수 있다.
+                    revision: Some("0".repeat(40)),
                     filename: "flux-2-klein-4b-Q8_0.gguf".to_owned(),
                 },
                 ..Default::default()

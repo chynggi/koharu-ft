@@ -1,4 +1,4 @@
-﻿use std::fmt;
+use std::fmt;
 
 use anyhow::Result;
 use koharu_pipeline::PipelineConfig;
@@ -177,6 +177,10 @@ pub async fn save_preferences(
     typesetting: TypesettingConfig,
 ) -> std::result::Result<Preferences, Error> {
     remember_pipeline_profiles(&mut pipeline);
+    // 다른 설정과 마찬가지로 저장 시점에 거른다. 여기서 걸리지 않으면 잘못된
+    // 모델 소스(예: 리비전 없는 Hugging Face 오버라이드)는 파이프라인이 그
+    // 모델을 로드할 때가 되어서야 드러난다.
+    pipeline.validate()?;
     let providers = providers.into_config()?;
     let pipeline_config = PipelineConfig::load()?;
     let providers_config = ProvidersConfig::load()?;

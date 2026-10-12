@@ -83,13 +83,10 @@ impl Serialize for PipelineConfig {
         processor
             .koharu_layout_rfdetr_seg_2xl
             .get_or_insert_with(|| config.clone());
-        match &self.ocr {
-            OcrModel::PaddleOcrVl1_6MangaLora(config) => {
-                processor
-                    .paddleocr_vl_1_6_manga_lora
-                    .get_or_insert_with(|| config.clone());
-            }
-            _ => {}
+        if let OcrModel::PaddleOcrVl1_6MangaLora(config) = &self.ocr {
+            processor
+                .paddleocr_vl_1_6_manga_lora
+                .get_or_insert_with(|| config.clone());
         }
         match &self.inpainting {
             InpaintingModel::LaMa(config) => {
@@ -315,10 +312,13 @@ impl PipelineConfig {
         }
     }
 
+    /// 디스크·네트워크 없이 알 수 있는 설정 오류를 모은다.
+    ///
+    /// `save_preferences`가 저장 직전에 이 함수를 부르므로, 리비전 없는 Hugging
+    /// Face 오버라이드 같은 실수는 모델을 로드할 때가 아니라 저장할 때 보고된다.
+    /// 검사 규칙은 모델을 만드는 쪽(`InpaintingModel::validate`)과 같다.
     pub fn validate(&self) -> Result<()> {
-        let _ = self.detection()?;
-        let _ = self.ocr()?;
-        let _ = self.inpainting()?;
+        self.inpainting()?.validate()?;
         if let OcrModel::PaddleOcrVl1_6MangaLora(config) = self.ocr()? {
             config.validate()?;
         }
@@ -391,7 +391,7 @@ pub enum InpaintingModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stages::WeightsFormatConfig;
+    use crate::stages::{ComponentSourceConfig, WeightsFormatConfig};
 
     #[test]
     fn defaults_select_one_processor_for_each_phase() {
@@ -551,6 +551,30 @@ mod tests {
         let config = value.try_into::<PipelineConfig>().unwrap();
         assert!(!config.translation.combine_pages);
         assert_eq!(config.translation.max_pages_per_request, 5);
+    }
+
+    #[test]
+    fn the_default_configuration_is_valid() {
+        PipelineConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_a_source_override_that_cannot_be_resolved() {
+        // 저장 시점에 걸러야 하는 실수다. 리비전 없는 Hugging Face 오버라이드는
+        // 저장소 헤드를 따라가므로 조용히 다른 파일을 로드하게 된다.
+        let mut klein = Flux2KleinConfig::default();
+        klein.source.transformer = ComponentSourceConfig::HuggingFace {
+            repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),
+            revision: None,
+            filename: "flux-2-klein-4b-Q8_0.gguf".to_owned(),
+        };
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::Flux2Klein(klein),
+            ..PipelineConfig::default()
+        };
+
+        let error = format!("{:#}", config.validate().unwrap_err());
+        assert!(error.contains("revision"), "{error}");
     }
 
     #[test]
