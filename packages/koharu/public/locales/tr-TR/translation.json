@@ -623,6 +623,8 @@
     "draw": "Çizim",
     "eraser": "Silgi",
     "increaseBrushSize": "Fırça boyutunu artır",
+    "manual_ocr_box": "Elle OCR (dikdörtgen)",
+    "manual_ocr_lasso": "Elle OCR (serbest çizim)",
     "pan": "Kaydır",
     "remove": "Kaldır",
     "select": "Seç",

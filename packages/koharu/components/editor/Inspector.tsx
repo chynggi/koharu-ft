@@ -249,12 +249,16 @@ function TypeInspector() {
             <Select
               disabled={disabled}
               value={String(weight)}
-              onValueChange={(font_weight) =>
-                apply((value) => ({
-                  ...value,
-                  font_weight: Number(font_weight),
-                }))
-              }
+              onValueChange={(next) => {
+                // Base UI resets the selection to `null` when the current value is
+                // no longer among the items, which happens as soon as the selected
+                // layer names a family that does not offer the stored weight.
+                // `Number(null)` is 0, so forwarding that reset would write a
+                // weight the scene rejects.
+                const font_weight = Number(next)
+                if (!weights.includes(font_weight)) return
+                apply((value) => ({ ...value, font_weight }))
+              }}
             >
               <SelectTrigger
                 size='sm'

@@ -51,13 +51,21 @@ const canvasCursors = {
   eraser: 'none',
   color_picker: 'crosshair',
   remove: 'none',
+  manual_ocr_box: 'crosshair',
+  manual_ocr_lasso: 'crosshair',
   pan: 'grab',
 } as const satisfies Record<CanvasTool, string | undefined>
+
+// Freeform lasso points are sampled at this page-space spacing so the polygon
+// stays small enough to send without losing the drawn shape.
+const LASSO_POINT_SPACING = 8
 
 type Gesture =
   | { kind: 'pan'; pointer: number; start: Point; translation: [number, number] }
   | { kind: 'move'; pointer: number; start: Point; originals: TransformFrame[] }
   | { kind: 'text'; pointer: number; start: Point; frame: Frame }
+  | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame }
+  | { kind: 'lasso'; pointer: number; points: Point[] }
   | StrokeGesture
 
 interface StrokeGesture {
@@ -94,6 +102,7 @@ export function CanvasWorkspace() {
   const commandQueue = useRef<Promise<void>>(Promise.resolve())
   const [previews, setPreviews] = useState<Record<string, Frame>>({})
   const [draft, setDraft] = useState<Frame | null>(null)
+  const [lasso, setLasso] = useState<Point[] | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
   const [cursor, setCursor] = useState<Point | null>(null)
   const colorSampling = useColorSampling()
@@ -219,6 +228,7 @@ export function CanvasWorkspace() {
       canvas?.cancelTransform()
     }
     setDraft(null)
+    setLasso(null)
     setPreviews({})
   }, [canvas, strokeUpdates, transformUpdates])
 
@@ -363,7 +373,17 @@ export function CanvasWorkspace() {
         return
       }
       const next = (
-        ['select', 'text', 'draw', 'eraser', 'color_picker', 'remove', 'pan'] as const
+        [
+          'select',
+          'text',
+          'draw',
+          'eraser',
+          'color_picker',
+          'remove',
+          'manual_ocr_box',
+          'manual_ocr_lasso',
+          'pan',
+        ] as const
       ).find((action) => state.shortcuts[action] === event.key.toLowerCase())
       if (next) setTool(next)
     }
@@ -456,6 +476,17 @@ export function CanvasWorkspace() {
     } else if (current.kind === 'text') {
       current.frame = draftFrame(current.start, point)
       setDraft(current.frame)
+    } else if (current.kind === 'manual_box') {
+      current.frame = draftFrame(current.start, point)
+      setDraft(current.frame)
+    } else if (current.kind === 'lasso') {
+      for (const sample of points) {
+        const last = current.points.at(-1)
+        if (!last || Math.hypot(sample.x - last.x, sample.y - last.y) >= LASSO_POINT_SPACING) {
+          current.points.push(sample)
+        }
+      }
+      setLasso([...current.points])
     } else if (current.kind === 'paint' || current.kind === 'erase' || current.kind === 'inpaint') {
       current.points.push(...points)
       strokeUpdates.schedule({ kind: current.kind, points })
@@ -477,6 +508,30 @@ export function CanvasWorkspace() {
           ? call(commands.addPointText, current.start)
           : call(commands.addTextBox, current.frame)
       )
+        .then((result) => {
+          selectLayers([result.layer])
+          return refresh(projectKey, pagesKey, pageKey)
+        })
+        .catch(() => undefined)
+    } else if (current.kind === 'manual_box') {
+      const frame = current.frame
+      setDraft(null)
+      if (frame.width < 4 / camera.zoom || frame.height < 4 / camera.zoom) return
+      void call(commands.manualOcr, [
+        { x: frame.x, y: frame.y },
+        { x: frame.x + frame.width, y: frame.y + frame.height },
+      ])
+        .then((result) => {
+          selectLayers([result.layer])
+          return refresh(projectKey, pagesKey, pageKey)
+        })
+        .catch(() => undefined)
+    } else if (current.kind === 'lasso') {
+      const points = current.points
+      setLasso(null)
+      const bbox = points.length >= 3 ? boundsOf(points) : null
+      if (!bbox || bbox.width < 4 / camera.zoom || bbox.height < 4 / camera.zoom) return
+      void call(commands.manualOcr, points)
         .then((result) => {
           selectLayers([result.layer])
           return refresh(projectKey, pagesKey, pageKey)
@@ -588,6 +643,13 @@ export function CanvasWorkspace() {
               const frame = draftFrame(point, point)
               gesture.current = { kind: 'text', pointer: event.pointerId, start: point, frame }
               setDraft(frame)
+            } else if (tool === 'manual_ocr_box') {
+              const frame = draftFrame(point, point)
+              gesture.current = { kind: 'manual_box', pointer: event.pointerId, start: point, frame }
+              setDraft(frame)
+            } else if (tool === 'manual_ocr_lasso') {
+              gesture.current = { kind: 'lasso', pointer: event.pointerId, points: [point] }
+              setLasso([point])
             } else if (tool === 'draw') {
               strokeUpdates.clear()
               const color = hexToRgba(brush.color)
@@ -757,6 +819,7 @@ export function CanvasWorkspace() {
               frames={layerFrames}
               previews={previews}
               draft={draft}
+              lasso={lasso}
               cursor={cursor}
               brushSize={brush.diameter}
               showBrushCursor={isBrushTool(tool)}
@@ -830,6 +893,20 @@ function rgbaToHex(color: [number, number, number, number]): string {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value))
+}
+
+function boundsOf(points: Point[]): Frame {
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return {
+    x,
+    y,
+    width: Math.max(...xs) - x,
+    height: Math.max(...ys) - y,
+    angle_degrees: 0,
+  }
 }
 
 function containCamera(

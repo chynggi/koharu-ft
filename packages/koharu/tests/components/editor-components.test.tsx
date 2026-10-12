@@ -379,7 +379,6 @@ describe('greenfield editor', () => {
       '_blank',
       'noopener,noreferrer',
     )
-
   })
 
   it('shows the current version and author in About', async () => {
@@ -799,6 +798,59 @@ describe('greenfield editor', () => {
         }),
       ]),
     )
+  })
+
+  it('never writes a weight that the selected family does not offer', async () => {
+    installProject()
+    const setTypography = vi.spyOn(commands, 'setTypography').mockResolvedValue(null)
+    const face = (name: string, weight: number) => ({
+      postscript_name: name,
+      weight,
+      weight_range: null,
+      style: 'normal' as const,
+    })
+    const family = (name: string, weights: number[]) => ({
+      name,
+      metadata: {
+        primary_script: 'latn',
+        scripts: ['latn'],
+        languages: ['en'],
+        category: 'SANS_SERIF',
+        classifications: ['sans-serif'],
+        use_cases: ['body-text'],
+      },
+      sources: ['system' as const],
+      faces: weights.map((weight) => face(`${name}-${weight}`, weight)),
+    })
+    queryClient.setQueryData(fontsKey, [family('Alpha', [700]), family('Beta', [400])])
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [
+        {
+          ...textLayer,
+          typography: { ...textLayer.typography, preferred_font: 'Alpha', font_weight: 700 },
+        },
+        {
+          ...secondLayer,
+          typography: { ...textLayer.typography, preferred_font: 'Beta', font_weight: 700 },
+        },
+      ],
+    }))
+    render(<Inspector />)
+    const written = () =>
+      setTypography.mock.calls.flatMap(([updates]) =>
+        updates.map((update) => update.typography.font_weight),
+      )
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Font weight' }))
+    act(() => useKoharuStore.setState({ selectedLayers: ['second'] }))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(written()).toEqual([])
+
+    await userEvent.click(screen.getByRole('option', { name: '400' }))
+    await waitFor(() => expect(written()).toEqual([400]))
   })
 
   it('debounces layer text editing and flushes it when focus leaves the field', async () => {

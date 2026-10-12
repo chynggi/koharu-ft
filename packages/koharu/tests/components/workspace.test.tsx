@@ -501,4 +501,48 @@ describe('canvas interaction adapter', () => {
       angle_degrees: 0,
     })
   })
+
+  it('runs manual OCR on a drawn box and selects the new region layer', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'manual_ocr_box' })
+    const manual = vi
+      .spyOn(commands, 'manualOcr')
+      .mockResolvedValue({ revision: 2, region: 'region', layer: 'manual', job: 'job' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 15, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(manual).toHaveBeenCalledOnce())
+    expect(manual).toHaveBeenCalledWith([
+      { x: 20, y: 20 },
+      { x: 130, y: 90 },
+    ])
+    await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['manual']))
+  })
+
+  it('runs manual OCR on a freeform lasso and previews the drawing', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'manual_ocr_lasso' })
+    const manual = vi
+      .spyOn(commands, 'manualOcr')
+      .mockResolvedValue({ revision: 2, region: 'region', layer: 'manual', job: 'job' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 16, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 16, clientX: 100, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 16, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(surface, { pointerId: 16, clientX: 30, clientY: 100 })
+    expect(screen.getByTestId('manual-ocr-lasso')).toBeInTheDocument()
+    fireEvent.pointerUp(surface, { pointerId: 16, clientX: 30, clientY: 100 })
+
+    await waitFor(() => expect(manual).toHaveBeenCalledOnce())
+    expect(manual).toHaveBeenCalledWith([
+      { x: 20, y: 20 },
+      { x: 90, y: 20 },
+      { x: 90, y: 80 },
+      { x: 20, y: 80 },
+    ])
+  })
 })

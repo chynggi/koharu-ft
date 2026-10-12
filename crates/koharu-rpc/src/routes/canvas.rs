@@ -9,7 +9,8 @@ use serde::Deserialize;
 use tauri::Manager as _;
 
 use koharu_app::commands::canvas::{
-    self, CanvasChannel, CanvasGeneration, CanvasPagePreparation, LayerCommit, PaintBrush, Point,
+    self, CanvasChannel, CanvasGeneration, CanvasPagePreparation, LayerCommit, ManualOcrCommit,
+    PaintBrush, Point,
 };
 use koharu_app::commands::project::CurrentProject;
 
@@ -34,6 +35,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/canvas/text/point", post(add_point_text))
         .route("/canvas/text/box", post(add_text_box))
+        .route("/canvas/ocr/manual", post(manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
         .route("/canvas/commit/erase", post(commit_erase))
         .route("/canvas/commit/transform", post(commit_transform))
@@ -130,6 +132,27 @@ async fn add_text_box(
     Ok(Json(
         canvas::add_text_box(
             request.frame,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct ManualOcrRequest {
+    points: Vec<Point>,
+}
+
+async fn manual_ocr(
+    State(app): State<AppState>,
+    Json(request): Json<ManualOcrRequest>,
+) -> ApiResult<Json<ManualOcrCommit>> {
+    Ok(Json(
+        canvas::manual_ocr(
+            request.points,
+            app.clone(),
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

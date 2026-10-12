@@ -22,6 +22,7 @@ interface CanvasOverlayProps {
   frames: Readonly<Record<EntityId, Frame>>
   previews: Readonly<Record<EntityId, Frame>>
   draft: Frame | null
+  lasso: Point[] | null
   cursor: Point | null
   brushSize: number
   showBrushCursor: boolean
@@ -38,6 +39,7 @@ export function CanvasOverlay({
   frames,
   previews,
   draft,
+  lasso,
   cursor,
   brushSize,
   showBrushCursor,
@@ -113,6 +115,7 @@ export function CanvasOverlay({
       })}
 
       {draft && <DraftOverlay frame={draft} camera={camera} />}
+      {lasso && <LassoOverlay points={lasso} camera={camera} />}
       {showBrushCursor && cursor && (
         <div
           className='absolute rounded-full border border-white/95 shadow-[0_0_0_1px_rgb(0_0_0/0.9),0_1px_3px_rgb(0_0_0/0.45)]'
@@ -190,5 +193,32 @@ function DraftOverlay({ frame, camera }: { frame: Frame; camera: Camera }) {
         transform: `rotate(${position.angle}deg)`,
       }}
     />
+  )
+}
+
+function LassoOverlay({ points, camera }: { points: Point[]; camera: Camera }) {
+  const dpr = window.devicePixelRatio
+  const path = points
+    .map(
+      (point) =>
+        `${(point.x * camera.zoom + camera.translation[0]) / dpr},${(point.y * camera.zoom + camera.translation[1]) / dpr}`,
+    )
+    .join(' ')
+  if (!path) return null
+
+  return (
+    <svg className='absolute inset-0 size-full overflow-hidden' data-testid='manual-ocr-lasso'>
+      <polygon
+        points={path}
+        fill='var(--canvas-selection)'
+        fillOpacity='0.08'
+        stroke='var(--canvas-selection)'
+        strokeWidth='3'
+        strokeDasharray='10 6'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        vectorEffect='non-scaling-stroke'
+      />
+    </svg>
   )
 }

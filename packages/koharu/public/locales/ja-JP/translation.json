@@ -623,6 +623,8 @@
     "draw": "描画",
     "eraser": "消しゴム",
     "increaseBrushSize": "ブラシサイズを拡大",
+    "manual_ocr_box": "手動OCR（矩形）",
+    "manual_ocr_lasso": "手動OCR（フリーハンド）",
     "pan": "移動",
     "remove": "削除",
     "select": "選択",

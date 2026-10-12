@@ -4,12 +4,13 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use koharu_desktop::Frame;
 use koharu_scene::{
-    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin,
+    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin, FitsTo,
     Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
-    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, Region as SceneRegion,
-    RemovePolicy, Revision, Session, Snapshot, SourceText as SceneSourceText,
-    TextGroup as SceneTextGroup, TextLayout as SceneTextLayout, TextLayoutKind,
-    Translation as SceneTranslation, Typography as SceneTypography, Visibility as SceneVisibility,
+    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom, Region as SceneRegion,
+    RegionSpec, RemovePolicy, Revision, Session, Snapshot, SourceText as SceneSourceText,
+    TextGroup as SceneTextGroup, TextLayout as SceneTextLayout, TextLayoutKind, TextRegion,
+    TextRole, Translation as SceneTranslation, Typography as SceneTypography,
+    Visibility as SceneVisibility,
 };
 use serde::Serialize;
 use specta::Type;
@@ -444,32 +445,92 @@ impl Project {
             )?;
             layer = Some(added_layer);
             edit.set(added_layer, &geometry)?;
-            edit.set(
-                added_layer,
-                &SceneTypography {
-                    origin: Origin::User,
-                    preferred_font: None,
-                    font_weight: None,
-                    font_style: None,
-                    size: None,
-                    auto_fit: true,
-                    color: None,
-                    stroke_color: None,
-                    stroke_width: None,
-                    alignment: match kind {
-                        TextLayoutKind::Point => Some(koharu_scene::TextAlignment::Start),
-                        TextLayoutKind::Paragraph => None,
-                    },
-                    writing_mode: None,
-                    extensions: Default::default(),
-                },
-            )?;
+            edit.set(added_layer, &Self::text_typography(kind))?;
             Ok(())
         })?;
         Ok((
             self.commit(patch).await?,
             layer.expect("text layer was added while building the patch"),
         ))
+    }
+
+    /// Writes a user-drawn text region where detection missed text. The result is
+    /// an ordinary `TextRegion` — kind, geometry, content and presentation layer —
+    /// so the OCR stage and downstream stages treat it exactly like a detected
+    /// one. The content carries no source text yet, so OCR fills it in.
+    pub async fn add_manual_text_region(
+        &mut self,
+        page: EntityId,
+        points: Vec<Point>,
+    ) -> Result<(Commit, EntityId, EntityId)> {
+        let geometry = Self::geometry_from_points(points)?;
+        let snapshot = self.snapshot();
+        let mut region = None;
+        let mut layer = None;
+        let patch = snapshot.patch(|edit| {
+            let added_region = edit.add_entity(page, At::End)?;
+            edit.set(added_region, &geometry)?;
+            edit.set(
+                added_region,
+                &SceneRegion {
+                    origin: Origin::User,
+                    kind: TextRegion::kind(),
+                    label: Some("manual".to_owned()),
+                },
+            )?;
+            region = Some(added_region);
+
+            let content = edit.add_text_content(page, At::End)?;
+            // A manual region has no detected dialogue balloon, so it stays free text.
+            edit.set(
+                content,
+                &TextRole {
+                    origin: Origin::User,
+                    role: "dev.koharu.text.free-text".to_owned(),
+                },
+            )?;
+            let added_layer = edit.add_text_layer(
+                page,
+                At::End,
+                content,
+                &SceneTextLayout {
+                    origin: Origin::User,
+                    kind: TextLayoutKind::Paragraph,
+                    angle_degrees: None,
+                },
+            )?;
+            edit.set(added_layer, &geometry)?;
+            edit.set(added_layer, &Self::text_typography(TextLayoutKind::Paragraph))?;
+            edit.relate::<RecognizedFrom>(content, added_region)?;
+            edit.relate::<FitsTo>(added_layer, added_region)?;
+            layer = Some(added_layer);
+            Ok(())
+        })?;
+        Ok((
+            self.commit(patch).await?,
+            region.expect("manual region was added while building the patch"),
+            layer.expect("manual text layer was added while building the patch"),
+        ))
+    }
+
+    fn text_typography(kind: TextLayoutKind) -> SceneTypography {
+        SceneTypography {
+            origin: Origin::User,
+            preferred_font: None,
+            font_weight: None,
+            font_style: None,
+            size: None,
+            auto_fit: true,
+            color: None,
+            stroke_color: None,
+            stroke_width: None,
+            alignment: match kind {
+                TextLayoutKind::Point => Some(koharu_scene::TextAlignment::Start),
+                TextLayoutKind::Paragraph => None,
+            },
+            writing_mode: None,
+            extensions: Default::default(),
+        }
     }
 
     pub async fn set_source_text(&mut self, layer: EntityId, text: String) -> Result<Commit> {
@@ -532,23 +593,38 @@ impl Project {
             for (update, content) in updates {
                 edit.promote_entity_to_user(update.layer)?;
                 edit.promote_entity_to_user(content)?;
-                edit.set(
-                    update.layer,
-                    &SceneTypography {
-                        origin: Origin::User,
-                        preferred_font: update.typography.preferred_font,
-                        font_weight: update.typography.font_weight,
-                        font_style: update.typography.font_style,
-                        size: update.typography.size.filter(|size| *size > 0.0),
-                        auto_fit: update.typography.auto_fit,
-                        color: update.typography.color,
-                        stroke_color: update.typography.stroke_color,
-                        stroke_width: update.typography.stroke_width,
-                        alignment: update.typography.alignment,
-                        writing_mode: update.typography.writing_mode,
-                        extensions: Default::default(),
-                    },
-                )?;
+                let typography = SceneTypography {
+                    origin: Origin::User,
+                    preferred_font: update.typography.preferred_font,
+                    font_weight: update.typography.font_weight,
+                    font_style: update.typography.font_style,
+                    size: update.typography.size.filter(|size| *size > 0.0),
+                    auto_fit: update.typography.auto_fit,
+                    color: update.typography.color,
+                    stroke_color: update.typography.stroke_color,
+                    stroke_width: update.typography.stroke_width,
+                    alignment: update.typography.alignment,
+                    writing_mode: update.typography.writing_mode,
+                    extensions: Default::default(),
+                };
+                // The caller only sees "invalid project: <reason>" from a rejection,
+                // which cannot be traced back to what was sent. Keep the payload on
+                // the failing branch so a report can be matched to its values.
+                if let Err(error) = edit.set(update.layer, &typography) {
+                    tracing::warn!(
+                        layer = %update.layer,
+                        content = %content,
+                        preferred_font = ?typography.preferred_font,
+                        font_weight = ?typography.font_weight,
+                        font_style = ?typography.font_style,
+                        size = ?typography.size,
+                        auto_fit = typography.auto_fit,
+                        stroke_width = ?typography.stroke_width,
+                        %error,
+                        "rejected typography write"
+                    );
+                    return Err(error);
+                }
             }
             Ok(())
         })?;
@@ -1225,6 +1301,41 @@ impl Project {
             .into(),
         })
     }
+
+    /// A two-point drag is a rectangle; three or more points are a freeform
+    /// polygon. Both become a single closed polygon the OCR stage can crop.
+    fn geometry_from_points(points: Vec<Point>) -> Result<SceneGeometry> {
+        if points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite())
+        {
+            bail!("region points must be finite");
+        }
+        let points = match points.as_slice() {
+            [start, end] => {
+                let (left, right) = (start.x.min(end.x), start.x.max(end.x));
+                let (top, bottom) = (start.y.min(end.y), start.y.max(end.y));
+                if right - left <= 0.0 || bottom - top <= 0.0 {
+                    bail!("a manual region must enclose a non-empty area");
+                }
+                vec![
+                    ScenePoint { x: left, y: top },
+                    ScenePoint { x: right, y: top },
+                    ScenePoint { x: right, y: bottom },
+                    ScenePoint { x: left, y: bottom },
+                ]
+            }
+            points if points.len() >= 3 => points
+                .iter()
+                .map(|point| ScenePoint { x: point.x, y: point.y })
+                .collect(),
+            _ => bail!("a manual region needs two corners or at least three points"),
+        };
+        Ok(SceneGeometry {
+            origin: Origin::User,
+            points,
+        })
+    }
 }
 
 fn validate_project_name(name: &str) -> Result<String> {
@@ -1434,6 +1545,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_manual_region_is_an_ocr_ready_text_region() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        // Two corners become a rectangle; the points are sorted into a polygon.
+        let (commit, region, layer) = project
+            .add_manual_text_region(
+                page,
+                vec![Point { x: 10.0, y: 20.0 }, Point { x: 40.0, y: 60.0 }],
+            )
+            .await
+            .unwrap();
+        let snapshot = commit.snapshot;
+        let stored = snapshot.component::<SceneRegion>(region).unwrap().unwrap();
+        assert_eq!(stored.kind, TextRegion::kind());
+        assert!(matches!(stored.origin, Origin::User));
+        let geometry = snapshot
+            .component::<SceneGeometry>(region)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            geometry.points,
+            vec![
+                ScenePoint { x: 10.0, y: 20.0 },
+                ScenePoint { x: 40.0, y: 20.0 },
+                ScenePoint { x: 40.0, y: 60.0 },
+                ScenePoint { x: 10.0, y: 60.0 },
+            ]
+        );
+
+        // The content is linked to its region so the OCR stage can find and fill it.
+        let content = snapshot
+            .text_layer(layer)
+            .unwrap()
+            .content()
+            .unwrap()
+            .id();
+        assert!(
+            snapshot
+                .relations_to_as::<RecognizedFrom>(region)
+                .any(|relation| relation.value().source == content)
+        );
+        assert!(snapshot.component::<SceneSourceText>(content).unwrap().is_none());
+
+        // A freeform drag keeps every vertex instead of reducing it to a box.
+        let (_, polygon, _) = project
+            .add_manual_text_region(
+                page,
+                vec![
+                    Point { x: 5.0, y: 5.0 },
+                    Point { x: 30.0, y: 5.0 },
+                    Point { x: 15.0, y: 25.0 },
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            project
+                .snapshot()
+                .component::<SceneGeometry>(polygon)
+                .unwrap()
+                .unwrap()
+                .points
+                .len(),
+            3
+        );
+    }
+
     #[test]
     fn raster_strokes_are_continuous_and_erasable() {
         let mut image = RgbaImage::new(32, 16);
@@ -1471,5 +1656,70 @@ mod tests {
             &[ScenePoint { x: 2.0, y: 2.0 }],
         );
         assert_eq!(white.get_pixel(2, 2).0, [255, 255, 255, 255]);
+    }
+
+    #[tokio::test]
+    async fn a_typography_write_that_drops_the_size_is_rejected_by_name() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+        let (_, _, layer) = project
+            .add_manual_text_region(
+                page,
+                vec![Point { x: 10.0, y: 20.0 }, Point { x: 40.0, y: 60.0 }],
+            )
+            .await
+            .unwrap();
+
+        // Auto-fit off without a size is the payload the scene rejects, and the
+        // rejection has to name that intent: it is what reaches the desktop toast.
+        let error = project
+            .set_typography(vec![TypographyUpdate {
+                layer,
+                typography: Typography {
+                    preferred_font: Some("GyeonggiTitle".to_owned()),
+                    font_weight: Some(500),
+                    font_style: None,
+                    size: None,
+                    auto_fit: false,
+                    color: None,
+                    stroke_color: None,
+                    stroke_width: None,
+                    alignment: None,
+                    writing_mode: None,
+                },
+            }])
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("auto-fit off requires an explicit font size"),
+            "{error}"
+        );
+
+        // The stored intent is unchanged, so the same layer still accepts a sized one.
+        project
+            .set_typography(vec![TypographyUpdate {
+                layer,
+                typography: Typography {
+                    preferred_font: Some("GyeonggiTitle".to_owned()),
+                    font_weight: Some(500),
+                    font_style: None,
+                    size: Some(64.0),
+                    auto_fit: false,
+                    color: None,
+                    stroke_color: None,
+                    stroke_width: None,
+                    alignment: None,
+                    writing_mode: None,
+                },
+            }])
+            .await
+            .unwrap();
     }
 }

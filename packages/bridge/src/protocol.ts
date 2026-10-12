@@ -263,6 +263,7 @@ export const commands = {
 		bytes(`/pages/${page}/canvas/resource/${revision}/${encodeURIComponent(resource)}`),
 	addPointText: (point: Point) => post<LayerCommit>("/canvas/text/point", { point }),
 	addTextBox: (frame: Frame) => post<LayerCommit>("/canvas/text/box", { frame }),
+	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
 	commitPaint: (
 		expectedRevision: Revision,
 		layer: string | null,
@@ -753,6 +754,15 @@ export type MangaInpaintorConfig = {
 
 /**  Mirror of [`koharu_pipeline::MemoryScope`] for the frontend. */
 export type MemoryScope = "process" | "device" | "system";
+
+/**  Result of a manual OCR request: the region/layer added for the drawn area
+ *  and the pipeline job that recognizes text inside it. */
+export type ManualOcrCommit = {
+	revision: Revision,
+	region: EntityId,
+	layer: EntityId,
+	job: JobId,
+};
 
 export type MiniMaxConfig = Record<string, never>;
 

@@ -60,3 +60,7 @@ Document only durable, repository-specific constraints here. Do not record curre
 
 - Comments should explain ownership, invariants, upstream mapping, or deliberate divergence; do not narrate straightforward code.
 - Keep this file focused on long-lived decision rules rather than the current implementation.
+
+## Notes
+
+- you must response on korean.

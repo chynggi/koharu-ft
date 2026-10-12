@@ -318,6 +318,8 @@ function ShortcutPreferences() {
     'eraser',
     'color_picker',
     'remove',
+    'manual_ocr_box',
+    'manual_ocr_lasso',
     'pan',
     'fit',
   ]
@@ -355,6 +357,8 @@ const shortcutKeys: Record<ShortcutAction, string> = {
   eraser: 'tools.eraser',
   color_picker: 'tools.color_picker',
   remove: 'tools.remove',
+  manual_ocr_box: 'tools.manual_ocr_box',
+  manual_ocr_lasso: 'tools.manual_ocr_lasso',
   pan: 'tools.pan',
   fit: 'canvas.fit',
 }

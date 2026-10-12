@@ -134,22 +134,41 @@ impl Component for Typography {
     const KIND: &'static str = "dev.koharu.text.typography";
 
     fn validate(&self, _context: &ValidationContext<'_>) -> Result<()> {
+        // Each rejection names the intent it protects. The desktop surfaces this
+        // string in the failure toast, and one shared "typography intent is
+        // invalid" cannot tell the person who hit it which field a caller sent
+        // wrong, or whether a font was involved at all.
         if self
             .preferred_font
             .as_ref()
             .is_some_and(|font| font.len() > 4096)
-            || self
-                .font_weight
-                .is_some_and(|weight| !(1..=1000).contains(&weight))
-            || self
-                .size
-                .is_some_and(|size| !size.is_finite() || size <= 0.0)
-            || (!self.auto_fit && self.size.is_none())
-            || self
-                .stroke_width
-                .is_some_and(|width| !width.is_finite() || width < 0.0)
         {
-            return Err(Error::invalid("typography intent is invalid"));
+            return Err(Error::invalid("preferred font name exceeds 4096 bytes"));
+        }
+        if self
+            .font_weight
+            .is_some_and(|weight| !(1..=1000).contains(&weight))
+        {
+            return Err(Error::invalid("font weight must be within 1..=1000"));
+        }
+        if self
+            .size
+            .is_some_and(|size| !size.is_finite() || size <= 0.0)
+        {
+            return Err(Error::invalid("font size must be finite and positive"));
+        }
+        if !self.auto_fit && self.size.is_none() {
+            return Err(Error::invalid(
+                "auto-fit off requires an explicit font size",
+            ));
+        }
+        if self
+            .stroke_width
+            .is_some_and(|width| !width.is_finite() || width < 0.0)
+        {
+            return Err(Error::invalid(
+                "stroke width must be finite and non-negative",
+            ));
         }
         self.origin.validate()?;
         if self.extensions.len() > 1024

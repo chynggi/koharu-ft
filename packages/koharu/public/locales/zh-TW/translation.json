@@ -623,6 +623,8 @@
     "draw": "繪圖",
     "eraser": "橡皮擦",
     "increaseBrushSize": "增加筆刷大小",
+    "manual_ocr_box": "手動 OCR（矩形）",
+    "manual_ocr_lasso": "手動 OCR（自由繪製）",
     "pan": "平移",
     "remove": "移除",
     "select": "選取",

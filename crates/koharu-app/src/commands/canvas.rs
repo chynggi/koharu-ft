@@ -219,6 +219,64 @@ pub async fn add_text_box(
     })
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Type)]
+pub struct ManualOcrCommit {
+    pub revision: Revision,
+    pub region: EntityId,
+    pub layer: EntityId,
+    pub job: JobId,
+}
+
+/// Manual OCR: the user marks an area that detection missed and the OCR stage
+/// runs on it. The area becomes an ordinary text region first, so the run is a
+/// normal pipeline job — scoped to that region so only it is re-recognized.
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "manual_ocr_requested",
+    skip_all,
+    fields(origin = "user", point_count = points.len())
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn manual_ocr(
+    points: Vec<Point>,
+    handle: AppHandle<CefRuntime>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<ManualOcrCommit, Error> {
+    let (commit, page, region, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        let page = project
+            .active_page()
+            .context("the project has no active page")?;
+        let (commit, region, layer) = project.add_manual_text_region(page, points).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), region, layer)
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+
+    let job = processing::process(
+        handle.clone(),
+        koharu_pipeline::Scope::Entities(vec![region]),
+        koharu_pipeline::Operation::Only {
+            stage: koharu_pipeline::Stage::Ocr,
+        },
+        handle.state::<CurrentProject>(),
+        handle.state::<Processing>(),
+        handle.state::<JobChannel>(),
+    )
+    .await?;
+    Ok(ManualOcrCommit {
+        revision: commit.revision,
+        region,
+        layer,
+        job,
+    })
+}
+
 #[tracing::instrument(
     target = "koharu_metrics",
     name = "paint_committed",

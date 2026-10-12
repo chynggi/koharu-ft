@@ -623,6 +623,8 @@
     "draw": "Dibujar",
     "eraser": "Borrador",
     "increaseBrushSize": "Aumentar tamaño del pincel",
+    "manual_ocr_box": "OCR manual (rectángulo)",
+    "manual_ocr_lasso": "OCR manual (trazo libre)",
     "pan": "Desplazar",
     "remove": "Eliminar",
     "select": "Seleccionar",
