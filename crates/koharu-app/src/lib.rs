@@ -14,13 +14,14 @@ pub use app::run;
 /// states are managed and before the main window is shown. Embedders use this
 /// to attach side services (for example the HTTP API in `koharu-rpc`) that
 /// need an `AppHandle`.
-static SETUP_HOOKS: parking_lot::Mutex<Vec<Box<dyn FnOnce(AppHandle<CefRuntime>) + Send>>> =
-    parking_lot::Mutex::new(Vec::new());
+type SetupHook = Box<dyn FnOnce(AppHandle<CefRuntime>) + Send>;
+
+static SETUP_HOOKS: parking_lot::Mutex<Vec<SetupHook>> = parking_lot::Mutex::new(Vec::new());
 
 pub fn extend_setup(hook: impl FnOnce(AppHandle<CefRuntime>) + Send + 'static) {
     SETUP_HOOKS.lock().push(Box::new(hook));
 }
 
-pub(crate) fn take_setup_hooks() -> Vec<Box<dyn FnOnce(AppHandle<CefRuntime>) + Send>> {
+pub(crate) fn take_setup_hooks() -> Vec<SetupHook> {
     std::mem::take(&mut *SETUP_HOOKS.lock())
 }

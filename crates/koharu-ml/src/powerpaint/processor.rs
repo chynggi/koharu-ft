@@ -53,7 +53,7 @@ impl Processor {
             mask.dimensions()
         );
         ensure!(
-            options.resolution >= 256 && options.resolution % 64 == 0,
+            options.resolution >= 256 && options.resolution.is_multiple_of(64),
             "PowerPaint resolution must be at least 256 and a multiple of 64"
         );
         ensure!(

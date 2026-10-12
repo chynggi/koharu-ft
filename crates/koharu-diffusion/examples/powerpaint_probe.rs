@@ -33,7 +33,7 @@ fn convert_stage(paths: Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
     let [clip_l, unet, vae, output] = <[PathBuf; 4]>::try_from(paths)
         .map_err(|_| "convert takes <clip_l> <unet> <vae> <output.gguf>, `-` to skip one")?;
     // `-` skips a component so a crash can be narrowed down to a single one.
-    let optional = |path: PathBuf| (path != PathBuf::from("-")).then_some(path);
+    let optional = |path: PathBuf| (path.as_os_str() != "-").then_some(path);
 
     set_log_callback(|message| eprintln!("[{:?}] {}", message.level, message.text))?;
 
