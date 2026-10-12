@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "Color del pincel",
     "hexCode": "Código de color hexadecimal",
+    "recent": "Colores recientes",
+    "recentColor": "Color reciente {{color}}",
     "sampleCanvas": "Elegir un color del lienzo",
     "transparent": "Transparente"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "Cancelar",
+    "cbzHint": "Un solo archivo con las páginas PNG, con el nombre del proyecto.",
     "description": "Renderiza las páginas como archivos de imagen.",
     "formats": "Formatos",
     "pattern": "Patrón de nombre",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "Copiar capas de texto seleccionadas",
     "delete": "Eliminar {{name}}",
     "edit": "Editar {{name}}",
     "empty": "No hay capas en esta página.",
@@ -254,6 +258,7 @@
     "moveUp": "Mover {{name}} arriba",
     "opacityLabel": "Opacidad de {{name}}",
     "originalArtwork": "Ilustración original",
+    "pasteCopied": "Pegar capas de texto copiadas",
     "show": "Mostrar {{name}}",
     "sourceLabel": "Texto original de {{name}}",
     "textName": "Texto {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "Acciones para {{page}}",
+    "mergeAsSpread": "Combinar en una página doble",
+    "chapterStart": "Inicio del capítulo",
     "delete": "Eliminar",
     "emptyDescription": "Importa archivos de imagen o una carpeta para añadir páginas.",
     "emptyTitle": "Aún no hay páginas",
@@ -311,6 +318,8 @@
     "layerCount": "{{count}} capas",
     "layerCount_one": "{{count}} capas",
     "layerCount_other": "{{count}} capas",
+    "markChapterStart": "Marcar como inicio de capítulo",
+    "removeChapterStart": "Quitar marca de inicio del capítulo",
     "noImage": "Sin imagen",
     "noResults": "Ninguna página coincide con este filtro.",
     "pageName": "Nombre de página",
@@ -553,10 +562,14 @@
     },
     "title": "Ajustes",
     "translation": {
+      "batching": "Agrupación de solicitudes",
+      "combinePages": "Combinar páginas en una solicitud",
+      "combinePagesDescription": "Traduce juntas hasta el número de páginas elegido para mantener la coherencia de nombres y trama. Las solicitudes de varias páginas usan solo texto y no incluyen imágenes.",
       "description": "Elige un modelo de cualquier proveedor configurado y aplica un conjunto compartido de opciones de traducción y generación.",
       "instructionsDescription": "Indicaciones sobre nombres, tono, terminología o formato.",
       "instructionsLabel": "Instrucciones de traducción",
       "instructionsPlaceholder": "Indicaciones opcionales para todo el proyecto",
+      "maxPagesPerRequest": "Máximo de páginas por solicitud",
       "model": "Modelo",
       "modelDescription": "Las etiquetas de proveedor indican dónde se ejecuta cada modelo; las conexiones se configuran por separado.",
       "modelQuantization": "Cuantización del modelo",

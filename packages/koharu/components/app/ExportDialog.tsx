@@ -67,6 +67,7 @@ export function ExportDialog({
   const { t } = useTranslation()
   const [png, setPng] = useState(true)
   const [psd, setPsd] = useState(false)
+  const [cbz, setCbz] = useState(false)
   const [scope, setScope] = useState<'all' | 'selected'>(selected.length ? 'selected' : 'all')
   const [pattern, setPattern] = useState(DEFAULT_PATTERN)
   const [subfolders, setSubfolders] = useState(false)
@@ -75,13 +76,20 @@ export function ExportDialog({
     const chosen: ExportFormat[] = []
     if (png) chosen.push('png')
     if (psd) chosen.push('psd')
+    if (cbz) chosen.push('cbz')
     return chosen
-  }, [png, psd])
+  }, [png, psd, cbz])
 
   const preview = useMemo(() => previewPattern(pattern), [pattern])
-  const bothFormats = formats.length === 2
+  // 하위 폴더는 페이지마다 파일을 쓰는 형식이 둘일 때만 뜻이 있다. 아카이브는
+  // 대상 폴더 바로 아래에 하나만 놓이므로 세지 않는다.
+  const pageFormatCount = (png ? 1 : 0) + (psd ? 1 : 0)
+  const bothFormats = pageFormatCount === 2
   const invalid = 'error' in preview
   const canStart = formats.length > 0 && !invalid && pages.length > 0
+  // 아카이브 항목은 언제나 PNG다. 페이지 파일 형식이 하나도 없으면 미리보기도
+  // 항목 이름을 보여줘야 하므로 png로 떨어진다.
+  const previewExtension = psd && !png ? 'psd' : 'png'
 
   const start = () => {
     onStart(scope === 'selected' ? selected : [], {
@@ -137,6 +145,11 @@ export function ExportDialog({
               <Checkbox id='export-psd' checked={psd} onCheckedChange={(v) => setPsd(v === true)} />
               <Label htmlFor='export-psd'>PSD</Label>
             </div>
+            <div className='flex items-center gap-2'>
+              <Checkbox id='export-cbz' checked={cbz} onCheckedChange={(v) => setCbz(v === true)} />
+              <Label htmlFor='export-cbz'>CBZ</Label>
+            </div>
+            <p className='text-[11px] text-muted-foreground'>{t('export.cbzHint')}</p>
           </fieldset>
 
           <div className='space-y-1'>
@@ -157,7 +170,7 @@ export function ExportDialog({
               </p>
             ) : (
               <p className='text-[11px] text-muted-foreground'>
-                {`${preview.name}.${formats[0] ?? 'png'}`}
+                {`${preview.name}.${previewExtension}`}
               </p>
             )}
           </div>

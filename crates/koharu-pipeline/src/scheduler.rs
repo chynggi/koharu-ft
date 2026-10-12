@@ -52,10 +52,11 @@ pub(crate) struct Scheduler {
     active_pages: usize,
     head: usize,
     total: usize,
+    translation_batch_size: usize,
 }
 
 impl Scheduler {
-    pub(crate) fn new(pages: &[EntityId], stages: &[Stage]) -> Self {
+    pub(crate) fn new(pages: &[EntityId], stages: &[Stage], translation_batch_size: usize) -> Self {
         let pages = pages
             .iter()
             .map(|page| PageWork {
@@ -77,10 +78,11 @@ impl Scheduler {
                 .map(|(index, page)| (page.page, index))
                 .collect(),
             pages,
-            page_window: stages.len().max(1),
+            page_window: stages.len().max(1).max(translation_batch_size),
             active_pages: 0,
             head: 0,
             total,
+            translation_batch_size: translation_batch_size.max(1),
         }
     }
 
@@ -91,12 +93,8 @@ impl Scheduler {
     pub(crate) fn start_next(
         &mut self,
         busy_stages: &BTreeSet<Stage>,
-    ) -> Option<(EntityId, Stage)> {
+    ) -> Option<(Vec<EntityId>, Stage)> {
         for page_index in self.head..self.pages.len() {
-            let started = self.pages[page_index].started();
-            if !started && self.active_pages >= self.page_window {
-                break;
-            }
             let stage_index =
                 self.pages[page_index]
                     .stages
@@ -111,13 +109,44 @@ impl Scheduler {
             let Some(stage_index) = stage_index else {
                 continue;
             };
-            if !started {
-                self.active_pages += 1;
+            let stage = self.pages[page_index].stages[stage_index].stage;
+            let batch_start =
+                page_index / self.translation_batch_size * self.translation_batch_size;
+            let batch_end = batch_start
+                .saturating_add(self.translation_batch_size)
+                .min(self.pages.len());
+            if stage == Stage::Translation && page_index != batch_start {
+                continue;
             }
-            let page = &mut self.pages[page_index];
-            let work = &mut page.stages[stage_index];
-            work.state = WorkState::Running;
-            return Some((page.page, work.stage));
+            let batch = if stage == Stage::Translation {
+                batch_start..batch_end
+            } else {
+                page_index..page_index + 1
+            };
+            let new_pages = batch
+                .clone()
+                .filter(|index| !self.pages[*index].started())
+                .count();
+            if self.active_pages + new_pages > self.page_window {
+                continue;
+            }
+            if batch.clone().any(|index| {
+                let page = &self.pages[index];
+                page.stages[stage_index].state != WorkState::Pending || !page.ready(stage_index)
+            }) {
+                continue;
+            }
+            let pages = batch
+                .map(|index| {
+                    let page = &mut self.pages[index];
+                    if !page.started() {
+                        self.active_pages += 1;
+                    }
+                    page.stages[stage_index].state = WorkState::Running;
+                    page.page
+                })
+                .collect();
+            return Some((pages, stage));
         }
         None
     }
@@ -161,11 +190,11 @@ mod tests {
     #[test]
     fn starts_pages_in_order_and_models_independently() {
         let pages = pages(2);
-        let mut scheduler = Scheduler::new(&pages, &Stage::ALL);
+        let mut scheduler = Scheduler::new(&pages, &Stage::ALL, 1);
         let mut busy = BTreeSet::new();
 
         let first = scheduler.start_next(&busy).unwrap();
-        assert_eq!(first, (pages[0], Stage::Detection));
+        assert_eq!(first, (vec![pages[0]], Stage::Detection));
         busy.insert(Stage::Detection);
         assert!(scheduler.start_next(&busy).is_none());
 
@@ -177,14 +206,14 @@ mod tests {
         busy.insert(inpainting.1);
         let next_page = scheduler.start_next(&busy).unwrap();
         busy.insert(next_page.1);
-        assert_eq!(ocr, (pages[0], Stage::Ocr));
-        assert_eq!(inpainting, (pages[0], Stage::Inpainting));
-        assert_eq!(next_page, (pages[1], Stage::Detection));
+        assert_eq!(ocr, (vec![pages[0]], Stage::Ocr));
+        assert_eq!(inpainting, (vec![pages[0]], Stage::Inpainting));
+        assert_eq!(next_page, (vec![pages[1]], Stage::Detection));
 
         assert!(!scheduler.complete_stage(pages[0], Stage::Ocr));
         busy.remove(&Stage::Ocr);
         let translation = scheduler.start_next(&busy).unwrap();
-        assert_eq!(translation, (pages[0], Stage::Translation));
+        assert_eq!(translation, (vec![pages[0]], Stage::Translation));
         assert!(busy.contains(&Stage::Detection));
         assert!(busy.contains(&Stage::Inpainting));
     }
@@ -193,12 +222,12 @@ mod tests {
     fn sliding_window_backpressures_fast_upstream_models() {
         let pages = pages(4);
         let stages = [Stage::Detection, Stage::Ocr, Stage::Inpainting];
-        let mut scheduler = Scheduler::new(&pages, &stages);
+        let mut scheduler = Scheduler::new(&pages, &stages, 1);
         let mut busy = BTreeSet::new();
 
         assert_eq!(
             scheduler.start_next(&busy),
-            Some((pages[0], Stage::Detection))
+            Some((vec![pages[0]], Stage::Detection))
         );
         assert!(!scheduler.complete_stage(pages[0], Stage::Detection));
         let ocr = scheduler.start_next(&busy).unwrap();
@@ -207,7 +236,10 @@ mod tests {
         busy.insert(inpainting.1);
 
         for page in &pages[1..3] {
-            assert_eq!(scheduler.start_next(&busy), Some((*page, Stage::Detection)));
+            assert_eq!(
+                scheduler.start_next(&busy),
+                Some((vec![*page], Stage::Detection))
+            );
             assert!(!scheduler.complete_stage(*page, Stage::Detection));
         }
         assert!(scheduler.start_next(&busy).is_none());
@@ -215,6 +247,37 @@ mod tests {
         assert!(!scheduler.complete_stage(pages[0], Stage::Ocr));
         assert!(scheduler.complete_stage(pages[0], Stage::Inpainting));
         busy.clear();
-        assert_eq!(scheduler.start_next(&busy), Some((pages[1], Stage::Ocr)));
+        assert_eq!(
+            scheduler.start_next(&busy),
+            Some((vec![pages[1]], Stage::Ocr))
+        );
+    }
+
+    #[test]
+    fn batches_translation_only_after_every_page_in_the_group_is_ready() {
+        let pages = pages(3);
+        let mut scheduler = Scheduler::new(&pages, &[Stage::Ocr, Stage::Translation], 2);
+        let busy = BTreeSet::new();
+
+        assert_eq!(
+            scheduler.start_next(&busy),
+            Some((vec![pages[0]], Stage::Ocr))
+        );
+        assert!(!scheduler.complete_stage(pages[0], Stage::Ocr));
+        assert_eq!(
+            scheduler.start_next(&busy),
+            Some((vec![pages[1]], Stage::Ocr))
+        );
+        assert!(!scheduler.complete_stage(pages[1], Stage::Ocr));
+        assert_eq!(
+            scheduler.start_next(&busy),
+            Some((vec![pages[0], pages[1]], Stage::Translation))
+        );
+        assert!(scheduler.complete_stage(pages[0], Stage::Translation));
+        assert!(scheduler.complete_stage(pages[1], Stage::Translation));
+        assert_eq!(
+            scheduler.start_next(&busy),
+            Some((vec![pages[2]], Stage::Ocr))
+        );
     }
 }

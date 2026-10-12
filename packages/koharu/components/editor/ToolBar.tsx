@@ -62,6 +62,9 @@ export function ToolBar() {
   const setBrush = useKoharuStore((state) => state.setBrush)
   const shortcuts = useKoharuStore((state) => state.shortcuts)
   const hasBrush = isBrushTool(active)
+  const cleanupLayer = page?.layers.find(
+    (layer) => layer.type === 'raster' && layer.kind === 'cleanup',
+  )
 
   return (
     <aside className='absolute top-3 left-3 z-20 flex w-11 flex-col rounded-2xl border border-border bg-[var(--surface-floating)] p-1 shadow-[var(--shadow-toolrail)]'>
@@ -80,7 +83,7 @@ export function ToolBar() {
                     aria-label={t(`tools.${tool}`)}
                     data-active={active === tool}
                     className='relative text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30 data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
-                    onClick={() => setTool(tool)}
+                    onClick={() => setTool(tool, cleanupLayer?.id)}
                   />
                 }
               >

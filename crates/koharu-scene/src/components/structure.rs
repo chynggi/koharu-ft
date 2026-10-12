@@ -40,12 +40,20 @@ impl Component for Project {
     }
 }
 
-#[revisioned(revision = 1)]
+#[revisioned(revision = 2)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct Page {
     pub label: String,
     pub width: f64,
     pub height: f64,
+    #[revision(start = 2, default_fn = "default_chapter_start")]
+    pub chapter_start: bool,
+}
+
+impl Page {
+    fn default_chapter_start(_revision: u16) -> std::result::Result<bool, revision::Error> {
+        Ok(false)
+    }
 }
 
 impl Component for Page {
@@ -71,6 +79,7 @@ pub struct PageDraft {
     pub label: String,
     pub width: f64,
     pub height: f64,
+    pub chapter_start: bool,
 }
 
 impl PageDraft {
@@ -80,7 +89,14 @@ impl PageDraft {
             label: label.into(),
             width,
             height,
+            chapter_start: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_chapter_start(mut self, chapter_start: bool) -> Self {
+        self.chapter_start = chapter_start;
+        self
     }
 }
 
@@ -90,6 +106,7 @@ impl From<PageDraft> for Page {
             label: value.label,
             width: value.width,
             height: value.height,
+            chapter_start: value.chapter_start,
         }
     }
 }

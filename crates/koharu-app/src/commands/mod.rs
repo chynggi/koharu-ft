@@ -1,4 +1,4 @@
-﻿pub mod agent;
+pub mod agent;
 pub mod canvas;
 pub mod editing;
 pub mod fonts;

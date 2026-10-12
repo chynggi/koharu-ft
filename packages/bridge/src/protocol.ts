@@ -200,8 +200,13 @@ export const commands = {
 		post<PageSummary[]>("/pages/import/dialog", { source }),
 	selectPage: (page: EntityId) => post<PageSelection>("/page/select", { page }),
 	renamePage: (page: EntityId, label: string) => post<null>("/page/rename", { page, label }),
+	// 챕터 경계는 페이지 하나의 불리언이라 전용 라우트를 쓴다.
+	setPageChapterStart: (page: EntityId, chapterStart: boolean) =>
+		post<null>("/page/chapter-start", { page, chapter_start: chapterStart }),
 	deletePages: (pages: EntityId[]) => post<null>("/pages/delete", { pages }),
 	movePage: (page: EntityId, index: number) => post<null>("/page/move", { page, index }),
+	// 인접한 페이지들을 하나의 넓은 스프레드로 합치고 새 페이지 id를 돌려준다.
+	mergePages: (pages: EntityId[]) => post<EntityId>("/pages/merge", { pages }),
 	setSourceText: (layer: EntityId, text: string) =>
 		post<null>("/layers/source-text", { layer, text }),
 	setTranslation: (layer: EntityId, text: string | null) =>
@@ -214,6 +219,9 @@ export const commands = {
 	deleteLayers: (layers: EntityId[]) => post<null>("/layers/delete", { layers }),
 	moveLayer: (layer: EntityId, parent: EntityId, index: number) =>
 		post<Page>("/layers/move", { layer, parent, index }),
+	// 클립보드에 담아 둔 텍스트 레이어들을 다른 페이지로 복제하고 새 id를 돌려준다.
+	pasteTextLayers: (layers: EntityId[], page: EntityId) =>
+		post<EntityId[]>("/layers/paste", { layers, page }),
 	undo: () => post<null>("/project/undo"),
 	redo: () => post<null>("/project/redo"),
 	process: (scope: Scope, operation: Operation) => post<JobId>("/process", { scope, operation }),
@@ -505,7 +513,7 @@ export type Error = string;
 
 export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run: RunId; delta: string } | { type: "reasoning_delta"; run: RunId; delta: string } | { type: "tool_started"; run: RunId; call_id: string; name: string } | { type: "tool_finished"; run: RunId; call_id: string; name: string; changed: boolean; output: string } | { type: "completed"; run: RunId; message: string } | { type: "failed"; run: RunId; message: string } | { type: "cancelled"; run: RunId };
 
-export type ExportFormat = "png" | "psd";
+export type ExportFormat = "png" | "psd" | "cbz";
 
 export type ExportOptions = {
 	formats: ExportFormat[],
@@ -854,6 +862,7 @@ export type PageSummary = {
 	label: string,
 	size: PageSize,
 	source_asset: string | null,
+	chapter_start: boolean,
 	layer_count: number,
 };
 
@@ -1004,6 +1013,8 @@ export type TranslationConfig = {
 	generation: GenerationConfig,
 	target_language: string,
 	instructions: string | null,
+	combine_pages?: boolean,
+	max_pages_per_request?: number,
 };
 
 export type TypesettingConfig = {

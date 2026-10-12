@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "ブラシカラー",
     "hexCode": "16進カラーコード",
+    "recent": "最近使った色",
+    "recentColor": "最近使った色 {{color}}",
     "sampleCanvas": "キャンバスから色を選択",
     "transparent": "透明"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "キャンセル",
+    "cbzHint": "PNGページを1つのアーカイブにまとめます。ファイル名はプロジェクト名になります。",
     "description": "ページを画像ファイルとして書き出します。",
     "formats": "形式",
     "pattern": "ファイル名パターン",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "選択したテキストレイヤーをコピー",
     "delete": "{{name}}を削除",
     "edit": "{{name}}を編集",
     "empty": "このページにはレイヤーがありません。",
@@ -254,6 +258,7 @@
     "moveUp": "{{name}}を上へ移動",
     "opacityLabel": "{{name}}の不透明度",
     "originalArtwork": "元のアートワーク",
+    "pasteCopied": "コピーしたテキストレイヤーを貼り付け",
     "show": "{{name}}を表示",
     "sourceLabel": "{{name}}の原文",
     "textName": "テキスト {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "{{page}}の操作",
+    "mergeAsSpread": "見開きに結合",
+    "chapterStart": "章の開始",
     "delete": "削除",
     "emptyDescription": "画像ファイルまたはフォルダーを読み込んでページを追加します。",
     "emptyTitle": "ページがまだありません",
@@ -311,6 +318,8 @@
     "layerCount": "{{count}}レイヤー",
     "layerCount_one": "{{count}}レイヤー",
     "layerCount_other": "{{count}}レイヤー",
+    "markChapterStart": "章の開始としてマーク",
+    "removeChapterStart": "章の開始マーカーを削除",
     "noImage": "画像なし",
     "noResults": "このフィルターに一致するページはありません。",
     "pageName": "ページ名",
@@ -553,10 +562,14 @@
     },
     "title": "設定",
     "translation": {
+      "batching": "リクエストのまとめ方",
+      "combinePages": "ページを1つのリクエストにまとめる",
+      "combinePagesDescription": "選択した枚数までのページをまとめて翻訳し、名前やストーリーの一貫性を保ちます。複数ページのリクエストではテキストのみを使用し、ページ画像は含めません。",
       "description": "設定済みプロバイダーのモデルを選び、共通の翻訳・生成オプションを適用します。",
       "instructionsDescription": "名前、語調、用語、書式に関する指示です。",
       "instructionsLabel": "翻訳指示",
       "instructionsPlaceholder": "プロジェクト全体への任意の指示",
+      "maxPagesPerRequest": "1リクエストあたりの最大ページ数",
       "model": "モデル",
       "modelDescription": "プロバイダー名はモデルの実行場所を示します。接続は別途設定します。",
       "modelQuantization": "モデル量子化",

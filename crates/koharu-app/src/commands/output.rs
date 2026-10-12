@@ -11,7 +11,7 @@ use koharu_renderer::{Frame, Renderer};
 use koharu_scene::{AssetRole, EntityId, Snapshot};
 use serde::Deserialize;
 use specta::Type;
-use std::sync::Arc;
+use std::{collections::HashSet, io::Write as _, sync::Arc};
 use tauri::{AppHandle, Manager as _, State, WebviewWindow, ipc::IpcResponse};
 use tauri_runtime_cef::CefRuntime;
 
@@ -36,21 +36,30 @@ impl IpcResponse for ThumbnailBytes {
 pub enum ExportFormat {
     Png,
     Psd,
+    /// 페이지 전체를 하나의 CBZ(ZIP) 아카이브로 묶는다. 항목은 PNG이고,
+    /// 이름은 나머지 형식과 같은 `pattern` 줄기를 쓴다.
+    Cbz,
 }
 
 impl ExportFormat {
+    /// 페이지마다 파일 하나를 쓰는 형식인가.
+    ///
+    /// `Cbz`만 페이지 전체를 하나의 아카이브로 묶으므로, 형식 목록을 페이지별
+    /// 작업으로 펼치기 전에 이 구분이 필요하다.
     #[must_use]
-    pub fn extension(self) -> &'static str {
-        match self {
-            Self::Png => "png",
-            Self::Psd => "psd",
-        }
+    fn writes_page_files(self) -> bool {
+        !matches!(self, Self::Cbz)
     }
 
-    /// 형식별 하위 폴더 이름. 확장자와 같지만 뜻이 달라 따로 둔다.
+    /// 형식별 하위 폴더 이름. 페이지마다 파일을 쓰는 형식만 하위 폴더를 갖는다 —
+    /// 아카이브는 한 폴더에 하나만 놓이므로 나눌 것이 없다.
     #[must_use]
-    pub fn subfolder(self) -> &'static str {
-        self.extension()
+    fn subfolder(self) -> Option<&'static str> {
+        match self {
+            Self::Png => Some("png"),
+            Self::Psd => Some("psd"),
+            Self::Cbz => None,
+        }
     }
 }
 
@@ -68,10 +77,9 @@ pub struct ExportOptions {
 impl ExportOptions {
     /// 대상 폴더 아래에서 이 형식이 쓰일 경로.
     fn directory(&self, root: &std::path::Path, format: ExportFormat) -> std::path::PathBuf {
-        if self.subfolders {
-            root.join(format.subfolder())
-        } else {
-            root.to_owned()
+        match (self.subfolders, format.subfolder()) {
+            (true, Some(name)) => root.join(name),
+            _ => root.to_owned(),
         }
     }
 }
@@ -126,19 +134,17 @@ pub async fn export_pages_to(
         return Err(anyhow::anyhow!("no export format was selected").into());
     }
     let template = crate::commands::naming::Template::parse(&options.pattern)?;
-    let snapshot = {
+    let (project_name, snapshot) = {
         let project = project.project.lock().await;
         let project = project.as_ref().context("no project is open")?;
-        project.snapshot()
+        (project.name.clone(), project.snapshot())
     };
-    let pages = if pages.is_empty() {
-        snapshot.pages().map(|page| page.id()).collect()
-    } else {
-        pages
-    };
-    if pages.is_empty() {
-        return Err(anyhow::anyhow!("there are no pages to export").into());
-    }
+    // 빈 목록은 "전체 페이지"라는 뜻이다. 선택 목록이 오면 프로젝트 순서로 다시
+    // 세우고, 이 프로젝트에 없는 id는 버린다.
+    let pages = resolve_export_pages(
+        snapshot.pages().map(|page| page.id()).collect(),
+        (!pages.is_empty()).then_some(pages),
+    )?;
     let page_count = pages.len();
 
     // 이름은 형식과 무관하게 페이지마다 한 번 정해진다. 충돌 해소도 여기서
@@ -154,24 +160,39 @@ pub async fn export_pages_to(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    for format in &options.formats {
+    // 아카이브는 페이지별 파일이 아니라 페이지 전체를 담는 한 파일이므로,
+    // 페이지 단위로 펼칠 수 있는 형식과 그렇지 않은 형식을 나눈다.
+    let page_formats: Vec<ExportFormat> = options
+        .formats
+        .iter()
+        .copied()
+        .filter(|format| format.writes_page_files())
+        .collect();
+    let archive = options
+        .formats
+        .iter()
+        .any(|format| !format.writes_page_files());
+
+    for format in &page_formats {
         let target = options.directory(&directory, *format);
         tokio::fs::create_dir_all(&target)
             .await
             .with_context(|| format!("failed to create {}", target.display()))?;
     }
 
-    let total = page_count.saturating_mul(options.formats.len());
+    // 진행률의 분모는 페이지별 파일 수에 아카이브 항목 수를 더한 값이다.
+    let total = page_count
+        .saturating_mul(page_formats.len())
+        .saturating_add(if archive { page_count } else { 0 });
     let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
     let units: Vec<_> = jobs
-        .into_iter()
+        .iter()
         .flat_map(|(page_id, stem)| {
-            options
-                .formats
+            page_formats
                 .iter()
-                .map(move |format| (page_id, stem.clone(), *format))
+                .map(move |format| (*page_id, stem.clone(), *format))
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -226,6 +247,9 @@ pub async fn export_pages_to(
                         .await?;
                         tokio::fs::write(target.join(format!("{stem}.psd")), bytes).await?;
                     }
+                    // `units`는 `writes_page_files()`를 통과한 형식만 담는다.
+                    // 아카이브는 페이지 순서를 지켜야 해서 별도 패스가 쓴다.
+                    ExportFormat::Cbz => unreachable!("the container format has its own pass"),
                 }
                 let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 progress(done, total, page_id);
@@ -241,12 +265,127 @@ pub async fn export_pages_to(
         .try_collect::<Vec<_>>()
         .await?;
 
+    if archive {
+        let destination = directory.join(archive_file_name(&project_name));
+        let counter = Arc::clone(&completed);
+        write_cbz(
+            destination,
+            &jobs,
+            &snapshot,
+            &renderer,
+            Arc::clone(&rasterizer),
+            &stop,
+            |page| {
+                let done = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                progress(done, total, page);
+            },
+        )
+        .await?;
+    }
+
     tracing::info!(
         target: "koharu_metrics",
         metric = "export",
         export_formats = ?options.formats,
         page_count,
     );
+    Ok(())
+}
+
+fn resolve_export_pages(
+    project_pages: Vec<EntityId>,
+    selected_pages: Option<Vec<EntityId>>,
+) -> Result<Vec<EntityId>> {
+    let is_selection = selected_pages.is_some();
+    let pages = match selected_pages {
+        Some(selected_pages) => {
+            let selected = selected_pages.into_iter().collect::<HashSet<_>>();
+            project_pages
+                .into_iter()
+                .filter(|page| selected.contains(page))
+                .collect()
+        }
+        None => project_pages,
+    };
+    if pages.is_empty() {
+        let message = if is_selection {
+            "none of the selected pages belong to this project"
+        } else {
+            "there are no pages to export"
+        };
+        return Err(anyhow::anyhow!(message));
+    }
+    Ok(pages)
+}
+
+/// 아카이브 파일 이름. 프로젝트 이름을 파일 이름 규칙으로 다듬어 쓴다.
+///
+/// 이름이 통째로 걸러지면(프로젝트 이름이 비었거나 금지 문자뿐이면) 고정
+/// 이름으로 떨어진다. 확장자는 언제나 하나뿐이므로 붙일 자리가 하나다.
+fn archive_file_name(project_name: &str) -> String {
+    let stem = crate::commands::naming::sanitize_label(project_name);
+    if stem.is_empty() {
+        "export.cbz".to_owned()
+    } else {
+        format!("{stem}.cbz")
+    }
+}
+
+/// 페이지들을 하나의 CBZ(ZIP)로 쓴다.
+///
+/// 페이지 순서가 곧 아카이브 항목 순서라서 병렬 스트림에 섞지 않는다. 그 대가로
+/// PNG와 CBZ를 함께 고르면 같은 페이지를 두 번 렌더링한다 — 두 출력의 픽셀은
+/// 같지만 하나는 파일로, 하나는 아카이브 항목으로 가므로 공유할 지점이 없다.
+///
+/// 중단되더라도 중앙 디렉터리는 쓴다. 잘린 ZIP보다는 그때까지 담긴 페이지를
+/// 읽을 수 있는 ZIP이 낫고, 부분 결과를 남기는 것은 페이지 파일과 같은 규칙이다.
+async fn write_cbz(
+    destination: std::path::PathBuf,
+    jobs: &[(EntityId, String)],
+    snapshot: &Snapshot,
+    renderer: &Renderer,
+    rasterizer: Arc<Rasterizer>,
+    stop: &StopToken,
+    report: impl Fn(EntityId),
+) -> Result<()> {
+    let file = std::fs::File::create(&destination)
+        .with_context(|| format!("failed to create {}", destination.display()))?;
+    let mut archive = ::zip::ZipWriter::new(std::io::BufWriter::new(file));
+    // 항목이 곧 PNG라서 이미 압축돼 있다. 다시 압축하는 것은 시간만 쓴다.
+    let options = ::zip::write::SimpleFileOptions::default()
+        .compression_method(::zip::CompressionMethod::Stored);
+    for (page_id, stem) in jobs {
+        if stop.stopped() {
+            break;
+        }
+        let frame = renderer.render(snapshot, *page_id).await?;
+        let image = rasterize(Arc::clone(&rasterizer), &frame, RasterOptions::default())
+            .await?
+            .image;
+        let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
+            let mut bytes = Vec::new();
+            PngEncoder::new_with_quality(&mut bytes, CompressionType::Best, FilterType::Adaptive)
+                .write_image(
+                    image.as_raw(),
+                    image.width(),
+                    image.height(),
+                    ExtendedColorType::Rgba8,
+                )?;
+            Ok(bytes)
+        })
+        .await
+        .context("archive worker stopped unexpectedly")??;
+        // 항목 이름은 페이지 파일과 같은 줄기를 쓴다. 아카이브 안은 언제나 PNG다.
+        archive.start_file(format!("{stem}.png"), options)?;
+        archive.write_all(&bytes)?;
+        report(*page_id);
+        tracing::info!(
+            target: "koharu_metrics",
+            metric = "page_exported",
+            format = ?ExportFormat::Cbz,
+        );
+    }
+    archive.finish()?;
     Ok(())
 }
 
@@ -419,4 +558,45 @@ pub async fn start_export(
         }
     }));
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{archive_file_name, resolve_export_pages};
+    use koharu_scene::EntityId;
+
+    #[test]
+    fn selected_pages_keep_project_order_and_ignore_duplicate_ids() {
+        let project_pages = vec![EntityId::new(), EntityId::new(), EntityId::new()];
+        let requested = vec![project_pages[2], project_pages[0], project_pages[2]];
+
+        assert_eq!(
+            resolve_export_pages(project_pages.clone(), Some(requested)).unwrap(),
+            vec![project_pages[0], project_pages[2]],
+        );
+    }
+
+    #[test]
+    fn selected_pages_must_belong_to_the_project() {
+        let project_page = EntityId::new();
+
+        assert!(resolve_export_pages(vec![project_page], Some(vec![EntityId::new()])).is_err());
+    }
+
+    #[test]
+    fn an_empty_selection_means_every_page() {
+        let project_pages = vec![EntityId::new(), EntityId::new()];
+
+        assert_eq!(
+            resolve_export_pages(project_pages.clone(), None).unwrap(),
+            project_pages,
+        );
+    }
+
+    #[test]
+    fn the_archive_keeps_the_project_name_but_not_its_separators() {
+        assert_eq!(archive_file_name("My Manga"), "My Manga.cbz");
+        assert_eq!(archive_file_name("vol/01"), "vol_01.cbz");
+        assert_eq!(archive_file_name("   "), "export.cbz");
+    }
 }

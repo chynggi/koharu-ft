@@ -128,6 +128,8 @@ impl Arguments {
                 generation: GenerationConfig::default(),
                 target_language: self.target_language,
                 instructions: self.translation_instructions.clone(),
+                combine_pages: false,
+                max_pages_per_request: 5,
             },
             inpainting: match self.inpainting {
                 InpaintingChoice::LaMa => InpaintingModel::LaMa(LaMaConfig::default()),

@@ -23,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .route("/layers/visibility", post(set_visibility))
         .route("/layers/delete", post(delete_layers))
         .route("/layers/move", post(move_layer))
+        .route("/layers/paste", post(paste_text_layers))
         .route("/project/undo", post(undo))
         .route("/project/redo", post(redo))
 }
@@ -165,6 +166,31 @@ async fn move_layer(
             request.layer,
             request.parent,
             request.index,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct PasteTextLayersRequest {
+    layers: Vec<EntityId>,
+    page: EntityId,
+}
+
+/// 클립보드에 담아 둔 텍스트 레이어들을 다른 페이지에 복제한다.
+///
+/// 붙여넣은 레이어의 새 id를 돌려주므로 호출자가 곧바로 선택을 옮길 수 있다.
+async fn paste_text_layers(
+    State(app): State<AppState>,
+    Json(request): Json<PasteTextLayersRequest>,
+) -> ApiResult<Json<Vec<EntityId>>> {
+    Ok(Json(
+        editing::paste_text_layers(
+            request.layers,
+            request.page,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

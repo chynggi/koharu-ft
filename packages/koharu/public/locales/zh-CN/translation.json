@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "笔刷颜色",
     "hexCode": "十六进制颜色代码",
+    "recent": "最近使用的颜色",
+    "recentColor": "最近使用的颜色 {{color}}",
     "sampleCanvas": "从画布拾取颜色",
     "transparent": "透明"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "取消",
+    "cbzHint": "将所有 PNG 页面打包为一个压缩包，文件名使用项目名称。",
     "description": "将页面渲染为图像文件。",
     "formats": "格式",
     "pattern": "文件名模式",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "复制所选文本图层",
     "delete": "删除 {{name}}",
     "edit": "编辑 {{name}}",
     "empty": "此页面上没有图层。",
@@ -254,6 +258,7 @@
     "moveUp": "上移 {{name}}",
     "opacityLabel": "{{name}} 不透明度",
     "originalArtwork": "原始图稿",
+    "pasteCopied": "粘贴已复制的文本图层",
     "show": "显示 {{name}}",
     "sourceLabel": "{{name}} 的原文",
     "textName": "文本 {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 的操作",
+    "mergeAsSpread": "合并为跨页",
+    "chapterStart": "章节开始",
     "delete": "删除",
     "emptyDescription": "导入图像文件或文件夹以添加页面。",
     "emptyTitle": "还没有页面",
@@ -311,6 +318,8 @@
     "layerCount": "{{count}} 个图层",
     "layerCount_one": "{{count}} 个图层",
     "layerCount_other": "{{count}} 个图层",
+    "markChapterStart": "标记为章节开始",
+    "removeChapterStart": "移除章节开始标记",
     "noImage": "无图像",
     "noResults": "没有与此筛选条件匹配的页面。",
     "pageName": "页面名称",
@@ -553,10 +562,14 @@
     },
     "title": "设置",
     "translation": {
+      "batching": "请求批处理",
+      "combinePages": "将页面合并到一个请求中",
+      "combinePagesDescription": "将所选数量的连续页面放在一起翻译，以保持名称和剧情一致。多页请求仅使用文本，不会包含页面图像。",
       "description": "选择任意已配置提供商的模型，然后应用一组共享的翻译和生成选项。",
       "instructionsDescription": "有关名称、语气、术语或格式的说明。",
       "instructionsLabel": "翻译说明",
       "instructionsPlaceholder": "可选的项目级说明",
+      "maxPagesPerRequest": "每个请求的最大页数",
       "model": "模型",
       "modelDescription": "提供商标签表示各模型的运行位置；连接需单独配置。",
       "modelQuantization": "模型量化",

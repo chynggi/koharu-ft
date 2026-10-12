@@ -92,8 +92,10 @@ pub fn router() -> Router<AppState> {
         .route("/pages/export/download/{job}", get(export_download_archive))
         .route("/pages/{id}/thumbnail", get(get_thumbnail))
         .route("/page/rename", post(rename_page))
+        .route("/page/chapter-start", post(set_page_chapter_start))
         .route("/pages/delete", post(delete_pages))
         .route("/page/move", post(move_page))
+        .route("/pages/merge", post(merge_pages))
 }
 
 async fn get_pages(State(app): State<AppState>) -> ApiResult<Json<Vec<PageSummary>>> {
@@ -362,6 +364,49 @@ async fn rename_page(
     )
     .await?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct SetPageChapterStartRequest {
+    page: EntityId,
+    chapter_start: bool,
+}
+
+/// 챕터 경계 표시는 페이지 하나의 불리언이라 페이지 이름 변경과 같은 층에 둔다.
+async fn set_page_chapter_start(
+    State(app): State<AppState>,
+    Json(request): Json<SetPageChapterStartRequest>,
+) -> ApiResult<()> {
+    editing::set_page_chapter_start(
+        request.page,
+        request.chapter_start,
+        app.state::<koharu_desktop::Desktop>(),
+        app.state::<CurrentProject>(),
+        app.state::<CanvasChannel>(),
+    )
+    .await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct MergePagesRequest {
+    pages: Vec<EntityId>,
+}
+
+/// 인접한 페이지들을 하나의 넓은 스프레드로 합치고 새 페이지 id를 돌려준다.
+async fn merge_pages(
+    State(app): State<AppState>,
+    Json(request): Json<MergePagesRequest>,
+) -> ApiResult<Json<EntityId>> {
+    Ok(Json(
+        editing::merge_pages(
+            request.pages,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
 }
 
 #[derive(Deserialize)]

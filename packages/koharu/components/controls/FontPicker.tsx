@@ -3,7 +3,7 @@
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import type { TFunction } from 'i18next'
 import { ChevronDown, ListFilter, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useFontPreview } from '@/lib/queries'
@@ -54,6 +54,7 @@ export function FontPicker({
   size = 'default',
   ariaLabel,
   placeholder,
+  onPreview,
   onChange,
 }: {
   value: string
@@ -62,13 +63,18 @@ export function FontPicker({
   size?: 'default' | 'sm'
   ariaLabel?: string
   placeholder?: string
+  onPreview?: (family: string) => void
   onChange: (family: string) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<Filters>(emptyFilters)
+  const [activeFontIndex, setActiveFontIndex] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const keyboardNavigation = useRef(false)
+  const previewedFamily = useRef(value)
+  const listId = useId()
   const orderedFamilies = useMemo(
     () =>
       [...families].sort(
@@ -108,14 +114,50 @@ export function FontPicker({
       orderedFamilies.find((family) => normalizeFontName(family.name) === normalizeFontName(value)),
     [orderedFamilies, value],
   )
+  const selectedIndex = results.findIndex(
+    (family) => normalizeFontName(family.name) === normalizeFontName(value),
+  )
+  const activeIndex = results.length ? Math.min(activeFontIndex, results.length - 1) : -1
+  const activeFamily = results[activeIndex]
   const activeFilterCount = Object.values(filters).filter(Boolean).length
+  const updateQuery = (next: string) => {
+    setQuery(next)
+    setActiveFontIndex(0)
+  }
+  const updateFilters = (next: Filters) => {
+    setFilters(next)
+    setActiveFontIndex(0)
+  }
+  const activateFont = (index: number) => {
+    const family = results[index]
+    if (!family) return
+    setActiveFontIndex(index)
+    if (
+      onPreview &&
+      normalizeFontName(previewedFamily.current) !== normalizeFontName(family.name)
+    ) {
+      previewedFamily.current = family.name
+      onPreview(family.name)
+    }
+  }
+  const chooseFont = (family: string) => {
+    if (!onPreview || normalizeFontName(previewedFamily.current) !== normalizeFontName(family)) {
+      onChange(family)
+    }
+    setOpen(false)
+  }
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) setQuery('')
+        if (!next) {
+          setQuery('')
+          return
+        }
+        previewedFamily.current = value
+        setActiveFontIndex(selectedIndex >= 0 ? selectedIndex : 0)
       }}
     >
       <PopoverTrigger
@@ -158,21 +200,43 @@ export function FontPicker({
               ref={input}
               value={query}
               aria-label={t('fontPicker.search')}
+              role='combobox'
+              aria-autocomplete='list'
+              aria-expanded={open}
+              aria-controls={listId}
+              aria-activedescendant={activeFamily ? `${listId}-option-${activeIndex}` : undefined}
               placeholder={t('fontPicker.search')}
               className='h-6 px-0 text-[11px]'
-              onChange={(event) => setQuery(event.currentTarget.value)}
+              onChange={(event) => {
+                updateQuery(event.currentTarget.value)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  if (results.length === 0) return
+                  event.preventDefault()
+                  keyboardNavigation.current = true
+                  const increment = event.key === 'ArrowDown' ? 1 : -1
+                  activateFont(Math.max(0, Math.min(results.length - 1, activeIndex + increment)))
+                } else if (event.key === 'Enter' && activeFamily) {
+                  event.preventDefault()
+                  chooseFont(activeFamily.name)
+                }
+              }}
             />
             <InputGroupAddon align='inline-end' className='gap-0.5 pr-0.5'>
               {query && (
-                <InputGroupButton aria-label={t('common.clearSearch')} onClick={() => setQuery('')}>
+                <InputGroupButton
+                  aria-label={t('common.clearSearch')}
+                  onClick={() => updateQuery('')}
+                >
                   <X />
                 </InputGroupButton>
               )}
               <FontFilterMenu
                 filters={filters}
                 facets={facets}
-                onChange={setFilters}
-                onClear={() => setFilters(emptyFilters)}
+                onChange={updateFilters}
+                onClear={() => updateFilters(emptyFilters)}
               />
             </InputGroupAddon>
           </InputGroup>
@@ -180,7 +244,8 @@ export function FontPicker({
         <FontResultSummary
           count={results.length}
           activeFilterCount={activeFilterCount}
-          onClear={() => setFilters(emptyFilters)}
+          previewFamily={activeFamily}
+          onClear={() => updateFilters(emptyFilters)}
         />
         <Separator />
         {open && (
@@ -188,10 +253,15 @@ export function FontPicker({
             key={`${query}:${filters.source}:${filters.script}:${filters.category}:${filters.useCase}`}
             families={results}
             value={value}
-            onSelect={(family) => {
-              onChange(family)
-              setOpen(false)
+            activeIndex={activeIndex}
+            listId={listId}
+            onPointerMove={(index) => {
+              keyboardNavigation.current = false
+              activateFont(index)
             }}
+            onActiveIndexChange={activateFont}
+            keyboardNavigation={keyboardNavigation}
+            onSelect={chooseFont}
           />
         )}
       </PopoverContent>
@@ -319,16 +389,24 @@ function FilterSubmenu({
 function FontResultSummary({
   count,
   activeFilterCount,
+  previewFamily,
   onClear,
 }: {
   count: number
   activeFilterCount: number
+  previewFamily?: FontFamily
   onClear: () => void
 }) {
   const { t } = useTranslation()
   return (
-    <div className='flex h-6 items-center justify-between px-2 text-[9px] text-muted-foreground'>
+    <div className='flex h-7 items-center justify-between gap-2 px-2 text-[9px] text-muted-foreground'>
       <span>{t('fontPicker.fontCount', { count })}</span>
+      {previewFamily && (
+        <div className='flex min-w-0 flex-1 items-center justify-end gap-1' aria-live='polite'>
+          <FontPreviewLabel family={previewFamily} className='h-5 max-w-12 min-w-0' />
+          <span className='min-w-0 truncate'>{previewFamily.name}</span>
+        </div>
+      )}
       {activeFilterCount > 0 ? (
         <Button variant='ghost' size='xs' className='h-5 px-1.5 text-[9px]' onClick={onClear}>
           {t('fontPicker.activeFilterCount', { count: activeFilterCount })}
@@ -342,10 +420,20 @@ function FontResultSummary({
 function FontList({
   families,
   value,
+  activeIndex,
+  listId,
+  onActiveIndexChange,
+  onPointerMove,
+  keyboardNavigation,
   onSelect,
 }: {
   families: FontFamily[]
   value: string
+  activeIndex: number
+  listId: string
+  onActiveIndexChange: (index: number) => void
+  onPointerMove: (index: number) => void
+  keyboardNavigation: { current: boolean }
   onSelect: (family: string) => void
 }) {
   const { t } = useTranslation()
@@ -370,10 +458,17 @@ function FontList({
       ),
   })
 
+  useEffect(() => {
+    if (activeIndex >= 0 && activeIndex < families.length) {
+      virtualizer.scrollToIndex(activeIndex, { align: 'auto' })
+    }
+  }, [activeIndex, families.length, virtualizer])
+
   return (
     <ScrollArea
       viewportRef={list}
       role='listbox'
+      id={listId}
       aria-label={t('fontPicker.fonts')}
       className='relative'
       viewportClassName='overflow-x-hidden'
@@ -399,13 +494,22 @@ function FontList({
               key={virtualRow.key}
               type='button'
               role='option'
+              id={`${listId}-option-${virtualRow.index}`}
               aria-label={t('fontPicker.fontLabel', { family: family.name, source })}
               aria-selected={selected}
+              data-highlighted={activeIndex === virtualRow.index}
               className={cn(
                 'absolute inset-x-0 top-0 flex h-9.5 w-full items-center px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
-                selected && 'bg-accent text-accent-foreground',
+                (selected || activeIndex === virtualRow.index) &&
+                  'bg-accent text-accent-foreground',
               )}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
+              onPointerMove={(event) => {
+                if (event.pointerType === 'mouse') onPointerMove(virtualRow.index)
+              }}
+              onMouseEnter={() => {
+                if (!keyboardNavigation.current) onActiveIndexChange(virtualRow.index)
+              }}
               onClick={() => onSelect(family.name)}
             >
               <div className='flex min-w-0 flex-1 flex-col justify-center gap-px'>

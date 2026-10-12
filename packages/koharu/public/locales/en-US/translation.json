@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "Brush color",
     "hexCode": "Hex color code",
+    "recent": "Recent colors",
+    "recentColor": "Recent color {{color}}",
     "sampleCanvas": "Pick color from canvas",
     "transparent": "Transparent"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "Cancel",
+    "cbzHint": "One archive of PNG pages, named after the project.",
     "description": "Render the pages to image files.",
     "formats": "Formats",
     "pattern": "Filename pattern",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "Copy selected text layers",
     "delete": "Delete {{name}}",
     "edit": "Edit {{name}}",
     "empty": "No layers on this page.",
@@ -254,6 +258,7 @@
     "moveUp": "Move {{name}} up",
     "opacityLabel": "{{name}} opacity",
     "originalArtwork": "Original artwork",
+    "pasteCopied": "Paste copied text layers",
     "show": "Show {{name}}",
     "sourceLabel": "{{name}} source text",
     "textName": "Text {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "Actions for {{page}}",
+    "mergeAsSpread": "Merge into spread",
+    "chapterStart": "Chapter start",
     "delete": "Delete",
     "emptyDescription": "Import image files or a folder to add pages.",
     "emptyTitle": "No pages yet",
@@ -311,6 +318,8 @@
     "layerCount": "{{count}} layers",
     "layerCount_one": "{{count}} layer",
     "layerCount_other": "{{count}} layers",
+    "markChapterStart": "Mark as chapter start",
+    "removeChapterStart": "Remove chapter start marker",
     "noImage": "No image",
     "noResults": "No pages match this filter.",
     "pageName": "Page name",
@@ -553,10 +562,14 @@
     },
     "title": "Settings",
     "translation": {
+      "batching": "Request batching",
+      "combinePages": "Combine pages in one request",
+      "combinePagesDescription": "Translate up to the selected number of pages together for consistent names and plot. Multi-page requests use text only and do not include page images.",
       "description": "Choose any configured provider model, then apply one shared set of translation and generation options.",
       "instructionsDescription": "Names, tone, terminology, or formatting guidance.",
       "instructionsLabel": "Translation instructions",
       "instructionsPlaceholder": "Optional project-wide guidance",
+      "maxPagesPerRequest": "Maximum pages per request",
       "model": "Model",
       "modelDescription": "Provider labels identify where each model runs; connections are configured separately.",
       "modelQuantization": "Model quantization",

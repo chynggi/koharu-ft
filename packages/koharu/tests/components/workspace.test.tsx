@@ -111,7 +111,7 @@ function installProject() {
   })
   queryClient.setQueryData(pagesKey, [])
   queryClient.setQueryData(pageKey, page)
-  useKoharuStore.setState({ selectedLayers: [], tool: 'select' })
+  useKoharuStore.setState({ selectedLayers: [], copiedTextLayers: [], tool: 'select' })
   useKoharuStore.setState({
     canvasPage: 'page',
     canvasRevision: 1,
@@ -144,6 +144,7 @@ describe('canvas interaction adapter', () => {
         label: 'Page',
         size: { width: 1000, height: 1000 },
         source_asset: null,
+        chapter_start: false,
         layer_count: 1,
       },
       {
@@ -151,6 +152,7 @@ describe('canvas interaction adapter', () => {
         label: 'Next',
         size: { width: 1000, height: 1000 },
         source_asset: null,
+        chapter_start: false,
         layer_count: 1,
       },
     ])
@@ -206,6 +208,68 @@ describe('canvas interaction adapter', () => {
 
     expect(event.defaultPrevented).toBe(true)
     input.remove()
+  })
+
+  it('copies and pastes selected text layers with keyboard shortcuts', async () => {
+    installProject()
+    const textLayer: Layer = {
+      type: 'text',
+      id: 'sound-effect',
+      parent: 'text-group',
+      geometry: {
+        points: [
+          { x: 10, y: 20 },
+          { x: 110, y: 20 },
+          { x: 110, y: 70 },
+          { x: 10, y: 70 },
+        ],
+      },
+      angle_degrees: null,
+      visibility: { visible: true, opacity: 1 },
+      content: {
+        id: 'sound-effect-content',
+        source: { text: 'ドン', language: 'ja' },
+        translation: { text: 'BOOM', language: 'en' },
+        role: null,
+        source_region: null,
+      },
+      typography: null,
+      layout: 'paragraph',
+      automatic_region: null,
+    }
+    queryClient.setQueryData(pageKey, {
+      id: 'page',
+      label: 'Page',
+      size: { width: 1000, height: 1000 },
+      layers: [textLayer],
+      regions: [],
+    })
+    useKoharuStore.setState({ selectedLayers: [textLayer.id] })
+    const paste = vi.spyOn(commands, 'pasteTextLayers').mockResolvedValue(['pasted-layer'])
+    vi.spyOn(commands, 'getProject').mockResolvedValue({
+      name: 'Book',
+      revision: 2,
+      active_page: 'page',
+      can_undo: true,
+      can_redo: false,
+    })
+    vi.spyOn(commands, 'getPages').mockResolvedValue([])
+    vi.spyOn(commands, 'getPage').mockResolvedValue({
+      id: 'page',
+      label: 'Page',
+      size: { width: 1000, height: 1000 },
+      layers: [],
+      regions: [],
+    })
+    renderWorkspace()
+
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+    expect(useKoharuStore.getState().copiedTextLayers).toEqual([textLayer.id])
+
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true })
+
+    await waitFor(() => expect(paste).toHaveBeenCalledWith([textLayer.id], 'page'))
+    await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['pasted-layer']))
   })
 
   it('announces WebGPU startup failures and offers recovery', () => {

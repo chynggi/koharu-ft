@@ -84,4 +84,42 @@ describe('ExportDialog', () => {
       subfolders: false,
     })
   })
+
+  it('CBZ를 고르면 아카이브까지 함께 요청한다', async () => {
+    const user = userEvent.setup()
+    const onStart = open()
+    await user.click(screen.getByRole('checkbox', { name: /cbz/i }))
+    await user.click(screen.getByRole('button', { name: /export/i }))
+    expect(onStart).toHaveBeenCalledWith(['a'], {
+      formats: ['png', 'cbz'],
+      pattern: '{index:04}_{label}',
+      subfolders: false,
+    })
+  })
+
+  it('CBZ만 고르면 항목 이름은 그대로 PNG로 미리보기한다', async () => {
+    const user = userEvent.setup()
+    const onStart = open()
+    await user.click(screen.getByRole('checkbox', { name: /png/i }))
+    await user.click(screen.getByRole('checkbox', { name: /cbz/i }))
+    expect(screen.getByText('0001_page-01.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /export/i }))
+    expect(onStart).toHaveBeenCalledWith(['a'], {
+      formats: ['cbz'],
+      pattern: '{index:04}_{label}',
+      subfolders: false,
+    })
+  })
+
+  it('하위 폴더는 아카이브를 세지 않고 페이지 파일 형식만 센다', async () => {
+    const user = userEvent.setup()
+    open()
+    await user.click(screen.getByRole('checkbox', { name: /cbz/i }))
+    // PNG와 CBZ를 골랐지만 페이지 파일 형식은 하나뿐이라 나눌 것이 없다.
+    // Base UI 체크박스는 네이티브 disabled가 아니라 aria-disabled를 쓴다.
+    const subfolders = screen.getByRole('checkbox', { name: /separate folders/i })
+    expect(subfolders).toHaveAttribute('aria-disabled', 'true')
+    await user.click(screen.getByRole('checkbox', { name: /psd/i }))
+    expect(subfolders).not.toHaveAttribute('aria-disabled', 'true')
+  })
 })

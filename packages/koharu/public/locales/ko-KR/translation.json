@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "브러시 색상",
     "hexCode": "16진수 색상 코드",
+    "recent": "최근 색상",
+    "recentColor": "최근 색상 {{color}}",
     "sampleCanvas": "캔버스에서 색상 선택",
     "transparent": "투명"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "취소",
+    "cbzHint": "PNG 페이지를 하나의 아카이브로 묶습니다. 파일 이름은 프로젝트 이름을 씁니다.",
     "description": "페이지를 이미지 파일로 렌더링합니다.",
     "formats": "형식",
     "pattern": "파일명 패턴",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "선택한 텍스트 레이어 복사",
     "delete": "{{name}} 삭제",
     "edit": "{{name}} 편집",
     "empty": "이 페이지에는 레이어가 없습니다.",
@@ -254,6 +258,7 @@
     "moveUp": "{{name}} 위로 이동",
     "opacityLabel": "{{name}} 불투명도",
     "originalArtwork": "원본 아트워크",
+    "pasteCopied": "복사한 텍스트 레이어 붙여넣기",
     "show": "{{name}} 표시",
     "sourceLabel": "{{name}} 원문",
     "textName": "텍스트 {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 작업",
+    "mergeAsSpread": "양면 페이지로 병합",
+    "chapterStart": "챕터 시작",
     "delete": "삭제",
     "emptyDescription": "이미지 파일이나 폴더를 가져와 페이지를 추가하세요.",
     "emptyTitle": "아직 페이지가 없습니다",
@@ -311,6 +318,8 @@
     "layerCount": "레이어 {{count}}개",
     "layerCount_one": "레이어 {{count}}개",
     "layerCount_other": "레이어 {{count}}개",
+    "markChapterStart": "챕터 시작으로 표시",
+    "removeChapterStart": "챕터 시작 표시 제거",
     "noImage": "이미지 없음",
     "noResults": "필터와 일치하는 페이지가 없습니다.",
     "pageName": "페이지 이름",
@@ -553,10 +562,14 @@
     },
     "title": "설정",
     "translation": {
+      "batching": "요청 묶음",
+      "combinePages": "페이지를 하나의 요청으로 묶기",
+      "combinePagesDescription": "선택한 페이지 수만큼 함께 번역하여 이름과 줄거리의 일관성을 유지합니다. 여러 페이지 요청에는 텍스트만 사용되며 페이지 이미지는 포함되지 않습니다.",
       "description": "설정된 제공자의 모델을 선택하고 공통 번역 및 생성 옵션을 적용합니다.",
       "instructionsDescription": "이름, 어조, 용어 또는 서식 지침입니다.",
       "instructionsLabel": "번역 지침",
       "instructionsPlaceholder": "프로젝트 전체에 적용할 선택적 지침",
+      "maxPagesPerRequest": "요청당 최대 페이지 수",
       "model": "모델",
       "modelDescription": "제공자 레이블은 각 모델의 실행 위치를 나타내며 연결은 별도로 설정합니다.",
       "modelQuantization": "모델 양자화",

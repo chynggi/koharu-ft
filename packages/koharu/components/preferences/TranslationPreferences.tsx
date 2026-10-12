@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { ModelPicker } from '@/components/controls/ModelPicker'
 import { GenerationPreferences } from '@/components/preferences/GenerationPreferences'
 import {
+  NumberField,
   PreferencePage,
   PreferenceRow,
   PreferenceSection,
@@ -27,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@koharu/ui/components/select'
+import { Switch } from '@koharu/ui/components/switch'
 import { Textarea } from '@koharu/ui/components/textarea'
 
 export function TranslationPreferences({
@@ -114,6 +116,37 @@ export function TranslationPreferences({
         value={value.generation}
         onChange={(generation) => onChange({ ...value, generation })}
       />
+
+      <PreferenceSection title={t('settings.translation.batching')}>
+        <PreferenceRow
+          title={t('settings.translation.combinePages')}
+          description={t('settings.translation.combinePagesDescription')}
+        >
+          <div className='flex h-8 items-center justify-end'>
+            <Switch
+              aria-label={t('settings.translation.combinePages')}
+              checked={value.combine_pages}
+              onCheckedChange={(combine_pages) => onChange({ ...value, combine_pages })}
+            />
+          </div>
+        </PreferenceRow>
+        {value.combine_pages && (
+          <PreferenceRow title={t('settings.translation.maxPagesPerRequest')} align='start'>
+            <NumberField
+              label={t('settings.translation.maxPagesPerRequest')}
+              value={value.max_pages_per_request ?? 5}
+              min={1}
+              step={1}
+              onChange={(max_pages_per_request) =>
+                onChange({
+                  ...value,
+                  max_pages_per_request: Math.floor(max_pages_per_request ?? 5),
+                })
+              }
+            />
+          </PreferenceRow>
+        )}
+      </PreferenceSection>
 
       <PreferenceSection title={t('settings.translation.output')}>
         <PreferenceRow

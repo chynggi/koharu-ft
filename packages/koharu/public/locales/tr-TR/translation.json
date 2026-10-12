@@ -64,6 +64,8 @@
   "colorPicker": {
     "brushColor": "Fırça rengi",
     "hexCode": "Onaltılık renk kodu",
+    "recent": "Son kullanılan renkler",
+    "recentColor": "Son kullanılan renk {{color}}",
     "sampleCanvas": "Tuvalden renk seç",
     "transparent": "Şeffaf"
   },
@@ -80,6 +82,7 @@
   },
   "export": {
     "cancel": "İptal",
+    "cbzHint": "PNG sayfalarını tek bir arşivde toplar; dosya adı proje adıdır.",
     "description": "Sayfaları görüntü dosyaları olarak işler.",
     "formats": "Biçimler",
     "pattern": "Dosya adı deseni",
@@ -233,6 +236,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "Seçili metin katmanlarını kopyala",
     "delete": "{{name}} öğesini sil",
     "edit": "{{name}} öğesini düzenle",
     "empty": "Bu sayfada katman yok.",
@@ -254,6 +258,7 @@
     "moveUp": "{{name}} öğesini yukarı taşı",
     "opacityLabel": "{{name}} opaklığı",
     "originalArtwork": "Orijinal çizim",
+    "pasteCopied": "Kopyalanan metin katmanlarını yapıştır",
     "show": "{{name}} öğesini göster",
     "sourceLabel": "{{name}} kaynak metni",
     "textName": "Metin {{index}}",
@@ -299,6 +304,8 @@
   },
   "navigator": {
     "actionsFor": "{{page}} için eylemler",
+    "mergeAsSpread": "Çift sayfada birleştir",
+    "chapterStart": "Bölüm başlangıcı",
     "delete": "Sil",
     "emptyDescription": "Sayfa eklemek için görüntü dosyalarını veya bir klasörü içe aktarın.",
     "emptyTitle": "Henüz sayfa yok",
@@ -311,6 +318,8 @@
     "layerCount": "{{count}} katman",
     "layerCount_one": "{{count}} katman",
     "layerCount_other": "{{count}} katman",
+    "markChapterStart": "Bölüm başlangıcı olarak işaretle",
+    "removeChapterStart": "Bölüm başlangıç işaretini kaldır",
     "noImage": "Görüntü yok",
     "noResults": "Bu filtreyle eşleşen sayfa yok.",
     "pageName": "Sayfa adı",
@@ -553,10 +562,14 @@
     },
     "title": "Ayarlar",
     "translation": {
+      "batching": "İstek gruplama",
+      "combinePages": "Sayfaları tek istekte birleştir",
+      "combinePagesDescription": "Adların ve olay örgüsünün tutarlılığını korumak için seçilen sayfa sayısına kadar sayfayı birlikte çevirin. Çok sayfalı istekler yalnızca metin kullanır, sayfa görsellerini içermez.",
       "description": "Yapılandırılmış bir sağlayıcı modeli seçin ve ortak çeviri ile üretim seçeneklerini uygulayın.",
       "instructionsDescription": "Adlar, ton, terminoloji veya biçimlendirme yönergeleri.",
       "instructionsLabel": "Çeviri talimatları",
       "instructionsPlaceholder": "Proje genelinde isteğe bağlı yönergeler",
+      "maxPagesPerRequest": "İstek başına en fazla sayfa",
       "model": "Model",
       "modelDescription": "Sağlayıcı etiketleri her modelin nerede çalıştığını gösterir; bağlantılar ayrı yapılandırılır.",
       "modelQuantization": "Model niceleme",

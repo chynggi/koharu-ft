@@ -1,4 +1,4 @@
-﻿use anyhow::Context as _;
+use anyhow::Context as _;
 use koharu_desktop::{CanvasState, Desktop};
 use koharu_scene::EntityId;
 use serde::Deserialize;
@@ -60,6 +60,33 @@ pub async fn rename_page(
 
 #[tracing::instrument(
     target = "koharu_metrics",
+    name = "page_chapter_start_changed",
+    skip_all,
+    fields(origin = "user", chapter_start)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn set_page_chapter_start(
+    page: EntityId,
+    chapter_start: bool,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<(), Error> {
+    let (commit, active_page) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        let commit = project.set_page_chapter_start(page, chapter_start).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page())
+    };
+    let canvas = synchronize_canvas(&desktop, &commit, active_page).await?;
+    canvas_channel.publish(canvas);
+    Ok(())
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
     name = "pages_deleted",
     skip_all,
     fields(origin = "user", entity_count = pages.len()),
@@ -110,6 +137,33 @@ pub async fn move_page(
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
     canvas_channel.publish(canvas);
     Ok(())
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "pages_merged",
+    skip_all,
+    fields(origin = "user", entity_count = pages.len()),
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn merge_pages(
+    pages: Vec<EntityId>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<EntityId, Error> {
+    let (commit, merged) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        let (commit, merged) = project.merge_pages(pages).await?;
+        project.record_commit(&commit);
+        project.select_page(merged)?;
+        (commit, merged)
+    };
+    let canvas = synchronize_canvas(&desktop, &commit, Some(merged)).await?;
+    canvas_channel.publish(canvas);
+    Ok(merged)
 }
 
 #[tracing::instrument(
@@ -306,6 +360,33 @@ pub async fn move_layer(
         .await?;
     canvas_channel.publish(desktop.canvas_state());
     Ok(view)
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "text_layers_pasted",
+    skip_all,
+    fields(origin = "user", entity_count = layers.len()),
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn paste_text_layers(
+    layers: Vec<EntityId>,
+    page: EntityId,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<Vec<EntityId>, Error> {
+    let (commit, added) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        let (commit, added) = project.paste_text_layers(page, layers).await?;
+        project.record_commit(&commit);
+        (commit, added)
+    };
+    let canvas = synchronize_canvas(&desktop, &commit, Some(page)).await?;
+    canvas_channel.publish(canvas);
+    Ok(added)
 }
 
 #[tracing::instrument(

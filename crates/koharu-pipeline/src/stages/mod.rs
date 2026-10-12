@@ -87,6 +87,9 @@ impl Stages {
         device: &koharu_ml::Device,
         resources: Arc<crate::resources::ResourceMonitor>,
     ) -> Result<Self> {
+        if config.translation.max_pages_per_request == 0 {
+            anyhow::bail!("maximum pages per translation request must be at least one");
+        }
         Ok(Self {
             detection: detection::Processor::new(config.detection()?, device.clone()),
             ocr: ocr::Processor::new(config.ocr.clone(), device.clone()),
@@ -122,6 +125,14 @@ impl Stages {
 
     pub(crate) async fn process(&self, stage: Stage, input: StageInput) -> Result<Patch> {
         self.processor(stage).process(input).await
+    }
+
+    pub(crate) async fn process_translation(&self, inputs: Vec<StageInput>) -> Result<Patch> {
+        self.translation.process_batch(inputs).await
+    }
+
+    pub(crate) fn translation_batch_size(&self) -> usize {
+        self.translation.batch_size()
     }
 
     pub(crate) fn unload(&self, stage: Stage) -> bool {

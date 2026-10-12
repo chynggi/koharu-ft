@@ -220,6 +220,14 @@ pub struct TranslationConfig {
     #[specta(type = String)]
     pub target_language: Language,
     pub instructions: Option<String>,
+    #[serde(default)]
+    pub combine_pages: bool,
+    #[serde(default = "default_max_pages_per_request")]
+    pub max_pages_per_request: u32,
+}
+
+fn default_max_pages_per_request() -> u32 {
+    5
 }
 
 impl Default for TranslationConfig {
@@ -229,6 +237,8 @@ impl Default for TranslationConfig {
             generation: GenerationConfig::default(),
             target_language: Language::English,
             instructions: None,
+            combine_pages: false,
+            max_pages_per_request: 5,
         }
     }
 }
@@ -512,6 +522,35 @@ mod tests {
         let config = toml::from_str::<PipelineConfig>("").unwrap();
 
         assert_eq!(config, PipelineConfig::default());
+    }
+
+    #[test]
+    fn reads_multi_page_translation_settings_and_defaults_older_settings() {
+        let mut value = toml::Value::try_from(PipelineConfig::default()).unwrap();
+        let translation = value
+            .get_mut("translation")
+            .and_then(toml::Value::as_table_mut)
+            .unwrap();
+        translation.insert("combine_pages".into(), toml::Value::Boolean(true));
+        translation.insert("max_pages_per_request".into(), toml::Value::Integer(3));
+        let config = value.try_into::<PipelineConfig>().unwrap();
+
+        assert!(config.translation.combine_pages);
+        assert_eq!(config.translation.max_pages_per_request, 3);
+        let serialized = toml::to_string(&config).unwrap();
+        let restored = toml::from_str::<PipelineConfig>(&serialized).unwrap();
+        assert_eq!(restored.translation, config.translation);
+
+        let mut value = toml::Value::try_from(PipelineConfig::default()).unwrap();
+        let translation = value
+            .get_mut("translation")
+            .and_then(toml::Value::as_table_mut)
+            .unwrap();
+        translation.remove("combine_pages");
+        translation.remove("max_pages_per_request");
+        let config = value.try_into::<PipelineConfig>().unwrap();
+        assert!(!config.translation.combine_pages);
+        assert_eq!(config.translation.max_pages_per_request, 5);
     }
 
     #[test]

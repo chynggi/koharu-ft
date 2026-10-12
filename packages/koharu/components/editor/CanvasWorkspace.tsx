@@ -10,16 +10,19 @@ import { StatusBar } from '@/components/editor/StatusBar'
 import { ToolBar } from '@/components/editor/ToolBar'
 import { useCanvas } from '@/components/editor/useCanvas'
 import { call } from '@/lib/backend'
+import { rememberColor } from '@/lib/colorHistory'
 import { expandLayerSelection } from '@/lib/document'
 import {
   controlFrame,
   draftFrame,
+  frameInsideRect,
   hitTestLayers,
   pagePoint,
   physicalPoint,
   selectableLayer,
   translateFrames,
 } from '@/lib/geometry'
+import { copySelectedTextLayers, pasteCopiedTextLayers } from '@/lib/layerClipboard'
 import {
   pageKey,
   pagesKey,
@@ -62,6 +65,13 @@ const LASSO_POINT_SPACING = 8
 
 type Gesture =
   | { kind: 'pan'; pointer: number; start: Point; translation: [number, number] }
+  | {
+      kind: 'select'
+      pointer: number
+      start: Point
+      current: Point
+      additive: boolean
+    }
   | { kind: 'move'; pointer: number; start: Point; originals: TransformFrame[] }
   | { kind: 'text'; pointer: number; start: Point; frame: Frame }
   | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame }
@@ -101,6 +111,7 @@ export function CanvasWorkspace() {
   const commitPending = useRef(false)
   const commandQueue = useRef<Promise<void>>(Promise.resolve())
   const [previews, setPreviews] = useState<Record<string, Frame>>({})
+  const [selectionRect, setSelectionRect] = useState<Frame | null>(null)
   const [draft, setDraft] = useState<Frame | null>(null)
   const [lasso, setLasso] = useState<Point[] | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
@@ -132,6 +143,9 @@ export function CanvasWorkspace() {
     selected.length === 1
       ? page?.layers.find((layer) => layer.id === selected[0] && layer.type === 'raster')
       : undefined
+  const cleanupLayer = page?.layers.find(
+    (layer) => layer.type === 'raster' && layer.kind === 'cleanup',
+  )
 
   const enqueue = useCallback(<Result,>(operation: () => Promise<Result>): Promise<Result> => {
     const pending = commandQueue.current.then(operation)
@@ -230,6 +244,7 @@ export function CanvasWorkspace() {
     setDraft(null)
     setLasso(null)
     setPreviews({})
+    setSelectionRect(null)
   }, [canvas, strokeUpdates, transformUpdates])
 
   const fitCanvas = useCallback(() => {
@@ -340,6 +355,17 @@ export function CanvasWorkspace() {
         return
       }
       const command = event.ctrlKey || event.metaKey
+      if (command && event.key.toLowerCase() === 'c') {
+        if (copySelectedTextLayers(page ?? undefined)) event.preventDefault()
+        return
+      }
+      if (command && event.key.toLowerCase() === 'v') {
+        if (useKoharuStore.getState().copiedTextLayers.length > 0 && page) {
+          event.preventDefault()
+          void pasteCopiedTextLayers(page).catch(() => undefined)
+        }
+        return
+      }
       if (command && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         void call(event.shiftKey ? commands.redo : commands.undo)
@@ -385,7 +411,7 @@ export function CanvasWorkspace() {
           'pan',
         ] as const
       ).find((action) => state.shortcuts[action] === event.key.toLowerCase())
-      if (next) setTool(next)
+      if (next) setTool(next, cleanupLayer?.id)
     }
 
     const up = (event: KeyboardEvent) => {
@@ -405,7 +431,15 @@ export function CanvasWorkspace() {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [cancelGesture, colorSampling, page, requestCanvasFit, selectLayers, setTool])
+  }, [
+    cancelGesture,
+    cleanupLayer?.id,
+    colorSampling,
+    page,
+    requestCanvasFit,
+    selectLayers,
+    setTool,
+  ])
 
   const clientPagePoint = (clientX: number, clientY: number) =>
     pagePoint(
@@ -466,7 +500,21 @@ export function CanvasWorkspace() {
 
     const points = samples.map((value) => clientPagePoint(value.clientX, value.clientY))
     const point = points.at(-1)!
-    if (current.kind === 'move') {
+    if (current.kind === 'select') {
+      const x = Math.min(current.start.x, point.x)
+      const y = Math.min(current.start.y, point.y)
+      const width = Math.abs(point.x - current.start.x)
+      const height = Math.abs(point.y - current.start.y)
+
+      current.current = point
+      setSelectionRect({
+        x,
+        y,
+        width,
+        height,
+        angle_degrees: 0,
+      })
+    } else if (current.kind === 'move') {
       updateTransform(
         translateFrames(current.originals, {
           x: point.x - current.start.x,
@@ -497,7 +545,26 @@ export function CanvasWorkspace() {
     const current = gesture.current
     gesture.current = null
     if (!current || !page) return
-    if (current.kind === 'move') {
+    if (current.kind === 'select') {
+      const x = Math.min(current.start.x, current.current.x)
+      const y = Math.min(current.start.y, current.current.y)
+      const width = Math.abs(current.current.x - current.start.x)
+      const height = Math.abs(current.current.y - current.start.y)
+
+      const rect = { x, y, width, height }
+      const selectedInRect = page.layers
+        .filter(selectableLayer)
+        .filter((layer) => {
+          const frame = controlFrame(layer, layerFrames)
+          return frame ? frameInsideRect(frame, rect) : false
+        })
+        .map((layer) => layer.id)
+
+      selectLayers(
+        current.additive ? [...new Set([...selected, ...selectedInRect])] : selectedInRect,
+      )
+      setSelectionRect(null)
+    } else if (current.kind === 'move') {
       finishTransform()
     } else if (current.kind === 'text') {
       const pointText =
@@ -623,7 +690,20 @@ export function CanvasWorkspace() {
               const target = hitTestLayers(page.layers, point, layerFrames)
               const additive = event.shiftKey || event.ctrlKey || event.metaKey
               if (!target) {
-                if (!additive) selectLayers([])
+                gesture.current = {
+                  kind: 'select',
+                  pointer: event.pointerId,
+                  start: point,
+                  current: point,
+                  additive,
+                }
+                setSelectionRect({
+                  x: point.x,
+                  y: point.y,
+                  width: 0,
+                  height: 0,
+                  angle_degrees: 0,
+                })
                 return
               }
               const next = additive
@@ -725,7 +805,10 @@ export function CanvasWorkspace() {
                 .sampleColor(physical)
                 .then((color) => {
                   const hex = rgbaToHex(color)
-                  if (!colorSampling?.complete(hex)) setBrush({ ...brush, color: hex })
+                  if (!colorSampling?.complete(hex)) {
+                    rememberColor(hex)
+                    setBrush({ ...brush, color: hex })
+                  }
                 })
                 .catch((error: unknown) => receiveError(errorMessage(error)))
             }
@@ -804,6 +887,20 @@ export function CanvasWorkspace() {
             useKoharuStore.setState({ camera: { zoom, translation, fitted: false } })
           }}
         >
+          {selectionRect && (
+            <div
+              data-testid='selection-rectangle'
+              className='pointer-events-none absolute z-10 border border-[var(--canvas-selection)] bg-[var(--canvas-selection)]/10'
+              style={{
+                left:
+                  (selectionRect.x * camera.zoom + camera.translation[0]) / window.devicePixelRatio,
+                top:
+                  (selectionRect.y * camera.zoom + camera.translation[1]) / window.devicePixelRatio,
+                width: (selectionRect.width * camera.zoom) / window.devicePixelRatio,
+                height: (selectionRect.height * camera.zoom) / window.devicePixelRatio,
+              }}
+            />
+          )}
           <canvas
             ref={setCanvasElement}
             data-testid='webgpu-canvas'
