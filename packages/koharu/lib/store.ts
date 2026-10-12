@@ -131,13 +131,15 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
   setCopiedTextLayers: (copiedTextLayers) => set({ copiedTextLayers: [...copiedTextLayers] }),
+  // 붓·지우개로 넘어갈 때만 cleanup 레이어를 고른다. 다른 도구는 선택을 건드리지
+  // 않으므로 이전 상태를 읽을 필요가 없다.
   setTool: (tool, cleanupLayer) =>
-    set((state) => ({
+    set({
       tool,
       ...(cleanupLayer && (tool === 'draw' || tool === 'eraser')
         ? { selectedLayers: [cleanupLayer] }
         : {}),
-    })),
+    }),
   setBrush: (brush) => set({ brush }),
   setShortcut: (action, key) =>
     set((state) => ({
