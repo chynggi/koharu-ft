@@ -1,8 +1,8 @@
-﻿use std::num::NonZeroU32;
+use std::num::NonZeroU32;
 
 use super::{
-    KvCacheType, LlamaAttentionType, LlamaContextParams, LlamaContextType,
-    LlamaFlashAttentionType, LlamaPoolingType, RopeScalingType,
+    KvCacheType, LlamaAttentionType, LlamaContextParams, LlamaContextType, LlamaFlashAttentionType,
+    LlamaPoolingType, RopeScalingType,
 };
 
 impl LlamaContextParams {

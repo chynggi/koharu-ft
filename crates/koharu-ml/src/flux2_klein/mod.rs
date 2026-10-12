@@ -228,7 +228,8 @@ impl Flux2KleinInpaint {
 
         let mut reference_images = vec![init_image.clone()];
         if let Some(image_reference) = image_reference {
-            let image_reference = Flux2ImageProcessor::fit_to_area(image_reference, options.max_pixels);
+            let image_reference =
+                Flux2ImageProcessor::fit_to_area(image_reference, options.max_pixels);
             let reference_width = (image_reference.width() / 16) * 16;
             let reference_height = (image_reference.height() / 16) * 16;
             ensure!(reference_width > 0 && reference_height > 0);

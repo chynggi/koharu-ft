@@ -110,7 +110,11 @@ fn forward<T: Serialize>(
     }
 }
 
-fn send<T: Serialize>(tx: &tokio::sync::mpsc::UnboundedSender<Event>, kind: &str, data: &T) -> bool {
+fn send<T: Serialize>(
+    tx: &tokio::sync::mpsc::UnboundedSender<Event>,
+    kind: &str,
+    data: &T,
+) -> bool {
     let Ok(event) = Event::default().json_data(json!({ "type": kind, "data": data })) else {
         return true;
     };

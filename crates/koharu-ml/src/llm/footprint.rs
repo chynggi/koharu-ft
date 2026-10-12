@@ -87,7 +87,11 @@ impl KvGeometry {
         };
         let n_head = model.n_head();
         let derived = (n_head > 0)
-            .then(|| u32::try_from(model.n_embd()).ok().map(|n_embd| n_embd / n_head))
+            .then(|| {
+                u32::try_from(model.n_embd())
+                    .ok()
+                    .map(|n_embd| n_embd / n_head)
+            })
             .flatten()
             .filter(|length| *length > 0);
 
@@ -140,7 +144,10 @@ mod tests {
             assert!(ElementSize::for_kv_cache_type(kind).is_some(), "{kind:?}");
         }
         assert_eq!(ElementSize::for_kv_cache_type(KvCacheType::Q4_K), None);
-        assert_eq!(ElementSize::for_kv_cache_type(KvCacheType::F16), Some(ElementSize::F16));
+        assert_eq!(
+            ElementSize::for_kv_cache_type(KvCacheType::F16),
+            Some(ElementSize::F16)
+        );
     }
 
     /// Llama 3 8B: 32 layers, 8 KV heads, 128-wide heads.

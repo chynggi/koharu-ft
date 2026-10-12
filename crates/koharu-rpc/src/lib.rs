@@ -13,8 +13,8 @@ pub mod routes;
 use std::path::PathBuf;
 
 use tauri::AppHandle;
-use tauri_runtime_cef::CefRuntime;
 use tauri::Manager as _;
+use tauri_runtime_cef::CefRuntime;
 
 /// Axum state: the live Tauri application handle.
 pub type AppState = AppHandle<CefRuntime>;
@@ -67,4 +67,3 @@ pub fn serve(
         }
     });
 }
-

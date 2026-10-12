@@ -180,7 +180,10 @@ mod tests {
         let first = Instant::now();
         let second = first + std::time::Duration::from_millis(100);
 
-        assert_eq!(Bytes::headroom_from(measured(12, first), measured(5, second)), None);
+        assert_eq!(
+            Bytes::headroom_from(measured(12, first), measured(5, second)),
+            None
+        );
     }
 
     #[test]
@@ -195,7 +198,12 @@ mod tests {
     fn a_used_figure_above_the_budget_saturates_instead_of_wrapping() {
         let at = Instant::now();
 
-        assert_eq!(Bytes::headroom_from(measured(5, at), measured(12, at)).unwrap().value, 0);
+        assert_eq!(
+            Bytes::headroom_from(measured(5, at), measured(12, at))
+                .unwrap()
+                .value,
+            0
+        );
     }
 
     #[test]

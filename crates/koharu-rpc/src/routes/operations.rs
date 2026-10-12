@@ -6,9 +6,9 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use tauri::Manager as _;
 
-use koharu_app::commands::processing::{Job, JobId, JobChannel, Processing};
-use koharu_app::commands::project::CurrentProject;
 use koharu_app::commands::processing;
+use koharu_app::commands::processing::{Job, JobChannel, JobId, Processing};
+use koharu_app::commands::project::CurrentProject;
 use koharu_pipeline::{Operation, Scope};
 
 use crate::AppState;

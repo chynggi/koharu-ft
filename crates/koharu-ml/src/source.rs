@@ -55,7 +55,9 @@ impl ComponentSource {
             }
             Self::Url { url, digest } => {
                 self.validate()?;
-                koharu_runtime::RemoteFile::pinned(url, digest).resolve().await
+                koharu_runtime::RemoteFile::pinned(url, digest)
+                    .resolve()
+                    .await
             }
         }
     }
@@ -98,9 +100,7 @@ impl ComponentSource {
                 );
                 Ok(())
             }
-            Self::Url { url, digest } => {
-                koharu_runtime::RemoteFile::pinned(url, digest).validate()
-            }
+            Self::Url { url, digest } => koharu_runtime::RemoteFile::pinned(url, digest).validate(),
         }
     }
 }
@@ -112,7 +112,13 @@ mod tests {
     #[test]
     fn a_relative_local_path_is_rejected() {
         let source = ComponentSource::LocalFile(PathBuf::from("model.gguf"));
-        assert!(source.validate().unwrap_err().to_string().contains("absolute"));
+        assert!(
+            source
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("absolute")
+        );
     }
 
     #[test]
@@ -141,7 +147,9 @@ mod tests {
         };
         assert!(repository("unsloth").validate().is_err());
         assert!(repository("a/b/c").validate().is_err());
-        repository("unsloth/FLUX.2-klein-4B-GGUF").validate().unwrap();
+        repository("unsloth/FLUX.2-klein-4B-GGUF")
+            .validate()
+            .unwrap();
 
         let revision = |revision: Option<&str>| ComponentSource::HuggingFace {
             repository: "unsloth/FLUX.2-klein-4B-GGUF".to_owned(),

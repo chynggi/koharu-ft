@@ -158,10 +158,7 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
                 .add_capability(
                     tauri::ipc::CapabilityBuilder::new("koharu-rpc-window")
                         .local(false)
-                        .remote(format!(
-                            "{}/*",
-                            frontend_url.origin().ascii_serialization()
-                        ))
+                        .remote(format!("{}/*", frontend_url.origin().ascii_serialization()))
                         .window("main")
                         .permission("core:window:allow-close")
                         .permission("core:window:allow-minimize")

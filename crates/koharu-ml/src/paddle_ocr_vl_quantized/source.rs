@@ -48,7 +48,9 @@ pub struct PaddleOCRVLQuantizedSource {
 impl PaddleOCRVLQuantizedSource {
     pub fn validate(&self) -> Result<()> {
         self.model.validate().context("PaddleOCR-VL model")?;
-        self.projector.validate().context("PaddleOCR-VL projector")?;
+        self.projector
+            .validate()
+            .context("PaddleOCR-VL projector")?;
         if let Some(lora) = &self.lora {
             lora.validate().context("PaddleOCR-VL LoRA")?;
         }

@@ -34,12 +34,8 @@ async fn put_config(
     Json(request): Json<SaveConfigRequest>,
 ) -> ApiResult<Json<Preferences>> {
     Ok(Json(
-        preferences::save_preferences(
-            request.pipeline,
-            request.providers,
-            request.typesetting,
-        )
-        .await?,
+        preferences::save_preferences(request.pipeline, request.providers, request.typesetting)
+            .await?,
     ))
 }
 

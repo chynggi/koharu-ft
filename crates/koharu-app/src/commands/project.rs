@@ -11,11 +11,11 @@ use koharu_desktop::Frame;
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin, FitsTo,
     Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
-    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom, Region as SceneRegion,
-    RegionSpec, RemovePolicy, Revision, Session, Snapshot, SourceText as SceneSourceText,
-    TextGroup as SceneTextGroup, TextLayout as SceneTextLayout, TextLayoutKind, TextRegion,
-    TextRole, Translation as SceneTranslation, Typography as SceneTypography,
-    Visibility as SceneVisibility,
+    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom,
+    Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, Snapshot,
+    SourceText as SceneSourceText, TextGroup as SceneTextGroup, TextLayout as SceneTextLayout,
+    TextLayoutKind, TextRegion, TextRole, Translation as SceneTranslation,
+    Typography as SceneTypography, Visibility as SceneVisibility,
 };
 use serde::Serialize;
 use specta::Type;
@@ -821,7 +821,10 @@ impl Project {
                 },
             )?;
             edit.set(added_layer, &geometry)?;
-            edit.set(added_layer, &Self::text_typography(TextLayoutKind::Paragraph))?;
+            edit.set(
+                added_layer,
+                &Self::text_typography(TextLayoutKind::Paragraph),
+            )?;
             edit.relate::<RecognizedFrom>(content, added_region)?;
             edit.relate::<FitsTo>(added_layer, added_region)?;
             layer = Some(added_layer);
@@ -1642,13 +1645,19 @@ impl Project {
                 vec![
                     ScenePoint { x: left, y: top },
                     ScenePoint { x: right, y: top },
-                    ScenePoint { x: right, y: bottom },
+                    ScenePoint {
+                        x: right,
+                        y: bottom,
+                    },
                     ScenePoint { x: left, y: bottom },
                 ]
             }
             points if points.len() >= 3 => points
                 .iter()
-                .map(|point| ScenePoint { x: point.x, y: point.y })
+                .map(|point| ScenePoint {
+                    x: point.x,
+                    y: point.y,
+                })
                 .collect(),
             _ => bail!("a manual region needs two corners or at least three points"),
         };
@@ -2169,18 +2178,18 @@ mod tests {
         );
 
         // The content is linked to its region so the OCR stage can find and fill it.
-        let content = snapshot
-            .text_layer(layer)
-            .unwrap()
-            .content()
-            .unwrap()
-            .id();
+        let content = snapshot.text_layer(layer).unwrap().content().unwrap().id();
         assert!(
             snapshot
                 .relations_to_as::<RecognizedFrom>(region)
                 .any(|relation| relation.value().source == content)
         );
-        assert!(snapshot.component::<SceneSourceText>(content).unwrap().is_none());
+        assert!(
+            snapshot
+                .component::<SceneSourceText>(content)
+                .unwrap()
+                .is_none()
+        );
 
         // A freeform drag keeps every vertex instead of reducing it to a box.
         let (_, polygon, _) = project

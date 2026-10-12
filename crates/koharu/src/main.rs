@@ -49,9 +49,12 @@ async fn main() {
         .ok()
         .and_then(|port| port.parse().ok())
         .unwrap_or(DEFAULT_RPC_PORT);
-    let static_dir = std::env::var("KOHARU_STATIC_DIR").ok().map(std::path::PathBuf::from).unwrap_or_else(|| {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/koharu/out")
-    });
+    let static_dir = std::env::var("KOHARU_STATIC_DIR")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/koharu/out")
+        });
     // Defaults to loopback-only, matching the desktop window's own connection.
     // Set KOHARU_RPC_HOST=0.0.0.0 (e.g. inside a container) to accept remote
     // connections; KOHARU_API_TOKEN is then required by the server for every

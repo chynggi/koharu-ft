@@ -31,7 +31,9 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn get_status(State(app): State<AppState>) -> ApiResult<Json<AgentStatus>> {
-    Ok(Json(agent::get_agent_status(app.state::<AgentState>()).await?))
+    Ok(Json(
+        agent::get_agent_status(app.state::<AgentState>()).await?,
+    ))
 }
 
 async fn logout(State(app): State<AppState>) -> ApiResult<Json<AgentStatus>> {

@@ -17,16 +17,16 @@ use std::path::PathBuf;
 
 use anyhow::Context as _;
 use axum::Json;
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, State};
 use axum::http::header;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::Router;
-use tokio::io::AsyncWriteExt as _;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, EntityId, PageDraft};
 use serde::Deserialize;
 use tauri::Manager as _;
+use tokio::io::AsyncWriteExt as _;
 
 use koharu_app::commands::canvas::CanvasChannel;
 use koharu_app::commands::editing;
@@ -53,12 +53,18 @@ pub struct ExportStaging(std::sync::Mutex<Option<(JobId, tempfile::TempDir)>>);
 
 impl ExportStaging {
     fn put(&self, job: JobId, directory: tempfile::TempDir) {
-        *self.0.lock().expect("the export staging lock is never poisoned") = Some((job, directory));
+        *self
+            .0
+            .lock()
+            .expect("the export staging lock is never poisoned") = Some((job, directory));
     }
 
     /// 이 job의 스테이징을 꺼내 소유권을 넘긴다. 호출자가 놓으면 지워진다.
     fn take(&self, job: JobId) -> Option<tempfile::TempDir> {
-        let mut slot = self.0.lock().expect("the export staging lock is never poisoned");
+        let mut slot = self
+            .0
+            .lock()
+            .expect("the export staging lock is never poisoned");
         match slot.take() {
             Some((held, directory)) if held == job => Some(directory),
             other => {
@@ -305,9 +311,7 @@ async fn commit_imported_pages(
     let (commit, page) = {
         let current = app.state::<CurrentProject>();
         let mut project = current.project.lock().await;
-        let project = project
-            .as_mut()
-            .context("no project is open")?;
+        let project = project.as_mut().context("no project is open")?;
         let source = AssetRole::new("source")?;
         let patch = project.snapshot().patch(|edit| {
             for imported in pages {
@@ -342,7 +346,9 @@ async fn commit_imported_pages(
     };
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
     canvas_channel.publish(desktop.canvas_state());
-    Ok(Json(lifecycle::get_pages(app.state::<CurrentProject>()).await?))
+    Ok(Json(
+        lifecycle::get_pages(app.state::<CurrentProject>()).await?,
+    ))
 }
 
 #[derive(Deserialize)]

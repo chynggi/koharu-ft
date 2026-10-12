@@ -366,11 +366,11 @@ async fn write_cbz(
             let mut bytes = Vec::new();
             PngEncoder::new_with_quality(&mut bytes, CompressionType::Best, FilterType::Adaptive)
                 .write_image(
-                    image.as_raw(),
-                    image.width(),
-                    image.height(),
-                    ExtendedColorType::Rgba8,
-                )?;
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ExtendedColorType::Rgba8,
+            )?;
             Ok(bytes)
         })
         .await

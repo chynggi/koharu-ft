@@ -233,7 +233,10 @@ mod tests {
 
     #[test]
     fn a_reading_keeps_the_scope_of_the_api_it_came_from() {
-        let devices = map_samples(&Device::cuda(0), vec![gpu(0, "NVIDIA RTX 4090", Vendor::Nvidia)]);
+        let devices = map_samples(
+            &Device::cuda(0),
+            vec![gpu(0, "NVIDIA RTX 4090", Vendor::Nvidia)],
+        );
         let headroom = devices[0].headroom().unwrap();
 
         assert_eq!(headroom.value, 6 * 1024 * 1024 * 1024);

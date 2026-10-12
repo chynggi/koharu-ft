@@ -208,14 +208,14 @@ impl Model {
         let lora = match options.lora {
             Some(options) => {
                 ensure_file(&options.adapter_path, "LoRA adapter")?;
-                let adapter = model.lora_adapter_init(&options.adapter_path).with_context(
-                    || {
+                let adapter = model
+                    .lora_adapter_init(&options.adapter_path)
+                    .with_context(|| {
                         format!(
                             "failed to initialize LoRA adapter {}",
                             options.adapter_path.display()
                         )
-                    },
-                )?;
+                    })?;
                 Some((adapter, options.scale))
             }
             None => None,
@@ -738,8 +738,9 @@ fn context_values(prepared: &PreparedPrompt, options: &GenerationOptions) -> Res
             "n_ctx is too small: need at least {required} positions for prompt and generation"
         ),
         None => {
-            let dynamic = NonZeroU32::new(u32::try_from(required).context("context size exceeds u32")?)
-                .expect("required context size is non-zero");
+            let dynamic =
+                NonZeroU32::new(u32::try_from(required).context("context size exceeds u32")?)
+                    .expect("required context size is non-zero");
             // A minimum only ever grows the context, so it cannot invalidate the
             // requirement computed above.
             let n_ctx = options.n_ctx_min.map_or(dynamic, |min| dynamic.max(min));

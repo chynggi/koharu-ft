@@ -6,7 +6,9 @@ use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use async_trait::async_trait;
 use image::DynamicImage;
 use koharu_ml::{
-    baberu_ocr::BaberuOcr, hayai_ocr::HayaiOcr, manga_ocr::MangaOcr,
+    baberu_ocr::BaberuOcr,
+    hayai_ocr::HayaiOcr,
+    manga_ocr::MangaOcr,
     paddle_ocr_vl::PaddleOCRVLTask,
     paddle_ocr_vl_quantized::{LoraSource, PaddleOCRVLQuantized, PaddleOCRVLQuantizedSource},
     source::ComponentSource,

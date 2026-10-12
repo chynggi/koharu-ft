@@ -153,7 +153,10 @@ pub(super) fn merge_lora(
             LoraHalf::A => &mut pair.0,
             LoraHalf::B => &mut pair.1,
         };
-        ensure!(slot.is_none(), "the adapter repeats a LoRA weight for {path}");
+        ensure!(
+            slot.is_none(),
+            "the adapter repeats a LoRA weight for {path}"
+        );
         *slot = Some(tensor.to_device(device));
     }
     ensure!(!pairs.is_empty(), "the adapter carries no LoRA weights");
@@ -184,7 +187,10 @@ pub(super) fn merge_lora(
 /// carries only what the inference path reads, so nothing outside it is
 /// touched.
 pub(super) fn replace_tower(vs: &mut nn::VarStore, tensors: &[(String, Tensor)]) -> Result<usize> {
-    ensure!(!tensors.is_empty(), "the tower checkpoint carries no weights");
+    ensure!(
+        !tensors.is_empty(),
+        "the tower checkpoint carries no weights"
+    );
 
     let mut variables = vs.variables();
     for (key, tensor) in tensors {
@@ -327,7 +333,12 @@ mod tests {
         let layernorm = &root / "visual" / "vision_model" / "post_layernorm";
         let _ = var(&layernorm, "weight", &[1.0, 1.0], &[2]);
         let _ = var(&layernorm, "bias", &[0.0, 0.0], &[2]);
-        let _ = var(&(&root / "mlp_AR" / "pre_norm"), "weight", &[5.0, 5.0], &[2]);
+        let _ = var(
+            &(&root / "mlp_AR" / "pre_norm"),
+            "weight",
+            &[5.0, 5.0],
+            &[2],
+        );
 
         let tensors = vec![(
             "model.visual.vision_model.post_layernorm.weight".to_owned(),

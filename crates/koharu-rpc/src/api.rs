@@ -2,13 +2,13 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
@@ -130,7 +130,9 @@ pub fn router(app: AppState, static_dir: Option<PathBuf>, api_token: Option<Stri
                 let token = token.clone();
                 async move { index_with_token(token, index, headers, uri).await }
             };
-            router = router.route("/", get(index_route)).fallback_service(serve_dir);
+            router = router
+                .route("/", get(index_route))
+                .fallback_service(serve_dir);
         } else {
             tracing::warn!(
                 path = %dir.display(),
@@ -251,8 +253,11 @@ mod tests {
         // EventSource appends its own parameters, so `token` cannot be assumed
         // to come first.
         assert_eq!(
-            presented_token(&HeaderMap::new(), &uri("/api/v1/events?since=4&token=s3cret"))
-                .as_deref(),
+            presented_token(
+                &HeaderMap::new(),
+                &uri("/api/v1/events?since=4&token=s3cret")
+            )
+            .as_deref(),
             Some("s3cret")
         );
     }
@@ -293,9 +298,17 @@ mod tests {
     #[test]
     fn authorization_needs_the_right_token() {
         assert!(authorized(&bearer("s3cret"), &uri("/"), "s3cret"));
-        assert!(authorized(&HeaderMap::new(), &uri("/?token=s3cret"), "s3cret"));
+        assert!(authorized(
+            &HeaderMap::new(),
+            &uri("/?token=s3cret"),
+            "s3cret"
+        ));
         assert!(!authorized(&bearer("wrong"), &uri("/"), "s3cret"));
-        assert!(!authorized(&HeaderMap::new(), &uri("/?token=wrong"), "s3cret"));
+        assert!(!authorized(
+            &HeaderMap::new(),
+            &uri("/?token=wrong"),
+            "s3cret"
+        ));
         assert!(!authorized(&HeaderMap::new(), &uri("/"), "s3cret"));
     }
 
@@ -312,4 +325,3 @@ mod tests {
         );
     }
 }
-

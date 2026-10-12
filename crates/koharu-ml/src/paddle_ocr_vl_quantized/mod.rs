@@ -174,14 +174,14 @@ mod tests {
         crate::init().await.unwrap();
         let source = PaddleOCRVLQuantizedSource {
             lora: Some(LoraSource {
-                adapter: ComponentSource::LocalFile(
-                    std::path::PathBuf::from(std::env::var("KOHARU_MANGA_LORA_GGUF").unwrap()),
-                ),
+                adapter: ComponentSource::LocalFile(std::path::PathBuf::from(
+                    std::env::var("KOHARU_MANGA_LORA_GGUF").unwrap(),
+                )),
                 scale: 1.0,
             }),
-            projector: ComponentSource::LocalFile(
-                std::path::PathBuf::from(std::env::var("KOHARU_MANGA_MMPROJ_GGUF").unwrap()),
-            ),
+            projector: ComponentSource::LocalFile(std::path::PathBuf::from(
+                std::env::var("KOHARU_MANGA_MMPROJ_GGUF").unwrap(),
+            )),
             ..PaddleOCRVLQuantizedSource::default()
         };
         let model = PaddleOCRVLQuantized::load_with_source(crate::Device::cpu(), source)

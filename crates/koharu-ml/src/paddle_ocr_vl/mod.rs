@@ -40,10 +40,7 @@ pub struct PaddleOCRVL {
 impl PaddleOCRVL {
     /// Loads the port, optionally with a fine-tuned adapter applied on top of
     /// the published checkpoint.
-    pub async fn load(
-        device: crate::Device,
-        adapter: Option<&PaddleOCRVLAdapter>,
-    ) -> Result<Self> {
+    pub async fn load(device: crate::Device, adapter: Option<&PaddleOCRVLAdapter>) -> Result<Self> {
         let device: Device = device.try_into_device()?;
         let config_path = CONFIG
             .resolve()
