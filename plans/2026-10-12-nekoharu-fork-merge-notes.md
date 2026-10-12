@@ -1,12 +1,12 @@
 # 메모 — NeKoharu 포크 병합 (fork `f9b22ba0`)
 
-최종 갱신: 2026-10-12 (병합 커밋 `2bbafb25`, 브랜치 `merge/nekoharu`)
+최종 갱신: 2026-10-12 (병합 커밋 `2bbafb25` + 정리 커밋 `67d7cb4f`…`d922d0ae`, `main`)
 
 디스코드에서 발견한 별도 포크 [nekojin116/NeKoharu](https://github.com/nekojin116/NeKoharu)가
 `bcac8a89`(upstream #1168) 위에 얹은 32개 커밋을 `main`에 병합했다. 포크는
 Tauri invoke 브리지와 자체 브랜딩을 전제하므로 히스토리는 병합하되 **기능만 우리
 구조로 옮겼다.** 아래는 무엇을 어디로 옮겼고, 어디서 의도적으로 갈라졌고, 무엇을
-검증하지 않았는지에 대한 기록이다.
+검증하지 않았는지에 대한 기록이다. 병합 직후 드러난 기존 문제는 §6에서 정리했다.
 
 **아래 "확인 방법"은 재검증용이다. 다음 세션은 이 문서를 믿기 전에 명령을 다시 돌릴 것.**
 특히 §5의 "실기 확인 안 함"은 이번 병합의 가장 큰 구멍이다.
@@ -118,13 +118,16 @@ CBZ 내보내기는 **upstream `69e67f96`(PR #1095)에 이미 있던 기능**이
 |---|---|
 | `cargo check -p koharu-rpc -p koharu-pipeline` | 통과 |
 | `cargo check -p koharu-scene -p koharu-app -p koharu-pipeline --all-targets` | 통과 (테스트 코드 포함) |
-| `cargo test -p koharu-app --lib output::` | 4/4 (선택 페이지 해석, 아카이브 이름) |
-| `cargo test -p koharu-app --lib project::` | 9/9 (스프레드 병합, 챕터 표시, 붙여넣기, 이동 순서) |
+| `cargo check --workspace --all-targets` | 통과 (경고 0) |
+| `cargo test -p koharu-app --lib` | 29/29 |
 | `cargo test -p koharu-scene` | 35/35 |
-| `cargo test -p koharu-pipeline` | 81/82 — 실패 1건은 §6, 이번 병합과 무관 |
+| `cargo test -p koharu-pipeline` | 84/84 (정리 후) |
+| `cargo clippy -- -D warnings` (CI lint 잡과 같은 명령) | 통과, 경고 0 |
+| `cargo clippy --workspace --all-targets` | 경고 0 (테스트·예제 포함) |
+| `cargo fmt -- --check` | 통과 (정리 후) |
 | `bun x tsc --noEmit` (`packages/bridge`, `packages/koharu`) | 통과 |
 | `bun x vitest run` (`packages/koharu`) | 15 files / 118 tests 통과 |
-| `cargo clippy -p koharu-app -p koharu-rpc -p koharu-pipeline -p koharu-scene --all-targets` | 경고 4건 — 전부 병합 이전부터 있던 것(§6) |
+| `bun run --filter @koharu/app lint` | 경고 0 |
 
 ## 5. 검증하지 않은 것
 
@@ -138,32 +141,54 @@ CBZ 내보내기는 **upstream `69e67f96`(PR #1095)에 이미 있던 기능**이
   모델에서 이름·줄거리 일관성을 올리는지는 확인하지 않았다. 스케줄러 단위 테스트(그룹이 다
   준비된 뒤에만 묶는지)까지가 검증 범위다.
 
-## 6. 이번 병합과 무관한 기존 문제
+## 6. 병합 직후 정리한 것 (병합 커밋 이후)
 
-**`koharu-pipeline` 테스트 1건 실패.**
-`stages::inpainting::tests::a_hugging_face_override_round_trips_through_toml` 이
-`Hugging Face revision is required: unsloth/FLUX.2-klein-4B-GGUF` 로 실패한다. 테스트는
-`81e6ac07`(포크의 로컬 LLM·FLUX.2 Klein 작업)에서 들어왔고, `d48ffa05`(ComponentSource를
-URL 소스까지 확장)가 리비전을 필수로 만든 뒤로 깨져 있다. 병합은 `stages/inpainting.rs`도
-`koharu-ml`도 건드리지 않는다.
+병합 결과를 검증하면서 드러난 기존 문제를 별도 커밋으로 정리했다.
 
-**clippy 경고 4건(CI는 `cargo clippy -- -D warnings`).** 병합 이전부터 있던 것으로,
-이번 병합이 추가한 파일에서는 경고가 나오지 않는다.
+**`a_hugging_face_override_round_trips_through_toml` 실패 → 고침 (`6dee8417`).**
+테스트는 `81e6ac07`(포크의 로컬 LLM·FLUX.2 Klein 작업)에서 들어왔고 `b789d65c`가 Hugging
+Face 리비전을 필수로 만든 뒤로 낡아 있었다. 리비전 `None` 픽스처가 그대로 남아
+`Hugging Face revision is required`로 실패했다.
 
-| 위치 | 경고 | 들어온 커밋 |
-|---|---|---|
-| `koharu-ml/src/powerpaint/processor.rs:56` | `is_multiple_of` | 병합 이전 |
-| `koharu-pipeline/src/config.rs:86` | `match` → `if let` | `933a466a` |
-| `koharu-pipeline/src/stages/inpainting.rs:431` | variant 크기 차 | 병합 이전 |
-| `koharu-app/src/lib.rs:17` | 복잡한 타입 | 병합 이전 |
+원인은 테스트만이 아니었다. `ComponentSource::validate`의 주석은 "저장할 때 걸러 추론
+중간에 터지지 않게 한다"고 약속하는데, `PipelineConfig::validate`를 부르는 곳이 **없었고**
+그 함수도 인페인팅 설정을 `let _ =`로 버리고 있었다. 그래서 잘못된 소스는 모델을 로드할
+때가 되어서야 드러났다. 정리한 내용:
+
+- `Processor::new`의 변형별 검사를 `InpaintingModel::validate`로 옮겨 저장 시점과 로드
+  시점이 같은 규칙을 쓰게 했다
+- `PipelineConfig::validate`가 인페인팅을 실제로 검증한다(더 이상 죽은 코드가 아니다)
+- `save_preferences`가 저장 전에 `pipeline.validate()`를 부른다 — provider 설정은 이미
+  같은 자리에서 검증되고 있었다
+
+**동작 변화 하나.** 이제 잘못된 모델 소스(리비전 없는 Hugging Face, 상대 경로, 없는
+파일, 다이제스트 없는 URL)를 담은 설정은 **저장이 거부된다.** 설정 화면에서 소스 종류를
+`hugging_face`로 바꾸고 필드를 채우는 중에는 자동 저장이 오류를 낼 수 있다. 의도한
+동작이지만(추론 중간에 실패하는 것보다 낫다), 거슬리면 클라이언트 쪽 검증을 먼저
+붙이는 편이 낫다.
+
+**"Revision (optional)" 라벨 → 고침 (`0687a5aa`).** 핵심은 40자 커밋 해시만 받는데 9개
+로케일이 모두 선택 사항이라고 말하고 있었다. 라벨에 실제 규칙을 적고, 영어로만 들어가
+있던 7개 로케일도 함께 번역했다.
+
+**clippy·rustfmt·oxlint 정리 (`67d7cb4f`, `d922d0ae`, `64ae8f29`).** CI lint 잡은
+`cargo clippy -- -D warnings`, `cargo fmt -- --check`, `bun run --filter @koharu/app lint`
+를 돌린다. 병합 이전부터 있던 경고 4건과 포맷 드리프트 24개 파일, 미사용 `clamp` 하나를
+정리해 세 검사가 모두 통과한다(`cargo clippy --workspace --all-targets`도 경고 0).
 
 확인 방법:
 
 ```sh
-cargo test -p koharu-pipeline --lib stages::inpainting
-cargo clippy -p koharu-app -p koharu-pipeline --all-targets 2>&1 | Select-String '^warning'
-git log -S 'a_hugging_face_override_round_trips_through_toml' --oneline   # 81e6ac07
+cargo clippy -- -D warnings
+cargo fmt -- --check
+cargo test -p koharu-pipeline
 ```
+
+**남은 것 하나 — `bun run check`(oxfmt).** 이것은 저장소 문제가 아니라 이 체크아웃의
+문제다. `core.autocrlf=true`라 작업 트리가 CRLF인데 oxfmt 0.71.0은 LF만 통과시킨다.
+같은 파일을 LF로 바꿔 검사하면 통과하고, CRLF로 두면 실패한다. CI는 리눅스에서 LF로
+체크아웃하므로 영향이 없다. `cargo fmt`는 CRLF를 문제삼지 않으므로(위 드리프트는 실제
+내용 차이였다) 두 도구의 결론이 갈리는 지점이다.
 
 ## 7. 다음 세션 메모
 
@@ -174,3 +199,5 @@ git log -S 'a_hugging_face_override_round_trips_through_toml' --oneline   # 81e6
   병합 후 제거했다.
 - §5의 실기 확인이 남은 일의 전부다. 확인 순서는 (1) 페이지 레일 드래그/화살표,
   (2) 챕터 표시와 스프레드 병합, (3) CBZ 내보내기 파일 열기, (4) 색상 스와치와 사각형 선택.
+- §6의 저장 시점 검증은 동작 변화다. 설정 화면에서 소스 종류를 바꾸는 도중 자동 저장이
+  실패한다는 불평이 나오면, 서버 검증을 되돌리는 대신 클라이언트 쪽 검증을 먼저 붙인다.
