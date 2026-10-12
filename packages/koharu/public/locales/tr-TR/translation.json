@@ -511,7 +511,7 @@
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
-        "sourceRevision": "Revision (optional)",
+        "sourceRevision": "Revizyon (40 karakterlik commit özeti)",
         "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",

@@ -511,7 +511,7 @@
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
-        "sourceRevision": "Revision (optional)",
+        "sourceRevision": "修订版本（40 位提交哈希）",
         "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",

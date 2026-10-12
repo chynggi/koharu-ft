@@ -511,7 +511,7 @@
         },
         "sourcePath": "경로",
         "sourceRepository": "저장소",
-        "sourceRevision": "리비전 (선택)",
+        "sourceRevision": "리비전 (40자 커밋 해시)",
         "sourceUrl": "URL",
         "steps": "스텝 수",
         "strength": "강도",

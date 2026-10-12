@@ -511,7 +511,7 @@
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
-        "sourceRevision": "Revision (optional)",
+        "sourceRevision": "Ревизия (40-символьный хеш коммита)",
         "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",

@@ -511,7 +511,7 @@
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
-        "sourceRevision": "Revision (optional)",
+        "sourceRevision": "リビジョン（40桁のコミットハッシュ）",
         "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",

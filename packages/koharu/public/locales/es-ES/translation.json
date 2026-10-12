@@ -511,7 +511,7 @@
         },
         "sourcePath": "Path",
         "sourceRepository": "Repository",
-        "sourceRevision": "Revision (optional)",
+        "sourceRevision": "Revisión (hash de commit de 40 caracteres)",
         "sourceUrl": "URL",
         "steps": "Steps",
         "strength": "Strength",
