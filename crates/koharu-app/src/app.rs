@@ -146,13 +146,22 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
                 .iter()
                 .find(|window| window.label == "main")
                 .context("the main Tauri window configuration is unavailable")?;
-            let window = tauri::WebviewWindowBuilder::from_config(application, window_config)?
+            let window_builder =
+                tauri::WebviewWindowBuilder::from_config(application, window_config)?;
+            // On Linux, creating the CEF window hidden and then showing/focusing it
+            // can break keyboard input. Create it visible from the start.
+            // See https://github.com/tauri-apps/tauri/issues/16251.
+            #[cfg(target_os = "linux")]
+            let window_builder = window_builder.visible(true);
+            let window = window_builder
                 .build()
                 .context("failed to create the main window")?;
-            window.show().context("failed to show the main window")?;
-            window
-                .set_focus()
-                .context("failed to focus the main window")?;
+            if !cfg!(target_os = "linux") {
+                window.show().context("failed to show the main window")?;
+                window
+                    .set_focus()
+                    .context("failed to focus the main window")?;
+            }
             let initialization_handle = handle.clone();
             drop(tauri::async_runtime::spawn(async move {
                 initialize(initialization_handle.clone())
@@ -257,10 +266,6 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(target_os = "linux")]
-            if let WindowEvent::Focused(focused) = event {
-                crate::linux_focus::synchronize(window, *focused);
-            }
             if matches!(
                 event,
                 WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
