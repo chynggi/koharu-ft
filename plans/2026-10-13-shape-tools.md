@@ -1145,10 +1145,11 @@ git commit -m "feat(psd): export shape layers as raster layers"
 - Modify: `packages/koharu/components/editor/ToolBar.tsx:44-54, 101-111`
 - Modify: `packages/koharu/components/editor/CanvasWorkspace.tsx:395-415, 722-735, 733-756`
 - Modify: `packages/koharu/components/editor/Inspector.tsx`
+- Modify: `packages/bridge/src/canvas.ts` — Task 5가 노출한 `beginShape`/`updateShape`/`finishShape`/`cancelShape`를 배선한다. 이게 없으면 그 API는 죽은 코드다 (Step 7 참조)
 - Modify: `packages/koharu/public/locales/*/translation.json` (9개)
 
 **Interfaces:**
-- Consumes: Task 6의 `protocol.ts` 타입과 명령
+- Consumes: Task 6의 `protocol.ts` 타입과 명령, Task 5의 `WebCanvas` 도형 프리뷰 API
 - Produces:
   - `SHAPE_KINDS: readonly ShapeKind[]`, `type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'polygon' | 'freeform'`
   - `defaultShapeStyle(kind: ShapeKind): ShapeStyle`
@@ -1156,6 +1157,7 @@ git commit -m "feat(psd): export shape layers as raster layers"
   - `isShapeTool(tool: CanvasTool): boolean` — 이 태스크에서는 `tool === 'shape'`
   - store: `shapeKind: ShapeKind`, `shapeStyle: ShapeStyle`, `setShapeKind`, `setShapeStyle`
   - `CanvasTool`에 `'shape'` 추가, `defaultShortcuts`에 `shape: 'r'`
+  - `Canvas` 인터페이스와 `createCanvas` 반환 객체에 `beginShape`/`updateShape`/`finishShape`/`cancelShape`
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -1247,9 +1249,19 @@ Expected: PASS
 
 `CanvasWorkspace.tsx:395`의 Escape·단축키 배열에 `'shape'`를 추가한다.
 
-`CanvasWorkspace.tsx:733`의 `'draw'` 분기 앞에 `'shape'` 분기를 넣는다. `'manual_box'`(CanvasWorkspace.tsx:726)와 같은 `draftFrame` 드래그를 쓴다. 포인터 업에서 `commands.addShape`를 호출하고 `refresh(projectKey, pagesKey, pageKey)`로 갱신한다.
+`CanvasWorkspace.tsx:733`의 `'draw'` 분기 앞에 `'shape'` 분기를 넣는다. `'manual_box'`(CanvasWorkspace.tsx:726)와 같은 `draftFrame` 드래그를 쓴다.
+
+**드래그 중 라이브 미리보기는 `packages/bridge/src/canvas.ts`를 거쳐야 한다.** Task 5가 `WebCanvas`에 `beginShape`/`updateShape`/`finishShape`/`cancelShape`를 노출했지만, `canvas.ts`가 WASM 핸들의 유일한 래퍼이고 여기에 네 메서드가 없으면 그 API는 도달 불가능한 죽은 코드가 된다 (Task 5 리뷰가 이 계획 누락을 지적했다). 따라서:
+
+1. `canvas.ts`의 `Canvas` 인터페이스(~:17-38)와 `CanvasHandle` 인터페이스(~:51-79)에 네 메서드를 추가한다. `CanvasHandle`의 `beginShape`는 `PathElement[]`(또는 그것을 담은 직렬화된 `PreparedPath`)와 페이지·리비전을 받는다.
+2. `createCanvas`의 반환 객체(~:103-180)에 네 메서드를 배선한다. `stroke` 계열(~:151-161)이 참고 패턴이다.
+3. `CanvasWorkspace.tsx`의 도형 분기가 드래그 시작 시 `canvas.beginShape({...})`, 이동 시 `updateShape`, 포인터 업 시 `finishShape`를 호출한다. `strokeUpdates`(~:162-165)의 `useFrameCommand` 스로틀 패턴을 그대로 쓴다 — 매 프레임 전부 보내면 안 된다.
+4. 취소(Escape·blur) 경로는 `cancelGesture`(~:231-248)에 도형 갈래를 추가해 `cancelShape`를 부른다. 기존 `strokeUpdates.clear(); canvas?.cancelStroke()` 옆이다.
+5. 포인터 업에서는 `finishShape()`가 돌려준 `{page, revision}` 검증에만 쓰고, **커밋은 `commands.addShape`로 한다** — 프론트가 스타일과 종류를 이미 알고 있으므로 경로를 되돌려받아 서버에 보낼 필요가 없다.
 
 `gesture.current`의 유니온(CanvasWorkspace.tsx:82 부근)에 `kind: 'shape'`를 추가한다.
+
+**미리보기 없이 `commands.addShape`만 부르면 안 된다.** 도형은 드래그하는 동안 모양이 보여야 하고, 두 방식이 공존하면 "왜 안 보이나"를 나중에 디버깅하게 된다. Step 5의 `draftFrame` 윤곽(`DraftOverlay`)만으로도 최소 피드백은 있지만, 실제 채우기·테두리를 보여주는 것이 Task 5가 프리뷰를 만든 이유다.
 
 - [ ] **Step 8: Inspector와 i18n을 넣는다**
 
