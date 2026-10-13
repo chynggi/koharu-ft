@@ -498,6 +498,13 @@ pub async fn rasterize_shapes(
 - `rasterized == false` → 벡터로 그린다
 - `rasterized == true` → 래스터 자산을 그린다. 벡터는 무시한다
 
+래스터 자산은 **페이지 전체 크기**이고, 렌더러는 그 자산을 레이어의
+프레임(=`rasterized` 도형에서는 페이지 사각형)에 맞춰 늘린다. 따라서
+페이지 병합이 래스터 레이어를 다시 패딩할 때 **래스터화된 도형도
+포함해야 한다** — 빠뜨리면 예전 페이지 폭의 이미지가 스프레드 전체로
+늘어난다. `merge_pages`가 `SceneRasterLayer`와 `rasterized == true`인
+`ShapeLayer`를 같은 `source` 자산 경로로 함께 처리한다.
+
 되돌리기가 데이터상 가능하다. 되돌리기 UI는 1a 범위 밖이다.
 
 **래스터화된 도형의 편집 정책은 1a에서 정하지 않는다.** 렌더러는

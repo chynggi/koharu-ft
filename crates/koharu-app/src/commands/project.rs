@@ -476,13 +476,18 @@ impl Project {
             bail!("the merged page is larger than Koharu supports");
         }
 
-        // Cleanup and paint layers are full-page pixel layers, so the renderer
-        // stretches them across the spread. Re-pad each to the merged width so its
-        // pixels stay in the correct half.
+        // Cleanup, paint, and rasterized shape layers are full-page pixel
+        // layers (`rasterize_shapes` bakes onto the whole page surface), so the
+        // renderer stretches them across the spread. Re-pad each to the merged
+        // width so its pixels stay in the correct half.
         let mut raster_blobs = Vec::new();
         for (index, &page) in pages.iter().enumerate() {
             for child in snapshot.children(page)? {
-                if snapshot.component::<SceneRasterLayer>(child)?.is_none() {
+                let is_page_pixels = snapshot.component::<SceneRasterLayer>(child)?.is_some()
+                    || snapshot
+                        .component::<SceneShapeLayer>(child)?
+                        .is_some_and(|shape| shape.rasterized);
+                if !is_page_pixels {
                     continue;
                 }
                 if let Some(asset) = snapshot.asset(child, &source_role)? {
@@ -2366,6 +2371,94 @@ mod tests {
                 "{endpoint:?} is outside the frame {frame:?}"
             );
         }
+    }
+
+    /// A rasterized shape's asset is a full page surface and the renderer fits
+    /// it to the layer's frame, which the shape branch repoints at the merged
+    /// page rectangle. Re-padding it is therefore what keeps its pixels in the
+    /// correct half; an old page-width image would be stretched over the spread.
+    #[tokio::test]
+    async fn merging_pages_repads_a_rasterized_shape_asset() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        // A rasterized shape owns a page-sized `source` asset, exactly like a
+        // cleanup or paint raster layer.
+        let (_, element) = project
+            .add_shape(
+                right,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([255, 0, 0, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        project
+            .rasterize_shapes(right, vec![element])
+            .await
+            .unwrap();
+        assert_eq!(
+            asset_dimensions(&project.snapshot(), element).await,
+            (30, 10),
+            "the bake is the source page's surface"
+        );
+
+        let (commit, _) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+
+        assert_eq!(
+            asset_dimensions(&project.snapshot(), element).await,
+            (50, 10),
+            "a rasterized shape must be re-padded to the merged page width"
+        );
+    }
+
+    /// The pixel dimensions of an entity's `source` asset.
+    async fn asset_dimensions(snapshot: &Snapshot, entity: EntityId) -> (u32, u32) {
+        let asset = snapshot
+            .asset(entity, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("the entity must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        image::load_from_memory(&bytes)
+            .unwrap()
+            .to_rgba8()
+            .dimensions()
     }
 
     #[test]
