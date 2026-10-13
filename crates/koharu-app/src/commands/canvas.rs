@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow, bail};
 use image::{GrayImage, ImageEncoder as _, codecs::png::PngEncoder};
@@ -534,6 +534,35 @@ pub async fn set_shape_geometries(
         let project = project.as_mut().context("no project is open")?;
         ensure_revision(project.snapshot().revision(), expected_revision)?;
         let commit = project.set_shape_geometries(updates).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page())
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(commit.revision)
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_rasterized",
+    skip_all,
+    fields(origin = "user", entity_count = shapes.len())
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn rasterize_shapes(
+    expected_revision: Revision,
+    page: EntityId,
+    shapes: Vec<EntityId>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<Revision, Error> {
+    let (commit, page) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let commit = project.rasterize_shapes(page, shapes).await?;
         project.record_commit(&commit);
         (commit, project.active_page())
     };

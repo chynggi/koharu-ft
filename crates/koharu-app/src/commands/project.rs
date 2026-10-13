@@ -21,6 +21,7 @@ use koharu_scene::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tokio::sync::Mutex;
+use vello::Scene;
 
 use super::{
     canvas::Point,
@@ -1310,6 +1311,124 @@ impl Project {
     /// "Rectangle 1" and "Ellipse 1" at once.
     fn same_shape_kind(left: &ShapeGeometry, right: &ShapeGeometry) -> bool {
         std::mem::discriminant(left) == std::mem::discriminant(right)
+    }
+
+    /// Bakes shapes into pixels and marks them rasterized.
+    ///
+    /// This is a one-way action: the baked asset becomes authoritative for
+    /// rendering (`rasterized == true` makes the renderer consume the raster),
+    /// so the shape can no longer be re-rendered from its parameters.
+    ///
+    /// One scene and one bake per shape, because each shape owns its own
+    /// `source` asset: batching several shapes into one surface would hand them
+    /// all the same image. Supersampling happens inside the rasterizer, so the
+    /// per-shape cost is one page-sized render either way.
+    pub async fn rasterize_shapes(
+        &mut self,
+        page: EntityId,
+        shapes: Vec<EntityId>,
+    ) -> Result<Commit> {
+        let snapshot = self.snapshot();
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        let mut targets = Vec::with_capacity(shapes.len());
+        for shape in shapes {
+            if snapshot.parent(shape)? != Some(page) {
+                bail!("a rasterized shape must be a layer on the active page");
+            }
+            let layer = snapshot
+                .component::<SceneShapeLayer>(shape)?
+                .context("only shape layers can be rasterized")?;
+            let geometry = snapshot
+                .component::<SceneGeometry>(shape)?
+                .context("a shape layer must have an outline geometry")?;
+            // A shape cannot be measured without a usable frame; skipping it
+            // matches the renderer, which draws nothing for it either.
+            let Some(frame) =
+                koharu_renderer::shape_renderer::shape_frame(&geometry, layer.angle_degrees)
+            else {
+                continue;
+            };
+            // `shape_layer_path` is the single entry point: it delegates
+            // `Polygon`/`Freeform` to the entity's points and every other kind
+            // to the shape's parameters. Calling `shape_path` directly would
+            // bake the two point-backed kinds as an empty path.
+            let path = koharu_renderer::shape_renderer::shape_layer_path(
+                &layer.geometry,
+                &geometry.points,
+                &layer.style,
+                frame,
+            );
+            targets.push((shape, layer, path));
+        }
+        if targets.is_empty() {
+            return self.commit(snapshot.patch(|_| Ok(()))?).await;
+        }
+        let baked = tokio_rayon::spawn(
+            move || -> Result<Vec<(EntityId, SceneShapeLayer, Vec<u8>)>> {
+                // `Rasterizer::new` and the readback both block on WGPU, so the
+                // whole bake stays off the async executor.
+                let rasterizer = koharu_rasterizer::Rasterizer::new()?;
+                targets
+                    .into_iter()
+                    .map(|(entity, layer, path)| {
+                        // The scene is drawn through the same Vello entry point
+                        // as the live preview (`PreparedPath::append_to`), so a
+                        // baked shape cannot look different from the shape the
+                        // user dragged. `rasterize_scene` is used rather than a
+                        // pixel loop because it supersamples and Lanczos
+                        // downsamples that draw for antialiasing.
+                        let mut scene = Scene::new();
+                        path.append_to(&mut scene);
+                        // A transparent background is load-bearing: any other
+                        // alpha paints the whole page rectangle over whatever
+                        // sits underneath the shape.
+                        let image = rasterizer.rasterize_scene(
+                            &scene,
+                            width,
+                            height,
+                            [0, 0, 0, 0],
+                            koharu_rasterizer::RasterOptions::supersampled(4),
+                        )?;
+                        let mut bytes = Cursor::new(Vec::new());
+                        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+                        Ok((entity, layer, bytes.into_inner()))
+                    })
+                    .collect()
+            },
+        )
+        .await?;
+        let source = AssetRole::new("source")?;
+        // The flag and the asset land in one patch, so one commit either writes
+        // both or neither. Splitting them would let a crash leave a rasterized
+        // shape with no image (it renders nothing) or an unattached image.
+        let patch = snapshot.patch(|edit| {
+            for (entity, mut layer, png) in baked {
+                edit.promote_entity_to_user(entity)?;
+                layer.origin = Origin::User;
+                layer.rasterized = true;
+                edit.set(entity, &layer)?;
+                edit.set_asset(
+                    entity,
+                    &source,
+                    AssetInput::new(
+                        png,
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )?;
+            }
+            Ok(())
+        })?;
+        self.commit(patch).await
     }
 
     pub async fn apply_raster_stroke(
@@ -2762,6 +2881,103 @@ mod tests {
         };
         assert_eq!(*style, next);
         assert!(matches!(shape, ShapeGeometry::Ellipse));
+    }
+
+    #[tokio::test]
+    async fn a_rasterized_shape_keeps_a_transparent_background() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Solid([255, 0, 0, 255])),
+            stroke: None,
+        };
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(10.0, 10.0, 20.0, 20.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style,
+                0.0,
+            )
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let image = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        // 도형 밖은 완전히 투명해야 한다.
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        assert_eq!(image.get_pixel(image.width() - 1, image.height() - 1)[3], 0);
+        // 도형 안쪽은 불투명한 빨강이어야 한다.
+        let center = image.get_pixel(20, 20);
+        assert_eq!(center[3], 255);
+        assert!(center[0] > 200);
+
+        let Layer::Shape { rasterized, .. } = Project::page(&snapshot, page)
+            .unwrap()
+            .layers
+            .into_iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap()
+        else {
+            panic!("expected a shape layer");
+        };
+        assert!(rasterized);
+    }
+
+    /// A `Polygon` has no drawing parameters of its own: its path comes from
+    /// the polygon. Baking it therefore proves `rasterize_shapes` goes through
+    /// `shape_layer_path` — `shape_path` would produce an empty path and this
+    /// asset would be entirely transparent.
+    #[tokio::test]
+    async fn a_rasterized_polygon_draws_from_its_points() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(20.0, 20.0, 60.0, 60.0),
+                ShapeGeometry::Polygon,
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([0, 0, 255, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let image = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        let inside = image.get_pixel(50, 50);
+        assert_eq!(inside[3], 255);
+        assert!(inside[2] > 200);
     }
 
     /// The TypeScript client in `packages/bridge/src/protocol.ts` reproduces

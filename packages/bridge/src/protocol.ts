@@ -294,6 +294,12 @@ export const commands = {
 			expected_revision: expectedRevision,
 			updates,
 		}),
+	rasterizeShapes: (expectedRevision: Revision, page: EntityId, shapes: EntityId[]) =>
+		post<Revision>("/canvas/shape/rasterize", {
+			expected_revision: expectedRevision,
+			page,
+			shapes,
+		}),
 	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
 	commitPaint: (
 		expectedRevision: Revision,

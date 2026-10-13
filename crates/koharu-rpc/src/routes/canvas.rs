@@ -38,6 +38,7 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/shape", post(add_shape))
         .route("/canvas/shape/style", post(set_shape_style))
         .route("/canvas/shape/geometry", post(set_shape_geometries))
+        .route("/canvas/shape/rasterize", post(rasterize_shapes))
         .route("/canvas/ocr/manual", post(manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
         .route("/canvas/commit/erase", post(commit_erase))
@@ -209,6 +210,30 @@ async fn set_shape_geometries(
         canvas::set_shape_geometries(
             request.expected_revision,
             request.updates,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct RasterizeShapesRequest {
+    expected_revision: Revision,
+    page: EntityId,
+    shapes: Vec<EntityId>,
+}
+
+async fn rasterize_shapes(
+    State(app): State<AppState>,
+    Json(request): Json<RasterizeShapesRequest>,
+) -> ApiResult<Json<Revision>> {
+    Ok(Json(
+        canvas::rasterize_shapes(
+            request.expected_revision,
+            request.page,
+            request.shapes,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

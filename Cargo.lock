@@ -4768,6 +4768,7 @@ dependencies = [
  "tokio-rayon",
  "tracing",
  "uuid",
+ "vello",
  "walkdir",
  "webp",
  "x11-dl",
