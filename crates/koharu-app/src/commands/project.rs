@@ -1234,33 +1234,37 @@ impl Project {
                 .count()
                 + 1
         );
-        let mut layer = None;
+        let mut added = None;
         let patch = snapshot.patch(|edit| {
             let at = snapshot
                 .page(page)?
                 .text_group()?
                 .map_or(At::End, |group| At::Before(group.id()));
-            let added = edit.add_entity(page, at)?;
-            edit.set(
-                added,
-                &SceneShapeLayer {
+            let entity = edit.add_entity(page, at)?;
+            let mut geometry = geometry;
+            geometry.origin = Origin::User;
+            // The layer is created in this patch and never reaches the
+            // snapshot, but the helper takes it by value, so it resyncs the
+            // endpoints here exactly as it does on the other write paths.
+            Self::write_geometry(
+                edit,
+                entity,
+                Some(SceneShapeLayer {
                     origin: Origin::User,
                     name,
                     geometry: shape,
                     style,
                     angle_degrees: Some(angle_degrees),
                     rasterized: false,
-                },
+                }),
+                &geometry,
             )?;
-            let mut geometry = geometry;
-            geometry.origin = Origin::User;
-            edit.set(added, &geometry)?;
-            layer = Some(added);
+            added = Some(entity);
             Ok(())
         })?;
         Ok((
             self.commit(patch).await?,
-            layer.expect("shape layer was added while building the patch"),
+            added.expect("shape layer was added while building the patch"),
         ))
     }
 
@@ -1296,9 +1300,10 @@ impl Project {
     /// its first and last points, while `line_path` strokes the endpoints and
     /// `element_frame` reads the polygon. Every path that writes a polygon for a
     /// shape must therefore come through here, or a moved line's selection box
-    /// separates from its stroke: `set_geometries` (the transform path) and
-    /// `merge_pages` (the spread path) are the two callers, and both are covered
-    /// by a regression test. A new write path must call this too.
+    /// separates from its stroke. The callers are `add_shape` (the creation
+    /// path), `set_geometries` (the transform path), and `merge_pages` (the
+    /// spread path); all three are covered by a regression test. A new write
+    /// path must call this too.
     fn write_geometry(
         edit: &mut koharu_scene::Edit,
         entity: EntityId,
@@ -3017,6 +3022,57 @@ mod tests {
         };
         assert_eq!(start, [100.0, 50.0]);
         assert_eq!(end, [110.0, 60.0]);
+    }
+
+    /// `add_shape` is a polygon write path too, so it resyncs a `Line`'s derived
+    /// endpoints through the same helper as the transform and spread paths. The
+    /// client always sends matching values, so this drives the mismatch in
+    /// directly: the polygon is authoritative whatever the caller passed.
+    #[tokio::test]
+    async fn adding_a_line_resyncs_its_endpoints_from_the_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 1.0, y: 2.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 9.0, y: 8.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [999.0, 999.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        let stored = project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [1.0, 2.0]);
+        assert_eq!(end, [9.0, 8.0]);
     }
 
     #[tokio::test]
