@@ -1326,6 +1326,7 @@ fn build_node(
                 &shape.style,
                 frame,
             );
+            let bounds = rotated_bounds(frame, &path);
             let scene = koharu_rasterizer::PreparedScene {
                 commands: vec![koharu_rasterizer::PreparedSceneCommand::FillPath(path)],
             };
@@ -1333,7 +1334,7 @@ fn build_node(
                 descriptor,
                 scene: Arc::new(scene),
                 resources: Arc::from([]),
-                local_bounds: rotated_bounds(frame),
+                local_bounds: bounds,
                 image: None,
                 text: None,
                 diagnostics: Arc::from([]),
@@ -1342,30 +1343,80 @@ fn build_node(
     }
 }
 
-/// The page-space bounds of a shape's rotated frame box.
+/// The page-space bounds of everything a shape draws.
 ///
-/// The shape's scene is drawn in its own local axes with the frame's rotation
-/// baked into the prepared path's transform, and the layer's placement for a
-/// shape is the identity. `local_bounds` is therefore consumed in page
-/// coordinates — both as the opacity clip rect in
-/// `Layer::append_vector_with_presentation` and, via `transform_bounds`, as the
-/// `Layer::bounds` that `Frame::cropped` clips exports to. The un-rotated frame
-/// box would leave the swept corners of a rotated shape outside those bounds
-/// and cut them off in export, so take the axis-aligned box of the rotated
-/// rectangle. For an unrotated frame this is exactly the frame box.
-fn rotated_bounds(frame: crate::shape_renderer::ShapeFrame) -> RenderBounds {
+/// The shape's scene is built in the frame's local axes with the rotation baked
+/// into the prepared path's transform, and the layer's placement for a shape is
+/// the identity. `local_bounds` is therefore consumed in page coordinates — both
+/// as the opacity clip rect in `Layer::append_vector_with_presentation` and, via
+/// `transform_bounds`, as the `Layer::bounds` that `Frame::cropped` clips
+/// exports to. The un-rotated frame box would leave the swept corners of a
+/// rotated shape outside those bounds and cut them off in export, so the local
+/// extent is rotated and swept into an axis-aligned box.
+///
+/// The local extent is the union of the frame box and the drawn path, not the
+/// box alone: a horizontal arrow's drag box is a hair tall while its head is
+/// `width` high, and a wide stroke reaches half its width past the geometry on
+/// every side, so either one would be clipped by a box-only bound. Miter joins
+/// can spike further than the stroke half-width allowed here; this bound is not
+/// a guarantee about join geometry.
+fn rotated_bounds(
+    frame: crate::shape_renderer::ShapeFrame,
+    path: &koharu_rasterizer::PreparedPath,
+) -> RenderBounds {
+    let half_stroke = path
+        .stroke
+        .as_ref()
+        .map_or(0.0, |stroke| f64::from(stroke.width) * 0.5);
+    let (mut min_x, mut min_y): (f64, f64) = (0.0, 0.0);
+    let (mut max_x, mut max_y): (f64, f64) = (f64::from(frame.width), f64::from(frame.height));
+    for element in &path.elements {
+        let control_points: &[f64] = match element {
+            koharu_rasterizer::PathElement::MoveTo(values)
+            | koharu_rasterizer::PathElement::LineTo(values) => values,
+            koharu_rasterizer::PathElement::QuadTo(values) => values,
+            koharu_rasterizer::PathElement::CurveTo(values) => values,
+            koharu_rasterizer::PathElement::Close => continue,
+        };
+        for pair in control_points.chunks_exact(2) {
+            min_x = min_x.min(pair[0]);
+            min_y = min_y.min(pair[1]);
+            max_x = max_x.max(pair[0]);
+            max_y = max_y.max(pair[1]);
+        }
+    }
+    let (min_x, min_y) = (min_x - half_stroke, min_y - half_stroke);
+    let (max_x, max_y) = (max_x + half_stroke, max_y + half_stroke);
+
     let (sin, cos) = f64::from(frame.angle_degrees).to_radians().sin_cos();
-    let half_width = f64::from(frame.width) * 0.5;
-    let half_height = f64::from(frame.height) * 0.5;
-    let extent_x = (half_width * cos).abs() + (half_height * sin).abs();
-    let extent_y = (half_width * sin).abs() + (half_height * cos).abs();
-    let center_x = f64::from(frame.x) + half_width;
-    let center_y = f64::from(frame.y) + half_height;
+    let center_x = f64::from(frame.x) + f64::from(frame.width) * 0.5;
+    let center_y = f64::from(frame.y) + f64::from(frame.height) * 0.5;
+    let (mut left, mut top): (f64, f64) = (f64::INFINITY, f64::INFINITY);
+    let (mut right, mut bottom): (f64, f64) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (x, y) in [
+        (min_x, min_y),
+        (max_x, min_y),
+        (max_x, max_y),
+        (min_x, max_y),
+    ] {
+        // Local coordinates are relative to the frame box's top-left; the
+        // rotation is about the box's centre, matching `shape_renderer`.
+        let (x, y) = (
+            x - f64::from(frame.width) * 0.5,
+            y - f64::from(frame.height) * 0.5,
+        );
+        let page_x = center_x + x * cos - y * sin;
+        let page_y = center_y + x * sin + y * cos;
+        left = left.min(page_x);
+        top = top.min(page_y);
+        right = right.max(page_x);
+        bottom = bottom.max(page_y);
+    }
     RenderBounds {
-        x: (center_x - extent_x) as f32,
-        y: (center_y - extent_y) as f32,
-        width: (extent_x * 2.0) as f32,
-        height: (extent_y * 2.0) as f32,
+        x: left as f32,
+        y: top as f32,
+        width: (right - left) as f32,
+        height: (bottom - top) as f32,
     }
 }
 
@@ -2265,6 +2316,59 @@ mod tests {
         assert!(
             node.scene.commands.is_empty(),
             "a degenerate polygon draws nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_wide_stroke_shape_layer_bounds_cover_its_stroke() {
+        // `Frame::cropped` clips to `bounds`, so a bound that stopped at the
+        // frame box would cut a stroke off along the box's edge. A 40-unit
+        // stroke centred on a 100x50 rectangle reaches 20 past every side.
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let entity = edit.add_entity(page, At::End)?;
+                edit.set(
+                    entity,
+                    &ShapeLayer {
+                        origin: Origin::User,
+                        name: "Rectangle 1".to_owned(),
+                        geometry: koharu_scene::ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                        style: koharu_scene::ShapeStyle {
+                            fill: None,
+                            stroke: Some(koharu_scene::StrokeStyle {
+                                color: [0, 0, 0, 255],
+                                width: 40.0,
+                                dash: None,
+                                cap: koharu_scene::LineCap::Butt,
+                                join: koharu_scene::LineJoin::Miter,
+                            }),
+                        },
+                        angle_degrees: Some(0.0),
+                        rasterized: false,
+                    },
+                )?;
+                edit.set(entity, &Geometry::rectangle(100.0, 100.0, 100.0, 50.0))?;
+                ids = Some((page, entity));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let bounds = frame.layer(shape).unwrap().bounds();
+        assert!(
+            f64::from(bounds.x) <= 80.0 && f64::from(bounds.y) <= 80.0,
+            "a 40-wide stroke must reach 20 past the box, bounds were {bounds:?}"
+        );
+        assert!(
+            f64::from(bounds.x + bounds.width) >= 220.0
+                && f64::from(bounds.y + bounds.height) >= 170.0,
+            "a 40-wide stroke must reach 20 past the box, bounds were {bounds:?}"
         );
     }
 

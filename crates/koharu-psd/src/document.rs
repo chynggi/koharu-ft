@@ -791,6 +791,91 @@ mod tests {
         }
     }
 
+    /// A horizontal arrow's drag box is a hair tall while its head is
+    /// `width` tall. `Layer::bounds` feeds `Frame::cropped`, so bounds that
+    /// counted only the frame box would clip roughly half the head off.
+    #[tokio::test]
+    async fn a_horizontal_arrow_is_not_clipped_by_its_crop() {
+        const HEAD_WIDTH: f32 = 12.0;
+        let (mut session, page) = scene_with_a_page(128, 128, [0, 0, 0, 0]).await;
+        let patch = session
+            .snapshot()
+            .patch(|edit| {
+                let entity = edit.add_entity(page, At::End)?;
+                edit.set(
+                    entity,
+                    &ShapeLayer {
+                        origin: Origin::User,
+                        name: "Line 1".to_owned(),
+                        geometry: ShapeGeometry::Line {
+                            start: [16.0, 64.0],
+                            end: [112.0, 64.0],
+                            head: Some(koharu_scene::ArrowHead {
+                                length: 18.0,
+                                width: HEAD_WIDTH,
+                            }),
+                        },
+                        style: ShapeStyle {
+                            fill: None,
+                            stroke: Some(koharu_scene::StrokeStyle {
+                                color: [0, 0, 0, 255],
+                                width: 2.0,
+                                dash: None,
+                                cap: koharu_scene::LineCap::Butt,
+                                join: koharu_scene::LineJoin::Miter,
+                            }),
+                        },
+                        angle_degrees: Some(0.0),
+                        rasterized: false,
+                    },
+                )?;
+                // The polygon is the hit-testing sample: a nearly flat drag box.
+                // The frontend clamps a zero-height frame to `1e-6` so the
+                // polygon stays drawable, which is what a horizontal drag
+                // really produces (`lib/shapes.ts` `MIN_FRAME_EXTENT`).
+                edit.set(
+                    entity,
+                    &Geometry {
+                        origin: Origin::User,
+                        points: vec![
+                            koharu_scene::Point { x: 16.0, y: 64.0 },
+                            koharu_scene::Point { x: 64.0, y: 64.0 },
+                            koharu_scene::Point {
+                                x: 112.0,
+                                y: 64.0 + 1e-6,
+                            },
+                        ],
+                    },
+                )?;
+                Ok(())
+            })
+            .expect("build arrow patch");
+        let snapshot = session.commit(patch).await.unwrap().snapshot;
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let document = build(
+            &snapshot,
+            &frame,
+            Arc::new(Rasterizer::new().expect("a WGPU adapter is required")),
+            RasterOptions::default(),
+            &PsdExportOptions::default(),
+        )
+        .await
+        .expect("an arrow must export");
+
+        let arrow = document
+            .layers
+            .iter()
+            .find(|layer| layer.name.starts_with("Shape"))
+            .expect("a shape layer must be emitted");
+        assert!(
+            f64::from(arrow.pixels.height()) >= f64::from(HEAD_WIDTH),
+            "an arrow's crop must span its head width ({HEAD_WIDTH}), was {}x{}",
+            arrow.pixels.width(),
+            arrow.pixels.height()
+        );
+    }
+
     #[tokio::test]
     async fn a_serialized_shape_layer_carries_a_readable_name() {
         let (mut session, page) = scene_with_a_page(64, 64, [0, 0, 0, 0]).await;
