@@ -1247,7 +1247,11 @@ Expected: FAIL — `Cannot find module '@/lib/shapes'`
 
 프레임 크기가 0이어도 점이 유한해야 한다. `width`/`height`가 0이면 최소 `1e-6`으로 클램프한다.
 
-`defaultShapeStyle`은 `{ fill: { kind: 'solid', color: [255, 255, 255, 255] }, stroke: null }` 형태로, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다. TS 타입이 유니온이면 그에 맞춘다.
+`defaultShapeStyle`은 **면적이 있는 도형**(`rectangle`·`ellipse`·`polygon`·`freeform`)에 대해 `{ fill: { solid: [255, 255, 255, 255] }, stroke: null }`을 반환하고, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다.
+
+**`line`·`arrow`는 예외다.** 직선분은 면적을 둘러싸지 않으므로 채우기만 있는 스타일은 아무것도 그리지 않는다 — 기본값으로 두면 사용자가 선을 그어도 화면에 아무것도 나타나지 않는다. 이 두 종류는 `{ fill: null, stroke: { color: [255,255,255,255], width: 2, dash: null, cap: 'round', join: 'round' } }`을 반환한다.
+
+처음에 이 계획은 여섯 종류 모두에 채우기 기본값을 요구했으나, 그 제약은 serde가 고정한 **wire 형태**(면적 도형의 채우기 리터럴)를 모든 종류로 과잉 일반화한 것이었다. wire 형태는 어느 쪽이든 동일하므로 두 종류의 예외는 직렬화 계약을 깨지 않는다.
 
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
