@@ -723,6 +723,11 @@ impl PreparedPath {
                 return Err(Error::invalid("prepared path contains a non-finite point"));
             }
         }
+        if let Some(fill) = &self.fill
+            && let PreparedFill::Gradient { gradient, .. } = fill
+        {
+            gradient.validate()?;
+        }
         if let Some(stroke) = &self.stroke {
             if !stroke.width.is_finite() || stroke.width < 0.0 {
                 return Err(Error::invalid(
@@ -746,7 +751,150 @@ impl PreparedPath {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PreparedFill {
-    Solid { color: [u8; 4], rule: FillRule },
+    Solid {
+        color: [u8; 4],
+        rule: FillRule,
+    },
+    Gradient {
+        gradient: PreparedGradient,
+        rule: FillRule,
+    },
+}
+
+/// A gradient ready for a renderer, with its control points in the **path's
+/// local coordinate system** — the same one [`PreparedPath::elements`] uses.
+///
+/// They are never page coordinates and never normalized frame coordinates.
+/// Keeping the gradient in the path's own space means [`PreparedPath::transform`]
+/// applies to the gradient and to the outline alike, so a rotated shape's
+/// gradient rotates with it without anyone hand-transforming the control points.
+/// The normalized-to-local spread happens before a path is built.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedGradient {
+    pub kind: PreparedGradientKind,
+    /// May be in any order; renderers sort stably by offset before assembling.
+    pub stops: Vec<PreparedGradientStop>,
+    pub extend: PreparedGradientExtend,
+}
+
+impl PreparedGradient {
+    /// Boundary validation for prepared gradients.
+    ///
+    /// `koharu-scene` validates the persisted `GradientSpec` with the same
+    /// rules, and this crate deliberately does **not** depend on that crate: the
+    /// rasterizer must stay usable from a backend that has never seen a scene.
+    /// Re-checking the rules here is therefore boundary validation, not
+    /// duplication — a prepared gradient can arrive from the WASM canvas or a
+    /// native caller that never built one from `GradientSpec` at all.
+    fn validate(&self) -> Result<()> {
+        if !(2..=32).contains(&self.stops.len()) {
+            return Err(Error::invalid(
+                "prepared gradient must have between 2 and 32 stops",
+            ));
+        }
+        for stop in &self.stops {
+            if !stop.offset.is_finite() || !(0.0..=1.0).contains(&stop.offset) {
+                return Err(Error::invalid(
+                    "prepared gradient stop offset must be finite and within 0.0..=1.0",
+                ));
+            }
+        }
+        for (index, stop) in self.stops.iter().enumerate() {
+            if self.stops[index + 1..]
+                .iter()
+                .any(|other| other.offset == stop.offset)
+            {
+                return Err(Error::invalid(
+                    "prepared gradient stop offsets must be unique",
+                ));
+            }
+        }
+        match &self.kind {
+            PreparedGradientKind::Linear { start, end } => {
+                if start.iter().chain(end).any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient endpoints must be finite"));
+                }
+                if start == end {
+                    return Err(Error::invalid(
+                        "prepared gradient linear endpoints must differ",
+                    ));
+                }
+            }
+            PreparedGradientKind::Radial { center, radius } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient center must be finite"));
+                }
+                if !radius.is_finite() || *radius <= 0.0 {
+                    return Err(Error::invalid(
+                        "prepared gradient radial radius must be finite and positive",
+                    ));
+                }
+            }
+            PreparedGradientKind::Sweep {
+                center,
+                start_degrees,
+                end_degrees,
+            } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient center must be finite"));
+                }
+                if !start_degrees.is_finite() || !end_degrees.is_finite() {
+                    return Err(Error::invalid(
+                        "prepared gradient sweep angles must be finite",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PreparedGradientKind {
+    Linear {
+        start: [f32; 2],
+        end: [f32; 2],
+    },
+    Radial {
+        center: [f32; 2],
+        radius: f32,
+    },
+    Sweep {
+        center: [f32; 2],
+        /// Degrees, measured from the positive X axis. The renderer converts
+        /// these to radians for peniko; the sign convention is peniko's own, so
+        /// the angle is passed through without a flip.
+        start_degrees: f32,
+        end_degrees: f32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedGradientStop {
+    /// `0.0..=1.0`.
+    pub offset: f32,
+    pub color: [u8; 4],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedGradientExtend {
+    Pad,
+    Repeat,
+    Reflect,
+}
+
+/// Stably sorts stops by offset. Unsorted input is legal, so renderers cannot
+/// reject it; they normalize it here instead.
+///
+/// A public helper rather than an inline sort because the stable ordering is a
+/// contract the design spec pins, and a test can only pin it if the sort is
+/// reachable on its own.
+pub fn stops_sorted(stops: &[PreparedGradientStop]) -> Vec<PreparedGradientStop> {
+    let mut sorted = stops.to_vec();
+    // `total_cmp` is a total order, so sorting is deterministic even for values
+    // validation has not yet rejected (for example `NaN`).
+    sorted.sort_by(|left, right| left.offset.total_cmp(&right.offset));
+    sorted
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1370,5 +1518,317 @@ mod tests {
         assert!(stroked(1.0, Some(vec![f32::NAN])).validate().is_err());
         assert!(stroked(1.0, Some(Vec::new())).validate().is_err());
         assert!(stroked(1.0, Some(vec![4.0, 2.0])).validate().is_ok());
+    }
+
+    fn gradient_fill() -> PreparedFill {
+        PreparedFill::Gradient {
+            gradient: PreparedGradient {
+                kind: PreparedGradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [100.0, 0.0],
+                },
+                stops: vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset: 1.0,
+                        color: [255, 255, 255, 255],
+                    },
+                ],
+                extend: PreparedGradientExtend::Pad,
+            },
+            rule: FillRule::NonZero,
+        }
+    }
+
+    fn filled(fill: PreparedFill) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: Some(fill),
+            stroke: None,
+        }
+    }
+
+    fn with_stops(stops: Vec<PreparedGradientStop>) -> PreparedGradient {
+        let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+            unreachable!()
+        };
+        PreparedGradient { stops, ..gradient }
+    }
+
+    #[test]
+    fn a_gradient_fill_validates() {
+        assert!(filled(gradient_fill()).validate().is_ok());
+    }
+
+    /// The stop-count band is inclusive on both ends: an implementation that
+    /// checked `< 2` or `<= 32` instead of `!(2..=32).contains(...)` fails here.
+    #[test]
+    fn the_stop_count_band_is_inclusive() {
+        let stop = |offset| PreparedGradientStop {
+            offset,
+            color: [1, 2, 3, 255],
+        };
+        let stops_of = |count: u32| {
+            (0..count)
+                .map(|index| stop(index as f32 / (count - 1) as f32))
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            filled(PreparedFill::Gradient {
+                gradient: with_stops(stops_of(2)),
+                rule: FillRule::NonZero,
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            filled(PreparedFill::Gradient {
+                gradient: with_stops(stops_of(32)),
+                rule: FillRule::NonZero,
+            })
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_gradient_with_one_stop_is_rejected() {
+        let mut gradient = with_stops(vec![PreparedGradientStop {
+            offset: 0.0,
+            color: [0, 0, 0, 255],
+        }]);
+        gradient.stops.truncate(1);
+        let path = filled(PreparedFill::Gradient {
+            gradient,
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    #[test]
+    fn a_gradient_with_thirty_three_stops_is_rejected() {
+        let stops = (0..33)
+            .map(|index| PreparedGradientStop {
+                offset: index as f32 / 32.0,
+                color: [1, 2, 3, 255],
+            })
+            .collect();
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(stops),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    #[test]
+    fn gradient_stop_offsets_must_be_finite_and_in_range() {
+        for offset in [f32::NAN, f32::INFINITY, -0.5, 1.5] {
+            let path = filled(PreparedFill::Gradient {
+                gradient: with_stops(vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset,
+                        color: [255, 255, 255, 255],
+                    },
+                ]),
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_err(), "offset {offset} must be rejected");
+        }
+    }
+
+    #[test]
+    fn duplicate_gradient_stop_offsets_are_rejected() {
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(vec![
+                PreparedGradientStop {
+                    offset: 0.5,
+                    color: [1, 1, 1, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.5,
+                    color: [2, 2, 2, 255],
+                },
+            ]),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    /// Unsorted stops are legal because the renderer sorts them; rejecting them
+    /// here would contradict `stops_sorted` and the design spec's failure table.
+    #[test]
+    fn unsorted_gradient_stops_validate() {
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(vec![
+                PreparedGradientStop {
+                    offset: 0.9,
+                    color: [1, 1, 1, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.1,
+                    color: [2, 2, 2, 255],
+                },
+            ]),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn degenerate_gradient_geometry_is_rejected() {
+        let cases = [
+            PreparedGradientKind::Linear {
+                start: [5.0, 5.0],
+                end: [5.0, 5.0],
+            },
+            PreparedGradientKind::Linear {
+                start: [0.0, f32::NAN],
+                end: [1.0, 0.0],
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, 0.0],
+                radius: 0.0,
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, 0.0],
+                radius: -1.0,
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, f32::INFINITY],
+                radius: 1.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [0.0, 0.0],
+                start_degrees: f32::NAN,
+                end_degrees: 360.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [0.0, 0.0],
+                start_degrees: 0.0,
+                end_degrees: f32::INFINITY,
+            },
+        ];
+        for kind in cases {
+            let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+                unreachable!()
+            };
+            let path = filled(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind: kind.clone(),
+                    ..gradient
+                },
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_err(), "{kind:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn non_degenerate_gradient_geometry_validates() {
+        let cases = [
+            PreparedGradientKind::Linear {
+                start: [0.0, 0.0],
+                end: [100.0, 0.0],
+            },
+            PreparedGradientKind::Radial {
+                center: [50.0, 50.0],
+                radius: 25.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [50.0, 50.0],
+                start_degrees: 0.0,
+                end_degrees: 360.0,
+            },
+        ];
+        for kind in cases {
+            let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+                unreachable!()
+            };
+            let path = filled(PreparedFill::Gradient {
+                gradient: PreparedGradient { kind, ..gradient },
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn stops_are_sorted_by_offset() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.8,
+                color: [255, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.2,
+                color: [0, 0, 255, 255],
+            },
+        ];
+        let sorted = stops_sorted(&stops);
+        assert_eq!(sorted[0].offset, 0.2);
+        assert_eq!(sorted[1].offset, 0.8);
+        assert_eq!(sorted[0].color, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn stops_sorted_leaves_sorted_input_in_order() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.0,
+                color: [0, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [128, 128, 128, 255],
+            },
+            PreparedGradientStop {
+                offset: 1.0,
+                color: [255, 255, 255, 255],
+            },
+        ];
+        assert_eq!(stops_sorted(&stops), stops);
+    }
+
+    /// Validation rejects duplicate offsets, but the sort itself must still be
+    /// stable so an unsorted duplicate pair never swaps when it passes through
+    /// the renderer's assembly path.
+    #[test]
+    fn stops_sorted_is_stable_for_equal_offsets() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [1, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [0, 1, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [0, 0, 1, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.1,
+                color: [9, 9, 9, 255],
+            },
+        ];
+        let sorted = stops_sorted(&stops);
+        assert_eq!(
+            sorted.iter().map(|stop| stop.color).collect::<Vec<_>>(),
+            vec![
+                [9, 9, 9, 255],
+                [1, 0, 0, 255],
+                [0, 1, 0, 255],
+                [0, 0, 1, 255],
+            ]
+        );
     }
 }

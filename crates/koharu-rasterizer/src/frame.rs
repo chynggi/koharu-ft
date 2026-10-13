@@ -5,15 +5,15 @@ use std::{collections::HashMap, sync::Arc};
 use vello::{
     FontEmbolden, Glyph, Scene,
     kurbo::{Affine, BezPath, Cap, Diagonal2, Join, Rect, Stroke},
-    peniko::{Blob, Color, Fill, FontData, Mix},
+    peniko::{Blob, Color, ColorStop, Extend, Fill, FontData, Gradient, Mix},
 };
 
 use crate::{
     Bounds, CompositionCommand, Error, FillRule, LayerId, LayerKind, PathElement, PreparedContent,
     PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest,
-    PreparedLineCap, PreparedLineJoin, PreparedPath, PreparedResource, PreparedResourceStore,
-    PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation, RasterDraw, ResourceId,
-    Result, Revision,
+    PreparedGradient, PreparedGradientExtend, PreparedGradientKind, PreparedLineCap,
+    PreparedLineJoin, PreparedPath, PreparedResource, PreparedResourceStore, PreparedScene,
+    PreparedSceneCommand, PreparedStroke, Presentation, RasterDraw, ResourceId, Result, Revision,
 };
 
 #[derive(Clone)]
@@ -507,17 +507,24 @@ impl PreparedPath {
     pub fn append_to(&self, scene: &mut Scene) {
         let path = compile_path(self);
         let affine = Affine::new(self.transform);
-        if let Some(PreparedFill::Solid { color, rule }) = &self.fill {
-            scene.fill(
-                match rule {
-                    FillRule::NonZero => Fill::NonZero,
-                    FillRule::EvenOdd => Fill::EvenOdd,
-                },
-                affine,
-                rgba(*color),
-                None,
-                &path,
-            );
+        match &self.fill {
+            Some(PreparedFill::Solid { color, rule }) => {
+                scene.fill(fill(rule), affine, rgba(*color), None, &path);
+            }
+            Some(PreparedFill::Gradient { gradient, rule }) => {
+                // Gradient control points are path-local, so the path affine is
+                // handed to Vello as the brush transform: that is the intended
+                // way to make a gradient rotate with its path, and it means the
+                // two transforms cannot drift apart.
+                scene.fill(
+                    fill(rule),
+                    affine,
+                    &compile_gradient(gradient),
+                    Some(affine),
+                    &path,
+                );
+            }
+            None => {}
         }
         if let Some(stroke) = &self.stroke {
             scene.stroke(
@@ -529,6 +536,49 @@ impl PreparedPath {
             );
         }
     }
+}
+
+fn fill(rule: &FillRule) -> Fill {
+    match rule {
+        FillRule::NonZero => Fill::NonZero,
+        FillRule::EvenOdd => Fill::EvenOdd,
+    }
+}
+
+fn compile_gradient(prepared: &PreparedGradient) -> Gradient {
+    let stops = crate::stops_sorted(&prepared.stops)
+        .into_iter()
+        .map(|stop| ColorStop {
+            offset: stop.offset,
+            color: rgba(stop.color).into(),
+        })
+        .collect::<Vec<_>>();
+    let gradient = match &prepared.kind {
+        PreparedGradientKind::Linear { start, end } => {
+            Gradient::new_linear((start[0], start[1]), (end[0], end[1]))
+        }
+        PreparedGradientKind::Radial { center, radius } => {
+            Gradient::new_radial((center[0], center[1]), *radius)
+        }
+        // Sweep angles are stored in degrees on the portable side; peniko
+        // measures them in radians.
+        PreparedGradientKind::Sweep {
+            center,
+            start_degrees,
+            end_degrees,
+        } => Gradient::new_sweep(
+            (center[0], center[1]),
+            start_degrees.to_radians(),
+            end_degrees.to_radians(),
+        ),
+    };
+    gradient
+        .with_extend(match prepared.extend {
+            PreparedGradientExtend::Pad => Extend::Pad,
+            PreparedGradientExtend::Repeat => Extend::Repeat,
+            PreparedGradientExtend::Reflect => Extend::Reflect,
+        })
+        .with_stops(&stops[..])
 }
 
 fn compile_path(prepared: &PreparedPath) -> BezPath {
@@ -573,9 +623,44 @@ fn rgba([r, g, b, a]: [u8; 4]) -> Color {
 mod tests {
     use super::*;
     use crate::{
-        Point, PreparedFrame, PreparedLayer, PreparedRaster, PreparedRasterTile, PreparedScene,
+        Point, PreparedFrame, PreparedGradient, PreparedGradientExtend, PreparedGradientKind,
+        PreparedGradientStop, PreparedLayer, PreparedRaster, PreparedRasterTile, PreparedScene,
         PreparedSceneCommand,
     };
+    use vello::peniko::{ColorStop, GradientKind};
+
+    /// A gradient path whose kind, stops, extend, and transform are all
+    /// non-trivial and whose stops are deliberately unsorted, so a preview that
+    /// skips sorting, drops `extend`, or forgets the brush transform changes the
+    /// encoding.
+    fn gradient_path(kind: PreparedGradientKind) -> PreparedPath {
+        PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 30.0, 40.0],
+            elements: vec![
+                PathElement::MoveTo([1.0, 2.0]),
+                PathElement::LineTo([9.0, 2.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind,
+                    stops: vec![
+                        PreparedGradientStop {
+                            offset: 0.75,
+                            color: [255, 0, 0, 255],
+                        },
+                        PreparedGradientStop {
+                            offset: 0.25,
+                            color: [0, 0, 255, 255],
+                        },
+                    ],
+                    extend: PreparedGradientExtend::Reflect,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
+    }
 
     /// Paths whose transform, fill, and stroke are all non-trivial, so a preview
     /// that drops or reorders any of them changes the encoding.
@@ -704,6 +789,204 @@ mod tests {
 
         assert_encoding_matches(&preview, &expected);
         assert_encoding_matches(&committed, &preview);
+    }
+
+    /// The browser's live shape preview appends a prepared path straight into a
+    /// scene instead of going through a committed frame. A gradient path must
+    /// issue the same draws there too, with the gradient control points left in
+    /// path-local coordinates and the path affine passed as `brush_transform`.
+    #[test]
+    fn appending_a_gradient_path_rotates_the_brush_with_its_path() {
+        let path = gradient_path(PreparedGradientKind::Sweep {
+            center: [5.0, 5.0],
+            start_degrees: 0.0,
+            end_degrees: 90.0,
+        });
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::NonZero,
+            affine,
+            &Gradient::new_sweep((5.0, 5.0), 0.0f32.to_radians(), 90.0f32.to_radians())
+                .with_extend(Extend::Reflect)
+                .with_stops([
+                    ColorStop {
+                        offset: 0.25,
+                        color: Color::from_rgba8(0, 0, 255, 255).into(),
+                    },
+                    ColorStop {
+                        offset: 0.75,
+                        color: Color::from_rgba8(255, 0, 0, 255).into(),
+                    },
+                ]),
+            Some(affine),
+            &bez,
+        );
+
+        let frame = shape_layer_frame(path);
+        let mut committed = Scene::new();
+        frame.layers()[0].append_vector_with_presentation(
+            &mut committed,
+            None,
+            Presentation {
+                visible: true,
+                opacity: 1.0,
+            },
+        );
+
+        assert_encoding_matches(&preview, &expected);
+        assert_encoding_matches(&committed, &preview);
+    }
+
+    /// A solid fill must keep passing `brush_transform: None`; a regression that
+    /// started rotating solid colours would still paint identically, so only the
+    /// encoding comparison can catch it.
+    #[test]
+    fn a_solid_fill_keeps_no_brush_transform() {
+        let mut path = shape_path();
+        path.stroke = None;
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.quad_to((11.0, 6.0), (9.0, 10.0));
+        bez.curve_to((7.0, 14.0), (3.0, 14.0), (1.0, 10.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::EvenOdd,
+            affine,
+            Color::from_rgba8(10, 20, 30, 255),
+            None,
+            &bez,
+        );
+
+        assert_encoding_matches(&preview, &expected);
+    }
+
+    /// `Scene`'s encoding carries the brush *transform* as a path tag but not
+    /// the brush payload, which lives in the scene's resource list. The
+    /// encoding comparison above therefore cannot see stop order, `extend`, or
+    /// the kind, so the assembled gradient is compared directly here.
+    #[test]
+    fn a_gradient_compiles_with_sorted_stops_and_mapped_extend() {
+        let gradient = compile_gradient(&PreparedGradient {
+            kind: PreparedGradientKind::Radial {
+                center: [5.0, 6.0],
+                radius: 25.0,
+            },
+            stops: vec![
+                PreparedGradientStop {
+                    offset: 0.75,
+                    color: [255, 0, 0, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.25,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: PreparedGradientExtend::Repeat,
+        });
+
+        let expected = Gradient::new_radial((5.0f32, 6.0f32), 25.0)
+            .with_extend(Extend::Repeat)
+            .with_stops([
+                ColorStop {
+                    offset: 0.25,
+                    color: Color::from_rgba8(0, 0, 255, 255).into(),
+                },
+                ColorStop {
+                    offset: 0.75,
+                    color: Color::from_rgba8(255, 0, 0, 255).into(),
+                },
+            ]);
+        assert_eq!(gradient, expected);
+    }
+
+    /// Sweep is the only kind whose stored units differ from peniko's: degrees
+    /// on the portable side, radians in the assembled gradient.
+    #[test]
+    fn sweep_angles_are_converted_from_degrees_to_radians() {
+        let gradient = compile_gradient(&PreparedGradient {
+            kind: PreparedGradientKind::Sweep {
+                center: [1.0, 2.0],
+                start_degrees: 0.0,
+                end_degrees: 180.0,
+            },
+            stops: vec![
+                PreparedGradientStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                PreparedGradientStop {
+                    offset: 1.0,
+                    color: [255, 255, 255, 255],
+                },
+            ],
+            extend: PreparedGradientExtend::Pad,
+        });
+
+        let expected =
+            Gradient::new_sweep((1.0f32, 2.0f32), 0.0f32.to_radians(), 180.0f32.to_radians())
+                .with_extend(Extend::Pad)
+                .with_stops([
+                    ColorStop {
+                        offset: 0.0,
+                        color: Color::from_rgba8(0, 0, 0, 255).into(),
+                    },
+                    ColorStop {
+                        offset: 1.0,
+                        color: Color::from_rgba8(255, 255, 255, 255).into(),
+                    },
+                ]);
+        assert_eq!(gradient, expected);
+
+        let GradientKind::Sweep(position) = gradient.kind else {
+            panic!("a sweep gradient must assemble as a sweep");
+        };
+        assert_eq!(position.end_angle, std::f32::consts::PI);
+    }
+
+    /// Every `PreparedGradientExtend` value must reach peniko unchanged; a
+    /// wildcard arm that fell back to `Pad` would otherwise go unnoticed.
+    #[test]
+    fn every_extend_mode_maps_across() {
+        for (prepared, expected) in [
+            (PreparedGradientExtend::Pad, Extend::Pad),
+            (PreparedGradientExtend::Repeat, Extend::Repeat),
+            (PreparedGradientExtend::Reflect, Extend::Reflect),
+        ] {
+            let gradient = compile_gradient(&PreparedGradient {
+                kind: PreparedGradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [1.0, 0.0],
+                },
+                stops: vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset: 1.0,
+                        color: [255, 255, 255, 255],
+                    },
+                ],
+                extend: prepared,
+            });
+            assert_eq!(gradient.extend, expected, "{prepared:?}");
+        }
     }
 
     /// Compares the encoded draw streams of two scenes.
