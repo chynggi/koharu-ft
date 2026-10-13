@@ -886,8 +886,9 @@ mod tests {
 
     /// `Scene`'s encoding carries the brush *transform* as a path tag but not
     /// the brush payload, which lives in the scene's resource list. The
-    /// encoding comparison above therefore cannot see stop order, `extend`, or
-    /// the kind, so the assembled gradient is compared directly here.
+    /// encoding comparison above therefore cannot see stop order or `extend`,
+    /// so the assembled gradient is compared directly here. A wrong kind or a
+    /// missing degree-to-radian conversion *is* visible there, via `draw_data`.
     #[test]
     fn a_gradient_compiles_with_sorted_stops_and_mapped_extend() {
         let gradient = compile_gradient(&PreparedGradient {

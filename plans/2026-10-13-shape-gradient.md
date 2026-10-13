@@ -946,10 +946,16 @@ git commit -m "feat(ui): edit gradient stops in the shape inspector"
 `Rasterizer::rasterize_scene`으로 회전한 그라디언트 사각형을 실제로 굽고, **단색이 아님**을 단언한다. `Some(T)` 이중 적용이면 그라디언트가 한 색으로 뭉개지므로 이 테스트가 그것을 잡는다.
 
 ```rust
-    /// A rotated gradient must still vary across the shape. Passing the path
-    /// affine as `brush_transform` double-applies it (`Scene::fill` composes
-    /// `transform * brush_transform`), which collapses the ramp to one colour —
-    /// a failure that only shows up on a real render.
+    /// A rotated gradient must still vary *along its own axis* on a real
+    /// render. Passing the path affine as `brush_transform` double-applies it
+    /// (`Scene::fill` composes `transform * brush_transform`), which collapses
+    /// the ramp to one colour — a failure only a pixel test can see.
+    ///
+    /// The sample points are chosen carefully: the path transform is a 90°
+    /// rotation (`[0, 1, -1, 0, ...]`), so the gradient's local +x axis — the
+    /// direction the ramp varies in — maps to page +y. Two pixels differing
+    /// only in x are on the same iso-colour line and would compare equal even
+    /// when the code is correct.
     #[test]
     fn a_rotated_gradient_is_not_collapsed_to_one_colour() {
         let path = PreparedPath {
@@ -961,11 +967,25 @@ git commit -m "feat(ui): edit gradient stops in the shape inspector"
                 PathElement::LineTo([0.0, 100.0]),
                 PathElement::Close,
             ],
-            fill: Some(gradient_fill()),
+            // `gradient_path` already builds a two-stop linear gradient along
+            // local +x; reuse it with the explicit linear kind.
+            fill: Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind: PreparedGradientKind::Linear {
+                        start: [0.0, 0.0],
+                        end: [100.0, 0.0],
+                    },
+                    stops: vec![
+                        PreparedGradientStop { offset: 0.0, color: [255, 0, 0, 255] },
+                        PreparedGradientStop { offset: 1.0, color: [0, 0, 255, 255] },
+                    ],
+                    extend: PreparedGradientExtend::Pad,
+                },
+                rule: FillRule::NonZero,
+            }),
             stroke: None,
         };
         let mut scene = vello::Scene::new();
-        // `compile_scene`를 직접 부르거나 `PreparedPath::append_to`를 쓴다.
         path.append_to(&mut scene);
 
         let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
@@ -973,34 +993,40 @@ git commit -m "feat(ui): edit gradient stops in the shape inspector"
             .rasterize_scene(&scene, 200, 200, [0, 0, 0, 0], crate::RasterOptions::default())
             .expect("the scene rasterizes");
 
-        // 회전한 그라디언트는 화면을 가로질러 색이 변해야 한다. 한 색으로
-        // 뭉개지면(=이중 적용) 서로 다른 두 열의 색이 같아진다.
-        let left = image.get_pixel(60, 100);
-        let right = image.get_pixel(140, 100);
+        // 회전 후 페이지상 사각형은 x∈[0,100], y∈[0,100] 을 덮고, 그라디언트
+        // 램프는 페이지 **y** 를 따라 변한다. 그러므로 같은 x, 다른 y 를
+        // 표본한다 — 둘 다 사각형 안이다.
+        let near = image.get_pixel(50, 30);
+        let far = image.get_pixel(50, 70);
         assert_ne!(
-            (left[0], left[1], left[2]),
-            (right[0], right[1], right[2]),
+            (near[0], near[1], near[2]),
+            (far[0], far[1], far[2]),
             "a rotated gradient collapsed to one colour — brush_transform is probably Some(affine)"
         );
+        // 두 표본이 실제로 배경이 아님도 확인한다. 배경끼리 비교하면
+        // 커버리지 차이를 그라디언트 변화로 착각할 수 있다.
+        assert!(near[3] > 0, "the near sample missed the shape");
+        assert!(far[3] > 0, "the far sample missed the shape");
     }
 ```
 
-`gradient_fill()`은 Task 2의 테스트 헬퍼다(검정→흰색 선형). 같은 모듈에 있으므로 재사용한다.
+`gradient_path(kind)`은 `frame.rs`의 같은 `mod tests`에 이미 있는 헬퍼다(`frame.rs:638`). 위 스니펫은 선형 그라디언트의 좌표를 명시하려고 `PreparedPath`를 직접 만들지만, **`gradient_path`를 쓸 수 있으면 그쪽이 낫다** — 종류만 바꿔 끼우면 되고 스톱·extend 를 다시 적을 필요가 없다. 다만 `gradient_path`의 로컬 사각형은 `[1,2]`~`[9,2]` 로 작으므로, 픽셀 표본을 잡으려면 위처럼 큰 경로가 필요하다. 어느 쪽을 택하든 **표본 좌표가 그라디언트 축을 따라야 한다**는 점이 이 테스트의 전부다.
 
 이 테스트는 **GPU 어댑터를 요구한다**. `koharu-rasterizer`의 기존 도형 테스트가 이미 그 전제를 쓰므로 새 제약이 아니다.
 
 - [ ] **Step 2: 실패를 확인한다**
 
-`Some(path affine)`을 `brush_transform`으로 넘긴 상태에서 실행한다.
+`brush_transform`에 `Some(path affine)`을 넘긴 상태에서 실행한다. Task 2의 수정 라운드가 이미 `None`으로 바꿨다면 **일시적으로 되돌려** 이 단계를 확인하고 다시 `None`으로 복원한다.
 
 Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_rotated_gradient`
-Expected: FAIL — 두 픽셀의 색이 같다는 단언 실패
+Expected: FAIL — 두 표본의 색이 같다는 단언 실패
 
-**이 실패가 이 태스크의 요점이다.** 실패하지 않으면 테스트가 이중 적용을 못 잡는 것이므로 테스트를 고쳐야 한다.
+**이 실패가 이 태스크의 요점이다.** 실패하지 않으면 테스트가 이중 적용을 못 잡는 것이므로(표본이 등색선 위에 있거나 사각형 밖이거나) 테스트를 고쳐야 한다. `None`을 유지한 채로도 이 테스트가 실패한다면 **표본 좌표가 틀린 것**이다 — Step 1의 주석이 그 이유를 설명한다.
 
-- [ ] **Step 3: `None`으로 바꾸고 통과를 확인한다**
+- [ ] **Step 3: `None`을 유지한 채 통과를 확인한다**
 
-Task 2가 `Some(affine)`을 넘기고 있으면 `None`으로 바꾼다. Task 2의 수정 라운드에서 이미 `None`이 되었다면 이 단계는 생략하고 Step 4로 간다 — 그 경우 Step 2의 실패는 재현되지 않으며, 그 사실을 보고에 남긴다.
+Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_rotated_gradient`
+Expected: PASS
 
 Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_rotated_gradient`
 Expected: PASS
