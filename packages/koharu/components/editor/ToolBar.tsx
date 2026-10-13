@@ -9,8 +9,6 @@ import {
   LassoSelect,
   Minus,
   MousePointer2,
-  Pencil,
-  Pentagon,
   Pipette,
   Plus,
   ScanText,
@@ -72,8 +70,6 @@ const shapeIcons = {
   ellipse: Circle,
   line: Minus,
   arrow: ArrowRight,
-  polygon: Pentagon,
-  freeform: Pencil,
 } as const satisfies Record<ShapeKind, typeof MousePointer2>
 
 const DEFAULT_STROKE_WIDTH = 2

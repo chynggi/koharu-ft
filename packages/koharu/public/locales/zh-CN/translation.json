@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "箭头",
         "ellipse": "椭圆",
-        "freeform": "自由曲线",
         "line": "直线",
-        "polygon": "多边形",
         "rectangle": "矩形"
       },
       "kindLabel": "形状类型：{{kind}}",

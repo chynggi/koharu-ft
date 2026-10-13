@@ -81,8 +81,6 @@ describe('shapeGeometry', () => {
     expect(geometry).toEqual({
       line: { start: [10, 20], end: [110, 70], head: null },
     })
-    expect(shapeGeometry('polygon', points)).toBe('polygon')
-    expect(shapeGeometry('freeform', points)).toBe('freeform')
   })
 
   it('gives an arrow a finite head even for a zero-length drag', () => {
@@ -121,14 +119,10 @@ describe('defaultShapeStyle', () => {
 
 describe('isShapeTool', () => {
   it('accepts only the shape tool', () => {
-    expect(SHAPE_KINDS).toEqual([
-      'rectangle',
-      'ellipse',
-      'line',
-      'arrow',
-      'polygon',
-      'freeform',
-    ])
+    // 1a ships the four kinds with an authored geometry. `polygon`/`freeform`
+    // are deferred with the vertex-editing surface, because a picker entry that
+    // only draws a differently tagged rectangle would be misleading.
+    expect(SHAPE_KINDS).toEqual(['rectangle', 'ellipse', 'line', 'arrow'])
     expect(isShapeTool('shape')).toBe(true)
     expect(isShapeTool('draw')).toBe(false)
   })

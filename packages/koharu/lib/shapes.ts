@@ -10,16 +10,15 @@ import type { CanvasPath, CanvasPathElement } from '@koharu/bridge/canvas'
 
 import type { CanvasTool } from './store'
 
-export type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'polygon' | 'freeform'
+export type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow'
 
-export const SHAPE_KINDS: readonly ShapeKind[] = [
-  'rectangle',
-  'ellipse',
-  'line',
-  'arrow',
-  'polygon',
-  'freeform',
-]
+// 1a exposes only the kinds that have a real authored geometry. `polygon` and
+// `freeform` exist in `ShapeGeometry` and the renderer's polygon path, but a
+// user drawing one would get a rectangle with a different tag: there is no
+// vertex-editing UI and `shapePolygon` returns the drag box's four corners for
+// both. They are deferred with the editing surface, not shipped as placeholders
+// (see "1a 범위" in `specs/2026-10-13-shape-tools-design.md`).
+export const SHAPE_KINDS: readonly ShapeKind[] = ['rectangle', 'ellipse', 'line', 'arrow']
 
 // Shapes are drawn from a polygon the frontend owns (the renderer only rebuilds
 // rectangle/ellipse/line from their parameters), so every kind is approximated
@@ -92,8 +91,6 @@ export function shapePolygon(kind: ShapeKind, frame: Frame): Geometry {
 export function shapeGeometry(kind: ShapeKind, points: Point[]): ShapeGeometry {
   if (kind === 'rectangle') return { rectangle: { corner_radius: 0 } }
   if (kind === 'ellipse') return 'ellipse'
-  if (kind === 'polygon') return 'polygon'
-  if (kind === 'freeform') return 'freeform'
   const first = points[0] ?? { x: 0, y: 0 }
   const last = points.at(-1) ?? first
   return {

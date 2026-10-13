@@ -69,7 +69,7 @@ describe('interface language persistence', () => {
   it('ships a translated string for every shape key the editor asks for', async () => {
     vi.resetModules()
     const { default: i18n } = await import('@/lib/i18n')
-    const kinds = ['rectangle', 'ellipse', 'line', 'arrow', 'polygon', 'freeform']
+    const kinds = ['rectangle', 'ellipse', 'line', 'arrow']
     const keys = [
       'tools.shape',
       'layers.kinds.shape',

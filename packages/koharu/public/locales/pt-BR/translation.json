@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "Seta",
         "ellipse": "Elipse",
-        "freeform": "Forma livre",
         "line": "Linha",
-        "polygon": "Polígono",
         "rectangle": "Retângulo"
       },
       "kindLabel": "Tipo de forma: {{kind}}",

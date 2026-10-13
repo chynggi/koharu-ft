@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "矢印",
         "ellipse": "楕円",
-        "freeform": "フリーフォーム",
         "line": "直線",
-        "polygon": "多角形",
         "rectangle": "長方形"
       },
       "kindLabel": "図形の種類: {{kind}}",

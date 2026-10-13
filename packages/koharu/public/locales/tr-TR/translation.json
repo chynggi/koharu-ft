@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "Ok",
         "ellipse": "Elips",
-        "freeform": "Serbest form",
         "line": "Çizgi",
-        "polygon": "Çokgen",
         "rectangle": "Dikdörtgen"
       },
       "kindLabel": "Şekil türü: {{kind}}",

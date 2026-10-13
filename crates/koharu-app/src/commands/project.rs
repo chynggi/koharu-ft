@@ -1290,23 +1290,6 @@ impl Project {
         self.commit(patch).await
     }
 
-    /// Moves shapes: the polygon is replaced and the rotation lands on the
-    /// `ShapeLayer`, which is what the renderer rebuilds the frame from. This is
-    /// the shape-only entry point, so a text-layer element is rejected rather
-    /// than silently treated as one.
-    pub async fn set_shape_geometries(
-        &mut self,
-        updates: Vec<(EntityId, SceneGeometry, f32)>,
-    ) -> Result<Commit> {
-        let snapshot = self.snapshot();
-        for (element, _, _) in &updates {
-            if snapshot.component::<SceneShapeLayer>(*element)?.is_none() {
-                bail!("only shape layers can change geometry");
-            }
-        }
-        self.set_geometries(updates).await
-    }
-
     /// Writes a polygon and keeps a `ShapeLayer`'s derived values in step with it.
     ///
     /// The polygon is authoritative and `Line`'s `start`/`end` are derived from
@@ -2900,8 +2883,8 @@ mod tests {
 
     /// `commit_transform` moves every transformable layer through
     /// `set_geometries`, so that path has to accept shapes too — otherwise
-    /// dragging a shape fails outright. It must resync a line the same way
-    /// `set_shape_geometries` does.
+    /// dragging a shape fails outright. It must resync a line's endpoints the
+    /// same way every other polygon write does (`Project::write_geometry`).
     #[tokio::test]
     async fn a_line_moves_through_the_general_transform_path() {
         let mut session = Session::memory().await.unwrap();
@@ -3020,7 +3003,7 @@ mod tests {
             ],
         };
         project
-            .set_shape_geometries(vec![(element, moved, 0.0)])
+            .set_geometries(vec![(element, moved, 0.0)])
             .await
             .unwrap();
 

@@ -289,11 +289,6 @@ export const commands = {
 		}),
 	setShapeStyle: (expectedRevision: Revision, updates: ShapeStyleUpdate[]) =>
 		post<Revision>("/canvas/shape/style", { expected_revision: expectedRevision, updates }),
-	setShapeGeometries: (expectedRevision: Revision, updates: ShapeFrameUpdate[]) =>
-		post<Revision>("/canvas/shape/geometry", {
-			expected_revision: expectedRevision,
-			updates,
-		}),
 	rasterizeShapes: (expectedRevision: Revision, page: EntityId, shapes: EntityId[]) =>
 		post<Revision>("/canvas/shape/rasterize", {
 			expected_revision: expectedRevision,
@@ -1029,12 +1024,6 @@ export type ShapeStyle = {
 export type ShapeStyleUpdate = {
 	element: EntityId,
 	style: ShapeStyle,
-};
-
-export type ShapeFrameUpdate = {
-	element: EntityId,
-	geometry: Geometry,
-	angle_degrees: number,
 };
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";

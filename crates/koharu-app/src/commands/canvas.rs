@@ -423,13 +423,6 @@ pub struct ShapeStyleUpdate {
     pub style: ShapeStyle,
 }
 
-#[derive(Clone, Debug, Deserialize, Type)]
-pub struct ShapeFrameUpdate {
-    pub element: EntityId,
-    pub geometry: Geometry,
-    pub angle_degrees: f32,
-}
-
 // Nine parameters because the IPC body is flat: the shape payload plus the
 // three injected `State`s. The HTTP route destructures the same fields.
 #[allow(clippy::too_many_arguments)]
@@ -496,44 +489,6 @@ pub async fn set_shape_style(
         let project = project.as_mut().context("no project is open")?;
         ensure_revision(project.snapshot().revision(), expected_revision)?;
         let commit = project.set_shape_style(updates).await?;
-        project.record_commit(&commit);
-        (commit, project.active_page())
-    };
-    desktop.synchronize(&commit.snapshot, page, &commit).await?;
-    canvas_channel.publish(desktop.canvas_state());
-    Ok(commit.revision)
-}
-
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_geometry_edited",
-    skip_all,
-    fields(origin = "user", entity_count = updates.len())
-)]
-#[tauri::command]
-#[specta::specta]
-pub async fn set_shape_geometries(
-    expected_revision: Revision,
-    updates: Vec<ShapeFrameUpdate>,
-    desktop: State<'_, Desktop>,
-    project: State<'_, CurrentProject>,
-    canvas_channel: State<'_, CanvasChannel>,
-) -> Result<Revision, Error> {
-    let updates = updates
-        .into_iter()
-        .map(|update| {
-            (
-                update.element,
-                update.geometry.into_scene(),
-                update.angle_degrees,
-            )
-        })
-        .collect();
-    let (commit, page) = {
-        let mut project = project.project.lock().await;
-        let project = project.as_mut().context("no project is open")?;
-        ensure_revision(project.snapshot().revision(), expected_revision)?;
-        let commit = project.set_shape_geometries(updates).await?;
         project.record_commit(&commit);
         (commit, project.active_page())
     };

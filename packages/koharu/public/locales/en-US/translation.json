@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "Arrow",
         "ellipse": "Ellipse",
-        "freeform": "Freeform",
         "line": "Line",
-        "polygon": "Polygon",
         "rectangle": "Rectangle"
       },
       "kindLabel": "Shape kind: {{kind}}",

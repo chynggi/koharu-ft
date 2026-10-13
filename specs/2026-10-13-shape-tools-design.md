@@ -30,9 +30,18 @@ Koharu의 캔버스는 9개 도구만 제공한다 — `select`, `text`, `draw`,
 이 문서는 **1a**만 다룬다. 1a는 도형을 벡터 레이어로 저장하고,
 기본 도형·채우기·선 스타일·점선·화살표·래스터화를 포함한다.
 
+**1a의 도구 종류는 사각형·타원·선·화살표 네 가지다.** `ShapeGeometry`와
+렌더러에는 `Polygon`·`Freeform`도 있지만(위 저장 모델 참조), 1a의
+도구 선택 목록(`SHAPE_KINDS`)에는 넣지 않는다. 꼭짓점 편집 UI가 없어
+사용자가 "다각형"을 고르면 태그만 다른 사각형을 얻게 되기 때문이다.
+두 종류의 폴리곤 경로·검증·직렬화는 그대로 유지하므로, 꼭짓점 편집을
+다루는 후속 스펙이 UI에만 추가하면 된다.
+
 **1b로 미루는 것**: 그라디언트·패턴 채우기. 별도 스펙에서 다룬다.
 1a는 `ShapeFill`을 처음부터 열거형으로 설계해 1b가 변형을 추가하기만
 하면 되도록 한다.
+
+**후속으로 미루는 것**: `Polygon`·`Freeform`의 도구 노출과 꼭짓점 편집.
 
 **로드맵에서 아직 스펙이 없는 서브프로젝트** (이 문서는 이들의 기반이
 아니다. 다만 1a의 표현 방식에 의존한다):
@@ -109,8 +118,9 @@ pub enum ShapeGeometry {
         head: Option<ArrowHead>,
     },
     /// 폴리곤이 곧 도형이다. 파라미터 없음.
+    /// 1a의 도구 목록에는 없다 (위 "범위" 참조). 꼭짓점 편집과 함께 후속 스펙이 노출한다.
     Polygon,
-    /// 폴리곤이 곧 도형이다. 파라미터 없음.
+    /// 폴리곤이 곧 도형이다. 파라미터 없음. `Polygon`과 같은 이유로 1a UI에는 없다.
     Freeform,
 }
 
@@ -421,25 +431,21 @@ pub async fn set_shape_style(
     shapes: Vec<ShapeStyleUpdate>,
 ) -> Result<Revision, Error>
 
-pub async fn set_shape_geometries(
-    expected_revision: Revision,
-    shapes: Vec<ShapeFrameUpdate>,
-) -> Result<Revision, Error>
-
 pub async fn rasterize_shapes(
     expected_revision: Revision,
     shapes: Vec<EntityId>,
 ) -> Result<Revision, Error>
 ```
 
-`set_shape_geometries`는 도형 전용 계약을 유지하되(비도형 요소를 사전
-거부한다), 실제 구현은 `set_geometries`가 소유한다. 처음에는 두 함수를
-분리하려 했으나, 변형 경로가 두 개가 되면 "폴리곤을 갱신할 때 `Line`의
-끝점을 재계산한다"는 불변식을 두 곳에 두게 되어 한쪽에서 잊힐 수 있다.
-`set_geometries`가 내부적으로 `Target::{Text, Shape}`로 갈라지고
-`set_shape_geometries`가 그것에 위임한다.
+**도형 전용 기하 커맨드는 없다.** 초안의 `set_shape_geometries`는
+`POST /canvas/shape/geometry`와 `commands.setShapeGeometries`를 함께
+가졌지만 호출자가 하나도 없었다 — 도형 이동은 전부
+`commitTransform` → `set_geometries`로 간다. AGENTS.md의 "죽은 추상화는
+제거한다"에 따라 커맨드·라우트·TS 항목·`ShapeFrameUpdate` 타입을
+1a에서 제거했다. 도형 전용 사전 거부가 필요해지면 그때 다시 만든다.
 
-**`Line`의 끝점 재계산이 이 통일의 이유다.** `Line`은 `start`/`end`와
+변형 경로는 `set_geometries` 하나다. `Line`의 끝점 재계산이 그
+통일의 이유다. `Line`은 `start`/`end`와
 폴리곤을 함께 저장하는 유일한 이중 저장 지점이다. 폴리곤이 권위이고
 끝점은 파생값이므로, 폴리곤을 쓰는 모든 경로가
 `ShapeGeometry::resync_with_polygon`을 호출해야 한다. 두 경로

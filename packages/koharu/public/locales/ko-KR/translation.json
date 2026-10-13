@@ -218,9 +218,7 @@
       "kind": {
         "arrow": "화살표",
         "ellipse": "타원",
-        "freeform": "자유곡선",
         "line": "선",
-        "polygon": "다각형",
         "rectangle": "사각형"
       },
       "kindLabel": "도형 종류: {{kind}}",

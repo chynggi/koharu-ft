@@ -1378,11 +1378,12 @@ fn rotated_bounds(
             koharu_rasterizer::PathElement::CurveTo(values) => values,
             koharu_rasterizer::PathElement::Close => continue,
         };
-        for pair in control_points.chunks_exact(2) {
-            min_x = min_x.min(pair[0]);
-            min_y = min_y.min(pair[1]);
-            max_x = max_x.max(pair[0]);
-            max_y = max_y.max(pair[1]);
+        // Every variant's coordinate list is a whole number of `(x, y)` pairs.
+        for [x, y] in control_points.as_chunks::<2>().0 {
+            min_x = min_x.min(*x);
+            min_y = min_y.min(*y);
+            max_x = max_x.max(*x);
+            max_y = max_y.max(*y);
         }
     }
     let (min_x, min_y) = (min_x - half_stroke, min_y - half_stroke);
