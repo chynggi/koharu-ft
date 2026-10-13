@@ -2,11 +2,13 @@ import type {
   ArrowHead,
   Frame,
   Geometry,
+  GradientSpec,
+  GradientStop,
   Point,
   ShapeGeometry,
   ShapeStyle,
 } from '@koharu/bridge/protocol'
-import type { CanvasPath, CanvasPathElement } from '@koharu/bridge/canvas'
+import type { CanvasGradient, CanvasPath, CanvasPathElement } from '@koharu/bridge/canvas'
 
 import type { CanvasTool } from './store'
 
@@ -121,6 +123,29 @@ export function defaultShapeStyle(kind: ShapeKind): ShapeStyle {
   return { fill: { solid: [255, 255, 255, 255] }, stroke: null }
 }
 
+export type GradientKindName = 'linear' | 'radial'
+
+/**
+ * The gradient a freshly created shape starts with: white to black across the
+ * frame, in the normalized frame-local coordinates `GradientSpec` stores.
+ *
+ * Linear runs left to right (`(0,0)` to `(1,0)`) and radial grows from the
+ * frame centre by half its width, so both read the same on a wide frame and
+ * neither escapes the unit square that validation requires. `pad` is the
+ * editor's default: the last stop's colour continues past the endpoints.
+ */
+export function defaultGradientSpec(kind: GradientKindName): GradientSpec {
+  const stops: GradientStop[] = [
+    { offset: 0, color: [255, 255, 255, 255] },
+    { offset: 1, color: [0, 0, 0, 255] },
+  ]
+  const spec: GradientSpec =
+    kind === 'linear'
+      ? { kind: { linear: { start: [0, 0], end: [1, 0] } }, stops, extend: 'pad' }
+      : { kind: { radial: { center: [0.5, 0.5], radius: 0.5 } }, stops, extend: 'pad' }
+  return spec
+}
+
 /**
  * The live WASM preview for a shape being dragged.
  *
@@ -142,18 +167,20 @@ export function shapePreviewPath(
   elements.push('Close')
   const arrow = kind === 'arrow' ? arrowHeadPath(points) : []
   elements.push(...arrow)
-  const solid = style.fill?.solid
+  const fill = style.fill
   return {
     transform: [1, 0, 0, 1, 0, 0],
     elements,
     // An arrow head is a filled triangle, so it forces a fill even when the
     // author set none, and then it borrows the stroke's colour.
     fill:
-      solid !== undefined
-        ? { Solid: { color: solid, rule: 'NonZero' } }
-        : arrow.length > 0 && style.stroke
-          ? { Solid: { color: style.stroke.color, rule: 'NonZero' } }
-          : null,
+      fill && 'solid' in fill
+        ? { Solid: { color: fill.solid, rule: 'NonZero' } }
+        : fill && 'gradient' in fill
+          ? { Gradient: { gradient: previewGradient(fill.gradient, frame), rule: 'NonZero' } }
+          : arrow.length > 0 && style.stroke
+            ? { Solid: { color: style.stroke.color, rule: 'NonZero' } }
+            : null,
     stroke: style.stroke
       ? {
           color: style.stroke.color,
@@ -163,6 +190,66 @@ export function shapePreviewPath(
           join: joinName(style.stroke.join),
         }
       : null,
+  }
+}
+
+/**
+ * Lifts a persisted gradient into the WASM preview's page coordinates.
+ *
+ * The server leaves this to `koharu_renderer::shape_renderer::fill`, which
+ * multiplies normalized coordinates by the frame extent **and stops there**:
+ * the rotation lives in `PreparedPath::transform`, which also shifts the frame's
+ * local origin onto the page, so vello applies both to the brush for free. This
+ * function cannot copy that, because the preview's `transform` is the identity
+ * and `shapePolygon` bakes the frame's position and angle into the outline
+ * points instead. Doing only the multiplication would leave the control points
+ * in the frame's own box — unrotated *and* offset by the frame origin whenever
+ * the frame is not at `(0,0)` — while the outline moved. Applying the same
+ * `rotatePoint` about the same centre the polygon uses, to the same
+ * `frame.origin + normalized * extent` the server's affine would produce, is
+ * what keeps the two in step.
+ */
+function previewGradient(spec: GradientSpec, frame: Frame): CanvasGradient {
+  const center = { x: frame.x + frame.width * 0.5, y: frame.y + frame.height * 0.5 }
+  const toPage = ([x, y]: [number, number]): [number, number] => {
+    const boxed = { x: frame.x + x * frame.width, y: frame.y + y * frame.height }
+    const rotated = rotatePoint(boxed, center, frame.angle_degrees)
+    return [rotated.x, rotated.y]
+  }
+  const kind = spec.kind
+  return {
+    kind:
+      'linear' in kind
+        ? {
+            Linear: {
+              start: toPage(kind.linear.start),
+              end: toPage(kind.linear.end),
+            },
+          }
+        : 'radial' in kind
+          ? {
+              Radial: {
+                center: toPage(kind.radial.center),
+                // The radius is a fraction of the frame's width, matching the
+                // server, and rotation leaves its length unchanged.
+                radius: kind.radial.radius * frame.width,
+              },
+            }
+          : {
+              Sweep: {
+                center: toPage(kind.sweep.center),
+                // Angles are absolute degrees, not normalized: no frame factor
+                // applies. They *do* rotate, though — vello would rotate a
+                // sweep's angular field along with the path, so the preview has
+                // to bake that rotation into the angles to land in the same
+                // place. 1b's editor never creates a sweep (spec G5); this arm
+                // exists so an imported one still previews in alignment.
+                start_degrees: kind.sweep.start_degrees + frame.angle_degrees,
+                end_degrees: kind.sweep.end_degrees + frame.angle_degrees,
+              },
+            },
+    stops: spec.stops,
+    extend: extendName(spec.extend),
   }
 }
 
@@ -224,5 +311,11 @@ function capName(cap: 'butt' | 'round' | 'square') {
 
 function joinName(join: 'miter' | 'round' | 'bevel') {
   return join === 'miter' ? 'Miter' : join === 'round' ? 'Round' : 'Bevel'
+}
+
+// `PreparedGradientExtend` is a unit-variant enum, so serde spells it with the
+// Rust variant names just as `PreparedLineCap`/`PreparedLineJoin` do.
+function extendName(extend: 'pad' | 'repeat' | 'reflect') {
+  return extend === 'pad' ? 'Pad' : extend === 'repeat' ? 'Repeat' : 'Reflect'
 }
 

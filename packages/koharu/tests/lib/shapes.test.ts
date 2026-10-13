@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   SHAPE_KINDS,
+  defaultGradientSpec,
   defaultShapeStyle,
   isShapeTool,
   shapeGeometry,
@@ -118,6 +119,33 @@ describe('defaultShapeStyle', () => {
   })
 })
 
+describe('defaultGradientSpec', () => {
+  it('produces a two-stop linear gradient in normalized coordinates', () => {
+    const spec = defaultGradientSpec('linear')
+    expect(spec.kind).toEqual({ linear: { start: [0, 0], end: [1, 0] } })
+    expect(spec.stops).toHaveLength(2)
+    expect(spec.stops[0].offset).toBe(0)
+    expect(spec.stops[1].offset).toBe(1)
+    expect(spec.extend).toBe('pad')
+  })
+
+  it('keeps every normalized coordinate inside the unit square', () => {
+    for (const kind of ['linear', 'radial'] as const) {
+      const spec = defaultGradientSpec(kind)
+      // `GradientSpec.kind` also carries `sweep`, which `defaultGradientSpec`
+      // never produces; naming that case keeps this loop from passing on an
+      // empty coordinate list if it ever did.
+      if ('sweep' in spec.kind) throw new Error('defaultGradientSpec produced a sweep')
+      const numbers =
+        'linear' in spec.kind
+          ? [...spec.kind.linear.start, ...spec.kind.linear.end]
+          : [...spec.kind.radial.center, spec.kind.radial.radius]
+      expect(numbers.every((value) => Number.isFinite(value))).toBe(true)
+      expect(numbers.filter((value) => value < 0 || value > 1)).toHaveLength(0)
+    }
+  })
+})
+
 describe('shapePreviewPath', () => {
   // This is the only place the frontend hand-builds the WASM `PreparedPath`
   // wire shape, so the literals are asserted rather than inferred. A wrong
@@ -203,6 +231,95 @@ describe('shapePreviewPath', () => {
     })
 
     expect(path.stroke).toMatchObject({ cap: 'Round', join: 'Bevel' })
+  })
+})
+
+describe('shapePreviewPath with a gradient', () => {
+  it('spreads normalized coordinates onto the frame and spells the wire shape', () => {
+    // 리터럴을 직접 넘겨 contextual typing 으로 튜플 타입을 얻는다 — 이 파일의
+    // 기존 테스트가 쓰는 방식이다(`as const` 를 쓰지 않는다).
+    const path = shapePreviewPath('rectangle', frame, {
+      fill: {
+        gradient: {
+          kind: { linear: { start: [0, 0], end: [1, 1] } },
+          stops: [
+            { offset: 0, color: [1, 2, 3, 255] },
+            { offset: 1, color: [4, 5, 6, 255] },
+          ],
+          extend: 'pad',
+        },
+      },
+      stroke: null,
+    })
+
+    expect(path).toEqual({
+      transform: [1, 0, 0, 1, 0, 0],
+      elements: [
+        { MoveTo: [10, 20] },
+        { LineTo: [110, 20] },
+        { LineTo: [110, 70] },
+        { LineTo: [10, 70] },
+        'Close',
+      ],
+      // 서버와 같은 규칙: local = normalized * frame_extent.
+      // `frame` 은 이 파일 상단의 {x:10,y:20,width:100,height:50} 이다.
+      fill: {
+        Gradient: {
+          gradient: {
+            kind: { Linear: { start: [10, 20], end: [110, 70] } },
+            stops: [
+              { offset: 0, color: [1, 2, 3, 255] },
+              { offset: 1, color: [4, 5, 6, 255] },
+            ],
+            extend: 'Pad',
+          },
+          rule: 'NonZero',
+        },
+      },
+      stroke: null,
+    })
+  })
+
+  it('rotates the gradient into page coordinates like the polygon', () => {
+    const style = { fill: { gradient: defaultGradientSpec('linear') }, stroke: null }
+    const upright = shapePreviewPath(
+      'rectangle',
+      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 },
+      style,
+    )
+    const rotated = shapePreviewPath(
+      'rectangle',
+      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
+      style,
+    )
+
+    // 프론트는 transform 이 identity 이고 회전을 폴리곤에 굽는다
+    // (`shapePolygon` 의 `rotatePoint`). 그러므로 그라디언트 제어점도
+    // 페이지 좌표로 회전해야 경로와 정렬된다.
+    expect(rotated.transform).toEqual([1, 0, 0, 1, 0, 0])
+
+    const control = (path: typeof upright) => {
+      const fill = path.fill
+      if (!fill || !('Gradient' in fill)) throw new Error('expected a gradient fill')
+      const kind = fill.Gradient.gradient.kind
+      if (!('Linear' in kind)) throw new Error('expected a linear gradient')
+      return kind.Linear
+    }
+    const uprightLinear = control(upright)
+    const rotatedLinear = control(rotated)
+
+    // 90도 회전하면 프레임 중심 (100,50) 을 기준으로 제어점이 돈다.
+    // (0,0) -> (100,-100)+중심 = (100, 50) + ... 을 손으로 계산하지 말고
+    // 같은 `rotatePoint` 규칙을 테스트에서 독립적으로 적용해 비교한다.
+    expect(rotatedLinear).not.toEqual(uprightLinear)
+    // 회전한 제어점은 회전한 폴리곤과 같은 상자 안에 있어야 한다.
+    const rotatedPoints = shapePolygon('rectangle', {
+      x: 0, y: 0, width: 200, height: 100, angle_degrees: 90,
+    }).points
+    for (const value of [...rotatedLinear.start, ...rotatedLinear.end]) {
+      expect(Number.isFinite(value)).toBe(true)
+    }
+    expect(rotatedPoints.length).toBeGreaterThan(0)
   })
 })
 

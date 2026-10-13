@@ -178,7 +178,10 @@ function ShapeInspector() {
               size='sm'
               disabled={disabled}
               allowTransparent
-              value={style.fill ? rgbaToHex(style.fill.solid) : null}
+              // A gradient fill has no single colour to show; the fill-kind
+              // picker and stop editor arrive with the gradient UI, which owns
+              // this control's final shape.
+              value={style.fill && 'solid' in style.fill ? rgbaToHex(style.fill.solid) : null}
               onChange={(color) =>
                 apply((value) => ({
                   ...value,

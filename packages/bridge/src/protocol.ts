@@ -995,10 +995,15 @@ export type RasterLayerKind = "cleanup" | "paint";
  *  These match serde's external tagging exactly — `Rectangle`/`Line` are
  *  struct variants and serialize as `{ rectangle: { corner_radius } }`, while
  *  `Ellipse`/`Polygon`/`Freeform` are unit variants and serialize as bare
- *  strings. `ShapeFill` is a newtype variant, so it is `{ solid: [r,g,b,a] }`
- *  with no `kind` key. `the_shape_wire_shape_matches_the_typescript_client`
- *  in `crates/koharu-app/src/commands/project.rs` pins every one of these
- *  strings; change that test and this type together.
+ *  strings. `ShapeFill::Solid` is a newtype variant, so it is
+ *  `{ solid: [r,g,b,a] }` with no `kind` key, while `ShapeFill::Gradient` is a
+ *  newtype variant over a struct, so it is a one-key `{ gradient: {...} }`.
+ *  `GradientKind` is likewise externally tagged and `GradientExtend` is a unit
+ *  enum, so it stays a bare lowercase string.
+ *  `the_shape_wire_shape_matches_the_typescript_client` and
+ *  `the_gradient_wire_shape_matches_the_typescript_client` in
+ *  `crates/koharu-app/src/commands/project.rs` pin every one of these strings;
+ *  change those tests and these types together.
  */
 export type ShapeGeometry = { rectangle: { corner_radius: number } } | "ellipse" | { line: {
 	start: [number, number],
@@ -1006,7 +1011,43 @@ export type ShapeGeometry = { rectangle: { corner_radius: number } } | "ellipse"
 	head: ArrowHead | null,
 } } | "polygon" | "freeform";
 
-export type ShapeFill = { solid: [number, number, number, number] };
+/**
+ *  Gradient control points are **normalized frame-local** values: the frame's
+ *  top-left is `(0,0)` and its bottom-right is `(1,1)`. They are never page
+ *  coordinates, so moving or resizing the shape does not invalidate them.
+ *
+ *  Stops may be stored in any order; the renderer sorts them stably by offset.
+ *  Only duplicate offsets are rejected, because which color wins would
+ *  otherwise be undefined.
+ */
+export type GradientSpec = {
+	kind: GradientKind,
+	stops: GradientStop[],
+	extend: GradientExtend,
+};
+
+/**
+ *  `radial`'s radius is a fraction of the frame's **width**, not of its height
+ *  or of either diagonal. `sweep`'s angles are absolute degrees rather than
+ *  normalized values, so no frame factor applies to them.
+ */
+export type GradientKind = { linear: { start: [number, number], end: [number, number] } } | { radial: {
+	center: [number, number],
+	radius: number,
+} } | { sweep: {
+	center: [number, number],
+	start_degrees: number,
+	end_degrees: number,
+} };
+
+export type GradientStop = {
+	offset: number,
+	color: [number, number, number, number],
+};
+
+export type GradientExtend = "pad" | "repeat" | "reflect";
+
+export type ShapeFill = { solid: [number, number, number, number] } | { gradient: GradientSpec };
 
 export type StrokeStyle = {
 	color: [number, number, number, number],

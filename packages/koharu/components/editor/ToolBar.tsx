@@ -202,7 +202,10 @@ function ShapeStyles() {
               label={t('inspector.shape.fill')}
               size='sm'
               allowTransparent
-              value={style.fill ? colorToHex(style.fill.solid) : null}
+              // Only a solid fill has one colour to show here; the gradient
+              // fill-kind picker and its stop editor belong to the Inspector,
+              // which owns the detailed style UI.
+              value={style.fill && 'solid' in style.fill ? colorToHex(style.fill.solid) : null}
               onChange={(color) =>
                 setShapeStyle({
                   ...style,

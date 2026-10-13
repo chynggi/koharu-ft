@@ -29,7 +29,34 @@ export type CanvasPathElement =
   | { CurveTo: [number, number, number, number, number, number] }
   | 'Close'
 
-export type CanvasPathFill = { Solid: { color: CanvasColor; rule: 'NonZero' | 'EvenOdd' } }
+/**
+ * A gradient as `koharu_rasterizer::PreparedGradient` deserializes it.
+ *
+ * The control points are **path-local** — the same coordinate system
+ * `CanvasPathElement` uses, with the normalized spread already applied — so the
+ * path transform carries the rotation and this gradient needs no extra one.
+ * That is the opposite of the persisted `GradientSpec`, whose points stay
+ * normalized and frame-local; `shapePreviewPath` owns the conversion.
+ */
+export interface CanvasGradient {
+  kind: CanvasGradientKind
+  stops: CanvasGradientStop[]
+  extend: 'Pad' | 'Repeat' | 'Reflect'
+}
+
+export type CanvasGradientKind =
+  | { Linear: { start: [number, number]; end: [number, number] } }
+  | { Radial: { center: [number, number]; radius: number } }
+  | { Sweep: { center: [number, number]; start_degrees: number; end_degrees: number } }
+
+export interface CanvasGradientStop {
+  offset: number
+  color: CanvasColor
+}
+
+export type CanvasPathFill =
+  | { Solid: { color: CanvasColor; rule: 'NonZero' | 'EvenOdd' } }
+  | { Gradient: { gradient: CanvasGradient; rule: 'NonZero' | 'EvenOdd' } }
 
 export interface CanvasPathStroke {
   color: CanvasColor
