@@ -139,7 +139,7 @@ pub(crate) async fn build(
         .iter()
         .filter_map(|layer| match layer.kind() {
             LayerKind::Text(text) => Some((layer.entity(), text)),
-            LayerKind::Image(_) => None,
+            LayerKind::Image(_) | LayerKind::Shape(_) => None,
         })
         .filter(|(_, text)| !text.text.trim().is_empty())
         .collect::<Vec<_>>();
@@ -149,7 +149,7 @@ pub(crate) async fn build(
     for visual in frame.layers().iter().rev() {
         let image = match visual.kind() {
             LayerKind::Image(image) => Some(image),
-            LayerKind::Text(_) => None,
+            LayerKind::Text(_) | LayerKind::Shape(_) => None,
         };
         let raster =
             image.is_some_and(|image| matches!(image.kind, ImageKind::Cleanup | ImageKind::Paint));
@@ -177,7 +177,11 @@ pub(crate) async fn build(
             });
         } else if let Some(text) = match visual.kind() {
             LayerKind::Text(text) if !text.text.trim().is_empty() => Some(text),
-            LayerKind::Text(_) | LayerKind::Image(_) => None,
+            // Task 8 replaces the shape arm with a `frame.cropped` + `rasterize`
+            // branch that emits a raster PSD layer. This arm only closes the
+            // match so `koharu-app` and `koharu-rpc`, which depend on this
+            // crate, can compile for Tasks 6 and 7.
+            LayerKind::Text(_) | LayerKind::Image(_) | LayerKind::Shape(_) => None,
         } {
             let offset = text_entities
                 .iter()
