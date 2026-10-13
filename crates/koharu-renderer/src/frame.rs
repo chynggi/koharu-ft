@@ -632,7 +632,7 @@ fn prepare_raster_tiles(
     })
 }
 
-fn layer_id(entity: EntityId) -> LayerId {
+pub(crate) fn layer_id(entity: EntityId) -> LayerId {
     LayerId::from_bytes(*entity.as_uuid().as_bytes())
 }
 

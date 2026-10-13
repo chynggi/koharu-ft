@@ -1189,6 +1189,63 @@ mod tests {
     }
 
     #[test]
+    fn a_shape_layer_accepts_a_vector_scene() {
+        // A shape draws through the same vector content path as text: the
+        // renderer compiles its parameters into one prepared fill path.
+        let mut bundle = bundle();
+        bundle.resources.clear();
+        let layer = &mut bundle.frame.layers[0];
+        layer.kind = LayerKind::Shape;
+        layer.content = PreparedContent::Vector(PreparedScene {
+            commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
+                transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                elements: vec![
+                    PathElement::MoveTo([0.0, 0.0]),
+                    PathElement::LineTo([10.0, 0.0]),
+                    PathElement::LineTo([10.0, 10.0]),
+                    PathElement::Close,
+                ],
+                fill: Some(PreparedFill::Solid {
+                    color: [255, 0, 0, 255],
+                    rule: FillRule::NonZero,
+                }),
+                stroke: None,
+            })],
+        });
+        assert!(bundle.manifest().is_ok());
+    }
+
+    #[test]
+    fn a_shape_layers_vector_content_is_validated() {
+        // Accepting the pairing is not enough: the scene must actually go
+        // through validation. A non-finite path transform is invalid for any
+        // vector kind, so if the shape arm skipped `scene.validate` this would
+        // wrongly pass.
+        let mut bundle = bundle();
+        bundle.resources.clear();
+        let layer = &mut bundle.frame.layers[0];
+        layer.kind = LayerKind::Shape;
+        layer.content = PreparedContent::Vector(PreparedScene {
+            commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
+                transform: [f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0],
+                elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+                fill: None,
+                stroke: None,
+            })],
+        });
+        assert!(matches!(bundle.manifest(), Err(Error::Invalid(_))));
+    }
+
+    #[test]
+    fn a_shape_layer_rejects_raster_content() {
+        // Only the `(Shape, Vector)` pairing is legal; a shape is never
+        // raster-backed through this kind.
+        let mut bundle = bundle();
+        bundle.frame.layers[0].kind = LayerKind::Shape;
+        assert!(matches!(bundle.manifest(), Err(Error::Invalid(_))));
+    }
+
+    #[test]
     fn packets_reject_unknown_versions() {
         let manifest = bundle().manifest().unwrap();
         let bytes = postcard::to_stdvec(&ManifestPacket {
