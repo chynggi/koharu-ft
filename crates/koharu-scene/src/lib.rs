@@ -25,11 +25,12 @@ pub use change::{
 pub use component::{Component, ValidationContext};
 pub use components::{
     ArrowHead, Asset, AssetInput, AssetMetadata, AssetRole, Authored, DetectionAnalysis,
-    DetectionLabel, EntityOrigin, FontStyle, Generation, Geometry, Group, LanguageTag, LineCap,
-    LineJoin, OcrAnalysis, Origin, Page, PageDraft, Point, Project, RasterLayer, RasterLayerKind,
-    Region, RegionKind, Relation, RelationKind, ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle,
-    SourceText, StrokeStyle, TextAlignment, TextContent, TextDirection, TextGroup, TextLayout,
-    TextLayoutKind, TextRole, Translation, Typography, Visibility, WritingMode,
+    DetectionLabel, EntityOrigin, FontStyle, Generation, Geometry, GradientExtend, GradientKind,
+    GradientSpec, GradientStop, Group, LanguageTag, LineCap, LineJoin, OcrAnalysis, Origin, Page,
+    PageDraft, Point, Project, RasterLayer, RasterLayerKind, Region, RegionKind, Relation,
+    RelationKind, ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle, SourceText, StrokeStyle,
+    TextAlignment, TextContent, TextDirection, TextGroup, TextLayout, TextLayoutKind, TextRole,
+    Translation, Typography, Visibility, WritingMode,
 };
 pub use document::{AnalysisRegionRef, GroupRef, TextContentRef, TextLayerRef};
 pub use edit::{At, Edit, RemovePolicy};

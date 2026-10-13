@@ -104,6 +104,10 @@ impl GradientSpec {
     /// here would make the editor re-sort the whole list on every mid-list
     /// insert. Only duplicate offsets are rejected, because which color wins
     /// would otherwise be undefined.
+    ///
+    /// `-0.0` passes the `0.0..=1.0` range check and compares equal to `0.0`,
+    /// so it counts as a duplicate of an existing `0.0` stop. That is correct
+    /// IEEE-754 behavior, not a gap.
     pub fn validate(&self, _context: &ValidationContext<'_>) -> Result<()> {
         if !(2..=32).contains(&self.stops.len()) {
             return Err(Error::invalid("gradient must have between 2 and 32 stops"));
@@ -183,7 +187,8 @@ pub struct GradientStop {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum GradientExtend {
-    /// Fills beyond the stops with the last stop's color (the default).
+    /// Fills beyond the stops with the last stop's color. The editor picks this
+    /// when it creates a gradient; there is deliberately no `Default` impl.
     Pad,
     Repeat,
     Reflect,
@@ -425,6 +430,30 @@ mod tests {
         spec.validate(&context)
     }
 
+    /// Compile-checked proof that all four types are re-exported at the crate
+    /// root, which is the path an external crate such as `koharu-renderer`
+    /// must use. Every annotation here fails to compile if its re-export is
+    /// dropped from `components.rs` or `lib.rs`.
+    #[test]
+    fn the_gradient_types_are_reachable_from_the_crate_root() {
+        let kind: crate::GradientKind = linear();
+        let gradient: crate::GradientSpec = GradientSpec {
+            kind,
+            stops: vec![
+                crate::GradientStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                crate::GradientStop {
+                    offset: 1.0,
+                    color: [255, 255, 255, 255],
+                },
+            ],
+            extend: crate::GradientExtend::Pad,
+        };
+        assert!(validate_spec(&gradient).is_ok());
+    }
+
     #[test]
     fn a_two_stop_gradient_validates() {
         assert!(validate_spec(&spec(linear())).is_ok());
@@ -505,6 +534,25 @@ mod tests {
             end: [0.5, 0.5],
         });
         assert!(validate_spec(&gradient).is_err());
+    }
+
+    #[test]
+    fn a_positive_radius_radial_gradient_validates() {
+        let gradient = spec(GradientKind::Radial {
+            center: [0.5, 0.5],
+            radius: 0.5,
+        });
+        assert!(validate_spec(&gradient).is_ok());
+    }
+
+    #[test]
+    fn a_finite_sweep_gradient_validates() {
+        let gradient = spec(GradientKind::Sweep {
+            center: [0.5, 0.5],
+            start_degrees: 0.0,
+            end_degrees: 360.0,
+        });
+        assert!(validate_spec(&gradient).is_ok());
     }
 
     #[test]
