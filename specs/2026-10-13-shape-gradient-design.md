@@ -215,7 +215,7 @@ pub enum PreparedFill {
 }
 
 pub struct PreparedGradient {
-    /// 페이지 좌표계. 정규화 → 페이지 변환을 이미 적용한 값이다.
+    /// 경로 로컬 좌표계. 정규화 → 프레임 로컬 변환을 이미 적용한 값이다.
     pub kind: PreparedGradientKind,
     pub stops: Vec<PreparedGradientStop>,
     pub extend: PreparedGradientExtend,
@@ -284,7 +284,9 @@ local_y = normalized_y * frame.height
 함수가 WASM `PreparedPath`의 wire 형태를 손으로 만드는 유일한 지점이었고
 (테스트로 못 박음), 그라디언트가 추가되면 그 조립 코드도 함께 늘어난다.
 
-**중복은 정규화 → 로컬 변환 한 곳뿐이고, 회전 처리는 두 경로가 다르다.**
+**정규화 → 로컬 변환은 서버에서 한 곳뿐이고, 회전 처리는 두 경로가 다르다.**
+(프론트는 미리보기를 서버 왕복 없이 만들어야 하므로 이 변환을 **의도적으로
+한 번 더** 구현한다 — 아래 참조. "한 곳"은 서버 한정이다.)
 
 **서버:** `PreparedPath.transform`이 회전을 담고 `brush_transform`은 `None`이므로,
 그라디언트 제어점은 **프레임 로컬** 좌표에 둔다. vello가 경로 변환을 브러시에
