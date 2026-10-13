@@ -6,6 +6,7 @@ import {
   isShapeTool,
   shapeGeometry,
   shapePolygon,
+  shapePreviewPath,
 } from '@/lib/shapes'
 
 const frame = { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 }
@@ -114,6 +115,94 @@ describe('defaultShapeStyle', () => {
     expect(line.fill).toBeNull()
     expect(line.stroke).toMatchObject({ width: 2, cap: 'round', join: 'round', dash: null })
     expect(defaultShapeStyle('arrow').stroke).toMatchObject({ width: 2 })
+  })
+})
+
+describe('shapePreviewPath', () => {
+  // This is the only place the frontend hand-builds the WASM `PreparedPath`
+  // wire shape, so the literals are asserted rather than inferred. A wrong
+  // spelling makes `beginShape`'s `path.validate()` throw during a drag.
+  const stroke = {
+    color: [0, 0, 0, 255] as [number, number, number, number],
+    width: 2,
+    dash: null,
+    cap: 'butt' as const,
+    join: 'miter' as const,
+  }
+
+  it('serializes a filled rectangle with PascalCase fill and no arrow tail', () => {
+    const path = shapePreviewPath('rectangle', frame, {
+      fill: { solid: [10, 20, 30, 255] },
+      stroke: null,
+    })
+
+    expect(path).toEqual({
+      transform: [1, 0, 0, 1, 0, 0],
+      elements: [
+        { MoveTo: [10, 20] },
+        { LineTo: [110, 20] },
+        { LineTo: [110, 70] },
+        { LineTo: [10, 70] },
+        'Close',
+      ],
+      fill: { Solid: { color: [10, 20, 30, 255], rule: 'NonZero' } },
+      stroke: null,
+    })
+  })
+
+  it('serializes an arrow with a stroked fill borrowed from the stroke', () => {
+    const path = shapePreviewPath('arrow', frame, { fill: null, stroke })
+
+    const points = shapePolygon('arrow', frame).points
+    const start = points[0]
+    const end = points.at(-1)!
+    const delta = { x: end.x - start.x, y: end.y - start.y }
+    const length = Math.hypot(delta.x, delta.y)
+    const direction = { x: delta.x / length, y: delta.y / length }
+    // The head geometry lives in `ARROW_HEAD`; assert the wire tail shape and
+    // let the numeric values come from the same constants the module uses.
+    const head = { length: 18, width: 12 }
+    const base = {
+      x: end.x - direction.x * head.length,
+      y: end.y - direction.y * head.length,
+    }
+    const perpendicular = {
+      x: (-direction.y * head.width) / 2,
+      y: (direction.x * head.width) / 2,
+    }
+
+    expect(path.transform).toEqual([1, 0, 0, 1, 0, 0])
+    expect(path.elements.slice(0, 3)).toEqual([
+      { MoveTo: [start.x, start.y] },
+      { LineTo: [points[1].x, points[1].y] },
+      { LineTo: [end.x, end.y] },
+    ])
+    expect(path.elements[3]).toBe('Close')
+    expect(path.elements.slice(4)).toEqual([
+      { MoveTo: [end.x, end.y] },
+      { LineTo: [base.x + perpendicular.x, base.y + perpendicular.y] },
+      { LineTo: [base.x - perpendicular.x, base.y - perpendicular.y] },
+      'Close',
+    ])
+    // The head is a filled triangle, so it forces a fill borrowing the stroke.
+    expect(path.fill).toEqual({ Solid: { color: [0, 0, 0, 255], rule: 'NonZero' } })
+    // Cap/join are PascalCase enum spellings, matching serde.
+    expect(path.stroke).toEqual({
+      color: [0, 0, 0, 255],
+      width: 2,
+      dash: null,
+      cap: 'Butt',
+      join: 'Miter',
+    })
+  })
+
+  it('keeps a round/square stroke spelled in PascalCase', () => {
+    const path = shapePreviewPath('line', frame, {
+      fill: null,
+      stroke: { ...stroke, cap: 'round', join: 'bevel' },
+    })
+
+    expect(path.stroke).toMatchObject({ cap: 'Round', join: 'Bevel' })
   })
 })
 
