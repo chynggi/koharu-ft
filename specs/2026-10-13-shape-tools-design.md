@@ -256,8 +256,20 @@ D2의 "폴리곤이 권위"는 **기하의 출처**를 뜻하지, **그리는 �
 
 **계약: 폴리곤이 권위이고 `start`/`end`는 파생값이다.** 폴리곤을 쓰는
 모든 경로는 `ShapeGeometry::resync_with_polygon(&mut self, points)`를
-호출해 첫 점을 `start`, 마지막 점을 `end`로 다시 맞춘다. 호출 지점은
-`set_geometries`의 도형 분기 **한 곳**이다 (위 "새 커맨드" 참조).
+호출해 첫 점을 `start`, 마지막 점을 `end`로 다시 맞춘다. `Line`을
+그리는 두 경로가 있으므로 **재계산 지점도 둘이다**:
+
+1. `set_geometries`의 도형 분기 — 변형(이동·크기조절·회전) 경로다.
+   `commit_transform`이 모든 변형 가능 레이어를 여기로 보낸다.
+2. `merge_pages`의 스프레드 시프트 루프 — 페이지 병합이 모든 폴리곤을
+   페이지 오프셋만큼 평행이동한다.
+
+두 경로 모두 `Project::write_geometry` 하나를 통과한다. 그 헬퍼가
+폴리곤을 쓰고 같은 트랜잭션에서 `ShapeLayer`를 재동기화하므로,
+**세 번째 쓰기 경로는 이 헬퍼를 부르는 것으로 계약을 지킨다.**
+초기 설계는 `set_geometries`를 유일한 지점으로 선언했으나, 병합
+경로가 이미 존재해 그 주장이 거짓이었다 — 병합 후에는 선택 상자만
+움직이고 그려진 선은 제자리에 남는다.
 
 이 이중 저장을 없애는 선택지도 있었다 — `Line`에서 `start`/`end`를
 지우고 폴리곤 첫·마지막 점을 쓰는 것이다. 채택하지 않은 이유는
@@ -430,8 +442,9 @@ pub async fn rasterize_shapes(
 **`Line`의 끝점 재계산이 이 통일의 이유다.** `Line`은 `start`/`end`와
 폴리곤을 함께 저장하는 유일한 이중 저장 지점이다. 폴리곤이 권위이고
 끝점은 파생값이므로, 폴리곤을 쓰는 모든 경로가
-`ShapeGeometry::resync_with_polygon`을 호출해야 한다. 이 호출 지점이
-하나여야 잊히지 않는다.
+`ShapeGeometry::resync_with_polygon`을 호출해야 한다. 두 경로
+(`set_geometries`와 `merge_pages`)가 `Project::write_geometry` 하나를
+공유하므로, 재계산은 그 헬퍼 안에 한 번만 있다.
 
 ### HTTP 라우트
 

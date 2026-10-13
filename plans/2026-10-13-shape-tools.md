@@ -548,7 +548,7 @@ let transform = [
   }
   ```
 
-  `set_shape_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다.
+  `set_shape_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다. **`merge_pages`(project.rs:586-624)도 같은 재계산이 필요하다** — 페이지 병합이 모든 폴리곤을 오프셋만큼 평행이동하므로, 폴리곤만 옮기면 병합 후 선의 선택 상자와 그려진 선이 분리된다. 최종 수정에서 두 경로를 `Project::write_geometry` 하나로 모았다 (아래 Task 6 참조).
 - `Polygon` / `Freeform` — `shape_path`는 이 두 변형에서 빈 경로(`MoveTo(0,0)`만)를 돌려준다. **`polygon_path`가 폴리곤 점을 받아 실제 경로를 만든다.** 두 함수를 고르는 일은 `shape_layer_path`가 한다.
 
 **추가 테스트**: `shape_layer_path`가 `Polygon`에서 `points`를 쓰고 `points`가 비면 빈 경로를 돌려주는지 확인한다.
@@ -933,6 +933,8 @@ Expected: 컴파일 실패
 `set_shape_style`은 `set_typography`(project.rs:907)를 따른다. `set_shape_geometries`는 `set_geometries`(project.rs:1104)를 따르되 `SceneTextLayout` 대신 `SceneShapeLayer.angle_degrees`를 갱신한다.
 
 **`set_shape_geometries`는 `Line`의 `start`/`end`를 폴리곤에서 다시 계산해야 한다.** 모든 변형 경로는 폴리곤만 갱신하는데 `line_path`는 `start`/`end`로 그리므로, 재계산하지 않으면 선을 드래그해도 그려지는 선이 제자리에 남고 `element_frame`(폴리곤을 읽는다)이 선에서 분리된다. Task 3이 넣은 `ShapeGeometry::resync_with_polygon(&mut self, points: &[Point])`를 `edit.set(element, &geometry)` 직전에 호출한다 — 첫 점이 `start`, 마지막 점이 `end`다. 이 호출을 검증하는 테스트를 Step 1에 추가한다: 선 폴리곤을 평행이동한 뒤 컴포넌트의 `start`/`end`가 따라 움직였는지 확인한다.
+
+**최종 수정에서 이 재계산은 `Project::write_geometry` 헬퍼 하나로 합쳐졌다.** 폴리곤을 쓰는 경로가 둘이기 때문이다: 이 변형 경로와 `merge_pages`의 스프레드 시프트 루프다. 헬퍼가 폴리곤 쓰기와 `ShapeLayer` 재동기화를 한 트랜잭션에 묶으므로, 이후 쓰기 경로는 그 헬퍼만 부르면 된다. 회귀 테스트도 둘이다 — 변형 경로는 `moving_a_line_resyncs_its_endpoints_from_the_polygon`, 병합 경로는 `merging_pages_shifts_a_line_shape_with_its_polygon`.
 
 세 메서드 모두 `Origin::User`로 승격하고 `promote_entity_to_user`를 호출한다.
 

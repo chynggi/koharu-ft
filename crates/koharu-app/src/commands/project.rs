@@ -606,8 +606,13 @@ impl Project {
                         continue;
                     }
                     if let Some(geometry) = snapshot.component::<SceneGeometry>(id)? {
-                        edit.set(
+                        // A merge shifts the polygon; a line shape has to take
+                        // its derived endpoints along through the same helper
+                        // the transform path uses.
+                        Self::write_geometry(
+                            edit,
                             id,
+                            snapshot.component::<SceneShapeLayer>(id)?,
                             &SceneGeometry {
                                 origin: geometry.origin,
                                 points: geometry
@@ -1179,10 +1184,8 @@ impl Project {
                         edit.set(element, &geometry)?;
                         edit.set(element, &layout)?;
                     }
-                    Target::Shape { mut layer } => {
-                        layer.geometry.resync_with_polygon(&geometry.points);
-                        edit.set(element, &geometry)?;
-                        edit.set(element, &layer)?;
+                    Target::Shape { layer } => {
+                        Self::write_geometry(edit, element, Some(layer), &geometry)?;
                     }
                 }
             }
@@ -1294,6 +1297,31 @@ impl Project {
             }
         }
         self.set_geometries(updates).await
+    }
+
+    /// Writes a polygon and keeps a `ShapeLayer`'s derived values in step with it.
+    ///
+    /// The polygon is authoritative and `Line`'s `start`/`end` are derived from
+    /// its first and last points, while `line_path` strokes the endpoints and
+    /// `element_frame` reads the polygon. Every path that writes a polygon for a
+    /// shape must therefore come through here, or a moved line's selection box
+    /// separates from its stroke: `set_geometries` (the transform path) and
+    /// `merge_pages` (the spread path) are the two callers, and both are covered
+    /// by a regression test. A new write path must call this too.
+    fn write_geometry(
+        edit: &mut koharu_scene::Edit,
+        entity: EntityId,
+        mut layer: Option<SceneShapeLayer>,
+        geometry: &SceneGeometry,
+    ) -> koharu_scene::Result<()> {
+        if let Some(layer) = layer.as_mut() {
+            layer.geometry.resync_with_polygon(&geometry.points);
+        }
+        edit.set(entity, geometry)?;
+        if let Some(layer) = layer {
+            edit.set(entity, &layer)?;
+        }
+        Ok(())
     }
 
     /// The layer-name stem, mirroring the raster convention.
@@ -2215,6 +2243,129 @@ mod tests {
         // Undo restores the two source pages.
         project.undo().await.unwrap();
         assert_eq!(Project::pages(&project.snapshot()).unwrap().len(), 2);
+    }
+
+    /// A merge shifts every entity's polygon by the page offset. A `Line` draws
+    /// from its stored endpoints while `element_frame` reads the polygon, so
+    /// shifting only the polygon recreates the defect `set_geometries` resyncs
+    /// away: the selection box moves and the drawn stroke stays behind.
+    #[tokio::test]
+    async fn merging_pages_shifts_a_line_shape_with_its_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let entity = setup.add_entity(right, At::End).unwrap();
+        setup
+            .set(
+                entity,
+                &SceneShapeLayer {
+                    origin: Origin::User,
+                    name: "Line 1".to_owned(),
+                    geometry: ShapeGeometry::Line {
+                        start: [0.0, 0.0],
+                        end: [10.0, 4.0],
+                        head: None,
+                    },
+                    style: ShapeStyle {
+                        fill: None,
+                        stroke: None,
+                    },
+                    angle_degrees: Some(0.0),
+                    rasterized: false,
+                },
+            )
+            .unwrap();
+        setup
+            .set(
+                entity,
+                &SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 2.0 },
+                        ScenePoint { x: 10.0, y: 4.0 },
+                    ],
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+
+        let snapshot = project.snapshot();
+        assert_eq!(
+            snapshot.page(merged).unwrap().page().unwrap().width,
+            50.0,
+            "the spread must be as wide as both pages"
+        );
+        let geometry = snapshot
+            .component::<SceneGeometry>(entity)
+            .unwrap()
+            .unwrap();
+        let first = *geometry.points.first().unwrap();
+        let last = *geometry.points.last().unwrap();
+        assert_eq!(first.x, 20.0, "the right page's polygon must shift left");
+
+        let ShapeGeometry::Line { start, end, .. } = snapshot
+            .component::<SceneShapeLayer>(entity)
+            .unwrap()
+            .unwrap()
+            .geometry
+        else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(
+            start,
+            [first.x, first.y],
+            "Line.start must follow the polygon"
+        );
+        assert_eq!(end, [last.x, last.y], "Line.end must follow the polygon");
+
+        // `element_frame` restores its frame from the polygon, so the drawn
+        // endpoints have to stay inside that frame.
+        let frame = koharu_renderer::shape_renderer::shape_frame(&geometry, Some(0.0)).unwrap();
+        for endpoint in [start, end] {
+            assert!(
+                endpoint[0] >= f64::from(frame.x) - 1e-6
+                    && endpoint[0] <= f64::from(frame.x + frame.width) + 1e-6,
+                "{endpoint:?} is outside the frame {frame:?}"
+            );
+            assert!(
+                endpoint[1] >= f64::from(frame.y) - 1e-6
+                    && endpoint[1] <= f64::from(frame.y + frame.height) + 1e-6,
+                "{endpoint:?} is outside the frame {frame:?}"
+            );
+        }
     }
 
     #[test]
