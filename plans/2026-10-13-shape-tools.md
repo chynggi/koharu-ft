@@ -64,9 +64,9 @@
 | `crates/koharu-canvas/src/web.rs` | `begin_transform` 게이트, `ShapeEdit` 미리보기 |
 | `crates/koharu-app/src/commands/canvas.rs` | `add_shape`, `set_shape_style`, `rasterize_shapes` |
 | `crates/koharu-app/src/commands/project.rs` | `Project::add_shape`, `::set_shape_style`, `::rasterize_shapes`, `Layer::Shape` 노출 |
-| `crates/koharu-rpc/src/routes/canvas.rs` | 4개 라우트 |
+| `crates/koharu-rpc/src/routes/canvas.rs` | 3개 라우트 |
 | `crates/koharu-psd/src/document.rs` | 도형을 래스터 레이어로 |
-| `packages/bridge/src/protocol.ts` | `ShapeLayer` 타입, 4개 명령 |
+| `packages/bridge/src/protocol.ts` | `ShapeLayer` 타입, 3개 명령 |
 | `packages/koharu/lib/store.ts` | `'shape'` 도구, `shapeKind`, `shapeStyle` |
 | `packages/koharu/lib/geometry.ts` | `selectableLayer`에 `'shape'` |
 | `packages/koharu/components/editor/ToolBar.tsx` | 도형 도구 + 스타일 Popover |
@@ -548,7 +548,7 @@ let transform = [
   }
   ```
 
-  `set_shape_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다. **`merge_pages`(project.rs:586-624)도 같은 재계산이 필요하다** — 페이지 병합이 모든 폴리곤을 오프셋만큼 평행이동하므로, 폴리곤만 옮기면 병합 후 선의 선택 상자와 그려진 선이 분리된다. 최종 수정에서 두 경로를 `Project::write_geometry` 하나로 모았다 (아래 Task 6 참조).
+  `set_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다. **`merge_pages`(project.rs:586-624)도 같은 재계산이 필요하다** — 페이지 병합이 모든 폴리곤을 오프셋만큼 평행이동하므로, 폴리곤만 옮기면 병합 후 선의 선택 상자와 그려진 선이 분리된다. 최종 수정에서 두 경로를 `Project::write_geometry` 하나로 모았다 (아래 Task 6 참조).
 - `Polygon` / `Freeform` — `shape_path`는 이 두 변형에서 빈 경로(`MoveTo(0,0)`만)를 돌려준다. **`polygon_path`가 폴리곤 점을 받아 실제 경로를 만든다.** 두 함수를 고르는 일은 `shape_layer_path`가 한다.
 
 **추가 테스트**: `shape_layer_path`가 `Polygon`에서 `points`를 쓰고 `points`가 비면 빈 경로를 돌려주는지 확인한다.
@@ -1298,9 +1298,9 @@ Expected: PASS
 
 - `tools.shape`
 - `inspector.shape.fill`, `inspector.shape.stroke`, `inspector.shape.strokeWidth`, `inspector.shape.dash`, `inspector.shape.rasterize`
-- `inspector.shape.kind.rectangle`, `.ellipse`, `.line`, `.arrow`, `.polygon`, `.freeform`
+- `inspector.shape.kind.rectangle`, `.ellipse`, `.line`, `.arrow`
 
-한국어(`ko-KR`)는 사각형/타원/선/화살표/다각형/자유곡선. 다른 로케일은 영어를 기본으로 두고 기존 파일의 번역 관행을 따른다.
+한국어(`ko-KR`)는 사각형/타원/선/화살표. 다른 로케일은 영어를 기본으로 두고 기존 파일의 번역 관행을 따른다.
 
 - [ ] **Step 9: 프론트 검사를 돌린다**
 
