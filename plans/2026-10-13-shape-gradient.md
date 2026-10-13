@@ -18,7 +18,7 @@
 
 - 그라디언트 좌표는 **정규화 프레임 로컬**(프레임 좌상단 `(0,0)`, 우하단 `(1,1)`)로 저장한다. 페이지 절대 좌표를 저장하지 않는다.
 - 정규화 → 프레임 로컬 변환은 `prepared()` 한 곳에서만 한다: `local = normalized * frame_extent`.
-- 회전 정렬은 `Scene::fill`의 `brush_transform` 인자로 한다. 그라디언트 제어점을 손으로 변환하지 않는다.
+- 회전 정렬은 `brush_transform`으로 하지 **않는다**. `Scene::fill`이 브러시 변환을 경로 변환에 **합성**하므로(`scene.rs:331`: `transform * brush_transform`) 경로 아핀을 넘기면 이중 적용된다. 그라디언트 좌표가 경로 로컬이면 vello가 경로 변환을 자동 적용하므로 `None`을 넘긴다. 그라디언트 제어점을 손으로 변환하지도 않는다.
 - `ShapeFill`의 `revisioned` 리비전을 올리지 않고 `Gradient`를 **마지막에** 추가한다.
 - 스톱은 2개 이상 32개 이하. `offset`은 `0.0..=1.0`이고 유한. 같은 `offset` 중복 금지.
 - 스톱 정렬은 검증하지 않는다(렌더러가 정렬한다).
@@ -33,7 +33,7 @@
 
 스펙이 명시하지 않았지만 사용자가 만나게 되는 입력들이다. 각 항목의 테스트는 그 코드를 소유한 태스크에 넣는다.
 
-1. **회전한 도형의 그라디언트 정렬** — 90° 회전한 도형의 그라디언트가 경로와 같은 각도로 돌아가야 한다. `brush_transform`을 빠뜨리면 그라디언트만 축정렬로 남는다 (Task 3).
+1. **회전한 도형의 그라디언트 정렬** — 90° 회전한 도형의 그라디언트가 경로와 같은 각도로 돌아가야 한다. `brush_transform`에 경로 아핀을 넘기면 **이중 적용**되어 두 배로 돌거나 뭉개진다 (Task 2·7).
 2. **`Solid` 데이터의 하위 호환** — `Gradient` 변형이 생긴 뒤에도 1a가 저장한 `Solid` 바이트가 `Solid`로 읽혀야 한다. 리비전을 잘못 올리면 기존 프로젝트가 깨진다 (Task 1).
 3. **스톱이 정렬되지 않은 입력** — `[{0.8, A}, {0.2, B}]`는 거부되지 않고 올바른 순서로 렌더링되어야 한다 (Task 2).
 4. **`fill: None` + 그라디언트** — 채우기 명령이 만들어지지 않아야 한다. 빈 그라디언트가 배경을 덮으면 안 된다 (Task 3).
@@ -56,7 +56,7 @@
 |---|---|
 | `crates/koharu-scene/src/components/shapes.rs` | `GradientSpec`, `GradientKind`, `GradientStop`, `GradientExtend`, `ShapeFill::Gradient`, 검증 |
 | `crates/koharu-rasterizer/src/prepared.rs` | `PreparedFill::Gradient`, `PreparedGradient`, 검증 |
-| `crates/koharu-rasterizer/src/frame.rs` | `compile_scene`의 그라디언트 조립 + `brush_transform` |
+| `crates/koharu-rasterizer/src/frame.rs` | `compile_scene`의 그라디언트 조립 + `brush_transform = None` |
 | `crates/koharu-renderer/src/shape_renderer.rs` | `fill()`이 그라디언트를 펴서 넘김, 화살촉 규칙 유지 |
 | `crates/koharu-app/src/commands/project.rs` | `serde_json` wire 계약 테스트 (그라디언트 + `Solid` 회귀) |
 | `packages/bridge/src/canvas.ts` | `CanvasPathFill`에 그라디언트 변형 |
@@ -381,8 +381,8 @@ Expected: 컴파일 실패
 
 1. `stops_sorted(&gradient.stops)`로 정렬한다.
 2. `peniko::{ColorStop, ColorStops, Gradient, GradientKind, Extend}`를 만든다. `peniko::Gradient::new_linear(start, end)` / `new_radial(center, radius)` / `new_sweep(center, start_angle, end_angle)`을 쓰고, `stops`를 `ColorStops`로 설정하고, `extend`를 `PreparedGradientExtend`에서 `peniko::Extend`로 매핑한다. `Sweep`의 각도는 도 단위이므로 `to_radians()`로 바꾼다.
-3. `scene.fill(rule, affine, &gradient, Some(affine), &path)`를 호출한다. **`brush_transform`에 경로와 같은 아핀을 넘긴다** — 회전 정렬이 여기서 결정되며, 이것이 스펙이 정한 유일한 방법이다.
-4. `Solid`는 기존대로 `brush_transform: None`을 넘긴다(색은 변환과 무관하다).
+3. `scene.fill(rule, affine, &gradient, None, &path)`를 호출한다. **`brush_transform`은 `None`이다.** `Scene::fill`이 `transform * brush_transform`을 합성하므로(`vello-0.10.0/src/scene.rs:331`) 경로 아핀을 넘기면 그라디언트가 `T*T`를 받아 이중 적용된다. 그라디언트 제어점이 경로 로컬이므로 vello가 경로 변환을 자동 적용하는 것으로 충분하다.
+4. `Solid`도 `brush_transform: None`을 넘긴다(색은 변환과 무관하다). 결과적으로 이 인자는 항상 `None`이다.
 
 `PreparedFill`을 매치하는 다른 지점이 컴파일 오류로 드러나면 같은 방식으로 처리한다.
 
@@ -455,8 +455,9 @@ git commit -m "feat(rasterizer): render gradient fills through peniko"
 
     #[test]
     fn a_rotated_shape_keeps_its_gradient_in_local_coordinates() {
-        // 회전 정렬은 렌더러의 brush_transform 몫이므로, 준비된 그라디언트는
-        // 회전한 도형에서도 로컬 좌표에 남아 있어야 한다.
+        // 회전은 경로 변환(`transform`)이 담당하고 vello 가 그것을 브러시에
+        // 자동 적용하므로, 준비된 그라디언트는 회전한 도형에서도 로컬 좌표에
+        // 남아 있어야 한다.
         //
         // Rectangle 을 쓰는 이유: Line 의 끝점은 `to_local` 로 각도에 따라
         // 바뀌므로 `Line` 으로는 이 단언이 성립하지 않는다. 그라디언트 좌표는
@@ -890,75 +891,83 @@ git commit -m "feat(ui): edit gradient stops in the shape inspector"
 
 ---
 
-### Task 7: 회귀 확인과 전체 검사
+### Task 7: 회전 렌더 실증과 전체 검사
 
-1a의 `Solid` 경로가 그대로이고 전체가 컴파일되는지 확인한다.
+`brush_transform`이 `None`이어야 한다는 결정을 **실제 픽셀로** 증명한다. 이것이 1b에서 가장 조용히 깨질 수 있는 지점이다: 이중 적용은 회전한 도형에서만 드러나고, 파라미터 기반 테스트로는 잡히지 않는다(Task 2 리뷰어가 `Some(T)`는 회전 그라디언트를 단색으로 뭉갠다는 것을 실측으로 확인했다).
 
 **Files:**
-- Test: `crates/koharu-rasterizer/src/frame.rs` (`compile_scene`의 `brush_transform`)
+- Test: `crates/koharu-rasterizer/src/frame.rs` (`compile_scene` 렌더)
+- Test: `crates/koharu-rasterizer/src/native.rs` 또는 `tests/` (실제 렌더)
 
 **Interfaces:**
-- Consumes: Task 2의 `compile_scene`, Task 3의 `fill`
+- Consumes: Task 2의 `compile_scene`, `Rasterizer::rasterize_scene`(1a부터 존재), Task 3의 `fill`
 - Produces: 없음 (검증만)
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
-`compile_scene`이 그라디언트에 `brush_transform`을 넘기는지, `Solid`에는 넘기지 않는지 고정한다. `Scene`의 내부는 읽을 수 없으므로 **`compile_scene`을 작은 순수 함수로 뽑아** 검증한다:
+`Rasterizer::rasterize_scene`으로 회전한 그라디언트 사각형을 실제로 굽고, **단색이 아님**을 단언한다. `Some(T)` 이중 적용이면 그라디언트가 한 색으로 뭉개지므로 이 테스트가 그것을 잡는다.
 
 ```rust
-/// The brush transform a prepared fill needs: a gradient must rotate with its
-/// path, a solid colour does not.
-pub(crate) fn brush_transform(fill: &PreparedFill, path: &PreparedPath) -> Option<Affine> {
-    match fill {
-        PreparedFill::Solid { .. } => None,
-        PreparedFill::Gradient { .. } => Some(Affine::new(path.transform)),
-    }
-}
-```
-
-테스트:
-
-```rust
+    /// A rotated gradient must still vary across the shape. Passing the path
+    /// affine as `brush_transform` double-applies it (`Scene::fill` composes
+    /// `transform * brush_transform`), which collapses the ramp to one colour —
+    /// a failure that only shows up on a real render.
     #[test]
-    fn a_gradient_brush_rotates_with_its_path() {
+    fn a_rotated_gradient_is_not_collapsed_to_one_colour() {
         let path = PreparedPath {
-            transform: [0.0, 1.0, -1.0, 0.0, 10.0, 20.0],
-            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            transform: [0.0, 1.0, -1.0, 0.0, 100.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([100.0, 0.0]),
+                PathElement::LineTo([100.0, 100.0]),
+                PathElement::LineTo([0.0, 100.0]),
+                PathElement::Close,
+            ],
             fill: Some(gradient_fill()),
             stroke: None,
         };
-        let Some(fill) = path.fill.as_ref() else { unreachable!() };
-        assert_eq!(brush_transform(fill, &path), Some(Affine::new(path.transform)));
-    }
+        let mut scene = vello::Scene::new();
+        // `compile_scene`를 직접 부르거나 `PreparedPath::append_to`를 쓴다.
+        path.append_to(&mut scene);
 
-    #[test]
-    fn a_solid_brush_needs_no_transform() {
-        let path = PreparedPath {
-            transform: [0.0, 1.0, -1.0, 0.0, 10.0, 20.0],
-            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
-            fill: Some(PreparedFill::Solid { color: [1, 2, 3, 255], rule: FillRule::NonZero }),
-            stroke: None,
-        };
-        let Some(fill) = path.fill.as_ref() else { unreachable!() };
-        assert_eq!(brush_transform(fill, &path), None);
+        let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
+        let image = rasterizer
+            .rasterize_scene(&scene, 200, 200, [0, 0, 0, 0], crate::RasterOptions::default())
+            .expect("the scene rasterizes");
+
+        // 회전한 그라디언트는 화면을 가로질러 색이 변해야 한다. 한 색으로
+        // 뭉개지면(=이중 적용) 서로 다른 두 열의 색이 같아진다.
+        let left = image.get_pixel(60, 100);
+        let right = image.get_pixel(140, 100);
+        assert_ne!(
+            (left[0], left[1], left[2]),
+            (right[0], right[1], right[2]),
+            "a rotated gradient collapsed to one colour — brush_transform is probably Some(affine)"
+        );
     }
 ```
 
+`gradient_fill()`은 Task 2의 테스트 헬퍼다(검정→흰색 선형). 같은 모듈에 있으므로 재사용한다.
+
+이 테스트는 **GPU 어댑터를 요구한다**. `koharu-rasterizer`의 기존 도형 테스트가 이미 그 전제를 쓰므로 새 제약이 아니다.
+
 - [ ] **Step 2: 실패를 확인한다**
 
-Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_gradient_brush`
-Expected: 컴파일 실패
+`Some(path affine)`을 `brush_transform`으로 넘긴 상태에서 실행한다.
 
-- [ ] **Step 3: `brush_transform`을 구현하고 `compile_scene`이 그것을 쓰게 한다**
+Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_rotated_gradient`
+Expected: FAIL — 두 픽셀의 색이 같다는 단언 실패
 
-Task 2에서 인라인으로 match하던 것을 이 함수로 바꾼다. 동작은 같다 — 이 태스크는 그 결정을 테스트 가능하게 만드는 것이다.
+**이 실패가 이 태스크의 요점이다.** 실패하지 않으면 테스트가 이중 적용을 못 잡는 것이므로 테스트를 고쳐야 한다.
 
-- [ ] **Step 4: 테스트가 통과하는지 확인한다**
+- [ ] **Step 3: `None`으로 바꾸고 통과를 확인한다**
 
-Run: `cargo test -j 6 -p koharu-rasterizer --lib`
-Expected: 전부 통과
+Task 2가 `Some(affine)`을 넘기고 있으면 `None`으로 바꾼다. Task 2의 수정 라운드에서 이미 `None`이 되었다면 이 단계는 생략하고 Step 4로 간다 — 그 경우 Step 2의 실패는 재현되지 않으며, 그 사실을 보고에 남긴다.
 
-- [ ] **Step 5: 전체를 한 번에 확인한다**
+Run: `cargo test -j 6 -p koharu-rasterizer --lib frame::tests::a_rotated_gradient`
+Expected: PASS
+
+- [ ] **Step 4: 전체를 한 번에 확인한다**
 
 Run: `cargo test -j 6 -p koharu-scene -p koharu-rasterizer -p koharu-renderer -p koharu-app -p koharu-psd --lib`
 Expected: 전부 통과
@@ -971,11 +980,11 @@ Expected: 전부 통과
 
 `-j 6`은 이 머신에서 필수다 (12코어, 무제한 병렬은 데스크톱을 멈춘다 — `fork/HANDOFF.md:44`).
 
-- [ ] **Step 6: 커밋**
+- [ ] **Step 5: 커밋**
 
 ```bash
 git add crates/koharu-rasterizer/src/frame.rs
-git commit -m "test(rasterizer): pin the gradient brush transform"
+git commit -m "test(rasterizer): prove a rotated gradient is not collapsed"
 ```
 
 ---
@@ -995,7 +1004,7 @@ git commit -m "test(rasterizer): pin the gradient brush transform"
 | G7 `Solid` 유지 | Task 3 (match 유지) + Task 4 (회귀 테스트) |
 | 저장 모델 타입·검증 | Task 1 |
 | wire 형태 | Task 4 (Rust 고정) + Task 5 (TS 일치) |
-| `PreparedFill` 확장·`brush_transform` | Task 2 + Task 7 |
+| `PreparedFill` 확장·`brush_transform = None` | Task 2 + Task 7 |
 | 렌더러 조립 (`peniko::Gradient`) | Task 2 |
 | 캔버스 미리보기 | Task 5 |
 | UI (Inspector·ToolBar·i18n) | Task 6 |
@@ -1006,7 +1015,7 @@ git commit -m "test(rasterizer): pin the gradient brush transform"
 **Spec gap을 계획이 메운 곳** (스펙에 없던 결정):
 
 1. **`koharu-rasterizer`가 `koharu-scene`에 의존하지 않는다.** 스펙은 `PreparedGradient`를 정의했지만 검증 주체를 정하지 않았다. 1a의 경계(이 크레이트는 vello를 알고 scene은 모른다)를 유지해야 하므로 `GradientSpec` 검증과 `PreparedGradient` 검증이 **같은 규칙을 두 크레이트에서 각각** 구현한다. 중복이 아니라 경계 검증이며, 주석에 그 이유를 남긴다 (Task 2).
-2. **`brush_transform`을 순수 함수로 뽑는다.** 스펙은 그 인자를 쓰라고만 했고 검증 방법을 정하지 않았다. `Scene` 내부를 읽을 수 없으므로 결정을 함수로 떼어내 테스트한다 (Task 7).
+2. **`brush_transform`은 `None`이고, 그 사실을 실제 픽셀로 증명한다.** 스펙 초판은 경로 아핀을 넘기라고 했으나 그것이 이중 적용이다(Task 2 리뷰가 실측으로 확인). 스펙을 정정했고, Task 7이 회전한 그라디언트가 단색으로 뭉개지지 않음을 실제 래스터로 단언한다. `Scene` 내부를 읽을 수 없어 파라미터 테스트로는 잡히지 않으므로 렌더가 필요하다.
 3. **`fill`에 `frame` 인자가 추가된다.** 스펙은 "정규화 → 로컬 변환은 준비 단계"라고만 했다. `prepared()`가 이미 `frame`을 갖고 있으므로 시그니처만 넓히면 된다 (Task 3).
 4. **`ShapeFill::Gradient`를 마지막 변형으로 둔다.** 스펙은 "리비전을 올리지 않는다"고 했고 revision의 태그 형식으로 그 근거를 댔지만, **어느 위치에 추가하는지**는 명시하지 않았다. 마지막이어야 `Solid`의 id 0이 유지된다 (Task 1).
 5. **프론트의 `extend`/`kind` 철자를 Task 2의 serde 출력에서 확정한다.** 스펙은 wire 형태를 예시로만 들었다. Task 5 Step 1이 그 확인 절차를 명시한다.

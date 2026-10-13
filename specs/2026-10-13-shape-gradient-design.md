@@ -233,15 +233,32 @@ pub struct PreparedGradient {
 넘긴다. `peniko::Gradient::new_linear`/`new_radial`/`new_sweep`이 각각 있고
 (`gradient.rs:344`, `:356`, `:393`), `stops`는 `ColorStops`로 감싼다.
 
-**회전 정렬은 `brush_transform` 인자로 한다.** `Scene::fill`은
-`brush_transform: Option<Affine>`을 별도로 받는다
-(`vello-0.10.0/src/scene.rs:316-323`). 이것이 vello가 브러시 변환을 위해
-의도한 경로이므로, 그라디언트 좌표를 손으로 변환하지 않고 여기에 경로와
-같은 아핀을 넘긴다.
+**회전 정렬에는 `brush_transform`을 쓰지 않는다 — `None`을 넘긴다.**
 
-즉 `PreparedFill::Gradient`의 제어점은 **경로와 같은 로컬 좌표계**에 두고,
-`compile_scene`이 `Some(Affine::new(prepared.transform))`을 `brush_transform`에
-넘긴다. 경로 변환과 브러시 변환이 같은 값이므로 둘이 어긋날 수 없다.
+초판은 "브러시 변환에 경로와 같은 아핀을 넘긴다"고 썼으나 **그것이 틀렸다.**
+`Scene::fill`은 브러시 변환을 경로 변환에 **합성**한다:
+
+```rust
+// vello-0.10.0/src/scene.rs:328-331
+if let Some(brush_transform) = brush_transform
+    && self.encoding.encode_transform(Transform::from_kurbo(&(transform * brush_transform)))
+```
+
+따라서 `brush_transform = Some(T)`는 브러시가 `T * T`를 받게 만든다 — 경로
+변환을 이중 적용한다. 회전한 도형의 그라디언트가 도형보다 두 배 각도로
+돌아가거나(또는 특정 회전에서 단색처럼 뭉개진다).
+
+정답은 **`None`**이다. `PreparedFill::Gradient`의 제어점이 이미 경로와 같은
+로컬 좌표계에 있고, vello가 경로 변환을 브러시에 자동으로 적용하므로 추가
+변환이 필요 없다. `Some(Affine::IDENTITY)`도 같은 결과지만(`T * I == T`)
+`None`이 의도를 더 분명히 한다.
+
+vello 자신의 `draw_blurred_rounded_rect`가 같은 규율을 쓴다 — 브러시에는
+**추가** 변환만 넘기고 경로 변환을 반복하지 않는다
+(`vello-0.10.0/src/scene.rs:296-298`).
+
+`Solid`도 `None`을 넘긴다(색은 변환과 무관하다). 결과적으로 `brush_transform`
+인자는 이 코드베이스에서 항상 `None`이며, Task 7이 그 사실을 테스트로 고정한다.
 
 **정규화 → 로컬 변환은 준비 단계에서 한다.** `shape_renderer`의 도형별 경로
 생성에서 정규화 좌표(0..1)를 프레임 로컬 좌표로 편다:
@@ -268,8 +285,9 @@ local_y = normalized_y * frame.height
 
 **중복은 정규화 → 로컬 변환 한 곳뿐이다.** 프론트도 서버와 같은
 `local = normalized * frame_extent` 규칙으로 제어점을 펴고,
-`transform`은 1a가 이미 경로에 쓰는 값을 그대로 쓴다. 회전 정렬은
-렌더러의 `brush_transform`이 담당하므로 프론트에는 회전 관련 코드가 없다.
+`transform`은 1a가 이미 경로에 쓰는 값을 그대로 쓴다. 회전 정렬은 vello가
+경로 변환을 브러시에 자동 적용하므로 **프론트에는 회전 관련 코드가 전혀
+없다** (`brush_transform`은 `None`이다).
 
 두 구현이 어긋나면 미리보기와 커밋 결과가 달라지므로, **양쪽을 같은
 리터럴 테스트로 고정한다** (서버는 Rust 테스트, 프론트는 vitest). 별도
@@ -302,7 +320,7 @@ UI가 없으므로, 1b가 만든 데이터에 스윕이 나타날 수는 없다.
 | `Linear`의 두 점이 같음 | 검증에서 거부 (방향 없음) |
 | `Radial`의 반지름 0 이하 | 검증에서 거부 |
 | 그라디언트가 프레임 밖으로 나감 | 정상. `extend` 규칙이 처리한다 |
-| 회전한 도형의 그라디언트 | `compile_scene`이 `brush_transform`에 경로와 같은 아핀을 넘긴다 |
+| 회전한 도형의 그라디언트 | `compile_scene`이 `brush_transform = None`을 넘긴다. vello가 경로 변환을 브러시에 자동 적용하므로 제어점이 로컬 좌표에 있으면 회전이 따라온다 |
 | `fill: None` | 그라디언트여도 채우기 명령을 만들지 않는다 (1a 규칙 유지) |
 | 화살촉 + 그라디언트 채우기 | 화살촉은 같은 경로의 subpath이므로 같은 그라디언트로 채워진다 (1a 동작 유지) |
 
@@ -316,9 +334,9 @@ UI가 없으므로, 1b가 만든 데이터에 스윕이 나타날 수는 없다.
 | `koharu-app` | `serde_json`으로 `ShapeFill::Gradient`의 정확한 wire JSON 고정 (TS 계약) |
 | `koharu-app` | `serde_json`으로 `ShapeFill::Solid`의 JSON이 1a와 **문자 단위로 동일**한지 (회귀) |
 | `koharu-renderer` | 정규화 좌표 → 프레임 로컬 좌표 변환 |
-| `koharu-renderer` | 회전한 도형에서 그라디언트 제어점이 로컬 좌표에 남아 있는지 (변환이 `brush_transform` 몫임을 고정) |
+| `koharu-renderer` | 회전한 도형에서 그라디언트 제어점이 로컬 좌표에 남아 있는지 (회전이 경로 변환 몫임을 고정) |
 | `koharu-rasterizer` | `PreparedFill::Gradient` 검증, `Solid` 하위 호환 |
-| `koharu-rasterizer` | **`compile_scene`이 그라디언트에 `brush_transform = Some(경로 아핀)`을 넘기는지, `Solid`에는 `None`인지** (핵심 함정) |
+| `koharu-rasterizer` | **`compile_scene`이 그라디언트와 `Solid` 모두에 `brush_transform = None`을 넘기는지** (이중 적용 방지의 핵심 함정) |
 | `koharu-rasterizer` | `peniko::Gradient` 조립 — 스톱 정렬, `Extend` 매핑 |
 | 프론트 | `shapePreviewPath`의 그라디언트 wire 형태 리터럴 단언 (서버와 같은 좌표 규칙) |
 | 프론트 | `defaultGradientSpec`이 검증을 통과하는 값인지 |
