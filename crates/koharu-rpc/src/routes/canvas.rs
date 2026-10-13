@@ -10,7 +10,7 @@ use tauri::Manager as _;
 
 use koharu_app::commands::canvas::{
     self, CanvasChannel, CanvasGeneration, CanvasPagePreparation, LayerCommit, ManualOcrCommit,
-    PaintBrush, Point,
+    PaintBrush, Point, ShapeFrameUpdate, ShapeStyleUpdate,
 };
 use koharu_app::commands::project::CurrentProject;
 
@@ -35,6 +35,9 @@ pub fn router() -> Router<AppState> {
         )
         .route("/canvas/text/point", post(add_point_text))
         .route("/canvas/text/box", post(add_text_box))
+        .route("/canvas/shape", post(add_shape))
+        .route("/canvas/shape/style", post(set_shape_style))
+        .route("/canvas/shape/geometry", post(set_shape_geometries))
         .route("/canvas/ocr/manual", post(manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
         .route("/canvas/commit/erase", post(commit_erase))
@@ -132,6 +135,80 @@ async fn add_text_box(
     Ok(Json(
         canvas::add_text_box(
             request.frame,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct AddShapeRequest {
+    expected_revision: Revision,
+    page: EntityId,
+    geometry: koharu_app::commands::project::Geometry,
+    shape: koharu_scene::ShapeGeometry,
+    style: koharu_scene::ShapeStyle,
+    angle_degrees: f32,
+}
+
+async fn add_shape(
+    State(app): State<AppState>,
+    Json(request): Json<AddShapeRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::add_shape(
+            request.expected_revision,
+            request.page,
+            request.geometry,
+            request.shape,
+            request.style,
+            request.angle_degrees,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapeStyleRequest {
+    expected_revision: Revision,
+    updates: Vec<ShapeStyleUpdate>,
+}
+
+async fn set_shape_style(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapeStyleRequest>,
+) -> ApiResult<Json<Revision>> {
+    Ok(Json(
+        canvas::set_shape_style(
+            request.expected_revision,
+            request.updates,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapeGeometriesRequest {
+    expected_revision: Revision,
+    updates: Vec<ShapeFrameUpdate>,
+}
+
+async fn set_shape_geometries(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapeGeometriesRequest>,
+) -> ApiResult<Json<Revision>> {
+    Ok(Json(
+        canvas::set_shape_geometries(
+            request.expected_revision,
+            request.updates,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

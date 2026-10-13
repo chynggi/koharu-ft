@@ -12,12 +12,13 @@ use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin, FitsTo,
     Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
     Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom,
-    Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, Snapshot,
-    SourceText as SceneSourceText, TextGroup as SceneTextGroup, TextLayout as SceneTextLayout,
-    TextLayoutKind, TextRegion, TextRole, Translation as SceneTranslation,
-    Typography as SceneTypography, Visibility as SceneVisibility,
+    Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, ShapeGeometry,
+    ShapeLayer as SceneShapeLayer, ShapeStyle, Snapshot, SourceText as SceneSourceText,
+    TextGroup as SceneTextGroup, TextLayout as SceneTextLayout, TextLayoutKind, TextRegion,
+    TextRole, Translation as SceneTranslation, Typography as SceneTypography,
+    Visibility as SceneVisibility,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use tokio::sync::Mutex;
 
@@ -101,6 +102,16 @@ pub enum Layer {
         name: String,
         kind: RasterLayerKind,
     },
+    Shape {
+        id: EntityId,
+        parent: Option<EntityId>,
+        geometry: Option<Geometry>,
+        angle_degrees: Option<f32>,
+        visibility: LayerVisibility,
+        shape: ShapeGeometry,
+        style: ShapeStyle,
+        rasterized: bool,
+    },
     Image {
         id: EntityId,
         parent: Option<EntityId>,
@@ -141,9 +152,27 @@ pub struct AnalysisRegion {
     pub label: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Type)]
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
 pub struct Geometry {
     pub points: Vec<Point>,
+}
+
+impl Geometry {
+    /// The transport view carries only points; the scene component also carries
+    /// authorship, which every caller of this promotes to `User` anyway.
+    pub fn into_scene(self) -> SceneGeometry {
+        SceneGeometry {
+            origin: Origin::User,
+            points: self
+                .points
+                .into_iter()
+                .map(|point| ScenePoint {
+                    x: point.x,
+                    y: point.y,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Type)]
@@ -1131,6 +1160,141 @@ impl Project {
         self.commit(patch).await
     }
 
+    /// Creates a user shape layer. The outline polygon is the entity's
+    /// `Geometry` and the regenerable parameters live in a separate
+    /// `ShapeLayer` on the same entity (decision D8); the entity is placed
+    /// before the page's text group so text keeps painting on top.
+    pub async fn add_shape(
+        &mut self,
+        page: EntityId,
+        geometry: SceneGeometry,
+        shape: ShapeGeometry,
+        style: ShapeStyle,
+        angle_degrees: f32,
+    ) -> Result<(Commit, EntityId)> {
+        if !angle_degrees.is_finite() {
+            bail!("shape angle must be finite");
+        }
+        let snapshot = self.snapshot();
+        snapshot.page(page)?;
+        let name = format!(
+            "{} {}",
+            Self::shape_kind_name(&shape),
+            snapshot
+                .children(page)?
+                .filter(|entity| {
+                    snapshot
+                        .component::<SceneShapeLayer>(*entity)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|layer| Self::same_shape_kind(&layer.geometry, &shape))
+                })
+                .count()
+                + 1
+        );
+        let mut layer = None;
+        let patch = snapshot.patch(|edit| {
+            let at = snapshot
+                .page(page)?
+                .text_group()?
+                .map_or(At::End, |group| At::Before(group.id()));
+            let added = edit.add_entity(page, at)?;
+            edit.set(
+                added,
+                &SceneShapeLayer {
+                    origin: Origin::User,
+                    name,
+                    geometry: shape,
+                    style,
+                    angle_degrees: Some(angle_degrees),
+                    rasterized: false,
+                },
+            )?;
+            let mut geometry = geometry;
+            geometry.origin = Origin::User;
+            edit.set(added, &geometry)?;
+            layer = Some(added);
+            Ok(())
+        })?;
+        Ok((
+            self.commit(patch).await?,
+            layer.expect("shape layer was added while building the patch"),
+        ))
+    }
+
+    pub async fn set_shape_style(
+        &mut self,
+        updates: Vec<(EntityId, ShapeStyle)>,
+    ) -> Result<Commit> {
+        let snapshot = self.snapshot();
+        let updates = updates
+            .into_iter()
+            .map(|(element, style)| {
+                let layer = snapshot
+                    .component::<SceneShapeLayer>(element)?
+                    .context("only shape layers can change style")?;
+                Ok((element, style, layer))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let patch = snapshot.patch(|edit| {
+            for (element, style, mut layer) in updates {
+                edit.promote_entity_to_user(element)?;
+                layer.origin = Origin::User;
+                layer.style = style;
+                edit.set(element, &layer)?;
+            }
+            Ok(())
+        })?;
+        self.commit(patch).await
+    }
+
+    /// Moves a shape: the polygon is replaced and the rotation lands on the
+    /// `ShapeLayer`, which is what the renderer rebuilds the frame from.
+    pub async fn set_shape_geometries(
+        &mut self,
+        updates: Vec<(EntityId, SceneGeometry, f32)>,
+    ) -> Result<Commit> {
+        let snapshot = self.snapshot();
+        let updates = updates
+            .into_iter()
+            .map(|(element, geometry, angle_degrees)| {
+                let mut layer = snapshot
+                    .component::<SceneShapeLayer>(element)?
+                    .context("only shape layers can change geometry")?;
+                layer.origin = Origin::User;
+                layer.angle_degrees = Some(angle_degrees);
+                Ok((element, geometry, layer))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let patch = snapshot.patch(|edit| {
+            for (element, mut geometry, layer) in updates {
+                edit.promote_entity_to_user(element)?;
+                geometry.origin = Origin::User;
+                edit.set(element, &geometry)?;
+                edit.set(element, &layer)?;
+            }
+            Ok(())
+        })?;
+        self.commit(patch).await
+    }
+
+    /// The layer-name stem, mirroring the raster convention.
+    fn shape_kind_name(shape: &ShapeGeometry) -> &'static str {
+        match shape {
+            ShapeGeometry::Rectangle { .. } => "Rectangle",
+            ShapeGeometry::Ellipse => "Ellipse",
+            ShapeGeometry::Line { .. } => "Line",
+            ShapeGeometry::Polygon => "Polygon",
+            ShapeGeometry::Freeform => "Freeform",
+        }
+    }
+
+    /// Name numbering counts only shapes of the same kind, so a page can hold
+    /// "Rectangle 1" and "Ellipse 1" at once.
+    fn same_shape_kind(left: &ShapeGeometry, right: &ShapeGeometry) -> bool {
+        std::mem::discriminant(left) == std::mem::discriminant(right)
+    }
+
     pub async fn apply_raster_stroke(
         &mut self,
         page: EntityId,
@@ -1436,6 +1600,20 @@ impl Project {
                 kind: raster.kind,
             });
         }
+        if let Some(shape) = snapshot.component::<SceneShapeLayer>(layer)? {
+            return Ok(Layer::Shape {
+                id: layer,
+                parent,
+                geometry: snapshot
+                    .component::<SceneGeometry>(layer)?
+                    .map(Self::geometry_view),
+                angle_degrees: shape.angle_degrees,
+                visibility,
+                shape: shape.geometry,
+                style: shape.style,
+                rasterized: shape.rasterized,
+            });
+        }
         let geometry = snapshot
             .component::<SceneGeometry>(layer)?
             .map(Self::geometry_view)
@@ -1525,6 +1703,7 @@ impl Project {
         Ok(snapshot.component::<SceneGroup>(entity)?.is_some()
             || snapshot.component::<SceneTextLayout>(entity)?.is_some()
             || snapshot.component::<SceneRasterLayer>(entity)?.is_some()
+            || snapshot.component::<SceneShapeLayer>(entity)?.is_some()
             || (snapshot.component::<SceneGeometry>(entity)?.is_some()
                 && snapshot
                     .asset(entity, &AssetRole::new("source")?)?
@@ -1793,9 +1972,25 @@ fn rasterize_stroke(
 
 #[cfg(test)]
 mod tests {
-    use koharu_scene::{Generation, ProducerId, WritingMode};
+    use koharu_scene::{
+        ArrowHead, Generation, LineCap, LineJoin, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle,
+        StrokeStyle, WritingMode,
+    };
 
     use super::*;
+
+    /// `Layer` carries its id inside each variant, so tests need this to pick
+    /// one out of a page view.
+    fn layer_id(layer: &Layer) -> EntityId {
+        match layer {
+            Layer::Group { id, .. }
+            | Layer::Text { id, .. }
+            | Layer::Raster { id, .. }
+            | Layer::Shape { id, .. }
+            | Layer::Image { id, .. }
+            | Layer::Artwork { id, .. } => *id,
+        }
+    }
 
     #[tokio::test]
     async fn merging_adjacent_pages_composes_a_wide_spread_and_keeps_layers() {
@@ -2317,5 +2512,159 @@ mod tests {
             }])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_shape_layer_round_trips_through_the_page_view() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let geometry = SceneGeometry::rectangle(10.0, 20.0, 100.0, 50.0);
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Solid([1, 2, 3, 255])),
+            stroke: None,
+        };
+
+        let (commit, element) = project
+            .add_shape(
+                page,
+                geometry,
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style.clone(),
+                0.0,
+            )
+            .await
+            .unwrap();
+        assert!(commit.revision.get() > 0);
+
+        let view = Project::page(&project.snapshot(), page).unwrap();
+        let layer = view
+            .layers
+            .iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap();
+        let Layer::Shape {
+            shape,
+            style: view_style,
+            angle_degrees,
+            rasterized,
+            ..
+        } = layer
+        else {
+            panic!("expected a shape layer");
+        };
+        assert!(matches!(shape, ShapeGeometry::Rectangle { .. }));
+        assert_eq!(*angle_degrees, Some(0.0));
+        assert!(!rasterized);
+        assert_eq!(view_style.fill, Some(ShapeFill::Solid([1, 2, 3, 255])));
+    }
+
+    #[tokio::test]
+    async fn changing_shape_style_keeps_the_geometry() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Ellipse,
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([0, 0, 0, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        let next = ShapeStyle {
+            fill: None,
+            stroke: None,
+        };
+        project
+            .set_shape_style(vec![(element, next.clone())])
+            .await
+            .unwrap();
+
+        let view = Project::page(&project.snapshot(), page).unwrap();
+        let Layer::Shape { style, shape, .. } = view
+            .layers
+            .iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap()
+        else {
+            panic!("expected a shape layer");
+        };
+        assert_eq!(*style, next);
+        assert!(matches!(shape, ShapeGeometry::Ellipse));
+    }
+
+    /// The TypeScript client in `packages/bridge/src/protocol.ts` reproduces
+    /// these strings by hand, so the wire shape has to be pinned here rather
+    /// than inferred from the Rust types. `ShapeFill` is a newtype variant and
+    /// `ShapeGeometry` a struct-variant enum, so both use serde's external
+    /// tagging: `{"solid":[...]}` and `{"rectangle":{...}}` / `"ellipse"`.
+    #[test]
+    fn the_shape_wire_shape_matches_the_typescript_client() {
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: Some(ShapeFill::Solid([1, 2, 3, 255])),
+                stroke: None,
+            })
+            .unwrap(),
+            r#"{"fill":{"solid":[1,2,3,255]},"stroke":null}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: None,
+                stroke: Some(StrokeStyle {
+                    color: [0, 0, 0, 255],
+                    width: 2.0,
+                    dash: Some(vec![4.0, 2.0]),
+                    cap: LineCap::Round,
+                    join: LineJoin::Bevel,
+                }),
+            })
+            .unwrap(),
+            r#"{"fill":null,"stroke":{"color":[0,0,0,255],"width":2.0,"dash":[4.0,2.0],"cap":"round","join":"bevel"}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Rectangle { corner_radius: 4.0 }).unwrap(),
+            r#"{"rectangle":{"corner_radius":4.0}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Ellipse).unwrap(),
+            r#""ellipse""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Polygon).unwrap(),
+            r#""polygon""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Freeform).unwrap(),
+            r#""freeform""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Line {
+                start: [0.0, 0.0],
+                end: [10.0, 0.0],
+                head: Some(ArrowHead {
+                    length: 4.0,
+                    width: 2.0,
+                }),
+            })
+            .unwrap(),
+            r#"{"line":{"start":[0.0,0.0],"end":[10.0,0.0],"head":{"length":4.0,"width":2.0}}}"#
+        );
     }
 }

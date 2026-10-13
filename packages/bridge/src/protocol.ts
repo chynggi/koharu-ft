@@ -271,6 +271,29 @@ export const commands = {
 		bytes(`/pages/${page}/canvas/resource/${revision}/${encodeURIComponent(resource)}`),
 	addPointText: (point: Point) => post<LayerCommit>("/canvas/text/point", { point }),
 	addTextBox: (frame: Frame) => post<LayerCommit>("/canvas/text/box", { frame }),
+	addShape: (
+		expectedRevision: Revision,
+		page: EntityId,
+		geometry: Geometry,
+		shape: ShapeGeometry,
+		style: ShapeStyle,
+		angleDegrees: number,
+	) =>
+		post<LayerCommit>("/canvas/shape", {
+			expected_revision: expectedRevision,
+			page,
+			geometry,
+			shape,
+			style,
+			angle_degrees: angleDegrees,
+		}),
+	setShapeStyle: (expectedRevision: Revision, updates: ShapeStyleUpdate[]) =>
+		post<Revision>("/canvas/shape/style", { expected_revision: expectedRevision, updates }),
+	setShapeGeometries: (expectedRevision: Revision, updates: ShapeFrameUpdate[]) =>
+		post<Revision>("/canvas/shape/geometry", {
+			expected_revision: expectedRevision,
+			updates,
+		}),
 	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
 	commitPaint: (
 		expectedRevision: Revision,
@@ -375,6 +398,11 @@ export type AnalysisRegion = {
 	geometry: Geometry,
 	kind: string,
 	label: string | null,
+};
+
+export type ArrowHead = {
+	length: number,
+	width: number,
 };
 
 export type Bounds = {
@@ -683,7 +711,7 @@ export type LanguageChoice = {
 	name: string,
 };
 
-export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
+export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "shape"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; shape: ShapeGeometry; style: ShapeStyle; rasterized: boolean } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
 
 export type LayerCommit = {
 	revision: Revision,
@@ -694,6 +722,10 @@ export type LayerVisibility = {
 	visible: boolean,
 	opacity: number,
 };
+
+export type LineCap = "butt" | "round" | "square";
+
+export type LineJoin = "miter" | "round" | "bevel";
 
 /**
  *  What the current build and device actually support.
@@ -954,6 +986,50 @@ export type Quantization = {
 };
 
 export type RasterLayerKind = "cleanup" | "paint";
+
+/**
+ *  Regenerable shape parameters. The outline polygon is the entity's separate
+ *  `Geometry`, not part of this type (decision D8).
+ *
+ *  These match serde's external tagging exactly — `Rectangle`/`Line` are
+ *  struct variants and serialize as `{ rectangle: { corner_radius } }`, while
+ *  `Ellipse`/`Polygon`/`Freeform` are unit variants and serialize as bare
+ *  strings. `ShapeFill` is a newtype variant, so it is `{ solid: [r,g,b,a] }`
+ *  with no `kind` key. `the_shape_wire_shape_matches_the_typescript_client`
+ *  in `crates/koharu-app/src/commands/project.rs` pins every one of these
+ *  strings; change that test and this type together.
+ */
+export type ShapeGeometry = { rectangle: { corner_radius: number } } | "ellipse" | { line: {
+	start: [number, number],
+	end: [number, number],
+	head: ArrowHead | null,
+} } | "polygon" | "freeform";
+
+export type ShapeFill = { solid: [number, number, number, number] };
+
+export type StrokeStyle = {
+	color: [number, number, number, number],
+	width: number,
+	dash: number[] | null,
+	cap: LineCap,
+	join: LineJoin,
+};
+
+export type ShapeStyle = {
+	fill: ShapeFill | null,
+	stroke: StrokeStyle | null,
+};
+
+export type ShapeStyleUpdate = {
+	element: EntityId,
+	style: ShapeStyle,
+};
+
+export type ShapeFrameUpdate = {
+	element: EntityId,
+	geometry: Geometry,
+	angle_degrees: number,
+};
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 

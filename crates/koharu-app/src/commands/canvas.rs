@@ -4,7 +4,7 @@ use anyhow::{Context as _, anyhow, bail};
 use image::{GrayImage, ImageEncoder as _, codecs::png::PngEncoder};
 use koharu_desktop::{CanvasState, Desktop, Frame, TransformFrame};
 use koharu_rasterizer::ResourceId;
-use koharu_scene::{EntityId, Revision};
+use koharu_scene::{EntityId, Revision, ShapeGeometry, ShapeStyle};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -17,7 +17,7 @@ use tauri_runtime_cef::CefRuntime;
 use super::{
     ChannelExt as _, Error, processing,
     processing::{JobChannel, JobId, Processing},
-    project::{CurrentProject, Page, Project, RasterStrokeMode},
+    project::{CurrentProject, Geometry, Page, Project, RasterStrokeMode},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Type)]
@@ -415,6 +415,131 @@ pub async fn commit_transform(
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
     canvas_channel.publish(desktop.canvas_state());
     Ok(Some(commit.revision))
+}
+
+#[derive(Clone, Debug, Deserialize, Type)]
+pub struct ShapeStyleUpdate {
+    pub element: EntityId,
+    pub style: ShapeStyle,
+}
+
+#[derive(Clone, Debug, Deserialize, Type)]
+pub struct ShapeFrameUpdate {
+    pub element: EntityId,
+    pub geometry: Geometry,
+    pub angle_degrees: f32,
+}
+
+// Nine parameters because the IPC body is flat: the shape payload plus the
+// three injected `State`s. The HTTP route destructures the same fields.
+#[allow(clippy::too_many_arguments)]
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_added",
+    skip_all,
+    fields(origin = "user", entity_count = 1_u64)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn add_shape(
+    expected_revision: Revision,
+    page: EntityId,
+    geometry: Geometry,
+    shape: ShapeGeometry,
+    style: ShapeStyle,
+    angle_degrees: f32,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<LayerCommit, Error> {
+    let (commit, active_page, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let (commit, layer) = project
+            .add_shape(page, geometry.into_scene(), shape, style, angle_degrees)
+            .await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), layer)
+    };
+    desktop
+        .synchronize(&commit.snapshot, active_page, &commit)
+        .await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(LayerCommit {
+        revision: commit.revision,
+        layer,
+    })
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_style_edited",
+    skip_all,
+    fields(origin = "user", entity_count = updates.len())
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn set_shape_style(
+    expected_revision: Revision,
+    updates: Vec<ShapeStyleUpdate>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<Revision, Error> {
+    let updates = updates
+        .into_iter()
+        .map(|update| (update.element, update.style))
+        .collect();
+    let (commit, page) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let commit = project.set_shape_style(updates).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page())
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(commit.revision)
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_geometry_edited",
+    skip_all,
+    fields(origin = "user", entity_count = updates.len())
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn set_shape_geometries(
+    expected_revision: Revision,
+    updates: Vec<ShapeFrameUpdate>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<Revision, Error> {
+    let updates = updates
+        .into_iter()
+        .map(|update| {
+            (
+                update.element,
+                update.geometry.into_scene(),
+                update.angle_degrees,
+            )
+        })
+        .collect();
+    let (commit, page) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let commit = project.set_shape_geometries(updates).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page())
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(commit.revision)
 }
 
 #[tracing::instrument(
