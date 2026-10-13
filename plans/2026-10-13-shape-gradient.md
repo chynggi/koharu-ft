@@ -73,7 +73,11 @@
 
 **Files:**
 - Modify: `crates/koharu-scene/src/components/shapes.rs`
+- Modify: `crates/koharu-scene/src/components.rs:28-30` (재수출 목록)
+- Modify: `crates/koharu-scene/src/lib.rs:26-33` (크레이트 루트 재수출 목록)
 - Test: `crates/koharu-scene/src/components/shapes.rs` (인라인 `mod tests`)
+
+**인터페이스 도달성 (이 태스크가 반드시 처리한다):** `mod components`와 `mod shapes`가 모두 private이므로, 새 타입 4개는 두 재수출 목록에 명시적으로 넣어야 크레이트 밖에서 도달한다. Task 3이 `koharu_scene::GradientSpec` 등을 **이름으로** 쓰기 때문에 이 단계를 빠뜨리면 Task 3이 첫 컴파일에서 `cannot find type GradientSpec`로 실패한다. 루트 재수출이 실제로 동작하는지 테스트 모듈의 `use crate::{GradientExtend, GradientKind, GradientSpec, GradientStop};` 한 줄로 컴파일 검증한다.
 
 **Interfaces:**
 - Consumes: 기존 `ShapeFill`(`shapes.rs:66-69`), `ShapeStyle`
@@ -254,6 +258,15 @@ Expected: 새 테스트 12개 포함 전부 통과
 
 Run: `cargo check -j 6 -p koharu-scene`
 Expected: 성공. `ShapeFill`을 매치하는 다른 크레이트(`koharu-renderer`)는 아직 컴파일되지 않을 수 있다 — 그건 Task 3의 몫이며, 이 태스크에서는 `koharu-scene`만 통과하면 된다.
+
+**재수출을 확인한다**: `cargo doc`을 돌릴 필요는 없고, 테스트 모듈에 다음 한 줄이 컴파일되면 충분하다:
+
+```rust
+    // 크레이트 루트 재수출이 실제로 도달 가능한지 컴파일로 검증한다.
+    use crate::{GradientExtend, GradientKind, GradientSpec, GradientStop};
+```
+
+`GradientKind`는 여러 테스트가 이미 이름으로 쓰므로, 이 import가 컴파일된다는 것 자체가 Task 3의 경로가 열렸다는 증거다.
 
 - [ ] **Step 6: 커밋**
 
