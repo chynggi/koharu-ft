@@ -2134,8 +2134,8 @@ fn rasterize_stroke(
 #[cfg(test)]
 mod tests {
     use koharu_scene::{
-        ArrowHead, Generation, LineCap, LineJoin, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle,
-        StrokeStyle, WritingMode,
+        ArrowHead, Generation, GradientExtend, GradientKind, GradientSpec, GradientStop, LineCap,
+        LineJoin, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle, StrokeStyle, WritingMode,
     };
 
     use super::*;
@@ -3327,6 +3327,90 @@ mod tests {
             })
             .unwrap(),
             r#"{"line":{"start":[0.0,0.0],"end":[10.0,0.0],"head":{"length":4.0,"width":2.0}}}"#
+        );
+    }
+
+    /// The gradient half of the same contract. `ShapeFill::Gradient` is a
+    /// newtype variant, so it stays externally tagged; `GradientKind` is a
+    /// struct-variant enum, so each kind is `{"kind_name":{...}}`; and
+    /// `GradientExtend` is a unit-variant enum, so it is a bare lowercase
+    /// string. The `f32` fields follow the `2.0` notation the `StrokeStyle`
+    /// assertion above already pins.
+    ///
+    /// The `Solid` regression is deliberately *not* repeated here: the first
+    /// assertion of `the_shape_wire_shape_matches_the_typescript_client` is
+    /// already byte-identical to the one this task's brief specifies, so a copy
+    /// would assert the same literal twice.
+    #[test]
+    fn the_gradient_wire_shape_matches_the_typescript_client() {
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Gradient(GradientSpec {
+                kind: GradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [1.0, 1.0],
+                },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: [1, 2, 3, 255],
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: [4, 5, 6, 255],
+                    },
+                ],
+                extend: GradientExtend::Repeat,
+            })),
+            stroke: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&style).unwrap(),
+            r#"{"fill":{"gradient":{"kind":{"linear":{"start":[0.0,0.0],"end":[1.0,1.0]}},"stops":[{"offset":0.0,"color":[1,2,3,255]},{"offset":1.0,"color":[4,5,6,255]}],"extend":"repeat"}},"stroke":null}"#
+        );
+
+        let radial = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Radial {
+                center: [0.5, 0.5],
+                radius: 0.25,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [255, 255, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Pad,
+        });
+        assert_eq!(
+            serde_json::to_string(&radial).unwrap(),
+            r#"{"gradient":{"kind":{"radial":{"center":[0.5,0.5],"radius":0.25}},"stops":[{"offset":0.0,"color":[0,0,0,255]},{"offset":1.0,"color":[255,255,255,255]}],"extend":"pad"}}"#
+        );
+
+        let sweep = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Sweep {
+                center: [0.5, 0.5],
+                start_degrees: 0.0,
+                end_degrees: 360.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Reflect,
+        });
+        assert_eq!(
+            serde_json::to_string(&sweep).unwrap(),
+            r#"{"gradient":{"kind":{"sweep":{"center":[0.5,0.5],"start_degrees":0.0,"end_degrees":360.0}},"stops":[{"offset":0.0,"color":[255,0,0,255]},{"offset":1.0,"color":[0,0,255,255]}],"extend":"reflect"}}"#
         );
     }
 }
