@@ -1317,6 +1317,60 @@ async fn disk_scene_reopens_and_validates() {
 }
 
 #[tokio::test]
+async fn a_scene_without_shapes_round_trips_after_the_component_is_registered() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("shape-free.khrproj");
+    let entity;
+    {
+        let mut session = Session::create(&path).await.unwrap();
+        let mut created = None;
+        let patch = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(page(), At::End)?;
+                let id = edit.add_entity(page, At::End)?;
+                edit.set(id, &Geometry::rectangle(4.0, 8.0, 16.0, 32.0))?;
+                created = Some(id);
+                Ok(())
+            })
+            .unwrap();
+        session.commit(patch).await.unwrap();
+        entity = created.unwrap();
+    }
+
+    // Registering `ShapeLayer` added a runtime-only schema bit, so a project
+    // saved before the component existed must still cross the container format
+    // untouched: both slots keep version 1, and a shape-free checkpoint carries
+    // no shape component for the new bit to decode.
+    for slot in ["state-a.khr", "state-b.khr"] {
+        let bytes = std::fs::read(path.join(slot)).unwrap();
+        assert_eq!(&bytes[..8], b"KHRSTATE");
+        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 1);
+        assert!(
+            !bytes
+                .windows(ShapeLayer::KIND.len())
+                .any(|window| window == ShapeLayer::KIND.as_bytes()),
+            "{slot} unexpectedly stores a shape layer"
+        );
+    }
+
+    let reopened = Session::open(&path).await.unwrap();
+    let snapshot = reopened.snapshot();
+    assert_eq!(snapshot.revision(), Revision::new(1));
+    assert_eq!(snapshot.pages().len(), 1);
+    assert!(snapshot.component::<ShapeLayer>(entity).unwrap().is_none());
+    assert_eq!(
+        snapshot
+            .component::<Geometry>(entity)
+            .unwrap()
+            .unwrap()
+            .points
+            .len(),
+        4
+    );
+}
+
+#[tokio::test]
 async fn reopen_updates_page_local_component_queries() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("refresh.khrproj");

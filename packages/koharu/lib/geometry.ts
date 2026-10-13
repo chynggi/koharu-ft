@@ -64,11 +64,12 @@ export function selectableLayer(layer: Layer): boolean {
 
 export function layerFrame(layer: Layer): Frame | null {
   const points =
-    layer.type === 'text' || layer.type === 'image' || layer.type === 'artwork'
+    layer.type === 'text' ||
+    layer.type === 'image' ||
+    layer.type === 'artwork' ||
+    layer.type === 'shape'
       ? layer.geometry?.points
-      : layer.type === 'shape'
-        ? layer.geometry?.points
-        : null
+      : null
   if (!points?.length || points.some((point) => !finite(point.x, point.y))) return null
   // A shape's outline is its polygon, so it is measured here rather than
   // restored from a rendered frame. Unlike text, a shape may legitimately have a
