@@ -1130,30 +1130,60 @@ impl Project {
         self.commit(patch).await
     }
 
+    /// Moves any transformable layer. `commit_transform` routes every element
+    /// the desktop reports as transformable through here, so a shape has to be
+    /// accepted alongside a text layer and get the shape treatment (rotation on
+    /// `ShapeLayer`, endpoints resynced from the polygon).
     pub async fn set_geometries(
         &mut self,
         geometries: impl IntoIterator<Item = (EntityId, SceneGeometry, f32)>,
     ) -> Result<Commit> {
         let snapshot = self.snapshot();
+        enum Target {
+            Text {
+                content: EntityId,
+                layout: SceneTextLayout,
+            },
+            Shape {
+                layer: SceneShapeLayer,
+            },
+        }
         let geometries = geometries
             .into_iter()
             .map(|(element, geometry, angle_degrees)| {
-                let mut layout = snapshot
-                    .component::<SceneTextLayout>(element)?
-                    .context("only text layers can change geometry")?;
-                layout.origin = Origin::User;
-                layout.angle_degrees = Some(angle_degrees);
-                let content = Self::text_content(&snapshot, element)?;
-                Ok((element, geometry, content, layout))
+                let target =
+                    if let Some(mut layer) = snapshot.component::<SceneShapeLayer>(element)? {
+                        layer.origin = Origin::User;
+                        layer.angle_degrees = Some(angle_degrees);
+                        Target::Shape { layer }
+                    } else {
+                        let mut layout = snapshot
+                            .component::<SceneTextLayout>(element)?
+                            .context("only text and shape layers can change geometry")?;
+                        layout.origin = Origin::User;
+                        layout.angle_degrees = Some(angle_degrees);
+                        let content = Self::text_content(&snapshot, element)?;
+                        Target::Text { content, layout }
+                    };
+                Ok((element, geometry, target))
             })
             .collect::<Result<Vec<_>>>()?;
         let patch = snapshot.patch(|edit| {
-            for (element, mut geometry, content, layout) in geometries {
+            for (element, mut geometry, target) in geometries {
                 edit.promote_entity_to_user(element)?;
-                edit.promote_entity_to_user(content)?;
                 geometry.origin = Origin::User;
-                edit.set(element, &geometry)?;
-                edit.set(element, &layout)?;
+                match target {
+                    Target::Text { content, layout } => {
+                        edit.promote_entity_to_user(content)?;
+                        edit.set(element, &geometry)?;
+                        edit.set(element, &layout)?;
+                    }
+                    Target::Shape { mut layer } => {
+                        layer.geometry.resync_with_polygon(&geometry.points);
+                        edit.set(element, &geometry)?;
+                        edit.set(element, &layer)?;
+                    }
+                }
             }
             Ok(())
         })?;
@@ -1248,34 +1278,21 @@ impl Project {
         self.commit(patch).await
     }
 
-    /// Moves a shape: the polygon is replaced and the rotation lands on the
-    /// `ShapeLayer`, which is what the renderer rebuilds the frame from.
+    /// Moves shapes: the polygon is replaced and the rotation lands on the
+    /// `ShapeLayer`, which is what the renderer rebuilds the frame from. This is
+    /// the shape-only entry point, so a text-layer element is rejected rather
+    /// than silently treated as one.
     pub async fn set_shape_geometries(
         &mut self,
         updates: Vec<(EntityId, SceneGeometry, f32)>,
     ) -> Result<Commit> {
         let snapshot = self.snapshot();
-        let updates = updates
-            .into_iter()
-            .map(|(element, geometry, angle_degrees)| {
-                let mut layer = snapshot
-                    .component::<SceneShapeLayer>(element)?
-                    .context("only shape layers can change geometry")?;
-                layer.origin = Origin::User;
-                layer.angle_degrees = Some(angle_degrees);
-                Ok((element, geometry, layer))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let patch = snapshot.patch(|edit| {
-            for (element, mut geometry, layer) in updates {
-                edit.promote_entity_to_user(element)?;
-                geometry.origin = Origin::User;
-                edit.set(element, &geometry)?;
-                edit.set(element, &layer)?;
+        for (element, _, _) in &updates {
+            if snapshot.component::<SceneShapeLayer>(*element)?.is_none() {
+                bail!("only shape layers can change geometry");
             }
-            Ok(())
-        })?;
-        self.commit(patch).await
+        }
+        self.set_geometries(updates).await
     }
 
     /// The layer-name stem, mirroring the raster convention.
@@ -2512,6 +2529,144 @@ mod tests {
             }])
             .await
             .unwrap();
+    }
+
+    /// `commit_transform` moves every transformable layer through
+    /// `set_geometries`, so that path has to accept shapes too — otherwise
+    /// dragging a shape fails outright. It must resync a line the same way
+    /// `set_shape_geometries` does.
+    #[tokio::test]
+    async fn a_line_moves_through_the_general_transform_path() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 10.0, y: 10.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [10.0, 10.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        let moved = SceneGeometry {
+            origin: Origin::User,
+            points: vec![
+                ScenePoint { x: 100.0, y: 50.0 },
+                ScenePoint { x: 105.0, y: 55.0 },
+                ScenePoint { x: 110.0, y: 60.0 },
+            ],
+        };
+        project
+            .set_geometries(vec![(element, moved.clone(), 30.0)])
+            .await
+            .unwrap();
+
+        let snapshot = project.snapshot();
+        let stored = snapshot
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.angle_degrees, Some(30.0));
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [100.0, 50.0]);
+        assert_eq!(end, [110.0, 60.0]);
+        assert_eq!(
+            snapshot
+                .component::<SceneGeometry>(element)
+                .unwrap()
+                .unwrap()
+                .points
+                .len(),
+            3
+        );
+    }
+
+    /// The polygon is authoritative for a `Line`; `start`/`end` are derived.
+    /// Without the resync the polygon moves, `line_path` keeps drawing the old
+    /// endpoints, and the selection box visibly separates from the stroke.
+    #[tokio::test]
+    async fn moving_a_line_resyncs_its_endpoints_from_the_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 10.0, y: 10.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [10.0, 10.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        // Translate the polygon by (100, 50); the stored endpoints must follow.
+        let moved = SceneGeometry {
+            origin: Origin::User,
+            points: vec![
+                ScenePoint { x: 100.0, y: 50.0 },
+                ScenePoint { x: 105.0, y: 55.0 },
+                ScenePoint { x: 110.0, y: 60.0 },
+            ],
+        };
+        project
+            .set_shape_geometries(vec![(element, moved, 0.0)])
+            .await
+            .unwrap();
+
+        let stored = project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [100.0, 50.0]);
+        assert_eq!(end, [110.0, 60.0]);
     }
 
     #[tokio::test]

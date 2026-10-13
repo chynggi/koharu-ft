@@ -7,7 +7,7 @@ use crate::{
     component::{Component, ValidationContext},
 };
 
-use super::Origin;
+use super::{Origin, Point};
 
 /// How a stroked path terminates an open subpath.
 #[revisioned(revision = 1)]
@@ -52,6 +52,26 @@ pub enum ShapeGeometry {
     Polygon,
     /// Points live in the entity's `Geometry` component.
     Freeform,
+}
+
+impl ShapeGeometry {
+    /// Realigns a `Line`'s endpoints with the polygon, which is authoritative.
+    ///
+    /// `Line` is the only variant whose drawing parameters are stored here as
+    /// well, so a polygon update must carry them along: `line_path` strokes
+    /// `start`/`end`, while `element_frame` reads the polygon, so a stale pair
+    /// makes the drawn line and its selection box separate. The first polygon
+    /// point is `start` and the last is `end`, because a line's polygon is the
+    /// segment sampled into three or more points. Every other variant derives
+    /// nothing from the polygon and is left alone.
+    pub fn resync_with_polygon(&mut self, points: &[Point]) {
+        if let Self::Line { start, end, .. } = self
+            && let (Some(first), Some(last)) = (points.first(), points.last())
+        {
+            *start = [first.x, first.y];
+            *end = [last.x, last.y];
+        }
+    }
 }
 
 #[revisioned(revision = 1)]
