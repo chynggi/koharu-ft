@@ -588,9 +588,12 @@ AGENTS.md의 검증 정책에 따라 가장 작은 관련 검사만 돌린다.
 | `koharu-renderer` | 도형 → `PreparedScene` 경로 생성, `element_frame`이 도형에서 프레임 반환 |
 | `koharu-renderer` | **45° 회전한 원**의 프레임이 지름을 유지하는지 (축 정렬 상자 함정) |
 | `koharu-renderer` | 화살표 `Line`이 폴리곤 샘플이 아니라 `start`/`end`로 그려지는지 |
+| `koharu-renderer` | 넓은 테두리·화살촉이 `Layer::bounds` 안에 들어오는지 (내보내기 크롭 회귀) |
 | `koharu-app` | **투명 배경 래스터화** — 알파 0 유지 |
-| `koharu-psd` | 도형이 래스터 레이어로 나오는지 |
-| 프론트 | `selectableLayer('shape')`, 드래그 → 프레임 계산, 스타일 store |
+| `koharu-app` | **페이지 병합**이 선 도형의 `start`/`end`를 폴리곤에 맞추고, 래스터화된 도형 자산을 다시 패딩하는지 |
+| `koharu-psd` | 도형이 래스터 레이어로 나오는지, 가로 화살표의 크롭 높이가 화살촉 폭 이상인지 |
+| 프론트 | `selectableLayer('shape')`, 드래그 → 프레임 계산, 스타일 store, `shapePreviewPath`의 직렬화 리터럴 |
+| 프론트 | 레이어 목록이 도형을 `name`과 `layers.kinds.shape`로 표시하는지 (D4) |
 | 회귀 | 도형 없는 페이지를 열고 저장한 뒤 다시 여는 왕복 |
 
 ## 실패 시나리오

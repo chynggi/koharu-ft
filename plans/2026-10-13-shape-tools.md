@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 사각형·타원·선·화살표·다각형·자유곡선을 벡터 레이어로 그려 저장하고, 채우기·테두리·점선 스타일을 편집하며, 필요할 때 래스터로 구울 수 있게 한다.
+**Goal:** 사각형·타원·선·화살표를 벡터 레이어로 그려 저장하고, 채우기·테두리·점선 스타일을 편집하며, 필요할 때 래스터로 구울 수 있게 한다. (`Polygon`·`Freeform`은 저장 모델과 렌더러에만 있고 1a 도구 목록에는 없다 — `specs/2026-10-13-shape-tools-design.md`의 "범위" 참조.)
 
 **Architecture:** 도형은 `ShapeLayer` 컴포넌트(폴리곤 + 재편집 파라미터 + 스타일)로 저장한다. `Geometry` 폴리곤이 히트테스트·프레임 복원의 권위이고, `ShapeGeometry` 파라미터가 렌더링의 권위다. 렌더러는 씬 컴파일 시점에 파라미터에서 vello 경로를 만들어 기존 `PreparedContent::Vector` 경로로 흘려보낸다. 래스터화는 기존 `Rasterizer::rasterize_scene`을 재사용한다.
 
@@ -1173,7 +1173,7 @@ git commit -m "feat(psd): export shape layers as raster layers"
 **Interfaces:**
 - Consumes: Task 6의 `protocol.ts` 타입과 명령, Task 5의 `WebCanvas` 도형 프리뷰 API
 - Produces:
-  - `SHAPE_KINDS: readonly ShapeKind[]`, `type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'polygon' | 'freeform'`
+  - `SHAPE_KINDS: readonly ShapeKind[]`, `type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow'`
   - `defaultShapeStyle(kind: ShapeKind): ShapeStyle`
   - `shapePolygon(kind: ShapeKind, frame: Frame): Geometry`
   - `isShapeTool(tool: CanvasTool): boolean` — 이 태스크에서는 `tool === 'shape'`
@@ -1242,11 +1242,12 @@ Expected: FAIL — `Cannot find module '@/lib/shapes'`
 - `rectangle` — 네 모서리, 프레임 각도로 회전
 - `ellipse` — 32점 타원, 같은 방식으로 회전
 - `line` / `arrow` — 시작·끝·중간 3점. 시작은 프레임 좌상단, 끝은 우하단
-- `polygon` / `freeform` — 프레임 네 모서리에서 시작 (사용자가 이후 편집)
 
 프레임 크기가 0이어도 점이 유한해야 한다. `width`/`height`가 0이면 최소 `1e-6`으로 클램프한다.
 
-`defaultShapeStyle`은 **면적이 있는 도형**(`rectangle`·`ellipse`·`polygon`·`freeform`)에 대해 `{ fill: { solid: [255, 255, 255, 255] }, stroke: null }`을 반환하고, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다.
+**최종 수정에서 `polygon`·`freeform`은 1a 도구 목록에서 빠졌다.** `shapePolygon`은 두 종류 모두 프레임 네 모서리를 돌려주므로, 사용자가 고르면 태그만 다른 사각형을 얻게 된다. `ShapeGeometry`와 렌더러의 `polygon_path`는 그대로 남아 있고, 꼭짓점 편집 UI가 생기면 `SHAPE_KINDS`와 로케일 키만 다시 넣으면 된다.
+
+`defaultShapeStyle`은 **면적이 있는 도형**(`rectangle`·`ellipse`)에 대해 `{ fill: { solid: [255, 255, 255, 255] }, stroke: null }`을 반환하고, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다.
 
 **`line`·`arrow`는 예외다.** 직선분은 면적을 둘러싸지 않으므로 채우기만 있는 스타일은 아무것도 그리지 않는다 — 기본값으로 두면 사용자가 선을 그어도 화면에 아무것도 나타나지 않는다. 이 두 종류는 `{ fill: null, stroke: { color: [255,255,255,255], width: 2, dash: null, cap: 'round', join: 'round' } }`을 반환한다.
 
