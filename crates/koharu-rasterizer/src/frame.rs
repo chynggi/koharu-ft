@@ -512,17 +512,15 @@ impl PreparedPath {
                 scene.fill(fill(rule), affine, rgba(*color), None, &path);
             }
             Some(PreparedFill::Gradient { gradient, rule }) => {
-                // Gradient control points are path-local, so the path affine is
-                // handed to Vello as the brush transform: that is the intended
-                // way to make a gradient rotate with its path, and it means the
-                // two transforms cannot drift apart.
-                scene.fill(
-                    fill(rule),
-                    affine,
-                    &compile_gradient(gradient),
-                    Some(affine),
-                    &path,
-                );
+                // `brush_transform` must stay `None` here. Vello *composes* it
+                // with the path transform (`Transform::from_kurbo(&(transform *
+                // brush_transform))` at `vello-0.10.0/src/scene.rs:328-331`), so
+                // handing it the path affine would apply that affine to the
+                // brush twice: a rotated gradient would over-rotate or, at some
+                // angles, collapse to a single colour. The control points are
+                // already in path-local coordinates, so the path transform
+                // rotates the brush and the outline together with no extra work.
+                scene.fill(fill(rule), affine, &compile_gradient(gradient), None, &path);
             }
             None => {}
         }
@@ -630,9 +628,13 @@ mod tests {
     use vello::peniko::{ColorStop, GradientKind};
 
     /// A gradient path whose kind, stops, extend, and transform are all
-    /// non-trivial and whose stops are deliberately unsorted, so a preview that
-    /// skips sorting, drops `extend`, or forgets the brush transform changes the
-    /// encoding.
+    /// non-trivial.
+    ///
+    /// The encoding comparison this feeds cannot see the brush payload, so stop
+    /// order and `extend` are pinned by the direct `compile_gradient` tests
+    /// below, not here. What it *can* see is the brush transform and the kind's
+    /// numeric payload (including a missing degree→radian conversion), which is
+    /// why the transform is non-identity and the kind is a sweep.
     fn gradient_path(kind: PreparedGradientKind) -> PreparedPath {
         PreparedPath {
             transform: [0.0, 1.0, -1.0, 0.0, 30.0, 40.0],
@@ -794,9 +796,15 @@ mod tests {
     /// The browser's live shape preview appends a prepared path straight into a
     /// scene instead of going through a committed frame. A gradient path must
     /// issue the same draws there too, with the gradient control points left in
-    /// path-local coordinates and the path affine passed as `brush_transform`.
+    /// path-local coordinates and **no** brush transform.
+    ///
+    /// The expected scene is built with `brush_transform: None`. Vello composes
+    /// any brush transform with the path transform, so `Some(affine)` here would
+    /// apply the path affine to the brush twice — a bug the committed frame and
+    /// the preview would share, which is exactly why this test pins `None`
+    /// rather than merely agreeing with `append_to`.
     #[test]
-    fn appending_a_gradient_path_rotates_the_brush_with_its_path() {
+    fn appending_a_gradient_path_passes_no_brush_transform() {
         let path = gradient_path(PreparedGradientKind::Sweep {
             center: [5.0, 5.0],
             start_degrees: 0.0,
@@ -827,7 +835,7 @@ mod tests {
                         color: Color::from_rgba8(255, 0, 0, 255).into(),
                     },
                 ]),
-            Some(affine),
+            None,
             &bez,
         );
 
