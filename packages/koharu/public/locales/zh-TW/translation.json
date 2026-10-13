@@ -212,6 +212,22 @@
     "placement": "位置",
     "resetAutoFit": "重設為自動符合",
     "selectPage": "選擇頁面以檢查其圖層。",
+    "shape": {
+      "dash": "虛線",
+      "fill": "填色",
+      "kind": {
+        "arrow": "箭頭",
+        "ellipse": "橢圓",
+        "freeform": "自由曲線",
+        "line": "直線",
+        "polygon": "多邊形",
+        "rectangle": "矩形"
+      },
+      "kindLabel": "形狀類型：{{kind}}",
+      "rasterize": "點陣化",
+      "stroke": "描邊",
+      "strokeWidth": "描邊寬度"
+    },
     "size": "字級",
     "source": "原文",
     "style": "樣式",
@@ -641,6 +657,7 @@
     "pan": "平移",
     "remove": "移除",
     "select": "選取",
+    "shape": "形狀",
     "text": "文字"
   },
   "updater": {

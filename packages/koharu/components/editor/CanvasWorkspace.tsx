@@ -34,6 +34,12 @@ import {
   usePages,
 } from '@/lib/queries'
 import {
+  shapeGeometry,
+  shapePolygon,
+  shapePreviewPath,
+  type ShapeKind,
+} from '@/lib/shapes'
+import {
   isBrushTool,
   maxBrushDiameter,
   MIN_BRUSH_DIAMETER,
@@ -41,8 +47,19 @@ import {
   useKoharuStore,
   type CanvasTool,
 } from '@/lib/store'
-import { prefetchCanvasPages, workspaceColor, type CanvasColor } from '@koharu/bridge/canvas'
-import { commands, type Frame, type Point, type TransformFrame } from '@koharu/bridge/protocol'
+import {
+  prefetchCanvasPages,
+  workspaceColor,
+  type CanvasColor,
+  type CanvasPath,
+} from '@koharu/bridge/canvas'
+import {
+  commands,
+  type Frame,
+  type Point,
+  type ShapeStyle,
+  type TransformFrame,
+} from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
 
 const BRUSH_DIAMETER_STEP = 4
@@ -50,6 +67,7 @@ const BRUSH_DIAMETER_STEP = 4
 const canvasCursors = {
   select: undefined,
   text: 'text',
+  shape: 'crosshair',
   draw: 'none',
   eraser: 'none',
   color_picker: 'crosshair',
@@ -63,6 +81,10 @@ const canvasCursors = {
 // stays small enough to send without losing the drawn shape.
 const LASSO_POINT_SPACING = 8
 
+// A shape has to clear this drag before it becomes a layer, so a stray click
+// with the shape tool does not leave a degenerate rectangle behind.
+const SHAPE_MINIMUM_DRAG = 4
+
 type Gesture =
   | { kind: 'pan'; pointer: number; start: Point; translation: [number, number] }
   | {
@@ -74,6 +96,15 @@ type Gesture =
     }
   | { kind: 'move'; pointer: number; start: Point; originals: TransformFrame[] }
   | { kind: 'text'; pointer: number; start: Point; frame: Frame }
+  | {
+      kind: 'shape'
+      pointer: number
+      revision: number
+      start: Point
+      frame: Frame
+      shapeKind: ShapeKind
+      style: ShapeStyle
+    }
   | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame }
   | { kind: 'lasso'; pointer: number; points: Point[] }
   | StrokeGesture
@@ -163,6 +194,7 @@ export function CanvasWorkspace() {
     ({ points }: StrokeUpdate) => canvas?.extendStroke(points),
     mergeStrokeUpdates,
   )
+  const shapeUpdates = useFrameCommand((path: CanvasPath) => canvas?.updateShape(path))
 
   const beginTransform = useCallback(
     (elements: TransformFrame[]) => {
@@ -235,6 +267,10 @@ export function CanvasWorkspace() {
       strokeUpdates.clear()
       canvas?.cancelStroke()
     }
+    if (current?.kind === 'shape') {
+      shapeUpdates.clear()
+      canvas?.cancelShape()
+    }
     if (transformActive.current) {
       transformUpdates.clear()
       transformActive.current = false
@@ -245,7 +281,7 @@ export function CanvasWorkspace() {
     setLasso(null)
     setPreviews({})
     setSelectionRect(null)
-  }, [canvas, strokeUpdates, transformUpdates])
+  }, [canvas, shapeUpdates, strokeUpdates, transformUpdates])
 
   const fitCanvas = useCallback(() => {
     const element = surface.current
@@ -402,6 +438,7 @@ export function CanvasWorkspace() {
         [
           'select',
           'text',
+          'shape',
           'draw',
           'eraser',
           'color_picker',
@@ -524,6 +561,10 @@ export function CanvasWorkspace() {
     } else if (current.kind === 'text') {
       current.frame = draftFrame(current.start, point)
       setDraft(current.frame)
+    } else if (current.kind === 'shape') {
+      current.frame = draftFrame(current.start, point)
+      setDraft(current.frame)
+      shapeUpdates.schedule(shapePreviewPath(current.shapeKind, current.frame, current.style))
     } else if (current.kind === 'manual_box') {
       current.frame = draftFrame(current.start, point)
       setDraft(current.frame)
@@ -580,6 +621,47 @@ export function CanvasWorkspace() {
           return refresh(projectKey, pagesKey, pageKey)
         })
         .catch(() => undefined)
+    } else if (current.kind === 'shape') {
+      const frame = current.frame
+      setDraft(null)
+      // A click without a drag has no shape to draw, so it only cancels the
+      // preview the pointer-down started.
+      if (
+        frame.width < SHAPE_MINIMUM_DRAG / camera.zoom ||
+        frame.height < SHAPE_MINIMUM_DRAG / camera.zoom
+      ) {
+        shapeUpdates.clear()
+        canvas?.cancelShape()
+        return
+      }
+      // Flush the last drag position before the preview is frozen. `finishShape`
+      // marks it pending, and only the committed frame replaces it.
+      shapeUpdates.commit()
+      try {
+        canvas?.finishShape()
+      } catch (error) {
+        receiveError(errorMessage(error))
+        return
+      }
+      const points = shapePolygon(current.shapeKind, frame).points
+      commitPending.current = true
+      void enqueue(() =>
+        call(
+          commands.addShape,
+          current.revision,
+          page.id,
+          { points },
+          shapeGeometry(current.shapeKind, points),
+          current.style,
+          frame.angle_degrees,
+        ),
+      )
+        .then((result) => {
+          selectLayers([result.layer])
+          return refresh(projectKey, pagesKey, pageKey)
+        })
+        .catch(() => canvas?.cancelShape())
+        .finally(() => (commitPending.current = false))
     } else if (current.kind === 'manual_box') {
       const frame = current.frame
       setDraft(null)
@@ -727,6 +809,26 @@ export function CanvasWorkspace() {
               const frame = draftFrame(point, point)
               gesture.current = { kind: 'manual_box', pointer: event.pointerId, start: point, frame }
               setDraft(frame)
+            } else if (tool === 'shape') {
+              const frame = draftFrame(point, point)
+              const current = useKoharuStore.getState()
+              const next: Gesture = {
+                kind: 'shape',
+                pointer: event.pointerId,
+                revision: canvasRevision,
+                start: point,
+                frame,
+                shapeKind: current.shapeKind,
+                style: current.shapeStyle,
+              }
+              setDraft(frame)
+              shapeUpdates.clear()
+              try {
+                canvas.beginShape(shapePreviewPath(next.shapeKind, frame, next.style))
+                gesture.current = next
+              } catch (error) {
+                receiveError(errorMessage(error))
+              }
             } else if (tool === 'manual_ocr_lasso') {
               gesture.current = { kind: 'lasso', pointer: event.pointerId, points: [point] }
               setLasso([point])

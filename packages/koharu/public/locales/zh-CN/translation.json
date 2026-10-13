@@ -212,6 +212,22 @@
     "placement": "位置",
     "resetAutoFit": "重置为自动适配",
     "selectPage": "选择一个页面以检查其图层。",
+    "shape": {
+      "dash": "虚线",
+      "fill": "填充",
+      "kind": {
+        "arrow": "箭头",
+        "ellipse": "椭圆",
+        "freeform": "自由曲线",
+        "line": "直线",
+        "polygon": "多边形",
+        "rectangle": "矩形"
+      },
+      "kindLabel": "形状类型：{{kind}}",
+      "rasterize": "栅格化",
+      "stroke": "描边",
+      "strokeWidth": "描边宽度"
+    },
     "size": "字号",
     "source": "原文",
     "style": "样式",
@@ -641,6 +657,7 @@
     "pan": "平移",
     "remove": "移除",
     "select": "选择",
+    "shape": "形状",
     "text": "文本"
   },
   "updater": {

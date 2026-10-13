@@ -1,9 +1,72 @@
 import { describe, expect, it } from 'vitest'
 
-import { resizeFrame, rotateFrame } from '@/lib/geometry'
-import type { Frame } from '@koharu/bridge/protocol'
+import {
+  controlFrame,
+  hitTestLayers,
+  layerFrame,
+  resizeFrame,
+  rotateFrame,
+  selectableLayer,
+} from '@/lib/geometry'
+import type { Frame, Layer } from '@koharu/bridge/protocol'
 
 const frame: Frame = { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 }
+
+const shapeLayer: Layer = {
+  type: 'shape',
+  id: 'shape',
+  parent: 'page',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: 0,
+  visibility: { visible: true, opacity: 1 },
+  shape: { rectangle: { corner_radius: 0 } },
+  style: { fill: { solid: [255, 255, 255, 255] }, stroke: null },
+  rasterized: false,
+}
+
+describe('shape selection geometry', () => {
+  it('selects and hit-tests a shape from its polygon', () => {
+    expect(selectableLayer(shapeLayer)).toBe(true)
+    expect(layerFrame(shapeLayer)).toEqual({ x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 })
+    expect(controlFrame(shapeLayer, {})).toEqual({
+      x: 10,
+      y: 20,
+      width: 100,
+      height: 50,
+      angle_degrees: 0,
+    })
+    expect(hitTestLayers([shapeLayer], { x: 60, y: 45 }, {})).toBe(shapeLayer)
+    expect(hitTestLayers([shapeLayer], { x: 300, y: 300 }, {})).toBeNull()
+  })
+
+  it('restores the authored angle of a rotated shape polygon', () => {
+    const rotated: Layer = {
+      ...shapeLayer,
+      angle_degrees: 90,
+      geometry: {
+        points: [
+          { x: 75, y: -25 },
+          { x: 75, y: 75 },
+          { x: 25, y: 75 },
+          { x: 25, y: -25 },
+        ],
+      },
+    }
+    const restored = layerFrame(rotated)!
+    expect(restored.angle_degrees).toBe(90)
+    expect(restored.width).toBeCloseTo(100, 6)
+    expect(restored.height).toBeCloseTo(50, 6)
+    expect(restored.x).toBeCloseTo(0, 6)
+    expect(restored.y).toBeCloseTo(0, 6)
+  })
+})
 
 describe('selection control geometry', () => {
   it('resizes from a handle while keeping the opposite edge fixed', () => {

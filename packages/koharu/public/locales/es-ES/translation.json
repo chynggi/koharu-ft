@@ -212,6 +212,22 @@
     "placement": "Colocación",
     "resetAutoFit": "Restablecer ajuste automático",
     "selectPage": "Selecciona una página para inspeccionar sus capas.",
+    "shape": {
+      "dash": "Discontinua",
+      "fill": "Relleno",
+      "kind": {
+        "arrow": "Flecha",
+        "ellipse": "Elipse",
+        "freeform": "Forma libre",
+        "line": "Línea",
+        "polygon": "Polígono",
+        "rectangle": "Rectángulo"
+      },
+      "kindLabel": "Tipo de forma: {{kind}}",
+      "rasterize": "Rasterizar",
+      "stroke": "Contorno",
+      "strokeWidth": "Grosor del contorno"
+    },
     "size": "Tamaño",
     "source": "Texto original",
     "style": "Estilo",
@@ -641,6 +657,7 @@
     "pan": "Desplazar",
     "remove": "Eliminar",
     "select": "Seleccionar",
+    "shape": "Forma",
     "text": "Texto"
   },
   "updater": {

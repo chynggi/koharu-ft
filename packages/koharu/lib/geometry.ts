@@ -59,16 +59,21 @@ export function draftFrame(start: Point, end: Point): Frame {
 }
 
 export function selectableLayer(layer: Layer): boolean {
-  return layer.type === 'text' || layer.type === 'image'
+  return layer.type === 'text' || layer.type === 'image' || layer.type === 'shape'
 }
 
 export function layerFrame(layer: Layer): Frame | null {
   const points =
     layer.type === 'text' || layer.type === 'image' || layer.type === 'artwork'
       ? layer.geometry?.points
-      : null
+      : layer.type === 'shape'
+        ? layer.geometry?.points
+        : null
   if (!points?.length || points.some((point) => !finite(point.x, point.y))) return null
-  if (layer.type === 'text' && layer.angle_degrees !== null) {
+  // Text and shapes both record an authored angle, and both must be measured in
+  // their own axes: a polygon alone cannot recover the axes of a rotated
+  // non-square outline, so the bounds would come out too large.
+  if ((layer.type === 'text' || layer.type === 'shape') && layer.angle_degrees !== null) {
     if (!finite(layer.angle_degrees)) return null
     const angle = (layer.angle_degrees * Math.PI) / 180
     const cos = Math.cos(angle)

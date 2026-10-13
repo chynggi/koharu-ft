@@ -212,6 +212,22 @@
     "placement": "Yerleşim",
     "resetAutoFit": "Otomatik sığdırmaya sıfırla",
     "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
+    "shape": {
+      "dash": "Kesikli",
+      "fill": "Dolgu",
+      "kind": {
+        "arrow": "Ok",
+        "ellipse": "Elips",
+        "freeform": "Serbest form",
+        "line": "Çizgi",
+        "polygon": "Çokgen",
+        "rectangle": "Dikdörtgen"
+      },
+      "kindLabel": "Şekil türü: {{kind}}",
+      "rasterize": "Rasterleştir",
+      "stroke": "Kenarlık",
+      "strokeWidth": "Kenarlık genişliği"
+    },
     "size": "Boyut",
     "source": "Kaynak metin",
     "style": "Stil",
@@ -641,6 +657,7 @@
     "pan": "Kaydır",
     "remove": "Kaldır",
     "select": "Seç",
+    "shape": "Şekil",
     "text": "Metin"
   },
   "updater": {

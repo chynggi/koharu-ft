@@ -25,6 +25,10 @@ const canvas = vi.hoisted(() => ({
   extendStroke: vi.fn(),
   finishStroke: vi.fn(),
   cancelStroke: vi.fn(),
+  beginShape: vi.fn(),
+  updateShape: vi.fn(),
+  finishShape: vi.fn(),
+  cancelShape: vi.fn(),
   sampleColor: vi.fn(),
   dispose: vi.fn(),
 }))
@@ -608,5 +612,84 @@ describe('canvas interaction adapter', () => {
       { x: 90, y: 80 },
       { x: 20, y: 80 },
     ])
+  })
+
+  it('previews a dragged shape on the canvas and commits it once', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'ellipse' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 20, clientX: 30, clientY: 40 })
+    expect(canvas.beginShape).toHaveBeenCalledOnce()
+    fireEvent.pointerMove(surface, { pointerId: 20, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 20, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.updateShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).toHaveBeenCalledOnce()
+    expect(addShape).toHaveBeenCalledWith(
+      1,
+      'page',
+      { points: expect.any(Array) },
+      'ellipse',
+      { fill: { solid: [255, 255, 255, 255] }, stroke: null },
+      0,
+    )
+    await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['shape']))
+  })
+
+  it('keeps a line shape drawn from the polygon the drag produced', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'line' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 21, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 21, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 21, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    const points = addShape.mock.calls[0][2].points
+    expect(addShape.mock.calls[0][3]).toEqual({
+      line: {
+        start: [points[0].x, points[0].y],
+        end: [points[2].x, points[2].y],
+        head: null,
+      },
+    })
+  })
+
+  it('cancels a shape preview without committing it', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 22, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 22, clientX: 140, clientY: 110 })
+    fireEvent.pointerCancel(surface)
+
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).not.toHaveBeenCalled()
+    expect(addShape).not.toHaveBeenCalled()
+  })
+
+  it('does not create a shape from a click with no drag', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 23, clientX: 30, clientY: 40 })
+    fireEvent.pointerUp(surface, { pointerId: 23, clientX: 30, clientY: 40 })
+
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).not.toHaveBeenCalled()
+    expect(addShape).not.toHaveBeenCalled()
   })
 })

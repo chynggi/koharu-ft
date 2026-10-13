@@ -14,12 +14,16 @@ import type {
   StartupState,
   ModelResources,
   PageSize,
+  ShapeStyle,
 } from '@koharu/bridge/protocol'
 import { toast } from '@koharu/ui/components/toast'
+
+import { defaultShapeStyle, type ShapeKind } from './shapes'
 
 export type CanvasTool =
   | 'select'
   | 'text'
+  | 'shape'
   | 'draw'
   | 'eraser'
   | 'color_picker'
@@ -67,6 +71,8 @@ interface KoharuStore {
   selectedPages: EntityId[]
   tool: CanvasTool
   brush: CanvasBrush
+  shapeKind: ShapeKind
+  shapeStyle: ShapeStyle
   inspector: InspectorSection
   processingScope: PipelineScope
   processingStages: Stage[]
@@ -81,6 +87,8 @@ interface KoharuStore {
   setCopiedTextLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool, cleanupLayer?: EntityId) => void
   setBrush: (brush: CanvasBrush) => void
+  setShapeKind: (kind: ShapeKind) => void
+  setShapeStyle: (style: ShapeStyle) => void
   setShortcut: (action: ShortcutAction, key: string) => void
   requestCanvasFit: () => void
   dismissJob: (id: string) => void
@@ -90,6 +98,7 @@ interface KoharuStore {
 export const defaultShortcuts: Shortcuts = {
   select: 'v',
   text: 't',
+  shape: 'r',
   draw: 'b',
   eraser: 'e',
   color_picker: 'i',
@@ -119,6 +128,8 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   selectedPages: [],
   tool: 'select',
   brush: { diameter: 48, color: '#FFFFFF' },
+  shapeKind: 'rectangle',
+  shapeStyle: defaultShapeStyle('rectangle'),
   inspector: 'copy',
   processingScope: 'selected-pages',
   processingStages: [...pipelineStages],
@@ -141,6 +152,10 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
         : {}),
     }),
   setBrush: (brush) => set({ brush }),
+  // Each kind ships the style that can actually draw it, so switching to a line
+  // never leaves the fill-only style of a rectangle behind.
+  setShapeKind: (shapeKind) => set({ shapeKind, shapeStyle: defaultShapeStyle(shapeKind) }),
+  setShapeStyle: (shapeStyle) => set({ shapeStyle }),
   setShortcut: (action, key) =>
     set((state) => ({
       shortcuts: { ...state.shortcuts, [action]: key.toLowerCase().slice(0, 1) },

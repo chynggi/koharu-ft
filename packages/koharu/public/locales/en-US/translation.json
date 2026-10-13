@@ -212,6 +212,22 @@
     "placement": "Placement",
     "resetAutoFit": "Reset to auto fit",
     "selectPage": "Select a page to inspect its layers.",
+    "shape": {
+      "dash": "Dashed",
+      "fill": "Fill",
+      "kind": {
+        "arrow": "Arrow",
+        "ellipse": "Ellipse",
+        "freeform": "Freeform",
+        "line": "Line",
+        "polygon": "Polygon",
+        "rectangle": "Rectangle"
+      },
+      "kindLabel": "Shape kind: {{kind}}",
+      "rasterize": "Rasterize",
+      "stroke": "Stroke",
+      "strokeWidth": "Stroke width"
+    },
     "size": "Size",
     "source": "Source text",
     "style": "Style",
@@ -641,6 +657,7 @@
     "pan": "Pan",
     "remove": "Remove",
     "select": "Select",
+    "shape": "Shape",
     "text": "Text"
   },
   "updater": {

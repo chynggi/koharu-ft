@@ -14,6 +14,43 @@ export interface CanvasStroke {
   color?: CanvasColor
 }
 
+/**
+ * A drawable path compiled by the frontend, in the exact shape
+ * `koharu_rasterizer::PreparedPath` deserializes from.
+ *
+ * Enums are spelled with their Rust variant names because serde's external
+ * tagging is the wire format: a unit variant is the bare string `"Close"` and a
+ * newtype/struct variant is a one-key object such as `{ MoveTo: [x, y] }`.
+ */
+export type CanvasPathElement =
+  | { MoveTo: [number, number] }
+  | { LineTo: [number, number] }
+  | { QuadTo: [number, number, number, number] }
+  | { CurveTo: [number, number, number, number, number, number] }
+  | 'Close'
+
+export type CanvasPathFill = { Solid: { color: CanvasColor; rule: 'NonZero' | 'EvenOdd' } }
+
+export interface CanvasPathStroke {
+  color: CanvasColor
+  width: number
+  dash: number[] | null
+  cap: 'Butt' | 'Round' | 'Square'
+  join: 'Miter' | 'Round' | 'Bevel'
+}
+
+export interface CanvasPath {
+  transform: [number, number, number, number, number, number]
+  elements: CanvasPathElement[]
+  fill: CanvasPathFill | null
+  stroke: CanvasPathStroke | null
+}
+
+export interface CanvasShapeCommit {
+  page: string
+  revision: number
+}
+
 export interface Canvas {
   resize(width: number, height: number, dpr: number, background: WorkspaceColor): void
   setView(zoom: number, translation: [number, number]): void
@@ -33,6 +70,10 @@ export interface Canvas {
   extendStroke(points: Point[]): void
   finishStroke(): void
   cancelStroke(): void
+  beginShape(path: CanvasPath): void
+  updateShape(path: CanvasPath): void
+  finishShape(): CanvasShapeCommit
+  cancelShape(): void
   sampleColor(point: Point): Promise<CanvasColor>
   dispose(): void
 }
@@ -72,6 +113,10 @@ interface CanvasHandle {
   extendStroke(points: Point[]): void
   finishStroke(): unknown
   cancelStroke(): void
+  beginShape(path: CanvasPath): void
+  updateShape(path: CanvasPath): void
+  finishShape(): CanvasShapeCommit
+  cancelShape(): void
   sampleColor(x: number, y: number): Promise<Uint8Array>
   setDeviceLostCallback(callback: ((reason: string) => void) | null): void
   dispose(): void
@@ -159,6 +204,10 @@ export async function createCanvas(
     extendStroke: (points) => canvas.extendStroke(points),
     finishStroke: () => void canvas.finishStroke(),
     cancelStroke: () => canvas.cancelStroke(),
+    beginShape: (path) => canvas.beginShape(path),
+    updateShape: (path) => canvas.updateShape(path),
+    finishShape: () => canvas.finishShape(),
+    cancelShape: () => canvas.cancelShape(),
     sampleColor: async (point) => {
       const color = await canvas.sampleColor(point.x, point.y)
       if (color.length !== 4) throw new Error('The WebGPU canvas returned an invalid color.')

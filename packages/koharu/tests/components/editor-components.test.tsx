@@ -119,6 +119,25 @@ const thirdLayer: Layer = {
   },
 }
 
+const shapeLayer: Layer = {
+  type: 'shape',
+  id: 'shape',
+  parent: 'page',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: 0,
+  visibility: { visible: true, opacity: 1 },
+  shape: { rectangle: { corner_radius: 0 } },
+  style: { fill: { solid: [255, 255, 255, 255] }, stroke: null },
+  rasterized: false,
+}
+
 const artworkLayer: Layer = {
   type: 'artwork',
   id: 'artwork',
@@ -682,6 +701,61 @@ describe('greenfield editor', () => {
         }),
       ]),
     )
+  })
+
+  it('switches the shape kind and seeds a style that can draw it', async () => {
+    const user = userEvent.setup()
+    installProject()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shape' }))
+    expect(useKoharuStore.getState().tool).toBe('shape')
+
+    await user.click(screen.getByRole('button', { name: 'Shape kind: Rectangle' }))
+    await user.click(screen.getByRole('button', { name: 'Line' }))
+
+    expect(useKoharuStore.getState().shapeKind).toBe('line')
+    expect(useKoharuStore.getState().shapeStyle).toEqual({
+      fill: null,
+      stroke: { color: [255, 255, 255, 255], width: 2, dash: null, cap: 'round', join: 'round' },
+    })
+  })
+
+  it('edits a selected shape style and rasterizes it from the inspector', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    const rasterize = vi.spyOn(commands, 'rasterizeShapes').mockResolvedValue(3)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Fill' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#FF0000' },
+    })
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        { element: 'shape', style: expect.objectContaining({ fill: { solid: [255, 0, 0, 255] } }) },
+      ]),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rasterize' }))
+    await waitFor(() => expect(rasterize).toHaveBeenCalledWith(1, 'page', ['shape']))
+  })
+
+  it('does not show the shape controls for a text selection', () => {
+    installProject()
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('shape-inspector')).not.toBeInTheDocument()
   })
 
   it('adjusts brush size from the toolbar popover', async () => {

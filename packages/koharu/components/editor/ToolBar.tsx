@@ -1,16 +1,21 @@
 'use client'
 
 import {
+  ArrowRight,
   Brush,
+  Circle,
   Eraser,
   Hand,
   LassoSelect,
   Minus,
   MousePointer2,
+  Pencil,
+  Pentagon,
   Pipette,
   Plus,
   ScanText,
   Sparkles,
+  Square,
   Type,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -18,12 +23,20 @@ import { useTranslation } from 'react-i18next'
 import { ColorWell } from '@/components/controls/ColorWell'
 import { usePage } from '@/lib/queries'
 import {
+  SHAPE_KINDS,
+  colorToHex,
+  hexToColor,
+  isShapeTool,
+  type ShapeKind,
+} from '@/lib/shapes'
+import {
   isBrushTool,
   maxBrushDiameter,
   MIN_BRUSH_DIAMETER,
   useKoharuStore,
   type CanvasTool,
 } from '@/lib/store'
+import type { ShapeStyle } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
 import {
   NumberField,
@@ -44,6 +57,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/t
 const tools = [
   ['select', MousePointer2],
   ['text', Type],
+  ['shape', Square],
   ['draw', Brush],
   ['eraser', Eraser],
   ['color_picker', Pipette],
@@ -52,6 +66,17 @@ const tools = [
   ['manual_ocr_lasso', LassoSelect],
   ['pan', Hand],
 ] as const satisfies ReadonlyArray<readonly [CanvasTool, typeof MousePointer2]>
+
+const shapeIcons = {
+  rectangle: Square,
+  ellipse: Circle,
+  line: Minus,
+  arrow: ArrowRight,
+  polygon: Pentagon,
+  freeform: Pencil,
+} as const satisfies Record<ShapeKind, typeof MousePointer2>
+
+const DEFAULT_STROKE_WIDTH = 2
 
 export function ToolBar() {
   const { t } = useTranslation()
@@ -109,8 +134,139 @@ export function ToolBar() {
           />
         </div>
       )}
+
+      {isShapeTool(active) && <ShapeStyles />}
     </aside>
   )
+}
+
+function ShapeStyles() {
+  const { t } = useTranslation()
+  const kind = useKoharuStore((state) => state.shapeKind)
+  const style = useKoharuStore((state) => state.shapeStyle)
+  const setShapeKind = useKoharuStore((state) => state.setShapeKind)
+  const setShapeStyle = useKoharuStore((state) => state.setShapeStyle)
+  const stroke = style.stroke
+  const KindIcon = shapeIcons[kind]
+
+  return (
+    <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
+      <Popover>
+        <Tooltip>
+          <PopoverTrigger
+            render={
+              <TooltipTrigger
+                render={
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='icon'
+                    aria-label={t('inspector.shape.kindLabel', {
+                      kind: t(`inspector.shape.kind.${kind}`),
+                    })}
+                    className='size-8 rounded-xl text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
+                  />
+                }
+              >
+                <KindIcon className='size-4' />
+              </TooltipTrigger>
+            }
+          />
+          <TooltipContent side='right'>
+            {t('inspector.shape.kindLabel', { kind: t(`inspector.shape.kind.${kind}`) })}
+          </TooltipContent>
+        </Tooltip>
+        <PopoverContent
+          side='right'
+          align='center'
+          sideOffset={8}
+          className='w-56 gap-2.5 rounded-xl p-2.5'
+        >
+          <PopoverTitle className='text-[11px]'>{t('inspector.shape.kind')}</PopoverTitle>
+          <div className='grid grid-cols-6 gap-1'>
+            {SHAPE_KINDS.map((candidate) => {
+              const Icon = shapeIcons[candidate]
+              return (
+                <button
+                  key={candidate}
+                  type='button'
+                  aria-label={t(`inspector.shape.kind.${candidate}`)}
+                  aria-pressed={kind === candidate}
+                  className='grid h-7 place-items-center rounded-md border border-input text-muted-foreground hover:text-foreground aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-accent-foreground'
+                  onClick={() => setShapeKind(candidate)}
+                >
+                  <Icon className='size-3.5' />
+                </button>
+              )
+            })}
+          </div>
+          <div className='flex items-center justify-between gap-3'>
+            <PopoverTitle className='text-[11px]'>{t('inspector.shape.fill')}</PopoverTitle>
+            <ColorWell
+              label={t('inspector.shape.fill')}
+              size='sm'
+              allowTransparent
+              value={style.fill ? colorToHex(style.fill.solid) : null}
+              onChange={(color) =>
+                setShapeStyle({
+                  ...style,
+                  fill: color === null ? null : { solid: hexToColor(color) },
+                })
+              }
+            />
+          </div>
+          <div className='flex items-center justify-between gap-3'>
+            <PopoverTitle className='text-[11px]'>{t('inspector.shape.stroke')}</PopoverTitle>
+            <ColorWell
+              label={t('inspector.shape.stroke')}
+              size='sm'
+              allowTransparent
+              value={stroke ? colorToHex(stroke.color) : null}
+              onChange={(color) =>
+                setShapeStyle({
+                  ...style,
+                  stroke:
+                    color === null
+                      ? null
+                      : { ...(stroke ?? defaultStroke()), color: hexToColor(color) },
+                })
+              }
+            />
+          </div>
+          <div className='flex items-center justify-between gap-3'>
+            <PopoverTitle className='text-[11px]'>{t('inspector.shape.strokeWidth')}</PopoverTitle>
+            <NumberField
+              min={0.5}
+              step={0.5}
+              value={stroke?.width ?? DEFAULT_STROKE_WIDTH}
+              className='w-20'
+              onValueChange={(next) => {
+                if (next === null) return
+                setShapeStyle({
+                  ...style,
+                  stroke: { ...(stroke ?? defaultStroke()), width: Math.max(next, 0.5) },
+                })
+              }}
+            >
+              <NumberFieldGroup className='h-7'>
+                <NumberFieldInput aria-label={t('inspector.shape.strokeWidth')} />
+              </NumberFieldGroup>
+            </NumberField>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
+
+function defaultStroke(): NonNullable<ShapeStyle['stroke']> {
+  return {
+    color: [0, 0, 0, 255],
+    width: DEFAULT_STROKE_WIDTH,
+    dash: null,
+    cap: 'butt',
+    join: 'miter',
+  }
 }
 
 function BrushSize({ value, onChange }: { value: number; onChange: (value: number) => void }) {

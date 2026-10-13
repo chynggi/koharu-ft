@@ -212,6 +212,22 @@
     "placement": "Posicionamento",
     "resetAutoFit": "Redefinir para ajuste automático",
     "selectPage": "Selecione uma página para inspecionar suas camadas.",
+    "shape": {
+      "dash": "Tracejada",
+      "fill": "Preenchimento",
+      "kind": {
+        "arrow": "Seta",
+        "ellipse": "Elipse",
+        "freeform": "Forma livre",
+        "line": "Linha",
+        "polygon": "Polígono",
+        "rectangle": "Retângulo"
+      },
+      "kindLabel": "Tipo de forma: {{kind}}",
+      "rasterize": "Rasterizar",
+      "stroke": "Contorno",
+      "strokeWidth": "Largura do contorno"
+    },
     "size": "Tamanho",
     "source": "Texto original",
     "style": "Estilo",
@@ -641,6 +657,7 @@
     "pan": "Mover",
     "remove": "Remover",
     "select": "Selecionar",
+    "shape": "Forma",
     "text": "Texto"
   },
   "updater": {

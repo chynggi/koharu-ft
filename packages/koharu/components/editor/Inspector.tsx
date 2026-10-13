@@ -47,6 +47,7 @@ import {
   type FontFamily,
   type FontStyle,
   type Layer,
+  type ShapeStyle,
   type TextAlignment,
   type Typography,
   type WritingMode,
@@ -124,11 +125,155 @@ export function Inspector() {
         <TypeInspector />
       </section>
 
+      <ShapeInspector />
+
       <section className='flex min-h-0 flex-1 flex-col'>
         <LayersInspector />
       </section>
     </aside>
   )
+}
+
+/**
+ * Style controls for the selected shape layers.
+ *
+ * The run itself is rendered only when a shape is selected, so the type
+ * inspector keeps its fixed height on text layers.
+ */
+function ShapeInspector() {
+  const { t } = useTranslation()
+  const revision = useKoharuStore((state) => state.canvasRevision)
+  const page = usePage().data
+  const selectedIds = useKoharuStore((state) => state.selectedLayers)
+  const expanded = page ? expandLayerSelection(page.layers, selectedIds) : []
+  const selected = (page?.layers ?? []).filter(
+    (layer): layer is Extract<Layer, { type: 'shape' }> =>
+      layer.type === 'shape' && expanded.includes(layer.id),
+  )
+  const current = selected[0]
+  const [rasterizing, setRasterizing] = useState(false)
+  if (!current || !page) return null
+  const style = current.style
+  const stroke = style.stroke
+  const disabled = revision === null
+  const apply = (update: (value: ShapeStyle) => ShapeStyle) => {
+    if (disabled) return
+    void call(
+      commands.setShapeStyle,
+      revision,
+      selected.map((layer) => ({ element: layer.id, style: update(layer.style) })),
+    )
+      .then(() => refresh(projectKey, pageKey))
+      .catch(() => undefined)
+  }
+
+  return (
+    <section className='shrink-0 border-b p-2' data-testid='shape-inspector'>
+      <div className='grid min-w-0 gap-1.5'>
+        <div className='grid min-w-0 grid-cols-[2.75rem_minmax(5.5rem,1fr)] items-end gap-1.5'>
+          <InspectorField label={t('inspector.shape.fill')}>
+            <ColorWell
+              label={t('inspector.shape.fill')}
+              size='sm'
+              disabled={disabled}
+              allowTransparent
+              value={style.fill ? rgbaToHex(style.fill.solid) : null}
+              onChange={(color) =>
+                apply((value) => ({
+                  ...value,
+                  fill: color === null ? null : { solid: hexToRgba(color) },
+                }))
+              }
+            />
+          </InspectorField>
+          <InspectorField label={t('inspector.shape.stroke')}>
+            <ColorWell
+              label={t('inspector.shape.stroke')}
+              size='sm'
+              disabled={disabled}
+              allowTransparent
+              value={stroke ? rgbaToHex(stroke.color) : null}
+              onChange={(color) =>
+                apply((value) => ({
+                  ...value,
+                  stroke: color === null ? null : { ...(stroke ?? defaultStroke), color: hexToRgba(color) },
+                }))
+              }
+            />
+          </InspectorField>
+        </div>
+        <div className='grid min-w-0 grid-cols-[minmax(5.5rem,1fr)_auto] items-end gap-1.5'>
+          <InspectorField label={t('inspector.shape.strokeWidth')}>
+            <NumberField
+              className='min-w-0'
+              disabled={disabled}
+              value={stroke?.width ?? defaultStroke.width}
+              min={0.5}
+              max={64}
+              step={0.5}
+              onValueChange={(next) => {
+                if (next === null || next < 0.5 || next > 64) return
+                apply((value) => ({
+                  ...value,
+                  stroke: { ...(stroke ?? defaultStroke), width: next },
+                }))
+              }}
+            >
+              <NumberFieldGroup>
+                <NumberFieldInput aria-label={t('inspector.shape.strokeWidth')} />
+              </NumberFieldGroup>
+            </NumberField>
+          </InspectorField>
+          <InspectorField label={t('inspector.shape.dash')}>
+            <button
+              type='button'
+              role='switch'
+              aria-label={t('inspector.shape.dash')}
+              aria-checked={stroke?.dash != null}
+              disabled={disabled}
+              data-active={stroke?.dash != null}
+              className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+              onClick={() =>
+                apply((value) => ({
+                  ...value,
+                  stroke: {
+                    ...(stroke ?? defaultStroke),
+                    dash: stroke?.dash ? null : [8, 6],
+                  },
+                }))
+              }
+            />
+          </InspectorField>
+        </div>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={disabled || rasterizing || current.rasterized}
+          className='justify-start gap-1.5 text-[10px]'
+          onClick={() => {
+            if (disabled) return
+            setRasterizing(true)
+            void call(commands.rasterizeShapes, revision, page.id, [current.id])
+              .then(() => refresh(projectKey, pageKey))
+              .catch(() => undefined)
+              .finally(() => setRasterizing(false))
+          }}
+        >
+          <ImageIcon className='size-3' />
+          {t('inspector.shape.rasterize')}
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+const defaultStroke: NonNullable<ShapeStyle['stroke']> = {
+  color: [0, 0, 0, 255],
+  width: 2,
+  dash: null,
+  cap: 'butt',
+  join: 'miter',
 }
 
 function TypeInspector() {
