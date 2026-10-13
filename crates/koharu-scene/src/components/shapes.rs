@@ -136,7 +136,10 @@ impl GradientSpec {
                     return Err(Error::invalid("gradient linear endpoints must differ"));
                 }
             }
-            GradientKind::Radial { radius, .. } => {
+            GradientKind::Radial { center, radius } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("gradient center must be finite"));
+                }
                 if !radius.is_finite() || *radius <= 0.0 {
                     return Err(Error::invalid(
                         "gradient radial radius must be finite and positive",
@@ -144,10 +147,13 @@ impl GradientSpec {
                 }
             }
             GradientKind::Sweep {
+                center,
                 start_degrees,
                 end_degrees,
-                ..
             } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("gradient center must be finite"));
+                }
                 if !start_degrees.is_finite() || !end_degrees.is_finite() {
                     return Err(Error::invalid("gradient sweep angles must be finite"));
                 }
@@ -569,6 +575,25 @@ mod tests {
         let gradient = spec(GradientKind::Sweep {
             center: [0.5, 0.5],
             start_degrees: f32::INFINITY,
+            end_degrees: 360.0,
+        });
+        assert!(validate_spec(&gradient).is_err());
+    }
+
+    #[test]
+    fn a_non_finite_radial_center_is_rejected() {
+        let gradient = spec(GradientKind::Radial {
+            center: [f32::NAN, 0.5],
+            radius: 0.5,
+        });
+        assert!(validate_spec(&gradient).is_err());
+    }
+
+    #[test]
+    fn a_non_finite_sweep_center_is_rejected() {
+        let gradient = spec(GradientKind::Sweep {
+            center: [0.5, f32::INFINITY],
+            start_degrees: 0.0,
             end_degrees: 360.0,
         });
         assert!(validate_spec(&gradient).is_err());
