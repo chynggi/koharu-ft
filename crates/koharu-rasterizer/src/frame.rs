@@ -4,15 +4,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use vello::{
     FontEmbolden, Glyph, Scene,
-    kurbo::{Affine, BezPath, Diagonal2, Join, Rect},
+    kurbo::{Affine, BezPath, Cap, Diagonal2, Join, Rect, Stroke},
     peniko::{Blob, Color, Fill, FontData, Mix},
 };
 
 use crate::{
     Bounds, CompositionCommand, Error, FillRule, LayerId, LayerKind, PathElement, PreparedContent,
-    PreparedElementFrame, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest, PreparedPath,
-    PreparedResource, PreparedResourceStore, PreparedScene, PreparedSceneCommand, Presentation,
-    RasterDraw, ResourceId, Result, Revision,
+    PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest,
+    PreparedLineCap, PreparedLineJoin, PreparedPath, PreparedResource, PreparedResourceStore,
+    PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation, RasterDraw, ResourceId,
+    Result, Revision,
 };
 
 #[derive(Clone)]
@@ -493,16 +494,28 @@ fn compile_scene(
             }
             PreparedSceneCommand::FillPath(prepared) => {
                 let path = compile_path(prepared);
-                scene.fill(
-                    match prepared.fill {
-                        FillRule::NonZero => Fill::NonZero,
-                        FillRule::EvenOdd => Fill::EvenOdd,
-                    },
-                    Affine::new(prepared.transform),
-                    rgba(prepared.color),
-                    None,
-                    &path,
-                );
+                let affine = Affine::new(prepared.transform);
+                if let Some(PreparedFill::Solid { color, rule }) = &prepared.fill {
+                    scene.fill(
+                        match rule {
+                            FillRule::NonZero => Fill::NonZero,
+                            FillRule::EvenOdd => Fill::EvenOdd,
+                        },
+                        affine,
+                        rgba(*color),
+                        None,
+                        &path,
+                    );
+                }
+                if let Some(stroke) = &prepared.stroke {
+                    scene.stroke(
+                        &compile_stroke(stroke),
+                        affine,
+                        rgba(stroke.color),
+                        None,
+                        &path,
+                    );
+                }
             }
         }
     }
@@ -523,6 +536,24 @@ fn compile_path(prepared: &PreparedPath) -> BezPath {
         }
     }
     path
+}
+
+fn compile_stroke(prepared: &PreparedStroke) -> Stroke {
+    let mut stroke = Stroke::new(f64::from(prepared.width))
+        .with_caps(match prepared.cap {
+            PreparedLineCap::Butt => Cap::Butt,
+            PreparedLineCap::Round => Cap::Round,
+            PreparedLineCap::Square => Cap::Square,
+        })
+        .with_join(match prepared.join {
+            PreparedLineJoin::Miter => Join::Miter,
+            PreparedLineJoin::Round => Join::Round,
+            PreparedLineJoin::Bevel => Join::Bevel,
+        });
+    if let Some(dash) = &prepared.dash {
+        stroke = stroke.with_dashes(0.0, dash.iter().map(|length| f64::from(*length)));
+    }
+    stroke
 }
 
 fn rgba([r, g, b, a]: [u8; 4]) -> Color {

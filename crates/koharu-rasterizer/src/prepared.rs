@@ -690,10 +690,10 @@ pub struct PreparedGlyph {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PreparedPath {
-    pub fill: FillRule,
     pub transform: [f64; 6],
-    pub color: [u8; 4],
     pub elements: Vec<PathElement>,
+    pub fill: Option<PreparedFill>,
+    pub stroke: Option<PreparedStroke>,
 }
 
 impl PreparedPath {
@@ -715,8 +715,54 @@ impl PreparedPath {
                 return Err(Error::invalid("prepared path contains a non-finite point"));
             }
         }
+        if let Some(stroke) = &self.stroke {
+            if !stroke.width.is_finite() || stroke.width < 0.0 {
+                return Err(Error::invalid(
+                    "prepared path stroke width must be finite and non-negative",
+                ));
+            }
+            if let Some(dash) = &stroke.dash
+                && (dash.is_empty()
+                    || dash
+                        .iter()
+                        .any(|length| !length.is_finite() || *length <= 0.0))
+            {
+                return Err(Error::invalid(
+                    "prepared path dash lengths must be finite and positive",
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PreparedFill {
+    Solid { color: [u8; 4], rule: FillRule },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedStroke {
+    pub color: [u8; 4],
+    pub width: f32,
+    /// On/off lengths in path units; when present, every element must be finite and positive.
+    pub dash: Option<Vec<f32>>,
+    pub cap: PreparedLineCap,
+    pub join: PreparedLineJoin,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedLineCap {
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedLineJoin {
+    Miter,
+    Round,
+    Bevel,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1171,5 +1217,93 @@ mod tests {
         assert_eq!(text.parse::<ResourceId>().unwrap(), id);
         assert_eq!(text.to_ascii_uppercase().parse::<ResourceId>().unwrap(), id);
         assert!("ab".parse::<ResourceId>().is_err());
+    }
+
+    #[test]
+    fn a_path_may_have_a_fill_and_a_stroke() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([10.0, 0.0]),
+                PathElement::LineTo([10.0, 10.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Solid {
+                color: [255, 0, 0, 255],
+                rule: FillRule::NonZero,
+            }),
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width: 2.0,
+                dash: None,
+                cap: PreparedLineCap::Round,
+                join: PreparedLineJoin::Round,
+            }),
+        };
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn a_path_without_fill_or_stroke_validates() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: None,
+        };
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn a_negative_stroke_width_is_rejected() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width: -1.0,
+                dash: None,
+                cap: PreparedLineCap::Butt,
+                join: PreparedLineJoin::Miter,
+            }),
+        };
+        assert!(path.validate().is_err());
+    }
+
+    fn stroked(width: f32, dash: Option<Vec<f32>>) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width,
+                dash,
+                cap: PreparedLineCap::Butt,
+                join: PreparedLineJoin::Miter,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_non_finite_stroke_width_is_rejected() {
+        assert!(stroked(f32::NAN, None).validate().is_err());
+        assert!(stroked(f32::INFINITY, None).validate().is_err());
+    }
+
+    #[test]
+    fn a_zero_stroke_width_is_allowed() {
+        assert!(stroked(0.0, None).validate().is_ok());
+    }
+
+    #[test]
+    fn a_dash_list_must_be_non_empty_and_positive() {
+        assert!(stroked(1.0, Some(vec![8.0, 0.0])).validate().is_err());
+        assert!(stroked(1.0, Some(vec![8.0, -1.0])).validate().is_err());
+        assert!(stroked(1.0, Some(vec![f32::NAN])).validate().is_err());
+        assert!(stroked(1.0, Some(Vec::new())).validate().is_err());
+        assert!(stroked(1.0, Some(vec![4.0, 2.0])).validate().is_ok());
     }
 }
