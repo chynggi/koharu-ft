@@ -9,6 +9,7 @@ mod assets;
 mod groups;
 mod layers;
 mod provenance;
+mod shapes;
 mod spatial;
 mod structure;
 mod text;
@@ -24,6 +25,9 @@ pub use layers::{
     WritingMode,
 };
 pub use provenance::{Authored, Generation, Origin};
+pub use shapes::{
+    ArrowHead, LineCap, LineJoin, ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle, StrokeStyle,
+};
 pub use spatial::{Geometry, Point, Visibility};
 pub use structure::{EntityOrigin, Page, PageDraft, Project, Relation, RelationKind};
 pub use text::{LanguageTag, SourceText, TextContent, TextRole, Translation};
