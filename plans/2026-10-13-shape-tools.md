@@ -597,15 +597,20 @@ git commit -m "feat(renderer): generate prepared paths for shapes"
 
 ```rust
     #[test]
-    fn a_rotated_shape_frame_preserves_its_diameter() {
-        // 45도 회전한 지름 100의 원을 32점 폴리곤으로 샘플링한다.
-        let radius = 50.0_f64;
+    fn a_rotated_shape_frame_preserves_its_dimensions() {
+        // 45도 회전한 비원형 타원(rx=50, ry=25)을 32점 폴리곤으로 샘플링한다.
+        //
+        // 원을 쓰면 안 된다: 원의 축 정렬 경계 상자는 회전에 불변이라
+        // 각도를 주든 안 주든 지름과 같다. 비원형 타원이라야 회전 시
+        // 축 정렬 상자가 100x50 -> 79.06x79.06 으로 바뀌므로 각도의
+        // 필요성이 실제로 고정된다.
+        let (rx, ry) = (50.0_f64, 25.0_f64);
         let (sin, cos) = (45.0_f64).to_radians().sin_cos();
         let points = (0..32)
             .map(|index| {
                 let theta = std::f64::consts::TAU * f64::from(index) / 32.0;
-                let x = radius * theta.cos();
-                let y = radius * theta.sin();
+                let x = rx * theta.cos();
+                let y = ry * theta.sin();
                 koharu_scene::Point {
                     x: 100.0 + x * cos - y * sin,
                     y: 100.0 + x * sin + y * cos,
@@ -617,15 +622,26 @@ git commit -m "feat(renderer): generate prepared paths for shapes"
             points,
         };
 
+        // 각도를 주면 작성 축에서 재므로 참 크기(2rx x 2ry)가 나온다.
         let frame = crate::shape_renderer::shape_frame(&geometry, Some(45.0)).unwrap();
         assert!((frame.width - 100.0).abs() < 1.0, "width was {}", frame.width);
-        assert!((frame.height - 100.0).abs() < 1.0, "height was {}", frame.height);
+        assert!((frame.height - 50.0).abs() < 1.0, "height was {}", frame.height);
 
-        // 각도를 주지 않으면 축 정렬 상자가 되어 sqrt(2)배로 커진다.
+        // 각도를 주지 않으면 축 정렬 상자가 되어 100x50 이 79.06x79.06 으로
+        // 바뀐다 — 정사각형이 되므로 폭은 줄고 높이는 늘어난다.
         let without = crate::shape_renderer::shape_frame(&geometry, None).unwrap();
-        assert!(without.width > 130.0, "width was {}", without.width);
+        assert!((without.width - 79.06).abs() < 0.5, "width was {}", without.width);
+        assert!((without.height - 79.06).abs() < 0.5, "height was {}", without.height);
+        assert!(without.height > 60.0, "height was {}", without.height);
     }
+```
 
+**이 테스트의 수학은 리뷰 중 검증됐다.** 회전한 타원의 축 정렬 경계 상자 폭은
+`2·√(rx²cos²θ + ry²sin²θ)`이고 높이는 `2·√(rx²sin²θ + ry²cos²θ)`이다.
+rx=50, ry=25, θ=45° 에서 둘 다 79.0569 이다. 원(rx=ry)이면 두 식 모두
+지름과 같아져 회전의 영향이 전혀 보이지 않는다.
+
+```rust
     #[test]
     fn a_shape_without_an_angle_falls_back_to_axis_aligned_bounds() {
         let geometry = koharu_scene::Geometry {
@@ -670,13 +686,15 @@ fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
             }
             geometry_frame(layer.geometry())
         }
+        // 도형은 각도를 넘겨야 회전한 비원형 타원이 참 크기를 유지한다.
+        // shape_frame이 그 변환을 캡슐화한다 (Task 3).
         LayerKind::Shape(shape) => {
-            crate::bubble::geometry_frame(layer.geometry(), shape.angle_degrees)
+            crate::shape_renderer::shape_frame(layer.geometry(), shape.angle_degrees)
                 .map(|frame| PreparedElementFrame {
-                    x: frame.bounds.x,
-                    y: frame.bounds.y,
-                    width: frame.bounds.width,
-                    height: frame.bounds.height,
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height,
                     angle_degrees: frame.angle_degrees,
                 })
         }
@@ -689,11 +707,11 @@ fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
 
 - [ ] **Step 5: `prepare_frame`·`NodeDescriptor`·`DraftMetadata`·`assemble_frame`·`build_node`를 배선한다**
 
-`frame.rs:474`의 `prepare_frame` 분기에 도형 갈래를 추가한다. `ShapeLayer` 컴포넌트를 읽어 `PreparedLayerKind::Shape` + `PreparedContent::Vector(scene)`를 만든다. `scene`은 `shape_path`가 만든 `PreparedPath` 하나를 `PreparedSceneCommand::FillPath`로 담는다.
+`frame.rs:474`의 `prepare_frame` 분기에 도형 갈래를 추가한다. `ShapeLayer` 컴포넌트를 읽어 `PreparedLayerKind::Shape` + `PreparedContent::Vector(scene)`를 만든다. `scene`은 **`shape_layer_path`** 가 만든 `PreparedPath` 하나를 `PreparedSceneCommand::FillPath`로 담는다.
 
-`Polygon`/`Freeform`은 `shape_path`가 빈 경로를 돌려주므로, `prepare_frame`이 `Geometry` 컴포넌트에서 폴리곤을 직접 읽어 `PathElement::MoveTo`/`LineTo`/`Close`로 채운다. 이 변환은 Task 7도 필요로 하므로 **`shape_renderer`에 `pub fn polygon_path(points: &[koharu_scene::Point], style: &ShapeStyle, frame: ShapeFrame) -> PreparedPath`로 두고 양쪽이 그것을 쓴다.** 폴리곤이 3점 미만이면 빈 `PreparedScene`을 만들고 `tracing::warn!`을 남긴다.
+`Polygon`/`Freeform`은 도형 파라미터에 점이 없으므로 `Geometry` 컴포넌트에서 폴리곤을 읽어야 한다. 이 변환은 Task 7도 필요로 하므로 **`shape_renderer`가 `polygon_path`를 두고 양쪽이 그것을 쓴다.** 폴리곤이 3점 미만이면 빈 `PreparedScene`을 만들고 `tracing::warn!`을 남긴다.
 
-`shape_path`와 `polygon_path`를 나누는 계약: `shape_path`는 `Rectangle`·`Ellipse`·`Line` 전용이고, `Polygon`·`Freeform`에서는 `polygon_path`를 쓴다. 호출자가 어느 것을 쓸지 고르는 대신 **`shape_renderer`에 두 함수를 합친 진입점을 둔다**:
+`shape_path`와 `polygon_path`를 나누는 계약: `shape_path`는 `Rectangle`·`Ellipse`·`Line` 전용이고, `Polygon`·`Freeform`에서는 `polygon_path`를 쓴다. 호출자가 어느 것을 쓸지 고르지 않도록 **`shape_renderer`에 두 함수를 합친 진입점을 둔다**:
 
 ```rust
 pub fn shape_layer_path(
@@ -704,11 +722,11 @@ pub fn shape_layer_path(
 ) -> PreparedPath
 ```
 
-이 함수가 `Polygon`/`Freeform`이면 `points`로, 나머지는 파라미터로 경로를 만든다. Task 4와 Task 7은 이 하나만 호출한다. Task 3의 테스트는 `shape_path`를 직접 부르고, `shape_layer_path`는 `Polygon` 위임을 검증하는 테스트를 하나 더 갖는다.
+이 함수가 `Polygon`/`Freeform`이면 `points`로, 나머지는 파라미터로 경로를 만든다. **Task 4와 Task 7은 이 하나만 호출한다.** `shape_path`를 직접 부르면 `Polygon`/`Freeform`이 빈 경로가 된다. Task 3의 테스트는 `shape_path`를 직접 부르고, `shape_layer_path`는 `Polygon` 위임을 검증하는 테스트를 갖는다.
 
 `rasterized == true`인 도형은 벡터 대신 래스터 자산을 그려야 한다. `ShapeLayer.rasterized`가 true면 `PreparedLayerKind::Raster` + 래스터 내용으로 내보낸다 (래스터 자산은 Task 7이 만든다). 래스터 내용을 만드는 방법은 `prepare_frame`의 기존 래스터 갈래(`frame.rs:486-490`)가 `RasterImage`를 받아 `prepare_raster_tiles`를 부르는 것을 따른다. 이 분기를 `prepare_frame`에 넣고 주석으로 이유를 남긴다.
 
-`NodeDescriptor`(frame.rs:442)에 `Shape(Box<ShapeNodeDescriptor>)`를 추가한다. `renderer.rs:1100` 부근의 `build_node`에 `NodeDescriptor::Shape` 갈래를 추가해 `shape_path`를 호출하고 `RetainedNode { descriptor, scene, resources: Arc::from([]), local_bounds, image: None, text: None, diagnostics }`를 만든다.
+`NodeDescriptor`(frame.rs:442)에 `Shape(Box<ShapeNodeDescriptor>)`를 추가한다. `ShapeNodeDescriptor`는 폴리곤 점도 담아야 `build_node`가 `shape_layer_path`에 넘길 수 있다. `renderer.rs:1100` 부근의 `build_node`에 `NodeDescriptor::Shape` 갈래를 추가해 **`shape_layer_path`** 를 호출하고 `RetainedNode { descriptor, scene, resources: Arc::from([]), local_bounds, image: None, text: None, diagnostics }`를 만든다.
 
 `renderer.rs:468`의 `DraftMetadata`에 `Shape(ShapeMetadata)`를 추가하고, `assemble_frame`(renderer.rs:1193)의 match에 `LayerKind::Shape(metadata)` 갈래를 추가한다.
 
