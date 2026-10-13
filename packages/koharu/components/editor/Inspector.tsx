@@ -20,6 +20,7 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  Shapes,
   Trash2,
   Type,
 } from 'lucide-react'
@@ -1222,11 +1223,13 @@ function layerIcon(layer: Layer): typeof Type {
   if (layer.type === 'group') return Folder
   if (layer.type === 'raster') return Brush
   if (layer.type === 'text') return Type
+  if (layer.type === 'shape') return Shapes
   return ImageIcon
 }
 
 function localizedLayerName(layer: Layer, index: number, t: TFunction): string {
-  if (layer.type === 'group' || layer.type === 'raster') return layer.name
+  if (layer.type === 'group' || layer.type === 'raster' || layer.type === 'shape')
+    return layer.name
   if (layer.type === 'text') {
     const text = layer.content.translation?.text || layer.content.source?.text
     return text?.trim() || t('layers.textName', { index: index + 1 })
@@ -1248,5 +1251,6 @@ function localizedLayerKind(layer: Layer, t: TFunction): string {
     if (role === 'free-text') return t('layers.kinds.freeText')
     return t('layers.kinds.text')
   }
+  if (layer.type === 'shape') return t('layers.kinds.shape')
   return t('layers.kinds.image')
 }

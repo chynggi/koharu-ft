@@ -49,7 +49,7 @@ Koharu의 캔버스는 9개 도구만 제공한다 — `select`, `text`, `draw`,
 | D1 | 도형을 벡터 레이어로 저장하고, 래스터화를 별도 액션으로 처음부터 제공 | 재편집 가능성이 래스터 굽기보다 중요하고, 되돌릴 수 없는 손실을 피한다 |
 | D2 | `Geometry` 폴리곤이 히트테스트·프레임 복원의 권위. 렌더링은 `ShapeGeometry` 파라미터를 쓴다 | 기존 검증된 코드를 재사용한다. 아래 "왜 이 소유권인가"와 "무엇이 그리는가" 참조 |
 | D3 | 회전 각도는 `ShapeLayer.angle_degrees`에 저장 | 폴리곤에서 복원 가능한 도형(사각형)과 불가능한 도형(타원·곡선)이 섞여 있다 |
-| D4 | `ShapeLayer`에 `name` 필드를 둔다 | 래스터 레이어와 같은 이유로 레이어 목록에서 식별 가능해야 한다 |
+| D4 | `ShapeLayer`에 `name` 필드를 둔다 | 래스터 레이어와 같은 이유로 레이어 목록에서 식별 가능해야 한다. `Layer::Shape`가 이 값을 클라이언트로 노출하므로 Inspector가 "Image N" 대신 실제 이름을 쓴다 |
 | D5 | 래스터화 여부는 `rasterized: bool` 하나로 관리한다 | 별도 상태 머신이 필요 없다 |
 | D6 | `ShapeFill`은 처음부터 열거형. 1a는 `Solid`만 갖는다 | 1b가 스키마를 갈아엎지 않게 한다 |
 | D7 | 도구는 "도형" 하나 + 종류 선택 | 도구막대가 짧고 단축키 관리가 쉽다 |
@@ -563,8 +563,8 @@ PNG/CBZ는 페이지를 통째로 래스터화하므로 변경이 없다.
 | `ToolBar` (`ToolBar.tsx:44`) | 도구 아이콘 + 스타일 Popover (종류·채우기·선·두께·점선) |
 | `selectableLayer` (`geometry.ts:61`) | `'shape'` 추가 — 안 하면 선택·이동이 안 된다 |
 | `isLockedLayer` (`document.ts:11`) | `artwork`만 잠그므로 수정 불필요 |
-| `Inspector` | 선택된 도형의 스타일 편집 섹션 |
-| i18n | 9개 로케일에 `tools.shape`, `inspector.shape.*` 키 추가 |
+| `Inspector` | 선택된 도형의 스타일 편집 섹션. 레이어 목록은 도형의 `name`과 `layers.kinds.shape`를 보여준다 (D4) — 분기가 없으면 이미지 아이콘과 "Image N"으로 표시된다 |
+| i18n | 9개 로케일에 `tools.shape`, `inspector.shape.*`, `layers.kinds.shape` 키 추가 |
 | store | `shapeKind`·`shapeStyle` 상태를 `brush`와 같은 패턴으로 추가 |
 
 그리기 제스처는 기존 `draftFrame`을 재사용한다

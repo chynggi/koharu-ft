@@ -72,6 +72,7 @@ describe('interface language persistence', () => {
     const kinds = ['rectangle', 'ellipse', 'line', 'arrow', 'polygon', 'freeform']
     const keys = [
       'tools.shape',
+      'layers.kinds.shape',
       'inspector.shape.fill',
       'inspector.shape.stroke',
       'inspector.shape.strokeWidth',

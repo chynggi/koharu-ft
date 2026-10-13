@@ -133,6 +133,7 @@ const shapeLayer: Layer = {
   },
   angle_degrees: 0,
   visibility: { visible: true, opacity: 1 },
+  name: 'Rectangle 1',
   shape: { rectangle: { corner_radius: 0 } },
   style: { fill: { solid: [255, 255, 255, 255] }, stroke: null },
   rasterized: false,
@@ -759,6 +760,25 @@ describe('greenfield editor', () => {
     render(<Inspector />)
 
     expect(screen.queryByTestId('shape-inspector')).not.toBeInTheDocument()
+  })
+
+  it('names a shape layer from its stored name and kind in the layer list', async () => {
+    // Decision D4: `ShapeLayer.name` exists so a shape is identifiable in the
+    // layer list. Without a `shape` branch the row falls through to the image
+    // arm and every shape reads "Image N" with an image icon.
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, { ...shapeLayer, name: 'Rectangle 3' }],
+    }))
+    render(<Inspector />)
+
+    expect(await screen.findByText('Rectangle 3')).toBeInTheDocument()
+    expect(screen.queryByText('Image 2')).not.toBeInTheDocument()
+    // The kind line distinguishes a shape from an image without relying on the
+    // name alone.
+    expect(screen.getByText('Shape')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Rectangle 3' })).toBeInTheDocument()
   })
 
   it('adjusts brush size from the toolbar popover', async () => {

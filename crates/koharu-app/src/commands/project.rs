@@ -109,6 +109,9 @@ pub enum Layer {
         geometry: Option<Geometry>,
         angle_degrees: Option<f32>,
         visibility: LayerVisibility,
+        /// Decision D4: a shape identifies itself in the layer list by name,
+        /// the way `Raster` does, instead of falling back to "Image N".
+        name: String,
         shape: ShapeGeometry,
         style: ShapeStyle,
         rasterized: bool,
@@ -1778,6 +1781,7 @@ impl Project {
                     .map(Self::geometry_view),
                 angle_degrees: shape.angle_degrees,
                 visibility,
+                name: shape.name,
                 shape: shape.geometry,
                 style: shape.style,
                 rasterized: shape.rasterized,
@@ -3067,6 +3071,7 @@ mod tests {
             .find(|layer| layer_id(layer) == element)
             .unwrap();
         let Layer::Shape {
+            name,
             shape,
             style: view_style,
             angle_degrees,
@@ -3076,6 +3081,9 @@ mod tests {
         else {
             panic!("expected a shape layer");
         };
+        // Decision D4: the layer list must be able to identify a shape by name
+        // rather than falling back to "Image N".
+        assert_eq!(name, "Rectangle 1");
         assert!(matches!(shape, ShapeGeometry::Rectangle { .. }));
         assert_eq!(*angle_degrees, Some(0.0));
         assert!(!rasterized);

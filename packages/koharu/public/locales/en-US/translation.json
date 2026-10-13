@@ -266,6 +266,7 @@
       "group": "Group",
       "image": "Image",
       "paint": "Paint",
+      "shape": "Shape",
       "text": "Text",
       "textGroup": "Text group"
     },

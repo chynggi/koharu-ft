@@ -26,6 +26,7 @@ const shapeLayer: Layer = {
   },
   angle_degrees: 0,
   visibility: { visible: true, opacity: 1 },
+  name: 'Rectangle 1',
   shape: { rectangle: { corner_radius: 0 } },
   style: { fill: { solid: [255, 255, 255, 255] }, stroke: null },
   rasterized: false,
