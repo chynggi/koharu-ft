@@ -2354,7 +2354,6 @@ mod tests {
         let (page, entity) = ids.unwrap();
 
         let frame = Renderer::default().render(&snapshot, page).await.unwrap();
-        let layer = frame.layer(entity).unwrap();
         // The raster branch of `prepare_frame` must win over the vector path.
         let prepared_layer = frame
             .prepared()
@@ -2372,7 +2371,6 @@ mod tests {
             "placement must be identity, was {:?}",
             prepared_layer.placement
         );
-        let _ = layer;
     }
 
     #[tokio::test]
