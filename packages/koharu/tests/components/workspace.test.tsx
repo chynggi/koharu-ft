@@ -98,6 +98,12 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals())
 
+function flushAnimationFrames() {
+  const pending = [...animationFrames.values()]
+  animationFrames.clear()
+  for (const callback of pending) callback(performance.now())
+}
+
 function installProject() {
   const page = {
     id: 'page',
@@ -664,6 +670,23 @@ describe('canvas interaction adapter', () => {
     })
   })
 
+  it('coalesces a burst of shape drags into one throttled preview frame', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 28, clientX: 30, clientY: 40 })
+    // While the shape gesture is live the preview must be throttled, not sent
+    // once per pointer event.
+    for (let x = 40; x <= 140; x += 10) {
+      fireEvent.pointerMove(surface, { pointerId: 28, clientX: x, clientY: x })
+    }
+    expect(canvas.updateShape).not.toHaveBeenCalled()
+
+    flushAnimationFrames()
+    expect(canvas.updateShape).toHaveBeenCalledOnce()
+  })
+
   it('cancels a shape preview without committing it', async () => {
     installProject()
     useKoharuStore.setState({ tool: 'shape' })
@@ -679,7 +702,7 @@ describe('canvas interaction adapter', () => {
     expect(addShape).not.toHaveBeenCalled()
   })
 
-  it('does not create a shape from a click with no drag', async () => {
+  it('does not create a shape from a click with no drag', () => {
     installProject()
     useKoharuStore.setState({ tool: 'shape' })
     const addShape = vi.spyOn(commands, 'addShape')
@@ -690,6 +713,76 @@ describe('canvas interaction adapter', () => {
 
     expect(canvas.cancelShape).toHaveBeenCalledOnce()
     expect(canvas.finishShape).not.toHaveBeenCalled()
+    expect(addShape).not.toHaveBeenCalled()
+  })
+
+  it('creates a horizontal arrow instead of discarding the drag', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'arrow' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    // A purely horizontal drag leaves the frame one unit tall, which a
+    // both-axes minimum would reject.
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 24, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 24, clientX: 160, clientY: 40 })
+    fireEvent.pointerUp(surface, { pointerId: 24, clientX: 160, clientY: 40 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+    expect(canvas.finishShape).toHaveBeenCalledOnce()
+  })
+
+  it('creates a vertical line instead of discarding the drag', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'line' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 25, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 25, clientX: 30, clientY: 170 })
+    fireEvent.pointerUp(surface, { pointerId: 25, clientX: 30, clientY: 170 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+  })
+
+  it('creates a thin but long rectangle', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'rectangle' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 26, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 26, clientX: 200, clientY: 41 })
+    fireEvent.pointerUp(surface, { pointerId: 26, clientX: 200, clientY: 41 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+  })
+
+  it('releases the native shape edit when finishing it fails', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    canvas.finishShape.mockImplementationOnce(() => {
+      throw new Error('no shape preview is active')
+    })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 27, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 27, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 27, clientX: 140, clientY: 110 })
+
+    // Leaving the WASM edit pending would block every later edit with
+    // "another canvas edit is already active".
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
     expect(addShape).not.toHaveBeenCalled()
   })
 })

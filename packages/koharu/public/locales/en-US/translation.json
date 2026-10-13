@@ -224,6 +224,7 @@
         "rectangle": "Rectangle"
       },
       "kindLabel": "Shape kind: {{kind}}",
+      "kindTitle": "Shape kind",
       "rasterize": "Rasterize",
       "stroke": "Stroke",
       "strokeWidth": "Stroke width"

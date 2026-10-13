@@ -224,6 +224,7 @@
         "rectangle": "Прямоугольник"
       },
       "kindLabel": "Тип фигуры: {{kind}}",
+      "kindTitle": "Тип фигуры",
       "rasterize": "Растеризовать",
       "stroke": "Обводка",
       "strokeWidth": "Ширина обводки"

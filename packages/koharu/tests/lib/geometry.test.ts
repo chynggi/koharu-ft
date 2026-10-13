@@ -66,6 +66,22 @@ describe('shape selection geometry', () => {
     expect(restored.x).toBeCloseTo(0, 6)
     expect(restored.y).toBeCloseTo(0, 6)
   })
+
+  it('selects a horizontal line, whose polygon has zero height', () => {
+    const horizontal: Layer = {
+      ...shapeLayer,
+      shape: { line: { start: [10, 40], end: [110, 40], head: null } },
+      geometry: {
+        points: [
+          { x: 10, y: 40 },
+          { x: 60, y: 40 },
+          { x: 110, y: 40 },
+        ],
+      },
+    }
+    expect(layerFrame(horizontal)).not.toBeNull()
+    expect(hitTestLayers([horizontal], { x: 60, y: 40 }, {})).toBe(horizontal)
+  })
 })
 
 describe('selection control geometry', () => {

@@ -224,6 +224,7 @@
         "rectangle": "長方形"
       },
       "kindLabel": "図形の種類: {{kind}}",
+      "kindTitle": "図形の種類",
       "rasterize": "ラスタライズ",
       "stroke": "縁取り",
       "strokeWidth": "縁取りの幅"

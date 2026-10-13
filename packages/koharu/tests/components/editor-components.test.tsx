@@ -716,6 +716,9 @@ describe('greenfield editor', () => {
     expect(useKoharuStore.getState().tool).toBe('shape')
 
     await user.click(screen.getByRole('button', { name: 'Shape kind: Rectangle' }))
+    // The popover heading must be a real string, not i18next's "returned an
+    // object instead of string" diagnostic for a branch key.
+    expect(await screen.findByText('Shape kind')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Line' }))
 
     expect(useKoharuStore.getState().shapeKind).toBe('line')

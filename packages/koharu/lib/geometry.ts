@@ -70,6 +70,16 @@ export function layerFrame(layer: Layer): Frame | null {
         ? layer.geometry?.points
         : null
   if (!points?.length || points.some((point) => !finite(point.x, point.y))) return null
+  // A shape's outline is its polygon, so it is measured here rather than
+  // restored from a rendered frame. Unlike text, a shape may legitimately have a
+  // degenerate axis: a horizontal line's polygon is one unit tall, and a
+  // backend-authored one can be exactly zero. Rejecting those would make the
+  // shape unselectable, so the extent is floored instead (the backend's
+  // `ElementFrame::is_valid` requires strictly positive extents).
+  const clampExtent = (value: number) =>
+    layer.type === 'shape' ? Math.max(value, minimumFrameSize) : value
+  const movable = (width: number, height: number) =>
+    layer.type === 'shape' || (width > minimumFrameSize && height > minimumFrameSize)
   // Text and shapes both record an authored angle, and both must be measured in
   // their own axes: a polygon alone cannot recover the axes of a rotated
   // non-square outline, so the bounds would come out too large.
@@ -88,12 +98,14 @@ export function layerFrame(layer: Layer): Frame | null {
     const height = bottom - top
     const centerX = (left + right) / 2
     const centerY = (top + bottom) / 2
-    return width > minimumFrameSize && height > minimumFrameSize
+    const frameWidth = clampExtent(width)
+    const frameHeight = clampExtent(height)
+    return movable(width, height)
       ? {
-          x: centerX * cos - centerY * sin - width / 2,
-          y: centerX * sin + centerY * cos - height / 2,
-          width,
-          height,
+          x: centerX * cos - centerY * sin - frameWidth / 2,
+          y: centerX * sin + centerY * cos - frameHeight / 2,
+          width: frameWidth,
+          height: frameHeight,
           angle_degrees: layer.angle_degrees,
         }
       : null
@@ -135,8 +147,8 @@ export function layerFrame(layer: Layer): Frame | null {
   const y = Math.min(...ys)
   const width = Math.max(...xs) - x
   const height = Math.max(...ys) - y
-  return width > minimumFrameSize && height > minimumFrameSize
-    ? { x, y, width, height, angle_degrees: 0 }
+  return movable(width, height)
+    ? { x, y, width: clampExtent(width), height: clampExtent(height), angle_degrees: 0 }
     : null
 }
 

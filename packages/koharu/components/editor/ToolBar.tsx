@@ -182,7 +182,7 @@ function ShapeStyles() {
           sideOffset={8}
           className='w-56 gap-2.5 rounded-xl p-2.5'
         >
-          <PopoverTitle className='text-[11px]'>{t('inspector.shape.kind')}</PopoverTitle>
+          <PopoverTitle className='text-[11px]'>{t('inspector.shape.kindTitle')}</PopoverTitle>
           <div className='grid grid-cols-6 gap-1'>
             {SHAPE_KINDS.map((candidate) => {
               const Icon = shapeIcons[candidate]

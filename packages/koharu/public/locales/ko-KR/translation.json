@@ -224,6 +224,7 @@
         "rectangle": "사각형"
       },
       "kindLabel": "도형 종류: {{kind}}",
+      "kindTitle": "도형 종류",
       "rasterize": "래스터화",
       "stroke": "테두리",
       "strokeWidth": "테두리 두께"
@@ -657,7 +658,7 @@
     "pan": "이동",
     "remove": "제거",
     "select": "선택",
-    "shape": "모양",
+    "shape": "도형",
     "text": "텍스트"
   },
   "updater": {

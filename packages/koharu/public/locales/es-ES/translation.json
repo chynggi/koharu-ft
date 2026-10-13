@@ -224,6 +224,7 @@
         "rectangle": "Rectángulo"
       },
       "kindLabel": "Tipo de forma: {{kind}}",
+      "kindTitle": "Tipo de forma",
       "rasterize": "Rasterizar",
       "stroke": "Contorno",
       "strokeWidth": "Grosor del contorno"

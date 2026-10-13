@@ -224,6 +224,7 @@
         "rectangle": "Dikdörtgen"
       },
       "kindLabel": "Şekil türü: {{kind}}",
+      "kindTitle": "Şekil türü",
       "rasterize": "Rasterleştir",
       "stroke": "Kenarlık",
       "strokeWidth": "Kenarlık genişliği"

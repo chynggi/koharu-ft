@@ -224,6 +224,7 @@
         "rectangle": "矩形"
       },
       "kindLabel": "形状类型：{{kind}}",
+      "kindTitle": "形状类型",
       "rasterize": "栅格化",
       "stroke": "描边",
       "strokeWidth": "描边宽度"

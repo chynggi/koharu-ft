@@ -625,11 +625,11 @@ export function CanvasWorkspace() {
       const frame = current.frame
       setDraft(null)
       // A click without a drag has no shape to draw, so it only cancels the
-      // preview the pointer-down started.
-      if (
-        frame.width < SHAPE_MINIMUM_DRAG / camera.zoom ||
-        frame.height < SHAPE_MINIMUM_DRAG / camera.zoom
-      ) {
+      // preview the pointer-down started. The gate is the drag's actual length:
+      // a horizontal line and a vertical line each leave one axis at the
+      // `draftFrame` floor, and requiring both axes would silently discard the
+      // two most natural line gestures.
+      if (Math.hypot(frame.width, frame.height) < SHAPE_MINIMUM_DRAG / camera.zoom) {
         shapeUpdates.clear()
         canvas?.cancelShape()
         return
@@ -640,6 +640,9 @@ export function CanvasWorkspace() {
       try {
         canvas?.finishShape()
       } catch (error) {
+        // The native edit stays active until it is cancelled, and its guard
+        // rejects every later edit while it is. Release it before reporting.
+        canvas?.cancelShape()
         receiveError(errorMessage(error))
         return
       }
