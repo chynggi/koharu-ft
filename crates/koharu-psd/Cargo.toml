@@ -19,3 +19,6 @@ koharu-scene = { workspace = true }
 thiserror = { workspace = true }
 tokio-rayon = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
