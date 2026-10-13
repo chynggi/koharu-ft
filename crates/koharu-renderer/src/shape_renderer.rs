@@ -10,11 +10,13 @@
 //! (`specs/2026-10-13-shape-tools-design.md`, "무엇이 그리는가").
 
 use koharu_rasterizer::{
-    FillRule, PathElement, PreparedFill, PreparedLineCap, PreparedLineJoin, PreparedPath,
+    FillRule, PathElement, PreparedFill, PreparedGradient, PreparedGradientExtend,
+    PreparedGradientKind, PreparedGradientStop, PreparedLineCap, PreparedLineJoin, PreparedPath,
     PreparedStroke,
 };
 use koharu_scene::{
-    ArrowHead, Geometry, LineCap, LineJoin, ShapeFill, ShapeGeometry, ShapeStyle, StrokeStyle,
+    ArrowHead, Geometry, GradientExtend, GradientKind, LineCap, LineJoin, ShapeFill, ShapeGeometry,
+    ShapeStyle, StrokeStyle,
 };
 
 /// Cubic approximation constant for a quarter circle.
@@ -153,7 +155,7 @@ fn prepared(
     PreparedPath {
         transform: transform(frame),
         elements,
-        fill: fill(style, has_head),
+        fill: fill(style, frame, has_head),
         stroke: style.stroke.as_ref().map(stroke),
     }
 }
@@ -284,16 +286,79 @@ fn line_path(
 /// when the author set no fill. Such a head has no colour of its own, so it
 /// takes the stroke's colour — the head is the business end of a stroked arrow
 /// — and is dropped entirely when neither a fill nor a stroke supplies one.
-fn fill(style: &ShapeStyle, has_head: bool) -> Option<PreparedFill> {
-    let color = match &style.fill {
-        Some(ShapeFill::Solid(color)) => Some(*color),
-        None if has_head => style.stroke.as_ref().map(|stroke| stroke.color),
+///
+/// This is the **only** place a persisted gradient's normalized frame-local
+/// coordinates (`0..=1`) become the path-local coordinates that
+/// [`PreparedPath::elements`] and the prepared gradient share. Every path — the
+/// parameterized kinds and the polygon/freeform delegate alike — reaches the
+/// prepared fill through here, so a second spread site would give the control
+/// points two authorities and let them drift, the same class of bug as 1a's
+/// `Line` double-store. Do not repeat the multiplication anywhere downstream.
+///
+/// The radius is a fraction of the frame's **width**, while `Sweep` angles are
+/// already absolute degrees and pass through untouched. The result stays in the
+/// path's local frame: rotation lives in [`PreparedPath::transform`] and the
+/// renderer applies it to the brush automatically.
+fn fill(style: &ShapeStyle, frame: ShapeFrame, has_head: bool) -> Option<PreparedFill> {
+    match &style.fill {
+        Some(ShapeFill::Solid(color)) => Some(PreparedFill::Solid {
+            color: *color,
+            rule: FillRule::NonZero,
+        }),
+        Some(ShapeFill::Gradient(spec)) => {
+            // Normalized frame-local (0..=1) -> path-local. Both control points
+            // and the width-relative radius are scaled here and nowhere else.
+            let local = |point: [f32; 2]| [point[0] * frame.width, point[1] * frame.height];
+            let kind = match &spec.kind {
+                GradientKind::Linear { start, end } => PreparedGradientKind::Linear {
+                    start: local(*start),
+                    end: local(*end),
+                },
+                GradientKind::Radial { center, radius } => PreparedGradientKind::Radial {
+                    center: local(*center),
+                    // The radius is a fraction of the frame's width, not of
+                    // its height or its smaller or larger extent.
+                    radius: *radius * frame.width,
+                },
+                GradientKind::Sweep {
+                    center,
+                    start_degrees,
+                    end_degrees,
+                } => PreparedGradientKind::Sweep {
+                    center: local(*center),
+                    // Angles are absolute, not normalized: no frame factor.
+                    start_degrees: *start_degrees,
+                    end_degrees: *end_degrees,
+                },
+            };
+            Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind,
+                    // Left in the author's order; the renderer sorts stably by
+                    // offset.
+                    stops: spec
+                        .stops
+                        .iter()
+                        .map(|stop| PreparedGradientStop {
+                            offset: stop.offset,
+                            color: stop.color,
+                        })
+                        .collect(),
+                    extend: match spec.extend {
+                        GradientExtend::Pad => PreparedGradientExtend::Pad,
+                        GradientExtend::Repeat => PreparedGradientExtend::Repeat,
+                        GradientExtend::Reflect => PreparedGradientExtend::Reflect,
+                    },
+                },
+                rule: FillRule::NonZero,
+            })
+        }
+        None if has_head => style.stroke.as_ref().map(|stroke| PreparedFill::Solid {
+            color: stroke.color,
+            rule: FillRule::NonZero,
+        }),
         None => None,
-    };
-    color.map(|color| PreparedFill::Solid {
-        color,
-        rule: FillRule::NonZero,
-    })
+    }
 }
 
 fn stroke(style: &StrokeStyle) -> PreparedStroke {
@@ -328,6 +393,7 @@ fn stroke(style: &StrokeStyle) -> PreparedStroke {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use koharu_scene::{GradientSpec, GradientStop};
 
     fn frame(width: f32, height: f32, angle_degrees: f32) -> ShapeFrame {
         ShapeFrame {
@@ -354,6 +420,247 @@ mod tests {
             a * local[0] + c * local[1] + e,
             b * local[0] + d * local[1] + f,
         ]
+    }
+
+    fn gradient_style() -> ShapeStyle {
+        ShapeStyle {
+            fill: Some(ShapeFill::Gradient(GradientSpec {
+                kind: GradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [1.0, 1.0],
+                },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: [255, 0, 0, 255],
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: [0, 0, 255, 255],
+                    },
+                ],
+                extend: GradientExtend::Pad,
+            })),
+            stroke: None,
+        }
+    }
+
+    #[test]
+    fn a_normalized_gradient_is_spread_onto_the_frame() {
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &gradient_style(),
+            frame(200.0, 100.0, 0.0),
+        );
+        let Some(PreparedFill::Gradient { gradient, .. }) = path.fill else {
+            panic!("a gradient fill must survive preparation");
+        };
+        let PreparedGradientKind::Linear { start, end } = gradient.kind else {
+            panic!("the linear kind must survive preparation");
+        };
+        // 정규화 (0,0)->(1,1) 이 200x100 프레임에서 (0,0)->(200,100) 이 된다.
+        assert!((start[0] - 0.0).abs() < 1e-6);
+        assert!((end[0] - 200.0).abs() < 1e-6);
+        assert!((end[1] - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_rotated_shape_keeps_its_gradient_in_local_coordinates() {
+        // 회전은 경로 변환(`transform`)이 담당하고 vello 가 그것을 브러시에
+        // 자동 적용하므로, 준비된 그라디언트는 회전한 도형에서도 로컬 좌표에
+        // 남아 있어야 한다.
+        //
+        // Rectangle 을 쓰는 이유: Line 의 끝점은 `to_local` 로 각도에 따라
+        // 바뀌므로 `Line` 으로는 이 단언이 성립하지 않는다. 그라디언트 좌표는
+        // 프레임의 폭·높이에만 의존하고 각도에는 의존하지 않는다.
+        let upright = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &gradient_style(),
+            frame(200.0, 100.0, 0.0),
+        );
+        let rotated = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &gradient_style(),
+            frame(200.0, 100.0, 90.0),
+        );
+        assert_eq!(upright.fill, rotated.fill);
+        assert_ne!(upright.transform, rotated.transform);
+    }
+
+    #[test]
+    fn a_gradient_fill_with_a_none_fill_stays_none() {
+        let style = ShapeStyle {
+            fill: None,
+            stroke: None,
+        };
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 0.0),
+        );
+        assert!(path.fill.is_none());
+    }
+
+    #[test]
+    fn an_arrow_head_gradient_uses_the_stroke_colour_when_fill_is_absent() {
+        let style = ShapeStyle {
+            fill: None,
+            stroke: Some(StrokeStyle {
+                color: [9, 9, 9, 255],
+                width: 2.0,
+                dash: None,
+                cap: LineCap::Butt,
+                join: LineJoin::Miter,
+            }),
+        };
+        let path = shape_path(
+            &ShapeGeometry::Line {
+                start: [0.0, 0.0],
+                end: [50.0, 0.0],
+                head: Some(ArrowHead {
+                    length: 10.0,
+                    width: 8.0,
+                }),
+            },
+            &style,
+            frame(100.0, 100.0, 0.0),
+        );
+        assert_eq!(
+            path.fill,
+            Some(PreparedFill::Solid {
+                color: [9, 9, 9, 255],
+                rule: FillRule::NonZero
+            })
+        );
+    }
+
+    #[test]
+    fn a_radial_gradient_radius_scales_by_the_frame_width() {
+        // 반지름은 프레임 폭 기준이다. 높이 기준으로 잘못 펴면 이 테스트가
+        // 잡는다 (200x100 프레임에서 0.25 -> 50).
+        let mut style = gradient_style();
+        style.fill = Some(ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Radial {
+                center: [0.5, 0.5],
+                radius: 0.25,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Repeat,
+        }));
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 0.0),
+        );
+        let Some(PreparedFill::Gradient { gradient, .. }) = path.fill else {
+            panic!("a radial gradient must survive preparation");
+        };
+        let PreparedGradientKind::Radial { center, radius } = gradient.kind else {
+            panic!("the radial kind must survive preparation");
+        };
+        assert!((center[0] - 100.0).abs() < 1e-6);
+        assert!((center[1] - 50.0).abs() < 1e-6);
+        assert!((radius - 50.0).abs() < 1e-6);
+        assert_eq!(gradient.extend, PreparedGradientExtend::Repeat);
+    }
+
+    #[test]
+    fn a_sweep_gradient_passes_its_angles_through_unchanged() {
+        // 각도는 정규화 대상이 아니다. 프레임 크기로 곱하면 0..360 스윕이
+        // 터무니없이 커진다.
+        let mut style = gradient_style();
+        style.fill = Some(ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Sweep {
+                center: [0.5, 0.5],
+                start_degrees: 90.0,
+                end_degrees: 270.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Reflect,
+        }));
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 0.0),
+        );
+        let Some(PreparedFill::Gradient { gradient, .. }) = path.fill else {
+            panic!("a sweep gradient must survive preparation");
+        };
+        let PreparedGradientKind::Sweep {
+            center,
+            start_degrees,
+            end_degrees,
+        } = gradient.kind
+        else {
+            panic!("the sweep kind must survive preparation");
+        };
+        assert!((center[0] - 100.0).abs() < 1e-6);
+        assert!((center[1] - 50.0).abs() < 1e-6);
+        assert!((start_degrees - 90.0).abs() < 1e-6);
+        assert!((end_degrees - 270.0).abs() < 1e-6);
+        assert_eq!(gradient.extend, PreparedGradientExtend::Reflect);
+    }
+
+    #[test]
+    fn a_gradient_carries_its_stops_through_unsorted() {
+        // 정렬은 렌더러의 몫이므로 준비 단계는 순서를 건드리지 않는다.
+        let mut style = gradient_style();
+        style.fill = Some(ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Linear {
+                start: [0.0, 0.0],
+                end: [1.0, 0.0],
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.75,
+                    color: [1, 2, 3, 255],
+                },
+                GradientStop {
+                    offset: 0.0,
+                    color: [4, 5, 6, 255],
+                },
+            ],
+            extend: GradientExtend::Pad,
+        }));
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 0.0),
+        );
+        let Some(PreparedFill::Gradient { gradient, .. }) = path.fill else {
+            panic!("a gradient must survive preparation");
+        };
+        assert_eq!(
+            gradient.stops,
+            vec![
+                PreparedGradientStop {
+                    offset: 0.75,
+                    color: [1, 2, 3, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.0,
+                    color: [4, 5, 6, 255],
+                },
+            ]
+        );
     }
 
     fn frame_box(x: f32, y: f32, width: f32, height: f32, angle_degrees: f32) -> ShapeFrame {
