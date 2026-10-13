@@ -242,6 +242,30 @@ D2의 "폴리곤이 권위"는 **기하의 출처**를 뜻하지, **그리는 �
 개수는 선 길이에 비례시키지 않고 고정한다 — 폴리곤은 히트테스트
 정밀도만 좌우하므로, 히트테스트에 충분한 3점이면 충분하다.
 
+### `Line`의 이중 저장 — 권위는 폴리곤이다
+
+`Line`은 `start`/`end`와 폴리곤을 함께 저장하는 **유일한 이중 저장
+지점**이다. 이 사실을 방치하면 실제 버그가 된다:
+
+- 모든 변형 경로는 폴리곤만 갱신한다.
+- `line_path`는 `start`/`end`로만 그린다 (폴리곤을 읽지 않는다).
+- `element_frame`은 폴리곤을 읽는다.
+
+결과: 선을 끌면 선택 상자(폴리곤)는 움직이는데 그려진 선은 제자리에
+남고, 둘이 눈에 띄게 분리된다.
+
+**계약: 폴리곤이 권위이고 `start`/`end`는 파생값이다.** 폴리곤을 쓰는
+모든 경로는 `ShapeGeometry::resync_with_polygon(&mut self, points)`를
+호출해 첫 점을 `start`, 마지막 점을 `end`로 다시 맞춘다. 호출 지점은
+`set_geometries`의 도형 분기 **한 곳**이다 (위 "새 커맨드" 참조).
+
+이 이중 저장을 없애는 선택지도 있었다 — `Line`에서 `start`/`end`를
+지우고 폴리곤 첫·마지막 점을 쓰는 것이다. 채택하지 않은 이유는
+`Line`의 두 끝점이 화살촉 방향 계산에 필요하고, 폴리곤이 3점 이상
+균등 분할이므로 매번 첫·마지막을 꺼내는 것이 같은 정보를 다른
+표현으로 다시 얻는 일이기 때문이다. 대신 파생값임을 명시하고
+재계산 지점을 하나로 모은다.
+
 ## 렌더러
 
 ### `PreparedPath` 확장
@@ -396,10 +420,18 @@ pub async fn rasterize_shapes(
 ) -> Result<Revision, Error>
 ```
 
-`set_geometries`를 도형까지 확장하지 않고 별도 커맨드를 두는 이유는,
-텍스트는 `TextLayout`을 갱신하고 도형은 `ShapeLayer.angle_degrees`를
-갱신하므로 두 컴포넌트를 한 함수에서 분기하는 것보다 경계가 선명하기
-때문이다.
+`set_shape_geometries`는 도형 전용 계약을 유지하되(비도형 요소를 사전
+거부한다), 실제 구현은 `set_geometries`가 소유한다. 처음에는 두 함수를
+분리하려 했으나, 변형 경로가 두 개가 되면 "폴리곤을 갱신할 때 `Line`의
+끝점을 재계산한다"는 불변식을 두 곳에 두게 되어 한쪽에서 잊힐 수 있다.
+`set_geometries`가 내부적으로 `Target::{Text, Shape}`로 갈라지고
+`set_shape_geometries`가 그것에 위임한다.
+
+**`Line`의 끝점 재계산이 이 통일의 이유다.** `Line`은 `start`/`end`와
+폴리곤을 함께 저장하는 유일한 이중 저장 지점이다. 폴리곤이 권위이고
+끝점은 파생값이므로, 폴리곤을 쓰는 모든 경로가
+`ShapeGeometry::resync_with_polygon`을 호출해야 한다. 이 호출 지점이
+하나여야 잊히지 않는다.
 
 ### HTTP 라우트
 
@@ -412,9 +444,14 @@ pub async fn rasterize_shapes(
 
 | 위치 | 현재 | 변경 |
 |---|---|---|
-| `crates/koharu-desktop/src/lib.rs:266` | `!matches!(kind, Text(_))` → 에러 | `Shape(_)` 허용 |
-| `crates/koharu-app/src/commands/project.rs:1114` | `SceneTextLayout` 필수 | 도형은 별도 커맨드로 분리 |
+| `crates/koharu-desktop/src/lib.rs:266` | `!matches!(kind, Text(_))` → 에러 | `Shape(_)` 허용 (`is_transformable` 술어로 추출) |
+| `crates/koharu-app/src/commands/project.rs:1114` | `SceneTextLayout` 필수 | `set_geometries`가 `Target::{Text, Shape}`로 분기해 도형도 받는다 |
 | `crates/koharu-canvas/src/web.rs:1395` | `kind != Text` | `Shape` 허용 |
+
+`transform_geometries`는 `matches!`를 쓰므로 도형 변형을 추가해도
+**컴파일 오류가 나지 않는다.** 즉 이 게이트는 조용한 동작 게이트이고,
+열지 않으면 도형을 끌 수 없다는 사실이 아무 데도 드러나지 않는다.
+그래서 술어를 떼어내 테스트로 고정한다.
 
 ## 래스터화
 
@@ -449,6 +486,18 @@ pub async fn rasterize_shapes(
 - `rasterized == true` → 래스터 자산을 그린다. 벡터는 무시한다
 
 되돌리기가 데이터상 가능하다. 되돌리기 UI는 1a 범위 밖이다.
+
+**래스터화된 도형의 편집 정책은 1a에서 정하지 않는다.** 렌더러는
+`rasterized == true`인 도형을 래스터 레이어로 내보내므로, 그 도형은
+`LayerKind::Image`가 되어 선택·이동 대상에서 빠진다(`selectableLayer`가
+`image`를 포함하지만 텍스트·도형과 다른 경로다). 만약 선택되어
+`set_geometries`가 도달하면 폴리곤만 바뀌고 그려지는 것은 래스터라
+**조용한 시각적 무변화**가 된다.
+
+1a는 이 상태를 "래스터화 = 편집 종료"로 둔다. 래스터화된 도형을 다시
+벡터로 되돌리거나, 래스터 상태에서도 이동을 허용하는 정책은 별도
+스펙에서 다룬다. 이 결정을 1a에서 명시하는 이유는 침묵이 "이동이
+되어야 한다"는 기대로 읽히기 때문이다.
 
 ## 내보내기
 
