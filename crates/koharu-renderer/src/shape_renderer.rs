@@ -346,6 +346,35 @@ mod tests {
         }
     }
 
+    /// Applies a Kurbo affine to a local point: `x' = a·x + c·y + e`,
+    /// `y' = b·x + d·y + f`.
+    fn to_page(affine: [f64; 6], local: [f64; 2]) -> [f64; 2] {
+        let [a, b, c, d, e, f] = affine;
+        [
+            a * local[0] + c * local[1] + e,
+            b * local[0] + d * local[1] + f,
+        ]
+    }
+
+    fn frame_box(x: f32, y: f32, width: f32, height: f32, angle_degrees: f32) -> ShapeFrame {
+        ShapeFrame {
+            x,
+            y,
+            width,
+            height,
+            angle_degrees,
+        }
+    }
+
+    /// `assert_eq!` on rotated coordinates is too strict: `90°`'s cosine is
+    /// `6.1e-17`, not exactly zero, so output carries ~1e-15 of rounding.
+    fn assert_close(actual: &[f64; 2], expected: [f64; 2]) {
+        assert!(
+            (actual[0] - expected[0]).abs() < 1e-9 && (actual[1] - expected[1]).abs() < 1e-9,
+            "{actual:?} != {expected:?}"
+        );
+    }
+
     #[test]
     fn a_rectangle_becomes_a_closed_four_point_path() {
         let path = shape_path(
@@ -367,6 +396,91 @@ mod tests {
         // 90도 회전은 [cos, sin, -sin, cos, ..] = [0, 1, -1, 0, ..]
         assert!((path.transform[0] - 0.0).abs() < 1e-9);
         assert!((path.transform[1] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_rotated_frame_maps_its_centre_and_round_trips_local_points() {
+        // 90° about (120, 60). The centre is the one point both spaces agree on,
+        // and it must land at the centre of the local box, not at the origin.
+        let frame = frame_box(100.0, 50.0, 40.0, 20.0, 90.0);
+        let centre = to_local(frame, [120.0, 60.0]);
+        assert!((centre[0] - 20.0).abs() < 1e-9, "x was {}", centre[0]);
+        assert!((centre[1] - 10.0).abs() < 1e-9, "y was {}", centre[1]);
+
+        // local -> page -> local is the identity for every box corner, which no
+        // axis-aligned frame can demonstrate.
+        let affine = transform(frame);
+        for local in [[0.0, 0.0], [40.0, 0.0], [40.0, 20.0], [0.0, 20.0]] {
+            let round_trip = to_local(frame, to_page(affine, local));
+            assert!(
+                (round_trip[0] - local[0]).abs() < 1e-9,
+                "{round_trip:?} != {local:?}"
+            );
+            assert!(
+                (round_trip[1] - local[1]).abs() < 1e-9,
+                "{round_trip:?} != {local:?}"
+            );
+        }
+
+        // A 90° turn sends the local top-left corner to page (130, 40), so the
+        // mapping is a real rotation rather than a translation.
+        let corner = to_page(affine, [0.0, 0.0]);
+        assert!((corner[0] - 130.0).abs() < 1e-9, "x was {}", corner[0]);
+        assert!((corner[1] - 40.0).abs() < 1e-9, "y was {}", corner[1]);
+    }
+
+    #[test]
+    fn a_thirty_degree_frame_round_trips_its_corners() {
+        // 30° exercises both sin and cos non-trivially, so a sign error in
+        // `to_local` that 90° happens to mask cannot survive this.
+        let frame = frame_box(7.0, 11.0, 30.0, 15.0, 30.0);
+        let affine = transform(frame);
+        for local in [[0.0, 0.0], [30.0, 0.0], [30.0, 15.0], [0.0, 15.0]] {
+            let round_trip = to_local(frame, to_page(affine, local));
+            assert!(
+                (round_trip[0] - local[0]).abs() < 1e-9,
+                "{round_trip:?} != {local:?}"
+            );
+            assert!(
+                (round_trip[1] - local[1]).abs() < 1e-9,
+                "{round_trip:?} != {local:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rotated_polygon_maps_page_points_into_the_frame() {
+        // A 90° frame about (120, 60) has the page mapping `(130 - y, 40 + x)`
+        // for local `(x, y)`, so these page points are exactly the local corners.
+        let points = vec![
+            koharu_scene::Point { x: 130.0, y: 40.0 },
+            koharu_scene::Point { x: 130.0, y: 80.0 },
+            koharu_scene::Point { x: 110.0, y: 80.0 },
+            koharu_scene::Point { x: 110.0, y: 40.0 },
+        ];
+        let path = polygon_path(&points, &filled(), frame_box(100.0, 50.0, 40.0, 20.0, 90.0));
+        let coordinates: Vec<[f64; 2]> = path
+            .elements
+            .iter()
+            .filter_map(|element| match element {
+                PathElement::MoveTo(values) | PathElement::LineTo(values) => Some(*values),
+                PathElement::Close => None,
+                other => panic!("unexpected element {other:?}"),
+            })
+            .collect();
+        assert_eq!(coordinates.len(), 4);
+        let expected = [[0.0, 0.0], [40.0, 0.0], [40.0, 20.0], [0.0, 20.0]];
+        for (actual, wanted) in coordinates.iter().zip(expected) {
+            assert!(
+                (actual[0] - wanted[0]).abs() < 1e-9,
+                "{actual:?} != {wanted:?}"
+            );
+            assert!(
+                (actual[1] - wanted[1]).abs() < 1e-9,
+                "{actual:?} != {wanted:?}"
+            );
+        }
+        assert_eq!(path.elements.last(), Some(&PathElement::Close));
     }
 
     #[test]
@@ -443,7 +557,65 @@ mod tests {
         // 화살촉은 채워진 삼각형이므로 두 번째 FillPath가 필요하다.
         // 이 함수는 하나의 PreparedPath만 돌려주므로, 화살촉은 같은
         // 경로에 별도 subpath로 들어가고 fill이 함께 켜진다.
-        assert!(path.fill.is_some());
+        assert!(matches!(path.fill, Some(PreparedFill::Solid { .. })));
+        // The line runs along +x in local space, so the head is the triangle
+        // (end), (end - length·dir ± width/2·perp) = (50, 0), (40, 4), (40, -4).
+        assert_eq!(
+            &path.elements[3..],
+            [
+                PathElement::MoveTo([50.0, 0.0]),
+                PathElement::LineTo([40.0, 4.0]),
+                PathElement::LineTo([40.0, -4.0]),
+                PathElement::Close,
+            ]
+        );
+    }
+
+    #[test]
+    fn an_arrow_head_keeps_its_base_and_half_width_on_a_rotated_line() {
+        // A 90° frame about (50, 50) maps local (x, y) to page (100 - y, x), so
+        // this horizontal page line is local (50, 0) -> (50, 100): straight
+        // down. The base therefore sits 10 above the tip and the half-width of 4
+        // falls on the local x axis.
+        let style = ShapeStyle {
+            fill: None,
+            stroke: Some(StrokeStyle {
+                color: [0, 0, 0, 255],
+                width: 2.0,
+                dash: None,
+                cap: LineCap::Butt,
+                join: LineJoin::Miter,
+            }),
+        };
+        let path = shape_path(
+            &ShapeGeometry::Line {
+                start: [100.0, 50.0],
+                end: [0.0, 50.0],
+                head: Some(ArrowHead {
+                    length: 10.0,
+                    width: 8.0,
+                }),
+            },
+            &style,
+            frame_box(0.0, 0.0, 100.0, 100.0, 90.0),
+        );
+        assert_eq!(path.elements.len(), 7);
+        assert!(matches!(path.elements[0], PathElement::MoveTo(_)));
+        assert!(matches!(path.elements[1], PathElement::LineTo(_)));
+        assert!(matches!(path.elements[2], PathElement::Close));
+        let PathElement::MoveTo(tip) = path.elements[3] else {
+            panic!("the head starts with a MoveTo");
+        };
+        let PathElement::LineTo(base_a) = path.elements[4] else {
+            panic!("the head side is a LineTo");
+        };
+        let PathElement::LineTo(base_b) = path.elements[5] else {
+            panic!("the head side is a LineTo");
+        };
+        assert_eq!(path.elements[6], PathElement::Close);
+        assert_close(&tip, [50.0, 100.0]);
+        assert_close(&base_a, [46.0, 90.0]);
+        assert_close(&base_b, [54.0, 90.0]);
     }
 
     #[test]
