@@ -528,6 +528,27 @@ let transform = [
 - `Rectangle { corner_radius }` — `corner_radius <= 0.0`이면 네 점 + `Close`. 0보다 크면 각 모서리를 반지름 `min(corner_radius, w/2, h/2)`로 둥글게 만든다. 각 모서리마다 `LineTo` + `QuadTo`를 쓴다.
 - `Ellipse` — 중심 `(w/2, h/2)`, 반지름 `(w/2, h/2)`인 타원을 4개의 `CurveTo`로 근사한다 (κ = 0.5522847498307936).
 - `Line { start, end, head }` — `start`·`end`는 페이지 좌표이므로 프레임 로컬로 옮긴다 (프레임 중심 기준 회전 후 평행이동). `MoveTo(start)` + `LineTo(end)` + `Close`. `head`가 있으면 끝점에 수직인 삼각형을 만든다.
+
+  **`Line`은 폴리곤과 중복 저장되므로 갱신 시 재계산이 필요하다.** 이것이 이 설계의 유일한 이중 저장 지점이고, 방치하면 실제 버그가 된다: 모든 변형 경로(`set_shape_geometries`, `commit_transform`)는 **폴리곤만** 갱신하는데 `line_path`는 `start`/`end`로 그리므로, 선을 드래그하면 폴리곤은 움직이지만 그려지는 선은 제자리에 남고 `element_frame`(폴리곤을 읽는다)도 선에서 분리된다.
+
+  계약: **폴리곤이 권위이고 `start`/`end`는 파생값이다.** 폴리곤을 쓰는 쪽은 반드시 `Line`의 두 끝점을 폴리곤에서 다시 계산해야 한다. `Line`의 폴리곤은 선을 따라 균등 분할된 3점 이상이므로(아래 "폴리곤 점 개수"), **첫 점이 `start`, 마지막 점이 `end`** 다. 재계산 헬퍼를 `koharu-scene`에 둔다:
+
+  ```rust
+  impl ShapeGeometry {
+      /// 폴리곤이 권위인 `Line`의 두 끝점을 다시 맞춘다.
+      /// 다른 변형은 폴리곤에서 파생되는 값이 없으므로 그대로 둔다.
+      pub fn resync_with_polygon(&mut self, points: &[Point]) {
+          if let Self::Line { start, end, .. } = self
+              && let (Some(first), Some(last)) = (points.first(), points.last())
+          {
+              *start = [first.x, first.y];
+              *end = [last.x, last.y];
+          }
+      }
+  }
+  ```
+
+  `set_shape_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다.
 - `Polygon` / `Freeform` — `shape_path`는 이 두 변형에서 빈 경로(`MoveTo(0,0)`만)를 돌려준다. **`polygon_path`가 폴리곤 점을 받아 실제 경로를 만든다.** 두 함수를 고르는 일은 `shape_layer_path`가 한다.
 
 **추가 테스트**: `shape_layer_path`가 `Polygon`에서 `points`를 쓰고 `points`가 비면 빈 경로를 돌려주는지 확인한다.
@@ -910,6 +931,8 @@ Expected: 컴파일 실패
 이름은 기존 래스터 이름 규칙(project.rs:1193)을 따른다: `format!("{} {}", 종류 이름, 기존 도형 수 + 1)`. 종류 이름은 `Rectangle`/`Ellipse`/`Line`/`Polygon`/`Freeform`.
 
 `set_shape_style`은 `set_typography`(project.rs:907)를 따른다. `set_shape_geometries`는 `set_geometries`(project.rs:1104)를 따르되 `SceneTextLayout` 대신 `SceneShapeLayer.angle_degrees`를 갱신한다.
+
+**`set_shape_geometries`는 `Line`의 `start`/`end`를 폴리곤에서 다시 계산해야 한다.** 모든 변형 경로는 폴리곤만 갱신하는데 `line_path`는 `start`/`end`로 그리므로, 재계산하지 않으면 선을 드래그해도 그려지는 선이 제자리에 남고 `element_frame`(폴리곤을 읽는다)이 선에서 분리된다. Task 3이 넣은 `ShapeGeometry::resync_with_polygon(&mut self, points: &[Point])`를 `edit.set(element, &geometry)` 직전에 호출한다 — 첫 점이 `start`, 마지막 점이 `end`다. 이 호출을 검증하는 테스트를 Step 1에 추가한다: 선 폴리곤을 평행이동한 뒤 컴포넌트의 `start`/`end`가 따라 움직였는지 확인한다.
 
 세 메서드 모두 `Origin::User`로 승격하고 `promote_entity_to_user`를 호출한다.
 
