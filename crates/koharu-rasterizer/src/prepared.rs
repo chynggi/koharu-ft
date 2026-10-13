@@ -697,7 +697,9 @@ pub struct PreparedPath {
 }
 
 impl PreparedPath {
-    fn validate(&self) -> Result<()> {
+    /// Public because the renderer builds prepared paths and must be able to
+    /// check that what it produced is drawable before handing it to a frame.
+    pub fn validate(&self) -> Result<()> {
         finite_affine(self.transform, "path transform")?;
         if self.elements.is_empty() {
             return Err(Error::invalid("prepared path is empty"));

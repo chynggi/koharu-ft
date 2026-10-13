@@ -11,6 +11,9 @@ mod renderer;
 mod script;
 mod segment;
 mod shape;
+// Public because Task 7 rasterizes shapes from `koharu-app` through
+// `koharu_renderer::shape_renderer::{shape_frame, shape_layer_path}`.
+pub mod shape_renderer;
 mod text_renderer;
 mod types;
 
