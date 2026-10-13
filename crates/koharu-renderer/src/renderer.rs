@@ -11,10 +11,10 @@ use futures::future::try_join_all;
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_scene::{
     Asset, AssetRole, BlobId, Change, Component, ComponentOwner, EntityChange, EntityId, FitsTo,
-    FlowsIn, Geometry, Group, OcrAnalysis, Origin, Page, Presents, RasterLayer, RasterLayerKind,
-    RecognizedFrom, Region, RelationChange, RelationId, RelationSpec, Revision, Snapshot,
-    TextAlignment, TextDirection, TextLayout as SceneTextLayout, TextLayoutKind, Translation,
-    Typography, Visibility,
+    FlowsIn, Geometry, Group, OcrAnalysis, Origin, Page, Point, Presents, RasterLayer,
+    RasterLayerKind, RecognizedFrom, Region, RelationChange, RelationId, RelationSpec, Revision,
+    ShapeLayer, Snapshot, TextAlignment, TextDirection, TextLayout as SceneTextLayout,
+    TextLayoutKind, Translation, Typography, Visibility,
 };
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -33,15 +33,16 @@ use vello::{
 use crate::{
     Error, FontFamily, FontStyle, Frame, ImageKind, ImageMetadata, Layer, LayerKind, Presentation,
     RasterImage, RenderBounds, RenderDependency, RenderDiagnostic, Result, RetentionStats,
-    TextAlign, TextMetadata, TypesettingConfig, WritingMode,
+    ShapeMetadata, TextAlign, TextMetadata, TypesettingConfig, WritingMode,
     bubble::{GeometryFrame, LayoutBox, contour, flow_cells, geometry_bounds, geometry_frame},
     fonts::{FontPreview, FontRequest, Fonts},
     frame::{
         FrameData, ImageNodeDescriptor, LayerData, LocalTextMetadata, NodeDescriptor, RetainedNode,
-        prepare_frame,
+        ShapeNodeDescriptor, prepare_frame,
     },
     images::{DecodedImage, ImageCache, decode},
     script::{is_chinese_or_japanese_text, shaping_direction_for_text},
+    shape_renderer,
     text_renderer::{StrokeOptions, TextNodeDescriptor, TextRenderer},
 };
 
@@ -291,7 +292,7 @@ impl Renderer {
             .iter()
             .filter_map(|(_, descriptor)| match descriptor {
                 NodeDescriptor::Image(image) => Some(image.blob),
-                NodeDescriptor::Text(_) => None,
+                NodeDescriptor::Text(_) | NodeDescriptor::Shape(_) => None,
             })
             .collect::<BTreeSet<_>>();
         let images = Arc::new(self.load_images(snapshot, image_ids).await?);
@@ -474,6 +475,7 @@ enum DraftMetadata {
         writing_mode: WritingMode,
         angle_degrees: f32,
     },
+    Shape(crate::ShapeMetadata),
 }
 
 struct CompiledPage {
@@ -684,6 +686,17 @@ impl Traversal<'_> {
                 self.dependencies.extend(common);
                 continue;
             }
+            if self.snapshot.component::<ShapeLayer>(entity)?.is_some() {
+                common.insert(component_dependency::<ShapeLayer>(entity));
+                common.insert(component_dependency::<Geometry>(entity));
+                if let Some(draft) =
+                    self.shape_draft(entity, presentation, Arc::from(ancestry), &mut common)?
+                {
+                    self.layers.push(draft);
+                }
+                self.dependencies.extend(common);
+                continue;
+            }
             common.insert(component_dependency::<Geometry>(entity));
             common.insert(RenderDependency::Component {
                 entity,
@@ -838,6 +851,82 @@ impl Traversal<'_> {
                 writing_mode,
                 angle_degrees: frame.angle_degrees,
             },
+            dependencies: dependencies.iter().cloned().collect(),
+        }))
+    }
+
+    /// Builds the layer draft for a `ShapeLayer` entity.
+    ///
+    /// The polygon points live in the entity's `Geometry` component and the
+    /// drawable parameters in `ShapeLayer`, so both are read here and the
+    /// points are copied into the descriptor for `build_node`.
+    ///
+    /// A shape whose `rasterized` flag is set draws from its raster asset
+    /// instead of its parameters (spec "렌더링 우선순위"). This is the only
+    /// place that can decide that, because it is the only one holding the
+    /// snapshot; `prepare_frame` later sees just the attached image and treats
+    /// it as authoritative. When the asset is absent the vector descriptor is
+    /// built instead, so a rasterized shape still draws.
+    fn shape_draft(
+        &self,
+        entity: EntityId,
+        presentation: Presentation,
+        ancestry: Arc<[EntityId]>,
+        dependencies: &mut BTreeSet<RenderDependency>,
+    ) -> Result<Option<LayerDraft>> {
+        let Some(shape) = self.snapshot.component::<ShapeLayer>(entity)? else {
+            return Ok(None);
+        };
+        let Some(geometry) = self.snapshot.component::<Geometry>(entity)? else {
+            return Ok(None);
+        };
+        // A shape cannot be measured without a usable frame; skipping it here
+        // keeps `placement` and `bounds` meaningful downstream.
+        let Some(frame) = geometry_frame(&geometry, shape.angle_degrees) else {
+            return Ok(None);
+        };
+        if shape.rasterized
+            && let Some(asset) = self.snapshot.asset(entity, self.source_role)?
+        {
+            dependencies.insert(RenderDependency::Component {
+                entity,
+                kind: ASSETS_KIND.to_owned(),
+            });
+            return Ok(Some(image_draft(
+                entity,
+                geometry,
+                ImageNodeDescriptor::from_asset(asset, None),
+                ImageMetadata {
+                    name: Some(shape.name),
+                    kind: ImageKind::Paint,
+                },
+                presentation,
+                ancestry,
+                dependencies,
+            )?));
+        }
+        let polygon = geometry
+            .points
+            .iter()
+            .map(|point| (point.x, point.y))
+            .collect();
+        Ok(Some(LayerDraft {
+            entity,
+            geometry,
+            frame,
+            presentation,
+            ancestry,
+            descriptor: NodeDescriptor::Shape(Box::new(ShapeNodeDescriptor {
+                geometry: shape.geometry.clone(),
+                style: shape.style.clone(),
+                angle_degrees: shape.angle_degrees,
+                polygon,
+            })),
+            metadata: DraftMetadata::Shape(ShapeMetadata {
+                geometry: shape.geometry,
+                style: shape.style,
+                angle_degrees: shape.angle_degrees,
+            }),
             dependencies: dependencies.iter().cloned().collect(),
         }))
     }
@@ -1177,6 +1266,70 @@ fn build_node(
                 diagnostics: rendered.diagnostics.into(),
             })
         }
+        NodeDescriptor::Shape(shape) => {
+            // A polygon needs three points to bound any area. Fewer than three
+            // yields an empty scene with a warning rather than a panic, so a
+            // degenerate shape is skipped instead of aborting the frame.
+            if shape.polygon.len() < 3 {
+                tracing::warn!("shape layer has fewer than three polygon points; skipping it");
+                return Ok(RetainedNode {
+                    descriptor,
+                    scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                    resources: Arc::from([]),
+                    local_bounds: RenderBounds::default(),
+                    image: None,
+                    text: None,
+                    diagnostics: Arc::from([]),
+                });
+            }
+            let geometry = Geometry {
+                origin: Origin::User,
+                points: shape
+                    .polygon
+                    .iter()
+                    .map(|(x, y)| Point { x: *x, y: *y })
+                    .collect(),
+            };
+            let Some(frame) = shape_renderer::shape_frame(&geometry, shape.angle_degrees) else {
+                tracing::warn!("shape layer has no measurable frame; skipping it");
+                return Ok(RetainedNode {
+                    descriptor,
+                    scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                    resources: Arc::from([]),
+                    local_bounds: RenderBounds::default(),
+                    image: None,
+                    text: None,
+                    diagnostics: Arc::from([]),
+                });
+            };
+            // `shape_layer_path` is the single entry point: it delegates
+            // `Polygon`/`Freeform` to the entity's points and every other kind
+            // to the shape's parameters. Calling `shape_path` directly would
+            // silently draw the two point-backed kinds as an empty path.
+            let path = shape_renderer::shape_layer_path(
+                &shape.geometry,
+                &geometry.points,
+                &shape.style,
+                frame,
+            );
+            let scene = koharu_rasterizer::PreparedScene {
+                commands: vec![koharu_rasterizer::PreparedSceneCommand::FillPath(path)],
+            };
+            Ok(RetainedNode {
+                descriptor,
+                scene: Arc::new(scene),
+                resources: Arc::from([]),
+                local_bounds: RenderBounds {
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height,
+                },
+                image: None,
+                text: None,
+                diagnostics: Arc::from([]),
+            })
+        }
     }
 }
 
@@ -1216,6 +1369,7 @@ fn assemble_frame(
                     angle_degrees,
                 })
             }
+            DraftMetadata::Shape(metadata) => LayerKind::Shape(metadata),
         };
         diagnostics.extend(
             node.diagnostics
@@ -1287,6 +1441,10 @@ fn placement(draft: &LayerDraft, node: &RetainedNode) -> Affine {
                     -f64::from(frame.height * 0.5),
                 ))
         }
+        // A shape's prepared path already places and rotates its own frame in
+        // page coordinates (`shape_renderer::transform`), so an outer placement
+        // would apply the frame twice.
+        NodeDescriptor::Shape(_) => Affine::IDENTITY,
     }
 }
 

@@ -445,6 +445,11 @@ impl PreparedLayer {
             (LayerKind::Text, PreparedContent::Vector(scene)) => {
                 scene.validate(resources, referenced)?;
             }
+            // A shape's content is a vector scene exactly like text's: the
+            // renderer draws the prepared path the shape parameters produce.
+            (LayerKind::Shape, PreparedContent::Vector(scene)) => {
+                scene.validate(resources, referenced)?;
+            }
             _ => {
                 return Err(Error::invalid(
                     "prepared layer kind and content do not match",
@@ -459,6 +464,7 @@ impl PreparedLayer {
 pub enum LayerKind {
     Raster,
     Text,
+    Shape,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

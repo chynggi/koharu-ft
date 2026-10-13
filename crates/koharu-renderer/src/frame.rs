@@ -322,6 +322,19 @@ pub struct Presentation {
 pub enum LayerKind {
     Image(ImageMetadata),
     Text(TextMetadata),
+    Shape(ShapeMetadata),
+}
+
+/// A shape layer's parameters plus the angle the layer was authored at.
+///
+/// The angle is copied from `ShapeLayer` at prepare time because the element
+/// frame accessor receives a [`Layer`], not a snapshot, so it cannot read the
+/// scene component; the frame it restores must be the authored one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeMetadata {
+    pub geometry: koharu_scene::ShapeGeometry,
+    pub style: koharu_scene::ShapeStyle,
+    pub angle_degrees: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -442,6 +455,21 @@ impl From<crate::bubble::LayoutBox> for RenderBounds {
 pub(crate) enum NodeDescriptor {
     Image(ImageNodeDescriptor),
     Text(Box<crate::text_renderer::TextNodeDescriptor>),
+    Shape(Box<ShapeNodeDescriptor>),
+}
+
+/// Everything `build_node` needs to draw a shape: its parameters, its style,
+/// its authored angle, and the polygon points `Polygon`/`Freeform` draw from.
+///
+/// The points live in the entity's `Geometry` component rather than in
+/// `ShapeGeometry`, so they must be carried here for `build_node` to reach
+/// them; they also make the descriptor the cache key for polygon edits.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ShapeNodeDescriptor {
+    pub(crate) geometry: koharu_scene::ShapeGeometry,
+    pub(crate) style: koharu_scene::ShapeStyle,
+    pub(crate) angle_degrees: Option<f32>,
+    pub(crate) polygon: Vec<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -484,27 +512,45 @@ pub(crate) fn prepare_frame(
     let mut prepared_layers = Vec::with_capacity(layers.len());
     for layer in layers {
         let (kind, content) = if let Some(image) = layer.raster_image() {
+            // Render priority (spec "렌더링 우선순위"): a decoded raster image is
+            // authoritative and the layer's vector content is ignored. This
+            // precedes the kind match so it applies to a rasterized shape too,
+            // which draws its raster asset instead of its parameters. `Layer`
+            // carries no `ShapeLayer`, so `rasterized` itself is not readable
+            // here; the attached image is the observable equivalent, and a
+            // shape whose raster asset is absent falls through to its vector
+            // below rather than disappearing.
             (
                 PreparedLayerKind::Raster,
                 PreparedContent::Raster(prepare_raster_tiles(image, &mut resources)?),
             )
-        } else if matches!(layer.kind(), LayerKind::Text(_)) {
-            for resource in layer.0.node.resources.iter() {
-                if !resources
-                    .iter()
-                    .any(|candidate| candidate.id() == resource.id())
-                {
-                    resources.push(resource.clone());
-                }
-            }
-            (
-                PreparedLayerKind::Text,
-                PreparedContent::Vector(layer.0.node.scene.as_ref().clone()),
-            )
         } else {
-            // Missing raster assets remain in native diagnostics and metadata but
-            // contribute no visual command to the portable frame.
-            continue;
+            match layer.kind() {
+                LayerKind::Text(_) => {
+                    for resource in layer.0.node.resources.iter() {
+                        if !resources
+                            .iter()
+                            .any(|candidate| candidate.id() == resource.id())
+                        {
+                            resources.push(resource.clone());
+                        }
+                    }
+                    (
+                        PreparedLayerKind::Text,
+                        PreparedContent::Vector(layer.0.node.scene.as_ref().clone()),
+                    )
+                }
+                // A shape shares the vector content path with text; only the
+                // layer kind differs. The scene was built from the shape's
+                // parameters at compile time.
+                LayerKind::Shape(_) => (
+                    PreparedLayerKind::Shape,
+                    PreparedContent::Vector(layer.0.node.scene.as_ref().clone()),
+                ),
+                // A shape's raster branch is the `raster_image` case above; a
+                // plain image without a decoded asset contributes no command.
+                LayerKind::Image(_) => continue,
+            }
         };
         prepared_layers.push(PreparedLayer {
             id: layer_id(layer.entity()),
@@ -600,20 +646,36 @@ fn prepared_bounds(bounds: RenderBounds) -> PreparedBounds {
 }
 
 fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
-    let LayerKind::Text(text) = layer.kind() else {
-        return None;
-    };
-    let bounds = text.rendered_bounds;
-    if bounds.width > 0.0 && bounds.height > 0.0 {
-        return Some(PreparedElementFrame {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-            angle_degrees: text.angle_degrees,
-        });
+    match layer.kind() {
+        LayerKind::Text(text) => {
+            let bounds = text.rendered_bounds;
+            if bounds.width > 0.0 && bounds.height > 0.0 {
+                return Some(PreparedElementFrame {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height,
+                    angle_degrees: text.angle_degrees,
+                });
+            }
+            geometry_frame(layer.geometry())
+        }
+        // A shape must pass its authored angle in, or a rotated non-circular
+        // ellipse collapses to its axis-aligned box instead of keeping its true
+        // size. `shape_frame` encapsulates that un-rotation (Task 3).
+        LayerKind::Shape(shape) => {
+            crate::shape_renderer::shape_frame(layer.geometry(), shape.angle_degrees).map(|frame| {
+                PreparedElementFrame {
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height,
+                    angle_degrees: frame.angle_degrees,
+                }
+            })
+        }
+        LayerKind::Image(_) => None,
     }
-    geometry_frame(layer.geometry())
 }
 
 fn geometry_frame(geometry: &Geometry) -> Option<PreparedElementFrame> {
@@ -705,5 +767,173 @@ mod tests {
         };
         assert_eq!((*width, *height), (PREPARED_RASTER_TILE_DIMENSION + 1, 1));
         assert_eq!(bytes.as_ref(), b"encoded-wide-image");
+    }
+
+    #[test]
+    fn a_rotated_shape_frame_preserves_its_dimensions() {
+        // 45도 회전한 비원형 타원(rx=50, ry=25)을 32점 폴리곤으로 샘플링한다.
+        //
+        // 원을 쓰면 안 된다: 원의 축 정렬 경계 상자는 회전에 불변이라
+        // 각도를 주든 안 주든 지름과 같다. 비원형 타원이라야 회전 시
+        // 축 정렬 상자가 100x50 -> 79.06x79.06 으로 바뀌므로 각도의
+        // 필요성이 실제로 고정된다.
+        let (rx, ry) = (50.0_f64, 25.0_f64);
+        let (sin, cos) = (45.0_f64).to_radians().sin_cos();
+        let points = (0..32)
+            .map(|index| {
+                let theta = std::f64::consts::TAU * f64::from(index) / 32.0;
+                let x = rx * theta.cos();
+                let y = ry * theta.sin();
+                koharu_scene::Point {
+                    x: 100.0 + x * cos - y * sin,
+                    y: 100.0 + x * sin + y * cos,
+                }
+            })
+            .collect::<Vec<_>>();
+        let geometry = koharu_scene::Geometry {
+            origin: koharu_scene::Origin::User,
+            points,
+        };
+
+        // 각도를 주면 작성 축에서 재므로 참 크기(2rx x 2ry)가 나온다.
+        let frame = crate::shape_renderer::shape_frame(&geometry, Some(45.0)).unwrap();
+        assert!(
+            (frame.width - 100.0).abs() < 1.0,
+            "width was {}",
+            frame.width
+        );
+        assert!(
+            (frame.height - 50.0).abs() < 1.0,
+            "height was {}",
+            frame.height
+        );
+
+        // 각도를 주지 않으면 축 정렬 상자가 되어 100x50 이 79.06x79.06 으로
+        // 바뀐다 — 정사각형이 되므로 폭은 줄고 높이는 늘어난다.
+        let without = crate::shape_renderer::shape_frame(&geometry, None).unwrap();
+        assert!(
+            (without.width - 79.06).abs() < 0.5,
+            "width was {}",
+            without.width
+        );
+        assert!(
+            (without.height - 79.06).abs() < 0.5,
+            "height was {}",
+            without.height
+        );
+        assert!(without.height > 60.0, "height was {}", without.height);
+    }
+
+    #[test]
+    fn a_shape_without_an_angle_falls_back_to_axis_aligned_bounds() {
+        let geometry = koharu_scene::Geometry {
+            origin: koharu_scene::Origin::User,
+            points: vec![
+                koharu_scene::Point { x: 10.0, y: 20.0 },
+                koharu_scene::Point { x: 60.0, y: 20.0 },
+                koharu_scene::Point { x: 60.0, y: 50.0 },
+            ],
+        };
+        let frame = crate::shape_renderer::shape_frame(&geometry, None).unwrap();
+        assert!((frame.width - 50.0).abs() < 1e-6);
+        assert!((frame.height - 30.0).abs() < 1e-6);
+        assert!((frame.angle_degrees - 0.0).abs() < 1e-6);
+    }
+
+    /// Wraps `geometry` in the minimum `Layer` `element_frame` reads.
+    fn shape_layer(geometry: Geometry, angle_degrees: Option<f32>) -> Layer {
+        Layer(Arc::new(LayerData {
+            entity: EntityId::new(),
+            geometry,
+            bounds: RenderBounds::default(),
+            presentation: Presentation {
+                visible: true,
+                opacity: 1.0,
+            },
+            ancestry: Arc::from([]),
+            kind: LayerKind::Shape(ShapeMetadata {
+                geometry: koharu_scene::ShapeGeometry::Ellipse,
+                style: koharu_scene::ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                angle_degrees,
+            }),
+            placement: Affine::IDENTITY,
+            node: Arc::new(RetainedNode {
+                descriptor: NodeDescriptor::Shape(Box::new(ShapeNodeDescriptor {
+                    geometry: koharu_scene::ShapeGeometry::Ellipse,
+                    style: koharu_scene::ShapeStyle {
+                        fill: None,
+                        stroke: None,
+                    },
+                    angle_degrees,
+                    polygon: Vec::new(),
+                })),
+                scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                resources: Arc::from([]),
+                local_bounds: RenderBounds::default(),
+                image: None,
+                text: None,
+                diagnostics: Arc::from([]),
+            }),
+            dependencies: Arc::from([]),
+        }))
+    }
+
+    #[test]
+    fn element_frame_restores_a_rotated_shape_from_its_recorded_angle() {
+        // Same 45°-rotated rx=50/ry=25 ellipse as above, but through the
+        // renderer's own layer path. This is the regression the task exists
+        // for: `element_frame` used to return `None` for anything but text, so
+        // a shape could not be selected or dragged.
+        let (rx, ry) = (50.0_f64, 25.0_f64);
+        let (sin, cos) = (45.0_f64).to_radians().sin_cos();
+        let points = (0..32)
+            .map(|index| {
+                let theta = std::f64::consts::TAU * f64::from(index) / 32.0;
+                let x = rx * theta.cos();
+                let y = ry * theta.sin();
+                koharu_scene::Point {
+                    x: 100.0 + x * cos - y * sin,
+                    y: 100.0 + x * sin + y * cos,
+                }
+            })
+            .collect();
+        let geometry = Geometry {
+            origin: koharu_scene::Origin::User,
+            points,
+        };
+
+        // The recorded angle is what preserves the authored 100x50 extent; with
+        // it dropped the frame collapses to the axis-aligned 79.06 square.
+        let frame = shape_layer(geometry.clone(), Some(45.0))
+            .element_frame()
+            .expect("a shape layer must restore its frame");
+        assert!(
+            (frame.width - 100.0).abs() < 1.0,
+            "width was {}",
+            frame.width
+        );
+        assert!(
+            (frame.height - 50.0).abs() < 1.0,
+            "height was {}",
+            frame.height
+        );
+        assert!((frame.angle_degrees - 45.0).abs() < 1e-6);
+
+        let without = shape_layer(geometry, None)
+            .element_frame()
+            .expect("an unrotated shape must still have a frame");
+        assert!(
+            (without.width - 79.06).abs() < 0.5,
+            "width was {}",
+            without.width
+        );
+        assert!(
+            (without.height - 79.06).abs() < 0.5,
+            "height was {}",
+            without.height
+        );
     }
 }
