@@ -492,34 +492,43 @@ fn compile_scene(
                 });
                 run.brush(rgba(prepared.color)).draw(Fill::NonZero, glyphs);
             }
-            PreparedSceneCommand::FillPath(prepared) => {
-                let path = compile_path(prepared);
-                let affine = Affine::new(prepared.transform);
-                if let Some(PreparedFill::Solid { color, rule }) = &prepared.fill {
-                    scene.fill(
-                        match rule {
-                            FillRule::NonZero => Fill::NonZero,
-                            FillRule::EvenOdd => Fill::EvenOdd,
-                        },
-                        affine,
-                        rgba(*color),
-                        None,
-                        &path,
-                    );
-                }
-                if let Some(stroke) = &prepared.stroke {
-                    scene.stroke(
-                        &compile_stroke(stroke),
-                        affine,
-                        rgba(stroke.color),
-                        None,
-                        &path,
-                    );
-                }
-            }
+            PreparedSceneCommand::FillPath(prepared) => prepared.append_to(&mut scene),
         }
     }
     Ok(scene)
+}
+
+impl PreparedPath {
+    /// Draws this path into a Vello scene.
+    ///
+    /// Committed frames and the browser's live shape preview both draw through
+    /// here, so a shape cannot look one way while it is being dragged and
+    /// another way once it is committed.
+    pub fn append_to(&self, scene: &mut Scene) {
+        let path = compile_path(self);
+        let affine = Affine::new(self.transform);
+        if let Some(PreparedFill::Solid { color, rule }) = &self.fill {
+            scene.fill(
+                match rule {
+                    FillRule::NonZero => Fill::NonZero,
+                    FillRule::EvenOdd => Fill::EvenOdd,
+                },
+                affine,
+                rgba(*color),
+                None,
+                &path,
+            );
+        }
+        if let Some(stroke) = &self.stroke {
+            scene.stroke(
+                &compile_stroke(stroke),
+                affine,
+                rgba(stroke.color),
+                None,
+                &path,
+            );
+        }
+    }
 }
 
 fn compile_path(prepared: &PreparedPath) -> BezPath {
@@ -563,7 +572,168 @@ fn rgba([r, g, b, a]: [u8; 4]) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Point, PreparedFrame, PreparedLayer, PreparedRaster, PreparedRasterTile};
+    use crate::{
+        Point, PreparedFrame, PreparedLayer, PreparedRaster, PreparedRasterTile, PreparedScene,
+        PreparedSceneCommand,
+    };
+
+    /// Paths whose transform, fill, and stroke are all non-trivial, so a preview
+    /// that drops or reorders any of them changes the encoding.
+    fn shape_path() -> PreparedPath {
+        PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 30.0, 40.0],
+            elements: vec![
+                PathElement::MoveTo([1.0, 2.0]),
+                PathElement::LineTo([9.0, 2.0]),
+                PathElement::QuadTo([11.0, 6.0, 9.0, 10.0]),
+                PathElement::CurveTo([7.0, 14.0, 3.0, 14.0, 1.0, 10.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Solid {
+                color: [10, 20, 30, 255],
+                rule: FillRule::EvenOdd,
+            }),
+            stroke: Some(PreparedStroke {
+                color: [1, 2, 3, 128],
+                width: 3.0,
+                dash: Some(vec![5.0, 2.0]),
+                cap: PreparedLineCap::Square,
+                join: PreparedLineJoin::Bevel,
+            }),
+        }
+    }
+
+    fn shape_layer_frame(path: PreparedPath) -> Frame {
+        let bundle = PreparedFrameBundle {
+            frame: PreparedFrame {
+                revision: Revision::new(1),
+                page: LayerId::from_bytes([7; 16]),
+                width: 100,
+                height: 100,
+                origin: (0, 0),
+                normalization: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                layers: vec![PreparedLayer {
+                    id: LayerId::from_bytes([3; 16]),
+                    geometry: vec![
+                        Point { x: 0.0, y: 0.0 },
+                        Point { x: 1.0, y: 0.0 },
+                        Point { x: 0.0, y: 1.0 },
+                    ],
+                    bounds: Bounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                    local_bounds: Bounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                    presentation: Presentation {
+                        visible: true,
+                        opacity: 1.0,
+                    },
+                    kind: LayerKind::Shape,
+                    placement: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                    content: PreparedContent::Vector(PreparedScene {
+                        commands: vec![PreparedSceneCommand::FillPath(path)],
+                    }),
+                    element_frame: None,
+                }],
+            },
+            resources: Vec::new(),
+        };
+        bundle
+            .into_frame_with_raster_sources(&HashMap::new())
+            .unwrap()
+    }
+
+    /// The browser's live shape preview appends a prepared path straight into a
+    /// scene instead of going through a committed frame. That path must issue
+    /// the same draws the committed frame does, or a shape would change
+    /// appearance when the drag ends.
+    ///
+    /// The expected scene is built with raw Vello calls rather than by reusing
+    /// `append_to`, so dropping the fill, the stroke, or the transform fails
+    /// this test instead of moving both sides together.
+    #[test]
+    fn appending_a_prepared_path_issues_the_same_draws_as_a_committed_frame() {
+        let path = shape_path();
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.quad_to((11.0, 6.0), (9.0, 10.0));
+        bez.curve_to((7.0, 14.0), (3.0, 14.0), (1.0, 10.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::EvenOdd,
+            affine,
+            Color::from_rgba8(10, 20, 30, 255),
+            None,
+            &bez,
+        );
+        expected.stroke(
+            &Stroke::new(3.0)
+                .with_caps(Cap::Square)
+                .with_join(Join::Bevel)
+                .with_dashes(0.0, [5.0, 2.0]),
+            affine,
+            Color::from_rgba8(1, 2, 3, 128),
+            None,
+            &bez,
+        );
+
+        let frame = shape_layer_frame(path);
+        let mut committed = Scene::new();
+        frame.layers()[0].append_vector_with_presentation(
+            &mut committed,
+            None,
+            Presentation {
+                visible: true,
+                opacity: 1.0,
+            },
+        );
+
+        assert_encoding_matches(&preview, &expected);
+        assert_encoding_matches(&committed, &preview);
+    }
+
+    /// Compares the encoded draw streams of two scenes.
+    ///
+    /// `PathTag`/`DrawTag` have no `Debug`, so the tag streams are compared by
+    /// length and the data they index is compared exactly.
+    fn assert_encoding_matches(left: &Scene, right: &Scene) {
+        let left = left.encoding();
+        let right = right.encoding();
+        assert_eq!(left.n_paths, right.n_paths, "path count differs");
+        assert_eq!(
+            left.n_path_segments, right.n_path_segments,
+            "path segment count differs"
+        );
+        assert_eq!(left.n_clips, right.n_clips, "clip count differs");
+        assert_eq!(
+            left.path_tags.len(),
+            right.path_tags.len(),
+            "path tag count differs"
+        );
+        assert_eq!(
+            left.draw_tags.len(),
+            right.draw_tags.len(),
+            "draw tag count differs"
+        );
+        assert_eq!(left.path_data, right.path_data, "path data differs");
+        assert_eq!(left.draw_data, right.draw_data, "draw data differs");
+        assert_eq!(left.transforms, right.transforms, "transforms differ");
+        assert_eq!(left.styles, right.styles, "styles differ");
+    }
 
     #[test]
     fn compiled_frame_preserves_raster_identity_and_metadata() {

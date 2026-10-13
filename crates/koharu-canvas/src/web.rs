@@ -12,8 +12,8 @@ use futures_channel::oneshot;
 use js_sys::{Array, Function, Uint8Array};
 use koharu_rasterizer::{
     CompositionCommand, Frame as PreparedFrame, GpuCompositor, LayerId, LayerKind, PreparedContent,
-    PreparedFrameManifest, PreparedRasterTile, PreparedResource, PreparedResourcePacket,
-    PreparedResourceStore, Presentation, RasterDraw, ResourceId, Revision,
+    PreparedFrameManifest, PreparedPath, PreparedRasterTile, PreparedResource,
+    PreparedResourcePacket, PreparedResourceStore, Presentation, RasterDraw, ResourceId, Revision,
 };
 use serde::{Deserialize, Serialize};
 use vello::{
@@ -131,6 +131,17 @@ enum StrokeCommitDto {
     },
 }
 
+/// The page and revision a previewed shape was drawn against.
+///
+/// The frontend already owns the shape's kind, frame, and style, so the commit
+/// guard is all the preview needs to hand back.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeCommitDto {
+    page: String,
+    revision: u64,
+}
+
 #[derive(Clone, Copy)]
 struct Camera {
     zoom: f64,
@@ -207,6 +218,18 @@ struct StrokeEdit {
     diameter: f32,
     color: [u8; 4],
     points: Vec<Point>,
+    preview: Scene,
+    pending: bool,
+}
+
+/// A shape being drawn or edited, previewed straight from the frontend's path.
+///
+/// The frontend owns per-kind shape geometry and style, so this holds the
+/// compiled preview of the path it hands over and nothing else: no shape kind
+/// or style is recomputed in WASM.
+struct ShapeEdit {
+    page: LayerId,
+    revision: Revision,
     preview: Scene,
     pending: bool,
 }
@@ -470,6 +493,7 @@ struct CanvasState {
     opacity: HashMap<LayerId, f32>,
     transform: Option<TransformEdit>,
     stroke: Option<StrokeEdit>,
+    shape: Option<ShapeEdit>,
     dirty: bool,
     generation: u64,
 }
@@ -491,6 +515,7 @@ impl CanvasState {
             opacity: HashMap::new(),
             transform: None,
             stroke: None,
+            shape: None,
             dirty: true,
             generation: 0,
         }
@@ -690,6 +715,7 @@ impl CanvasState {
         if page_changed {
             self.transform = None;
             self.stroke = None;
+            self.shape = None;
         } else {
             if self.transform.as_ref().is_some_and(|edit| {
                 !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
@@ -700,6 +726,11 @@ impl CanvasState {
                 !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
             }) {
                 self.stroke = None;
+            }
+            if self.shape.as_ref().is_some_and(|edit| {
+                !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
+            }) {
+                self.shape = None;
             }
         }
         self.opacity.clear();
@@ -763,6 +794,7 @@ impl CanvasState {
         self.opacity.clear();
         self.transform = None;
         self.stroke = None;
+        self.shape = None;
         self.dirty = true;
     }
 
@@ -874,6 +906,10 @@ impl CanvasState {
             if opacity < 1.0 {
                 vectors.pop_layer();
             }
+            vectors_pending = true;
+        }
+        if let Some(shape) = self.shape.as_ref() {
+            vectors.append(&shape.preview, None);
             vectors_pending = true;
         }
         flush_vectors(
@@ -1370,7 +1406,10 @@ impl WebCanvas {
             .frame
             .as_ref()
             .ok_or_else(|| js_message("no prepared frame is installed"))?;
-        if browser.canvas.transform.is_some() || browser.canvas.stroke.is_some() {
+        if browser.canvas.transform.is_some()
+            || browser.canvas.stroke.is_some()
+            || browser.canvas.shape.is_some()
+        {
             return Err(js_message("another canvas edit is already active"));
         }
         if requested.is_empty() {
@@ -1392,7 +1431,7 @@ impl WebCanvas {
                 .layer(id)
                 .ok_or_else(|| js_message("transform element is not in the prepared frame"))?;
             let presentation = layer.presentation();
-            if layer.kind() != LayerKind::Text
+            if !matches!(layer.kind(), LayerKind::Text | LayerKind::Shape)
                 || !presentation.visible
                 || presentation.opacity <= 0.0
             {
@@ -1521,7 +1560,10 @@ impl WebCanvas {
         validate_brush(diameter)?;
         let color = rgba(color)?;
         let mut browser = self.browser_mut()?;
-        if browser.canvas.stroke.is_some() || browser.canvas.transform.is_some() {
+        if browser.canvas.stroke.is_some()
+            || browser.canvas.transform.is_some()
+            || browser.canvas.shape.is_some()
+        {
             return Err(js_message("another canvas edit is already active"));
         }
         let frame = browser
@@ -1682,6 +1724,86 @@ impl WebCanvas {
         self.request_render()
     }
 
+    /// Starts previewing a shape the frontend has already turned into a path.
+    ///
+    /// The frontend owns per-kind shape geometry and style, so this only draws
+    /// what it sends; nothing about the shape is recomputed here.
+    #[wasm_bindgen(js_name = beginShape)]
+    pub fn begin_shape(&self, path: JsValue) -> Result<(), JsValue> {
+        let path: PreparedPath = serde_wasm_bindgen::from_value(path).map_err(js_error)?;
+        path.validate().map_err(js_error)?;
+        let mut browser = self.browser_mut()?;
+        if browser.canvas.shape.is_some()
+            || browser.canvas.stroke.is_some()
+            || browser.canvas.transform.is_some()
+        {
+            return Err(js_message("another canvas edit is already active"));
+        }
+        let frame = browser
+            .canvas
+            .frame
+            .as_ref()
+            .ok_or_else(|| js_message("no prepared frame is installed"))?;
+        browser.canvas.shape = Some(ShapeEdit {
+            page: frame.page(),
+            revision: frame.revision(),
+            preview: scene_of(&path),
+            pending: false,
+        });
+        browser.canvas.dirty = true;
+        drop(browser);
+        self.request_render()
+    }
+
+    /// Replaces the previewed shape while the gesture is still live.
+    #[wasm_bindgen(js_name = updateShape)]
+    pub fn update_shape(&self, path: JsValue) -> Result<(), JsValue> {
+        let path: PreparedPath = serde_wasm_bindgen::from_value(path).map_err(js_error)?;
+        path.validate().map_err(js_error)?;
+        let mut browser = self.browser_mut()?;
+        let shape = browser
+            .canvas
+            .shape
+            .as_mut()
+            .ok_or_else(|| js_message("no shape preview is active"))?;
+        if shape.pending {
+            return Err(js_message("shape is waiting for its replacement frame"));
+        }
+        shape.preview = scene_of(&path);
+        browser.canvas.dirty = true;
+        drop(browser);
+        self.request_render()
+    }
+
+    #[wasm_bindgen(js_name = finishShape)]
+    pub fn finish_shape(&self) -> Result<JsValue, JsValue> {
+        let mut browser = self.browser_mut()?;
+        let shape = browser
+            .canvas
+            .shape
+            .as_mut()
+            .ok_or_else(|| js_message("no shape preview is active"))?;
+        if shape.pending {
+            return Err(js_message("shape is already waiting for replacement"));
+        }
+        shape.pending = true;
+        let output = ShapeCommitDto {
+            page: format_layer_id(shape.page),
+            revision: shape.revision.get(),
+        };
+        serde_wasm_bindgen::to_value(&output).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = cancelShape)]
+    pub fn cancel_shape(&self) -> Result<(), JsValue> {
+        let mut browser = self.browser_mut()?;
+        if browser.canvas.shape.take().is_some() {
+            browser.canvas.dirty = true;
+        }
+        drop(browser);
+        self.request_render()
+    }
+
     #[wasm_bindgen(js_name = sampleColor)]
     pub async fn sample_color(&self, x: f64, y: f64) -> Result<Uint8Array, JsValue> {
         let (send, receive) = oneshot::channel();
@@ -1802,6 +1924,12 @@ fn page_clip(camera: Camera, page: (u32, u32), viewport: PhysicalSize) -> [u32; 
         right.saturating_sub(left),
         bottom.saturating_sub(top),
     ]
+}
+
+fn scene_of(path: &PreparedPath) -> Scene {
+    let mut scene = Scene::new();
+    path.append_to(&mut scene);
+    scene
 }
 
 fn draw_dot(scene: &mut Scene, point: Point, diameter: f32, color: [u8; 4]) {
