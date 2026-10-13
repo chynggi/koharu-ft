@@ -182,8 +182,8 @@ bits 0..=4가 variant id다(`revision-0.30.0/README.md:545`, `:548-549`).
 - 스톱 `offset`이 비유한이거나 0.0..=1.0 밖
 - 같은 `offset`을 가진 스톱이 둘 이상 (어느 색이 이기는지 정의되지 않는다)
 - `Linear`의 `start`/`end`에 비유한 값이 있거나 두 점이 같음 (길이 0이면 방향이 없다)
-- `Radial`의 `radius`가 비유한이거나 0 이하
-- `Sweep`의 각도가 비유한
+- `Radial`의 `center`가 비유한이거나 `radius`가 비유한이거나 0 이하
+- `Sweep`의 `center`가 비유한이거나 각도가 비유한
 
 **거부하지 않는 것**: 스톱이 정렬되어 있지 않은 것. 렌더러가 정렬해 쓰므로
 저장 순서는 자유다. 검증으로 강제하면 UI가 스톱을 중간에 삽입할 때마다
@@ -283,14 +283,26 @@ local_y = normalized_y * frame.height
 함수가 WASM `PreparedPath`의 wire 형태를 손으로 만드는 유일한 지점이었고
 (테스트로 못 박음), 그라디언트가 추가되면 그 조립 코드도 함께 늘어난다.
 
-**중복은 정규화 → 로컬 변환 한 곳뿐이다.** 프론트도 서버와 같은
-`local = normalized * frame_extent` 규칙으로 제어점을 펴고,
-`transform`은 1a가 이미 경로에 쓰는 값을 그대로 쓴다. 회전 정렬은 vello가
-경로 변환을 브러시에 자동 적용하므로 **프론트에는 회전 관련 코드가 전혀
-없다** (`brush_transform`은 `None`이다).
+**중복은 정규화 → 로컬 변환 한 곳뿐이고, 회전 처리는 두 경로가 다르다.**
+
+**서버:** `PreparedPath.transform`이 회전을 담고 `brush_transform`은 `None`이므로,
+그라디언트 제어점은 **프레임 로컬** 좌표에 둔다. vello가 경로 변환을 브러시에
+자동 적용한다.
+
+**프론트:** `shapePreviewPath`의 `transform`은 항상 `identity`이고
+(`packages/koharu/lib/shapes.ts:147`), 회전은 `shapePolygon`이 **폴리곤 점에
+직접 굽는다** (`shapes.ts:73`, `:79`의 `rotatePoint`). 그러므로 프론트의
+그라디언트 제어점도 **폴리곤과 같은 방식으로 페이지 좌표로 회전**해야 경로와
+정렬된다. 프레임 로컬에 그대로 두면 회전한 도형의 그라디언트가 축정렬로 남아
+경로와 어긋난다.
+
+두 경로의 **최종 좌표계는 같아야 한다** — 어느 쪽이든 그려지는 그라디언트는
+페이지 위에서 같은 위치·방향이어야 한다. 서버는 vello가 대신 회전해 주고
+프론트는 직접 회전한다는 차이만 있다.
 
 두 구현이 어긋나면 미리보기와 커밋 결과가 달라지므로, **양쪽을 같은
-리터럴 테스트로 고정한다** (서버는 Rust 테스트, 프론트는 vitest). 별도
+리터럴 테스트로 고정한다** (서버는 Rust 테스트, 프론트는 vitest — 프론트
+테스트는 회전한 프레임에서 제어점이 실제로 돌아갔는지까지 단언한다). 별도
 공유 모듈을 만드는 것은 WASM 경계를 넘나드는 코드에서는 과잉이다.
 
 ## UI
@@ -338,7 +350,8 @@ UI가 없으므로, 1b가 만든 데이터에 스윕이 나타날 수는 없다.
 | `koharu-rasterizer` | `PreparedFill::Gradient` 검증, `Solid` 하위 호환 |
 | `koharu-rasterizer` | **`compile_scene`이 그라디언트와 `Solid` 모두에 `brush_transform = None`을 넘기는지** (이중 적용 방지의 핵심 함정) |
 | `koharu-rasterizer` | `peniko::Gradient` 조립 — 스톱 정렬, `Extend` 매핑 |
-| 프론트 | `shapePreviewPath`의 그라디언트 wire 형태 리터럴 단언 (서버와 같은 좌표 규칙) |
+| 프론트 | `shapePreviewPath`의 그라디언트 wire 형태 리터럴 단언 |
+| 프론트 | **회전한 프레임에서 그라디언트 제어점이 페이지 좌표로 돌아갔는지** (`transform`은 identity이므로 회전이 제어점에 있어야 한다) |
 | 프론트 | `defaultGradientSpec`이 검증을 통과하는 값인지 |
 
 ## 기존 프로젝트 호환

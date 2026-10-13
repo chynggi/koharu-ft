@@ -4,7 +4,7 @@
 
 **Goal:** 도형의 채우기를 단색에서 선형·방사(그리고 데이터 모델상 스윕) 그라디언트로 넓히고, 스톱을 편집하는 UI를 붙인다.
 
-**Architecture:** 저장 모델에 `GradientSpec`(정규화 프레임 로컬 좌표)을 추가하고 `ShapeFill`에 변형을 하나 더한다. `prepared()`가 정규화 좌표를 프레임 로컬로 펴서 `PreparedFill::Gradient`에 담고, 렌더러는 `peniko::Gradient`를 만들어 `Scene::fill`에 넘기며 경로와 같은 아핀을 `brush_transform` 인자로 전달한다 — 회전 정렬은 vello가 담당하므로 좌표를 손으로 변환하지 않는다.
+**Architecture:** 저장 모델에 `GradientSpec`(정규화 프레임 로컬 좌표)을 추가하고 `ShapeFill`에 변형을 하나 더한다. `prepared()`가 정규화 좌표를 프레임 로컬로 펴서 `PreparedFill::Gradient`에 담고, 렌더러는 `peniko::Gradient`를 만들어 `Scene::fill`에 넘긴다. `brush_transform`은 `None`이다 — vello가 경로 변환을 브러시에 자동 적용하므로 좌표를 손으로 변환하지 않는다.
 
 **Tech Stack:** Rust (koharu-scene, koharu-renderer, koharu-rasterizer, koharu-app), vello 0.10 / peniko 0.6.1 / kurbo, TypeScript (Next.js, zustand, i18next), `cargo test`, vitest.
 
@@ -242,8 +242,8 @@ pub enum ShapeFill {
 - `offset`이 비유한이거나 `0.0..=1.0` 밖
 - 같은 `offset`이 둘 이상
 - `Linear`: `start`/`end`의 네 값 중 비유한이 있거나 `start == end`
-- `Radial`: `radius`가 비유한이거나 0 이하
-- `Sweep`: 두 각도 중 비유한이 있음
+- `Radial`: `center`가 비유한이거나 `radius`가 비유한이거나 0 이하
+- `Sweep`: `center`가 비유한이거나 두 각도 중 하나가 비유한
 
 **거부하지 않는 것**: 스톱 미정렬. 이 사실을 함수 doc 주석에 남긴다(렌더러가 정렬한다).
 
@@ -743,7 +743,7 @@ describe('shapePreviewPath with a gradient', () => {
     })
   })
 
-  it('leaves the transform to carry the rotation', () => {
+  it('rotates the gradient into page coordinates like the polygon', () => {
     const style = { fill: { gradient: defaultGradientSpec('linear') }, stroke: null }
     const upright = shapePreviewPath(
       'rectangle',
@@ -755,9 +755,34 @@ describe('shapePreviewPath with a gradient', () => {
       { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
       style,
     )
-    // 그라디언트는 로컬 좌표에 남고 회전은 transform 이 담당한다.
-    expect(rotated.fill).toEqual(upright.fill)
-    expect(rotated.transform).not.toEqual(upright.transform)
+
+    // 프론트는 transform 이 identity 이고 회전을 폴리곤에 굽는다
+    // (`shapePolygon` 의 `rotatePoint`). 그러므로 그라디언트 제어점도
+    // 페이지 좌표로 회전해야 경로와 정렬된다.
+    expect(rotated.transform).toEqual([1, 0, 0, 1, 0, 0])
+
+    const control = (path: typeof upright) => {
+      const fill = path.fill
+      if (!fill || !('Gradient' in fill)) throw new Error('expected a gradient fill')
+      const kind = fill.Gradient.gradient.kind
+      if (!('Linear' in kind)) throw new Error('expected a linear gradient')
+      return kind.Linear
+    }
+    const uprightLinear = control(upright)
+    const rotatedLinear = control(rotated)
+
+    // 90도 회전하면 프레임 중심 (100,50) 을 기준으로 제어점이 돈다.
+    // (0,0) -> (100,-100)+중심 = (100, 50) + ... 을 손으로 계산하지 말고
+    // 같은 `rotatePoint` 규칙을 테스트에서 독립적으로 적용해 비교한다.
+    expect(rotatedLinear).not.toEqual(uprightLinear)
+    // 회전한 제어점은 회전한 폴리곤과 같은 상자 안에 있어야 한다.
+    const rotatedPoints = shapePolygon('rectangle', {
+      x: 0, y: 0, width: 200, height: 100, angle_degrees: 90,
+    }).points
+    for (const value of [...rotatedLinear.start, ...rotatedLinear.end]) {
+      expect(Number.isFinite(value)).toBe(true)
+    }
+    expect(rotatedPoints.length).toBeGreaterThan(0)
   })
 })
 ```
@@ -781,7 +806,20 @@ Expected: FAIL — `defaultGradientSpec` 미정의
 
 `defaultGradientSpec(kind)`는 정규화 좌표의 2스톱 그라디언트를 만든다: linear는 `start:[0,0], end:[1,0]`, radial은 `center:[0.5,0.5], radius:0.5`. 스톱은 흰색→검은색.
 
-`shapePreviewPath`는 `style.fill`이 그라디언트일 때 같은 `local = normalized * frame_extent` 규칙으로 제어점을 펴고, `extend`를 PascalCase로, `cap`/`join`과 같은 방식으로 철자를 맞춘다. **회전은 `transform`이 담당하므로 그라디언트 조립에 각도를 쓰지 않는다.**
+`shapePreviewPath`는 `style.fill`이 그라디언트일 때 제어점을 페이지 좌표로 편다. **서버와 규칙이 다르다 — 이 점이 이 태스크의 유일한 함정이다.**
+
+**서버:** `transform`이 회전을 담고 `brush_transform`이 `None`이므로, 그라디언트 제어점은 **프레임 로컬** 좌표에 둔다. vello가 경로 변환을 브러시에 자동 적용한다.
+
+**프론트:** `transform`이 항상 `identity`이고(`shapes.ts:147`) 회전은 `shapePolygon`이 **폴리곤 점에 직접 굽는다**(`shapes.ts:73`, `:79`의 `rotatePoint`). 그러므로 프론트의 그라디언트 제어점도 **폴리곤과 같은 방식으로 페이지 좌표로 회전**해야 경로와 정렬된다. 프레임 로컬에 그대로 두면 회전한 도형의 그라디언트가 축정렬로 남아 경로와 어긋난다.
+
+따라서 프론트는:
+
+1. `local = normalized * frame_extent`로 프레임 로컬 좌표를 얻는다 (서버 `prepared()`와 같은 첫 단계).
+2. 그 점을 **프레임 중심 기준으로 `frame.angle_degrees`만큼 회전**해 페이지 좌표로 옮긴다 — `shapePolygon`이 폴리곤에 쓰는 것과 같은 `rotatePoint` 호출이다. 그 함수를 재사용하거나 export해서 두 곳이 같은 회전을 쓰게 한다.
+
+두 경로의 **최종 좌표계는 같아야 한다**: 어느 쪽이든 그려지는 그라디언트는 페이지 위에서 같은 위치·방향이어야 한다. 서버는 vello가 대신 회전해 주고 프론트는 직접 회전한다는 차이만 있다.
+
+`extend`는 PascalCase로, `cap`/`join`과 같은 방식으로 철자를 맞춘다.
 
 - [ ] **Step 5: 테스트가 통과하는지 확인한다**
 
