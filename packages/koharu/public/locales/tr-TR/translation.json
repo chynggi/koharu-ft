@@ -683,6 +683,8 @@
     "decreaseBrushSize": "Fırça boyutunu azalt",
     "draw": "Çizim",
     "eraser": "Silgi",
+    "fill": "Dolgu",
+    "fillColor": "Dolgu rengi",
     "increaseBrushSize": "Fırça boyutunu artır",
     "manual_ocr_box": "Elle OCR (dikdörtgen)",
     "manual_ocr_lasso": "Elle OCR (serbest çizim)",

@@ -683,6 +683,8 @@
     "decreaseBrushSize": "ブラシサイズを縮小",
     "draw": "描画",
     "eraser": "消しゴム",
+    "fill": "塗りつぶし",
+    "fillColor": "塗りつぶしの色",
     "increaseBrushSize": "ブラシサイズを拡大",
     "manual_ocr_box": "手動OCR（矩形）",
     "manual_ocr_lasso": "手動OCR（フリーハンド）",

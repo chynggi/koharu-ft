@@ -69,6 +69,7 @@ const canvasCursors = {
   text: 'text',
   shape: 'crosshair',
   draw: 'none',
+  fill: 'crosshair',
   eraser: 'none',
   color_picker: 'crosshair',
   remove: 'none',
@@ -160,6 +161,7 @@ export function CanvasWorkspace() {
   const layerFrames = useKoharuStore((state) => state.layerFrames)
   const tool = useKoharuStore((state) => state.tool)
   const brush = useKoharuStore((state) => state.brush)
+  const fillColor = useKoharuStore((state) => state.fillColor)
   const selected = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
   const setTool = useKoharuStore((state) => state.setTool)
@@ -440,6 +442,7 @@ export function CanvasWorkspace() {
           'text',
           'shape',
           'draw',
+          'fill',
           'eraser',
           'color_picker',
           'remove',
@@ -905,6 +908,17 @@ export function CanvasWorkspace() {
                 gesture.current = null
                 receiveError(errorMessage(error))
               }
+            } else if (tool === 'fill') {
+              // The command is raster-only. Without a single selected raster
+              // layer there is no legal target, and saying so on every click in
+              // empty space would be noise — the tool simply does nothing.
+              if (!activeRaster) return
+              const target = activeRaster.id
+              commitPending.current = true
+              void call(commands.fillRaster, canvasRevision, target, point, hexToRgba(fillColor))
+                .then(() => refresh(projectKey, pagesKey, pageKey))
+                .catch(() => undefined)
+                .finally(() => (commitPending.current = false))
             } else if (tool === 'color_picker') {
               void canvas
                 .sampleColor(physical)

@@ -683,6 +683,8 @@
     "decreaseBrushSize": "Decrease brush size",
     "draw": "Brush",
     "eraser": "Eraser",
+    "fill": "Fill",
+    "fillColor": "Fill color",
     "increaseBrushSize": "Increase brush size",
     "manual_ocr_box": "Manual OCR (box)",
     "manual_ocr_lasso": "Manual OCR (lasso)",

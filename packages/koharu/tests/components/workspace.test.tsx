@@ -529,6 +529,49 @@ describe('canvas interaction adapter', () => {
     expect(commit).toHaveBeenCalledWith(1, 'paint', expect.arrayContaining([{ x: 20, y: 20 }]), 48)
   })
 
+  it('fills the selected raster layer at the clicked page point with the fill colour', async () => {
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, paintLayer],
+    }))
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: ['paint'], fillColor: '#102030' })
+    const fill = vi
+      .spyOn(commands, 'fillRaster')
+      .mockResolvedValue({ revision: 2, layer: 'paint' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 30, clientX: 30, clientY: 40 })
+
+    await waitFor(() => expect(fill).toHaveBeenCalledOnce())
+    // (30, 40) is a client point; the fill command takes page pixels, which the
+    // identity camera maps to (20, 20) — screen space would be wrong here.
+    expect(fill).toHaveBeenCalledWith(1, 'paint', { x: 20, y: 20 }, [16, 32, 48, 255])
+  })
+
+  it('does not fill without a selected raster layer', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: [] })
+    const fill = vi.spyOn(commands, 'fillRaster')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 31, clientX: 30, clientY: 40 })
+
+    expect(fill).not.toHaveBeenCalled()
+  })
+
+  it('does not fill when the selection is not a raster layer', () => {
+    installProject()
+    // `installProject` selects the image layer 'element'.
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: ['element'] })
+    const fill = vi.spyOn(commands, 'fillRaster')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 32, clientX: 30, clientY: 40 })
+
+    expect(fill).not.toHaveBeenCalled()
+  })
+
   it('maps the Remove tool to an inpainting mask gesture', async () => {
     installProject()
     useKoharuStore.setState({ tool: 'remove' })

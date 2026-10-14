@@ -772,6 +772,50 @@ describe('greenfield editor', () => {
     })
   })
 
+  it('offers a fill colour apart from the brush colour', async () => {
+    const user = userEvent.setup()
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({
+      selectedLayers: ['raster'],
+      canvasRevision: 1,
+      brush: { diameter: 48, color: '#FFFFFF' },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Fill' }))
+    expect(useKoharuStore.getState().tool).toBe('fill')
+    // The brush-size slider is meaningless for filling, so the rail shows only
+    // the colour well.
+    expect(screen.queryByRole('button', { name: /Brush size/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Fill color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#123456' },
+    })
+
+    expect(useKoharuStore.getState().fillColor).toBe('#123456')
+    expect(useKoharuStore.getState().brush.color).toBe('#FFFFFF')
+  })
+
+  it('disables the fill tool without a selected raster layer', () => {
+    installProject()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Fill' })).toBeDisabled()
+  })
+
   it('edits a selected shape style and rasterizes it from the inspector', async () => {
     installProject()
     const user = userEvent.setup()

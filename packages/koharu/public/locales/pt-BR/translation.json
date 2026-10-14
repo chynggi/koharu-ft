@@ -683,6 +683,8 @@
     "decreaseBrushSize": "Diminuir tamanho do pincel",
     "draw": "Desenhar",
     "eraser": "Borracha",
+    "fill": "Preenchimento",
+    "fillColor": "Cor do preenchimento",
     "increaseBrushSize": "Aumentar tamanho do pincel",
     "manual_ocr_box": "OCR manual (retângulo)",
     "manual_ocr_lasso": "OCR manual (traço livre)",

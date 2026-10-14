@@ -9,6 +9,7 @@ import {
   LassoSelect,
   Minus,
   MousePointer2,
+  PaintBucket,
   Pipette,
   Plus,
   ScanText,
@@ -58,6 +59,7 @@ const tools = [
   ['text', Type],
   ['shape', Square],
   ['draw', Brush],
+  ['fill', PaintBucket],
   ['eraser', Eraser],
   ['color_picker', Pipette],
   ['remove', Sparkles],
@@ -80,13 +82,24 @@ export function ToolBar() {
   const page = usePage().data
   const active = useKoharuStore((state) => state.tool)
   const brush = useKoharuStore((state) => state.brush)
+  const fillColor = useKoharuStore((state) => state.fillColor)
   const setTool = useKoharuStore((state) => state.setTool)
   const setBrush = useKoharuStore((state) => state.setBrush)
+  const setFillColor = useKoharuStore((state) => state.setFillColor)
   const shortcuts = useKoharuStore((state) => state.shortcuts)
   const hasBrush = isBrushTool(active)
   const cleanupLayer = page?.layers.find(
     (layer) => layer.type === 'raster' && layer.kind === 'cleanup',
   )
+  // Bucket fill is raster-only, and the server rejects anything else. The tool
+  // is disabled rather than reporting that on every click. One layer is the
+  // command's whole target, so a multi-layer selection is not fillable either —
+  // the same rule the canvas click applies.
+  const hasFillTarget = useKoharuStore((state) => {
+    if (state.selectedLayers.length !== 1) return false
+    const target = state.selectedLayers[0]
+    return page?.layers.some((layer) => layer.id === target && layer.type === 'raster') ?? false
+  })
 
   return (
     <aside className='absolute top-3 left-3 z-20 flex w-11 flex-col rounded-2xl border border-border bg-[var(--surface-floating)] p-1 shadow-[var(--shadow-toolrail)]'>
@@ -101,7 +114,7 @@ export function ToolBar() {
                     type='button'
                     variant='ghost'
                     size='icon'
-                    disabled={!page}
+                    disabled={!page || (tool === 'fill' && !hasFillTarget)}
                     aria-label={t(`tools.${tool}`)}
                     data-active={active === tool}
                     className='relative text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30 data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
@@ -128,6 +141,16 @@ export function ToolBar() {
           <BrushSize
             value={brush.diameter}
             onChange={(diameter) => setBrush({ ...brush, diameter })}
+          />
+        </div>
+      )}
+
+      {active === 'fill' && (
+        <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
+          <ColorWell
+            label={t('tools.fillColor')}
+            value={fillColor}
+            onChange={(color) => setFillColor(color)}
           />
         </div>
       )}

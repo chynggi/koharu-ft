@@ -683,6 +683,8 @@
     "decreaseBrushSize": "브러시 크기 줄이기",
     "draw": "그리기",
     "eraser": "지우개",
+    "fill": "채우기",
+    "fillColor": "채우기 색",
     "increaseBrushSize": "브러시 크기 늘리기",
     "manual_ocr_box": "수동 OCR (사각형)",
     "manual_ocr_lasso": "수동 OCR (자유형)",

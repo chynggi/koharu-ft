@@ -25,6 +25,7 @@ export type CanvasTool =
   | 'text'
   | 'shape'
   | 'draw'
+  | 'fill'
   | 'eraser'
   | 'color_picker'
   | 'remove'
@@ -71,6 +72,10 @@ interface KoharuStore {
   selectedPages: EntityId[]
   tool: CanvasTool
   brush: CanvasBrush
+  // The bucket fill keeps its own colour: it is a different operation from
+  // painting, so sharing `brush.color` would make each tool silently retarget
+  // the other's colour.
+  fillColor: string
   shapeKind: ShapeKind
   shapeStyle: ShapeStyle
   inspector: InspectorSection
@@ -87,6 +92,7 @@ interface KoharuStore {
   setCopiedTextLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool, cleanupLayer?: EntityId) => void
   setBrush: (brush: CanvasBrush) => void
+  setFillColor: (color: string) => void
   setShapeKind: (kind: ShapeKind) => void
   setShapeStyle: (style: ShapeStyle) => void
   setShortcut: (action: ShortcutAction, key: string) => void
@@ -100,6 +106,7 @@ export const defaultShortcuts: Shortcuts = {
   text: 't',
   shape: 'r',
   draw: 'b',
+  fill: 'g',
   eraser: 'e',
   color_picker: 'i',
   remove: 'j',
@@ -128,6 +135,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   selectedPages: [],
   tool: 'select',
   brush: { diameter: 48, color: '#FFFFFF' },
+  fillColor: '#000000',
   shapeKind: 'rectangle',
   shapeStyle: defaultShapeStyle('rectangle'),
   inspector: 'copy',
@@ -152,6 +160,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
         : {}),
     }),
   setBrush: (brush) => set({ brush }),
+  setFillColor: (fillColor) => set({ fillColor }),
   // Each kind ships the style that can actually draw it, so switching to a line
   // never leaves the fill-only style of a rectangle behind.
   setShapeKind: (shapeKind) => set({ shapeKind, shapeStyle: defaultShapeStyle(shapeKind) }),
