@@ -71,7 +71,7 @@
 - Produces:
   - `BrushRamp::{AlongStroke { from: [u8; 4], to: [u8; 4] }, FixedAxis { from: [u8; 4], to: [u8; 4], axis: RampAxis }}`
   - `RampAxis::{Horizontal, Vertical}`
-  - `BrushRamp::validate(&self) -> Result<()>`
+
   - `BrushRamp::color_at(&self, position: f32) -> [u8; 4]` — `position`은 `0.0..=1.0`으로 클램프된다
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
