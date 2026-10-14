@@ -654,6 +654,7 @@ TS 타입과 미리보기 조립을 넓힌다. 서버 커맨드는 바뀌지 않
 - Modify: `packages/bridge/src/protocol.ts:1006-1030` (`ShapeFill` 등)
 - Modify: `packages/bridge/src/canvas.ts:25-47` (`CanvasPathFill`, `CanvasPath`)
 - Modify: `packages/koharu/lib/shapes.ts:108-170` (`defaultShapeStyle`, `shapePreviewPath`, `defaultGradientSpec`)
+- Modify: `packages/koharu/components/editor/Inspector.tsx:181` and `packages/koharu/components/editor/ToolBar.tsx:205` — both read `style.fill.solid`, which becomes a TS2339 error once `ShapeFill` is a union. Narrow to the solid arm (`'solid' in fill`). **곧바로 Task 6이 두 파일을 다시 쓰지만, 이 태스크가 끝나는 시점에 `tsc`가 통과해야 하므로 여기서 최소 수정한다.** 별칭·호환 shim을 만들지 않는다 (AGENTS.md).
 - Modify: `packages/koharu/tests/lib/shapes.test.ts`
 - Test: `packages/koharu/tests/lib/shapes.test.ts`
 
@@ -745,14 +746,11 @@ describe('shapePreviewPath with a gradient', () => {
 
   it('rotates the gradient into page coordinates like the polygon', () => {
     const style = { fill: { gradient: defaultGradientSpec('linear') }, stroke: null }
-    const upright = shapePreviewPath(
-      'rectangle',
-      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 },
-      style,
-    )
+    const frame = { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 }
+    const upright = shapePreviewPath('rectangle', frame, style)
     const rotated = shapePreviewPath(
       'rectangle',
-      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
+      { ...frame, angle_degrees: 90 },
       style,
     )
 
@@ -768,21 +766,40 @@ describe('shapePreviewPath with a gradient', () => {
       if (!('Linear' in kind)) throw new Error('expected a linear gradient')
       return kind.Linear
     }
-    const uprightLinear = control(upright)
-    const rotatedLinear = control(rotated)
 
-    // 90도 회전하면 프레임 중심 (100,50) 을 기준으로 제어점이 돈다.
-    // (0,0) -> (100,-100)+중심 = (100, 50) + ... 을 손으로 계산하지 말고
-    // 같은 `rotatePoint` 규칙을 테스트에서 독립적으로 적용해 비교한다.
-    expect(rotatedLinear).not.toEqual(uprightLinear)
-    // 회전한 제어점은 회전한 폴리곤과 같은 상자 안에 있어야 한다.
-    const rotatedPoints = shapePolygon('rectangle', {
-      x: 0, y: 0, width: 200, height: 100, angle_degrees: 90,
-    }).points
-    for (const value of [...rotatedLinear.start, ...rotatedLinear.end]) {
-      expect(Number.isFinite(value)).toBe(true)
+    // 기본 선형 그라디언트는 정규화 (0,0)->(1,0) 이므로 200x100 프레임에서
+    // 페이지 (0,0)->(200,0) 이다.
+    expect(control(upright)).toEqual({ start: [0, 0], end: [200, 0] })
+
+    // 90도 회전하면 프레임 중심 (100,50) 을 기준으로 돈다. 정확한 값을
+    // 단언한다 — "not equal" 만으로는 어떤 잘못된 회전도 통과한다.
+    //
+    // rotatePoint(p, (100,50), 90) 은 p 를 중심 기준으로 (x,y) -> (-y, x) 로
+    // 보낸다: (0,0) -> (150,-50), (200,0) -> (150,150).
+    const rotatedLinear = control(rotated)
+    for (const [actual, expected] of [
+      [rotatedLinear.start, [150, -50]],
+      [rotatedLinear.end, [150, 150]],
+    ] as const) {
+      expect(actual[0]).toBeCloseTo(expected[0], 6)
+      expect(actual[1]).toBeCloseTo(expected[1], 6)
     }
-    expect(rotatedPoints.length).toBeGreaterThan(0)
+  })
+
+  it('offsets the gradient by the frame origin', () => {
+    // 프레임이 (0,0) 이 아니면 서버의 평행이동이 `PreparedPath::transform`
+    // 에 있으므로 곱셈만으로는 부족하다. 원점을 더하지 않는 구현은 이
+    // 테스트에서 드러난다.
+    const path = shapePreviewPath(
+      'rectangle',
+      { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 },
+      { fill: { gradient: defaultGradientSpec('linear') }, stroke: null },
+    )
+    const fill = path.fill
+    if (!fill || !('Gradient' in fill)) throw new Error('expected a gradient fill')
+    const kind = fill.Gradient.gradient.kind
+    if (!('Linear' in kind)) throw new Error('expected a linear gradient')
+    expect(kind.Linear).toEqual({ start: [10, 20], end: [110, 20] })
   })
 })
 ```
@@ -812,12 +829,13 @@ Expected: FAIL — `defaultGradientSpec` 미정의
 
 **프론트:** `transform`이 항상 `identity`이고(`shapes.ts:147`) 회전은 `shapePolygon`이 **폴리곤 점에 직접 굽는다**(`shapes.ts:73`, `:79`의 `rotatePoint`). 그러므로 프론트의 그라디언트 제어점도 **폴리곤과 같은 방식으로 페이지 좌표로 회전**해야 경로와 정렬된다. 프레임 로컬에 그대로 두면 회전한 도형의 그라디언트가 축정렬로 남아 경로와 어긋난다.
 
-따라서 프론트는:
+따라서 프론트는 **세 단계**를 한다 — 서버의 두 단계에 회전이 더해진다:
 
-1. `local = normalized * frame_extent`로 프레임 로컬 좌표를 얻는다 (서버 `prepared()`와 같은 첫 단계).
+1. `boxed = frame.origin + normalized * frame_extent` — 정규화 → 프레임 상자 좌표. **원점을 더해야 한다.** 서버에서 이 평행이동은 `PreparedPath::transform`에 들어 있어(`shape_renderer.rs:130-131`의 `center_x - (...)` 항) `fill()`의 곱셈만 봐서는 보이지 않는다. 곱셈만 하면 프레임이 `(0,0)`이 아닐 때 제어점이 프레임 상자 안에 남아 어긋난다.
 2. 그 점을 **프레임 중심 기준으로 `frame.angle_degrees`만큼 회전**해 페이지 좌표로 옮긴다 — `shapePolygon`이 폴리곤에 쓰는 것과 같은 `rotatePoint` 호출이다. 그 함수를 재사용하거나 export해서 두 곳이 같은 회전을 쓰게 한다.
+3. `Radial`의 `radius`는 프레임 **폭** 비율이므로 `radius * frame.width` (회전은 길이를 바꾸지 않는다). `Sweep`의 중심은 1·2단계를 따르고 **각도도 `frame.angle_degrees`만큼 더한다** — vello는 sweep의 각도장을 경로와 함께 회전시키므로, 프론트가 그 회전을 각도에 미리 반영해야 같은 위치에 온다. (1b의 편집기는 sweep을 만들지 않으므로 이 갈래는 도달 불가지만, 데이터에 sweep이 있으면 정렬이 맞아야 한다.)
 
-두 경로의 **최종 좌표계는 같아야 한다**: 어느 쪽이든 그려지는 그라디언트는 페이지 위에서 같은 위치·방향이어야 한다. 서버는 vello가 대신 회전해 주고 프론트는 직접 회전한다는 차이만 있다.
+두 경로의 **최종 좌표계는 같아야 한다**: 어느 쪽이든 그려지는 그라디언트는 페이지 위에서 같은 위치·방향이어야 한다. 서버는 곱셈만 하고 평행이동·회전을 vello에 맡기며, 프론트는 그 셋을 직접 굽는다는 차이만 있다.
 
 `extend`는 PascalCase로, `cap`/`join`과 같은 방식으로 철자를 맞춘다.
 
