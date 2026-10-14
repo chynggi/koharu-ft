@@ -2,6 +2,7 @@ import type {
   ArrowHead,
   Frame,
   Geometry,
+  GradientExtend,
   GradientSpec,
   GradientStop,
   Point,
@@ -210,9 +211,16 @@ export function shapePreviewPath(
  * what keeps the two in step.
  */
 function previewGradient(spec: GradientSpec, frame: Frame): CanvasGradient {
-  const center = { x: frame.x + frame.width * 0.5, y: frame.y + frame.height * 0.5 }
+  // The same degenerate floor `shapePolygon` applies, and for the same reason:
+  // a zero-width frame would otherwise give a linear gradient two identical
+  // endpoints and a radial one a zero radius, both of which
+  // `PreparedPath::validate` rejects during the drag. Sharing the floor keeps
+  // the control points and the outline describing one box.
+  const width = Math.max(frame.width, MIN_FRAME_EXTENT)
+  const height = Math.max(frame.height, MIN_FRAME_EXTENT)
+  const center = { x: frame.x + width * 0.5, y: frame.y + height * 0.5 }
   const toPage = ([x, y]: [number, number]): [number, number] => {
-    const boxed = { x: frame.x + x * frame.width, y: frame.y + y * frame.height }
+    const boxed = { x: frame.x + x * width, y: frame.y + y * height }
     const rotated = rotatePoint(boxed, center, frame.angle_degrees)
     return [rotated.x, rotated.y]
   }
@@ -232,7 +240,7 @@ function previewGradient(spec: GradientSpec, frame: Frame): CanvasGradient {
                 center: toPage(kind.radial.center),
                 // The radius is a fraction of the frame's width, matching the
                 // server, and rotation leaves its length unchanged.
-                radius: kind.radial.radius * frame.width,
+                radius: kind.radial.radius * width,
               },
             }
           : {
@@ -315,7 +323,7 @@ function joinName(join: 'miter' | 'round' | 'bevel') {
 
 // `PreparedGradientExtend` is a unit-variant enum, so serde spells it with the
 // Rust variant names just as `PreparedLineCap`/`PreparedLineJoin` do.
-function extendName(extend: 'pad' | 'repeat' | 'reflect') {
+function extendName(extend: GradientExtend) {
   return extend === 'pad' ? 'Pad' : extend === 'repeat' ? 'Repeat' : 'Reflect'
 }
 

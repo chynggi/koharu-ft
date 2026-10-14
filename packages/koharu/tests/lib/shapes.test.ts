@@ -235,6 +235,20 @@ describe('shapePreviewPath', () => {
 })
 
 describe('shapePreviewPath with a gradient', () => {
+  type PreviewPath = ReturnType<typeof shapePreviewPath>
+
+  const gradientOf = (path: PreviewPath) => {
+    const fill = path.fill
+    if (!fill || !('Gradient' in fill)) throw new Error('expected a gradient fill')
+    return fill.Gradient.gradient
+  }
+
+  const linearOf = (path: PreviewPath) => {
+    const kind = gradientOf(path).kind
+    if (!('Linear' in kind)) throw new Error('expected a linear gradient')
+    return kind.Linear
+  }
+
   it('spreads normalized coordinates onto the frame and spells the wire shape', () => {
     // 리터럴을 직접 넘겨 contextual typing 으로 튜플 타입을 얻는다 — 이 파일의
     // 기존 테스트가 쓰는 방식이다(`as const` 를 쓰지 않는다).
@@ -280,46 +294,120 @@ describe('shapePreviewPath with a gradient', () => {
     })
   })
 
-  it('rotates the gradient into page coordinates like the polygon', () => {
-    const style = { fill: { gradient: defaultGradientSpec('linear') }, stroke: null }
-    const upright = shapePreviewPath(
-      'rectangle',
-      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 },
-      style,
+  // The frontend's `transform` is the identity and `shapePolygon` bakes the
+  // rotation into the outline points (`shapes.ts`'s `rotatePoint`), so the
+  // gradient control points must be rotated into page coordinates too. These
+  // assertions pin exact coordinates rather than "it moved": a rotation in the
+  // wrong direction, about the wrong centre, or left axis-aligned would all
+  // satisfy a `not.toEqual`. `toBeCloseTo` because cos 90° is 6.12e-17, not 0.
+  it('leaves an unrotated gradient spanning the frame', () => {
+    const linear = linearOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 },
+        { fill: { gradient: defaultGradientSpec('linear') }, stroke: null },
+      ),
     )
-    const rotated = shapePreviewPath(
-      'rectangle',
-      { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
-      style,
+
+    expect(linear.start[0]).toBeCloseTo(0, 6)
+    expect(linear.start[1]).toBeCloseTo(0, 6)
+    expect(linear.end[0]).toBeCloseTo(200, 6)
+    expect(linear.end[1]).toBeCloseTo(0, 6)
+  })
+
+  it('rotates the gradient about the frame centre by the frame angle', () => {
+    const rotated = linearOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
+        { fill: { gradient: defaultGradientSpec('linear') }, stroke: null },
+      ),
     )
 
-    // 프론트는 transform 이 identity 이고 회전을 폴리곤에 굽는다
-    // (`shapePolygon` 의 `rotatePoint`). 그러므로 그라디언트 제어점도
-    // 페이지 좌표로 회전해야 경로와 정렬된다.
-    expect(rotated.transform).toEqual([1, 0, 0, 1, 0, 0])
+    // (0,0) and (200,0) turned 90° about (100,50).
+    expect(rotated.start[0]).toBeCloseTo(150, 6)
+    expect(rotated.start[1]).toBeCloseTo(-50, 6)
+    expect(rotated.end[0]).toBeCloseTo(150, 6)
+    expect(rotated.end[1]).toBeCloseTo(150, 6)
+  })
 
-    const control = (path: typeof upright) => {
-      const fill = path.fill
-      if (!fill || !('Gradient' in fill)) throw new Error('expected a gradient fill')
-      const kind = fill.Gradient.gradient.kind
-      if (!('Linear' in kind)) throw new Error('expected a linear gradient')
-      return kind.Linear
-    }
-    const uprightLinear = control(upright)
-    const rotatedLinear = control(rotated)
+  it('offsets an unrotated gradient by the frame origin', () => {
+    // The server's translation lives in `PreparedPath::transform`; the preview
+    // has no transform, so it must fold the frame origin into the points. A
+    // bare `normalized * extent` would put these at (0,0)->(100,0).
+    const linear = linearOf(
+      shapePreviewPath('rectangle', frame, {
+        fill: { gradient: defaultGradientSpec('linear') },
+        stroke: null,
+      }),
+    )
 
-    // 90도 회전하면 프레임 중심 (100,50) 을 기준으로 제어점이 돈다.
-    // (0,0) -> (100,-100)+중심 = (100, 50) + ... 을 손으로 계산하지 말고
-    // 같은 `rotatePoint` 규칙을 테스트에서 독립적으로 적용해 비교한다.
-    expect(rotatedLinear).not.toEqual(uprightLinear)
-    // 회전한 제어점은 회전한 폴리곤과 같은 상자 안에 있어야 한다.
-    const rotatedPoints = shapePolygon('rectangle', {
-      x: 0, y: 0, width: 200, height: 100, angle_degrees: 90,
-    }).points
-    for (const value of [...rotatedLinear.start, ...rotatedLinear.end]) {
-      expect(Number.isFinite(value)).toBe(true)
-    }
-    expect(rotatedPoints.length).toBeGreaterThan(0)
+    expect(linear.start[0]).toBeCloseTo(10, 6)
+    expect(linear.start[1]).toBeCloseTo(20, 6)
+    expect(linear.end[0]).toBeCloseTo(110, 6)
+    expect(linear.end[1]).toBeCloseTo(20, 6)
+  })
+
+  it('scales a radial gradient radius by the frame width', () => {
+    const radial = gradientOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 0, y: 0, width: 200, height: 100, angle_degrees: 0 },
+        { fill: { gradient: defaultGradientSpec('radial') }, stroke: null },
+      ),
+    ).kind
+    if (!('Radial' in radial)) throw new Error('expected a radial gradient')
+
+    // Centre (0.5,0.5) on a 200x100 frame, radius 0.5 of the width.
+    expect(radial.Radial.center[0]).toBeCloseTo(100, 6)
+    expect(radial.Radial.center[1]).toBeCloseTo(50, 6)
+    expect(radial.Radial.radius).toBeCloseTo(100, 6)
+  })
+
+  it('keeps a degenerate frame drawable', () => {
+    // `PreparedPath::validate` rejects a linear gradient whose endpoints are
+    // equal, so a zero-width frame must not produce one during the drag.
+    const linear = linearOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 0, y: 0, width: 0, height: 0, angle_degrees: 0 },
+        { fill: { gradient: defaultGradientSpec('linear') }, stroke: null },
+      ),
+    )
+
+    expect(Number.isFinite(linear.start[0] + linear.start[1])).toBe(true)
+    expect(linear.start).not.toEqual(linear.end)
+  })
+
+  it('bakes the frame angle into sweep angles as well as its centre', () => {
+    // 1b's editor never creates a sweep (spec G5), but vello rotates a sweep's
+    // angular field with the path, so the preview has to add the frame angle
+    // here too or an imported sweep would drift out of alignment.
+    const sweep = gradientOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 0, y: 0, width: 200, height: 100, angle_degrees: 90 },
+        {
+          fill: {
+            gradient: {
+              kind: { sweep: { center: [0.5, 0.5], start_degrees: 0, end_degrees: 360 } },
+              stops: [
+                { offset: 0, color: [1, 2, 3, 255] },
+                { offset: 1, color: [4, 5, 6, 255] },
+              ],
+              extend: 'pad',
+            },
+          },
+          stroke: null,
+        },
+      ),
+    ).kind
+    if (!('Sweep' in sweep)) throw new Error('expected a sweep gradient')
+
+    expect(sweep.Sweep.center[0]).toBeCloseTo(100, 6)
+    expect(sweep.Sweep.center[1]).toBeCloseTo(50, 6)
+    expect(sweep.Sweep.start_degrees).toBeCloseTo(90, 6)
+    expect(sweep.Sweep.end_degrees).toBeCloseTo(450, 6)
   })
 })
 
