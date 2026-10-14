@@ -9,8 +9,8 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use koharu_desktop::Frame;
 use koharu_scene::{
-    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin, FitsTo,
-    Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
+    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, Edit, EntityId, EntityOrigin,
+    FitsTo, Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
     Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom,
     Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, ShapeGeometry,
     ShapeLayer as SceneShapeLayer, ShapeStyle, Snapshot, SourceText as SceneSourceText,
@@ -314,6 +314,97 @@ fn owning_page(snapshot: &Snapshot, entity: EntityId) -> Result<EntityId> {
         page = parent;
     }
     Ok(page)
+}
+
+/// The pixels a raster layer owns, decoded and pinned to the page size.
+///
+/// A layer that carries no `source` asset — a paint layer a user has not drawn
+/// on yet — is an empty page-sized surface rather than an error, so callers can
+/// mutate and re-encode it uniformly. A stored image whose dimensions do not
+/// match the page is rejected instead of being silently rescaled, because every
+/// raster consumer indexes by page coordinates.
+async fn read_source_image(
+    snapshot: &Snapshot,
+    entity: EntityId,
+    role: &AssetRole,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    let image = match snapshot.asset(entity, role)? {
+        Some(asset) => {
+            let bytes = snapshot.read_blob(asset.blob).await?;
+            image::load_from_memory(&bytes)?.to_rgba8()
+        }
+        None => RgbaImage::new(width, height),
+    };
+    if image.dimensions() != (width, height) {
+        bail!("raster layer dimensions must match the page");
+    }
+    Ok(image)
+}
+
+/// Whether a user edit must claim both of a raster layer's origin records.
+fn raster_layer_needs_promotion(
+    snapshot: &Snapshot,
+    entity: EntityId,
+    raster: &SceneRasterLayer,
+) -> Result<bool> {
+    Ok(raster.origin != Origin::User
+        || snapshot
+            .component::<EntityOrigin>(entity)?
+            .is_some_and(|origin| origin.origin != Origin::User))
+}
+
+/// Encodes a raster surface as the PNG payload of a layer's `source` asset.
+fn encode_source_image(image: RgbaImage) -> Result<Vec<u8>> {
+    let mut bytes = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+    Ok(bytes.into_inner())
+}
+
+/// Stores `bytes` as the layer's `source` asset, promoting user ownership first
+/// when `promote` is set.
+///
+/// [`SceneRasterLayer::origin`] is persisted separately from the [`EntityOrigin`]
+/// component, and pipeline stages gate on it
+/// (`crates/koharu-pipeline/src/stages/inpainting.rs` derives `generated` from
+/// both), so a user pixel write has to claim *both* records. Claiming only
+/// `EntityOrigin` would leave the layer looking pipeline-owned, and the next
+/// stage that reuses such a layer as its overlay would treat the user's pixels
+/// as its own generated output. That invariant lives here, next to the write
+/// that must uphold it, so no caller can uphold half of it.
+///
+/// This returns a scene result rather than `anyhow::Result` because it runs
+/// inside [`Snapshot::patch`], whose closure is typed by the scene crate; PNG
+/// encoding, which is not, stays in [`encode_source_image`].
+fn write_source_image(
+    edit: &mut Edit,
+    entity: EntityId,
+    raster: &mut SceneRasterLayer,
+    promote: bool,
+    role: &AssetRole,
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+) -> koharu_scene::Result<()> {
+    if promote {
+        edit.promote_entity_to_user(entity)?;
+        raster.origin = Origin::User;
+        edit.set(entity, raster)?;
+    }
+    edit.set_asset(
+        entity,
+        role,
+        AssetInput::new(
+            bytes,
+            "image/png",
+            AssetMetadata {
+                width: Some(width),
+                height: Some(height),
+                attributes: Default::default(),
+            },
+        ),
+    )
 }
 
 impl Project {
@@ -1499,6 +1590,7 @@ impl Project {
         }
         let mut raster_layer = None;
         let mut promote_layer = false;
+        let source = AssetRole::new("source")?;
         let mut image = if let Some(layer) = layer {
             if snapshot.parent(layer)? != Some(page) {
                 bail!("the raster target must be a layer on the active page");
@@ -1506,31 +1598,17 @@ impl Project {
             let target = snapshot
                 .component::<SceneRasterLayer>(layer)?
                 .context("the raster target must be a layer on the active page")?;
-            promote_layer = target.origin != Origin::User
-                || snapshot
-                    .component::<EntityOrigin>(layer)?
-                    .is_some_and(|origin| origin.origin != Origin::User);
+            promote_layer = raster_layer_needs_promotion(&snapshot, layer, &target)?;
             raster_layer = Some(target);
-            match snapshot.asset(layer, &AssetRole::new("source")?)? {
-                Some(asset) => {
-                    let bytes = snapshot.read_blob(asset.blob).await?;
-                    image::load_from_memory(&bytes)?.to_rgba8()
-                }
-                None => RgbaImage::new(width, height),
-            }
+            read_source_image(&snapshot, layer, &source, width, height).await?
         } else {
             if mode == RasterStrokeMode::Erase {
                 bail!("eraser requires a raster layer target");
             }
             RgbaImage::new(width, height)
         };
-        if image.dimensions() != (width, height) {
-            bail!("raster layer dimensions must match the page");
-        }
         rasterize_stroke(&mut image, mode, color, diameter, &points);
-        let mut bytes = Cursor::new(Vec::new());
-        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
-        let source = AssetRole::new("source")?;
+        let bytes = encode_source_image(image)?;
         let name = format!(
             "Paint {}",
             snapshot
@@ -1547,46 +1625,49 @@ impl Project {
         );
         let mut committed_layer = layer;
         let patch = snapshot.patch(|edit| {
-            let layer = if let Some(layer) = committed_layer {
-                if promote_layer {
-                    edit.promote_entity_to_user(layer)?;
-                    let raster = raster_layer
-                        .as_mut()
-                        .expect("an existing raster target has a layer component");
-                    raster.origin = Origin::User;
-                    edit.set(layer, raster)?;
-                }
-                layer
+            if let Some(layer) = committed_layer {
+                let raster = raster_layer
+                    .as_mut()
+                    .expect("an existing raster target has a layer component");
+                write_source_image(
+                    edit,
+                    layer,
+                    raster,
+                    promote_layer,
+                    &source,
+                    bytes,
+                    width,
+                    height,
+                )?;
             } else {
                 let at = snapshot
                     .page(page)?
                     .text_group()?
                     .map_or(At::End, |group| At::Before(group.id()));
                 let layer = edit.add_entity(page, at)?;
-                edit.set(
+                // The creation branch belongs to this method alone: it is the
+                // only raster command that can conjure a layer. A freshly added
+                // entity already carries `Origin::User`, so the asset write is
+                // not a promotion.
+                let mut raster = SceneRasterLayer {
+                    origin: Origin::User,
+                    name,
+                    kind: RasterLayerKind::Paint,
+                };
+                edit.set(layer, &raster)?;
+                write_source_image(
+                    edit,
                     layer,
-                    &SceneRasterLayer {
-                        origin: Origin::User,
-                        name,
-                        kind: RasterLayerKind::Paint,
-                    },
+                    &mut raster,
+                    false,
+                    &source,
+                    bytes,
+                    width,
+                    height,
                 )?;
                 committed_layer = Some(layer);
-                layer
-            };
-            edit.set_asset(
-                layer,
-                &source,
-                AssetInput::new(
-                    bytes.into_inner(),
-                    "image/png",
-                    AssetMetadata {
-                        width: Some(width),
-                        height: Some(height),
-                        attributes: Default::default(),
-                    },
-                ),
-            )
+            }
+            Ok(())
         })?;
         Ok((
             self.commit(patch).await?,
@@ -1624,49 +1705,29 @@ impl Project {
         // from both), so a user adjustment has to claim both. Claiming only
         // `EntityOrigin` would leave the layer looking pipeline-owned, and the
         // next stage that reuses such a layer as its overlay would treat the
-        // user's pixels as its own generated output.
+        // user's pixels as its own generated output. `write_source_image` owns
+        // the promotion step; this comment records why it must happen at all.
         let mut raster_layer = snapshot
             .component::<SceneRasterLayer>(layer)?
             .context("only raster layers can be adjusted")?;
-        let promote_layer = raster_layer.origin != Origin::User
-            || snapshot
-                .component::<EntityOrigin>(layer)?
-                .is_some_and(|origin| origin.origin != Origin::User);
+        let promote_layer = raster_layer_needs_promotion(&snapshot, layer, &raster_layer)?;
         let source = AssetRole::new("source")?;
-        let mut image = match snapshot.asset(layer, &source)? {
-            Some(asset) => {
-                let bytes = snapshot.read_blob(asset.blob).await?;
-                image::load_from_memory(&bytes)?.to_rgba8()
-            }
-            // `apply_raster_stroke` treats a missing asset as an empty
-            // page-sized surface rather than an error; an adjustment over it is
-            // then a no-op image that still commits.
-            None => RgbaImage::new(width, height),
-        };
-        if image.dimensions() != (width, height) {
-            bail!("raster layer dimensions must match the page");
-        }
+        // `apply_raster_stroke` treats a missing asset as an empty
+        // page-sized surface rather than an error; an adjustment over it is
+        // then a no-op image that still commits.
+        let mut image = read_source_image(&snapshot, layer, &source, width, height).await?;
         apply_adjust(&mut image, adjust);
-        let mut bytes = Cursor::new(Vec::new());
-        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+        let bytes = encode_source_image(image)?;
         let patch = snapshot.patch(|edit| {
-            if promote_layer {
-                edit.promote_entity_to_user(layer)?;
-                raster_layer.origin = Origin::User;
-                edit.set(layer, &raster_layer)?;
-            }
-            edit.set_asset(
+            write_source_image(
+                edit,
                 layer,
+                &mut raster_layer,
+                promote_layer,
                 &source,
-                AssetInput::new(
-                    bytes.into_inner(),
-                    "image/png",
-                    AssetMetadata {
-                        width: Some(width),
-                        height: Some(height),
-                        attributes: Default::default(),
-                    },
-                ),
+                bytes,
+                width,
+                height,
             )
         })?;
         Ok((self.commit(patch).await?, layer))
@@ -1700,14 +1761,12 @@ impl Project {
         // from both), so a user fill has to claim both. Claiming only
         // `EntityOrigin` would leave the layer looking pipeline-owned, and the
         // next stage that reuses such a layer as its overlay would treat the
-        // user's pixels as its own generated output.
+        // user's pixels as its own generated output. `write_source_image` owns
+        // the promotion step; this comment records why it must happen at all.
         let mut raster_layer = snapshot
             .component::<SceneRasterLayer>(layer)?
             .context("only raster layers can be filled")?;
-        let promote_layer = raster_layer.origin != Origin::User
-            || snapshot
-                .component::<EntityOrigin>(layer)?
-                .is_some_and(|origin| origin.origin != Origin::User);
+        let promote_layer = raster_layer_needs_promotion(&snapshot, layer, &raster_layer)?;
         // The click point is `f64` page space and `flood_fill_mut` takes `u32`,
         // so both axes are validated before the cast: a negative value would
         // become a huge `u32` and a `NaN` slips past `< 0.0` and `>= width`
@@ -1726,19 +1785,10 @@ impl Project {
         }
         let (x, y) = (x as u32, y as u32);
         let source = AssetRole::new("source")?;
-        let mut image = match snapshot.asset(layer, &source)? {
-            Some(asset) => {
-                let bytes = snapshot.read_blob(asset.blob).await?;
-                image::load_from_memory(&bytes)?.to_rgba8()
-            }
-            // `apply_raster_stroke` treats a missing asset as an empty
-            // page-sized surface rather than an error; a fill over it is then a
-            // region of transparency that still commits.
-            None => RgbaImage::new(width, height),
-        };
-        if image.dimensions() != (width, height) {
-            bail!("raster layer dimensions must match the page");
-        }
+        // `apply_raster_stroke` treats a missing asset as an empty
+        // page-sized surface rather than an error; a fill over it is then a
+        // region of transparency that still commits.
+        let mut image = read_source_image(&snapshot, layer, &source, width, height).await?;
         // `flood_fill_mut` is 4-directional and compares with `PartialEq`, so
         // the region is exactly the set of pixels equal to the start pixel —
         // there is no tolerance to give it, and none is wanted here.
@@ -1754,26 +1804,17 @@ impl Project {
         if image.get_pixel(x, y).0 != color {
             imageproc::drawing::flood_fill_mut(&mut image, x, y, image::Rgba(color));
         }
-        let mut bytes = Cursor::new(Vec::new());
-        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+        let bytes = encode_source_image(image)?;
         let patch = snapshot.patch(|edit| {
-            if promote_layer {
-                edit.promote_entity_to_user(layer)?;
-                raster_layer.origin = Origin::User;
-                edit.set(layer, &raster_layer)?;
-            }
-            edit.set_asset(
+            write_source_image(
+                edit,
                 layer,
+                &mut raster_layer,
+                promote_layer,
                 &source,
-                AssetInput::new(
-                    bytes.into_inner(),
-                    "image/png",
-                    AssetMetadata {
-                        width: Some(width),
-                        height: Some(height),
-                        attributes: Default::default(),
-                    },
-                ),
+                bytes,
+                width,
+                height,
             )
         })?;
         Ok((self.commit(patch).await?, layer))
