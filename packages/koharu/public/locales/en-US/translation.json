@@ -239,6 +239,7 @@
       "stopColor": "Stop {{index}} color",
       "stopOffset": "Stop {{index}} position",
       "stops": "Stops",
+      "stopsTooClose": "No room between stops",
       "stroke": "Stroke",
       "strokeWidth": "Stroke width"
     },

@@ -4,6 +4,7 @@ import {
   MAX_GRADIENT_STOPS,
   MIN_GRADIENT_STOPS,
   SHAPE_KINDS,
+  STOP_OFFSET_STEP,
   addGradientStop,
   defaultGradientSpec,
   defaultShapeStyle,
@@ -11,6 +12,7 @@ import {
   gradientStopBounds,
   isShapeTool,
   moveGradientStop,
+  normalizeGradientStops,
   removeGradientStop,
   shapeGeometry,
   shapePolygon,
@@ -18,6 +20,7 @@ import {
   withFillKind,
   withGradientKind,
 } from '@/lib/shapes'
+import type { GradientStop } from '@koharu/bridge/protocol'
 
 const frame = { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 }
 
@@ -196,21 +199,121 @@ describe('withFillKind', () => {
 
 describe('gradient stop editing', () => {
   const spec = defaultGradientSpec('linear')
+  const stop = (offset: number): GradientStop => ({ offset, color: [0, 0, 0, 255] })
+  const offsetsOf = (candidate: GradientStop[] | null) => {
+    if (!candidate) throw new Error('expected stops')
+    return candidate.map((entry) => entry.offset)
+  }
+  const add = (stops: GradientStop[]): GradientStop[] => {
+    const next = addGradientStop(stops)
+    if (!next) throw new Error('expected an added stop')
+    return next
+  }
 
   it('adds a stop without duplicating an offset', () => {
-    let current = spec
+    let current = spec.stops
     for (let index = 0; index < MAX_GRADIENT_STOPS - MIN_GRADIENT_STOPS; index += 1) {
-      current = { ...current, stops: addGradientStop(current.stops) }
+      current = add(current)
     }
-    const offsets = current.stops.map((stop) => stop.offset)
+    const offsets = current.map((entry) => entry.offset)
     expect(offsets).toHaveLength(MAX_GRADIENT_STOPS)
     expect(new Set(offsets).size).toBe(MAX_GRADIENT_STOPS)
     expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
-    expect(current.stops.map((stop) => stop.offset)).toEqual([...offsets].sort((a, b) => a - b))
+    expect(current.map((entry) => entry.offset)).toEqual([...offsets].sort((a, b) => a - b))
+  })
+
+  it('refuses to add past the stop ceiling', () => {
+    let current = spec.stops
+    for (let index = 0; index < MAX_GRADIENT_STOPS - MIN_GRADIENT_STOPS; index += 1) {
+      current = add(current)
+    }
+    expect(current).toHaveLength(MAX_GRADIENT_STOPS)
+    expect(addGradientStop(current)).toBeNull()
+  })
+
+  it('refuses to add into a gap narrower than one grid step', () => {
+    // The server only requires distinct offsets, so a spec read from disk can
+    // have neighbours closer than one step. Rounding such a midpoint lands on a
+    // neighbour, which is the duplicate `validate` rejects.
+    expect(addGradientStop([stop(0.5), stop(0.500001)])).toBeNull()
+    expect(addGradientStop([stop(0.5), stop(0.5000005)])).toBeNull()
+    expect(addGradientStop([stop(0.03125), stop(0.0312505)])).toBeNull()
+    // Exactly one step apart also has no grid point strictly between the ends.
+    expect(addGradientStop([stop(0.5), stop(0.501)])).toBeNull()
+  })
+
+  it('never adds a duplicate even from an off-grid tight spec', () => {
+    // The reviewer's path to a duplicate: a server-valid spec with tight
+    // neighbours plus an add attempt. Every insertion that is accepted must
+    // leave a spec the server still accepts.
+    const tight = { ...spec, stops: [stop(0.7865), stop(0.3), stop(0.7865004), stop(0.9), stop(1)] }
+    const inserted = addGradientStop(tight.stops)
+    if (inserted) {
+      const offsets = inserted.map((entry) => entry.offset)
+      expect(new Set(offsets).size).toBe(offsets.length)
+      expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    }
+    // Adding and removing repeatedly must not drift into a duplicate either.
+    let current = normalizeGradientStops(tight.stops)
+    for (let round = 0; round < 20; round += 1) {
+      const next = addGradientStop(current)
+      if (!next) break
+      const offsets = next.map((entry) => entry.offset)
+      expect(new Set(offsets).size).toBe(offsets.length)
+      current = removeGradientStop({ ...spec, stops: next }, 0).stops
+    }
+  })
+
+  it('normalises stops onto the grid without changing count or order', () => {
+    const tight = [stop(0.0005), stop(0.03125), stop(0.0312505), stop(0.7865), stop(1)]
+    const normalized = normalizeGradientStops(tight)
+    const offsets = normalized.map((entry) => entry.offset)
+    expect(normalized).toHaveLength(tight.length)
+    // Ascending, distinct, on the grid, and in range.
+    expect(offsets).toEqual([...offsets].sort((left, right) => left - right))
+    expect(new Set(offsets).size).toBe(offsets.length)
+    expect(
+      offsets.every((offset) => Number.isInteger(Math.round(offset / STOP_OFFSET_STEP))),
+    ).toBe(true)
+    expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    // Colours ride along with their stop rather than being re-sorted away.
+    expect(normalized.map((entry) => entry.color)).toEqual(tight.map((entry) => entry.color))
+  })
+
+  it('spreads a fully collapsed stop list onto distinct grid points', () => {
+    // The worst server-valid input: every offset identical. Both sweeps have to
+    // run (forward pushes off the ceiling, backward pulls back inside it) and
+    // the result must still be distinct, in range, and keep the count.
+    const collapsed = Array.from({ length: MAX_GRADIENT_STOPS }, () => stop(1))
+    const normalized = normalizeGradientStops(collapsed)
+    const offsets = normalized.map((entry) => entry.offset)
+    expect(offsets).toHaveLength(MAX_GRADIENT_STOPS)
+    expect(new Set(offsets).size).toBe(MAX_GRADIENT_STOPS)
+    expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    expect(offsets).toEqual([...offsets].sort((left, right) => left - right))
+  })
+
+  it('keeps a settled spec untouched when normalising', () => {
+    expect(normalizeGradientStops(spec.stops)).toEqual(spec.stops)
+  })
+
+  it('keeps every slider bound containing its own stop', () => {
+    // A bound that excludes the stop's own value clamps the thumb away from it,
+    // which is how the reviewer found a stop that could no longer be dragged
+    // back down. Every stop must be reachable from its own slider.
+    const tight = [stop(0.0005), stop(0.03125), stop(0.0312505), stop(0.7865), stop(1)]
+    const normalized = normalizeGradientStops(tight)
+    const sorted = [...normalized].sort((left, right) => left.offset - right.offset)
+    sorted.forEach((entry, index) => {
+      const [lower, upper] = gradientStopBounds(normalized, index)
+      if (lower > upper) return
+      expect(entry.offset).toBeGreaterThanOrEqual(lower)
+      expect(entry.offset).toBeLessThanOrEqual(upper)
+    })
   })
 
   it('keeps a moved stop strictly between its neighbours', () => {
-    const three = { ...spec, stops: addGradientStop(spec.stops) }
+    const three = { ...spec, stops: add(spec.stops) }
     const moved = moveGradientStop(three, 1, 5)
     if (!moved) throw new Error('expected a move')
     // A drag past the last stop clamps one step short of it rather than
@@ -218,24 +321,40 @@ describe('gradient stop editing', () => {
     expect(moved.stops.map((stop) => stop.offset)).toEqual([0, 0.999, 1])
   })
 
-  it('refuses a move when the neighbours leave no room', () => {
-    const tight = {
-      ...spec,
-      stops: [
-        { offset: 0, color: [0, 0, 0, 255] as [number, number, number, number] },
-        { offset: 0.0005, color: [255, 255, 255, 255] as [number, number, number, number] },
-        { offset: 0.001, color: [0, 0, 0, 255] as [number, number, number, number] },
-      ],
-    }
-    const [lower, upper] = gradientStopBounds(tight.stops, 1)
-    expect(lower).toBeGreaterThan(upper)
-    expect(moveGradientStop(tight, 1, 0.0005)).toBeNull()
+  it('normalises tight neighbours apart so a move is always possible', () => {
+    // `[0, 0.0005, 0.001]` is server-valid but has no free grid point between
+    // the ends. Normalisation is what makes this recoverable rather than a dead
+    // control: the three stops are spread onto distinct grid points, and each
+    // one's bounds then contain it.
+    const tight = { ...spec, stops: [stop(0), stop(0.0005), stop(0.001)] }
+    const normalized = normalizeGradientStops(tight.stops)
+    expect(normalized.map((entry) => entry.offset)).toEqual([0, 0.001, 0.002])
+    const moved = moveGradientStop(tight, 1, 0.0005)
+    if (!moved) throw new Error('expected a move')
+    const offsets = moved.stops.map((entry) => entry.offset)
+    expect(new Set(offsets).size).toBe(3)
+    expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+  })
+
+  it('refuses a move that cannot reach any grid point', () => {
+    // A two-stop spec whose gap is narrower than the grid has no legal offset
+    // between the ends, so the move is refused rather than rounded onto one.
+    const tight = { ...spec, stops: [stop(0.5), stop(0.5000005)] }
+    expect(gradientStopBounds(tight.stops, 0)).toEqual([0, 0.5])
+    const moved = moveGradientStop(tight, 0, 0.5000002)
+    if (!moved) throw new Error('expected a clamped move')
+    // Clamping lands on the bound, which is a distinct grid point.
+    expect(new Set(moved.stops.map((entry) => entry.offset)).size).toBe(2)
   })
 
   it('removes a stop and replaces one gradient kind in place', () => {
     expect(removeGradientStop(spec, 0).stops).toEqual([spec.stops[1]])
     expect(gradientKindName(withGradientKind(spec, 'radial'))).toBe('radial')
     expect(withGradientKind(spec, 'radial').stops).toEqual(spec.stops)
+  })
+
+  it('reports the offsets it actually built', () => {
+    expect(offsetsOf(add(spec.stops))).toEqual([0, 0.5, 1])
   })
 })
 

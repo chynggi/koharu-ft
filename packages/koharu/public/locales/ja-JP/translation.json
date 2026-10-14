@@ -239,6 +239,7 @@
       "stopColor": "ストップ {{index}} の色",
       "stopOffset": "ストップ {{index}} の位置",
       "stops": "ストップ",
+      "stopsTooClose": "ストップの間に余白がありません",
       "stroke": "縁取り",
       "strokeWidth": "縁取りの幅"
     },

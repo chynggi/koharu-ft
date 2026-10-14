@@ -239,6 +239,7 @@
       "stopColor": "{{index}}. durak rengi",
       "stopOffset": "{{index}}. durak konumu",
       "stops": "Duraklar",
+      "stopsTooClose": "Duraklar arasında yer yok",
       "stroke": "Kenarlık",
       "strokeWidth": "Kenarlık genişliği"
     },

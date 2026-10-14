@@ -128,7 +128,10 @@ export type GradientKindName = 'linear' | 'radial'
 
 // The renderer's `PreparedGradient` validation rejects a stop count outside
 // this range, so the editor must never build one: the inspector disables the
-// add button at the ceiling and the remove button at the floor.
+// add button at the ceiling and the remove button at the floor. Because the
+// buttons are disabled there is no message to show for either bound, so this
+// feature deliberately ships no `tooFewStops`/`tooManyStops` key rather than
+// carrying translations no code path renders.
 export const MIN_GRADIENT_STOPS = 2
 export const MAX_GRADIENT_STOPS = 32
 
@@ -208,65 +211,141 @@ export function withGradientKind(spec: GradientSpec, kind: GradientKindName): Gr
   return { ...spec, kind: defaultGradientSpec(kind).kind }
 }
 
+/** The offset grid every edit is placed on, in normalized frame coordinates. */
+export const STOP_OFFSET_STEP = 0.001
+
 /**
- * Adds a stop in the widest gap between two existing offsets.
+ * The number of distinct offsets the grid can hold.
  *
- * Splitting the widest gap keeps offsets unique, which the server requires,
- * and the new stop copies its left neighbour's colour so adding one does not
- * change the gradient until the user edits it. The result is ordered by offset.
+ * `MAX_GRADIENT_STOPS` is far below this, which is what makes normalisation
+ * total: any server-acceptable spec can be spread onto free grid points.
  */
-export function addGradientStop(stops: GradientStop[]): GradientStop[] {
-  const sorted = sortStops(stops)
+const GRID_POINTS = Math.round(1 / STOP_OFFSET_STEP) + 1
+
+/** The grid point nearest `offset`, clamped into the unit interval. */
+function snapToGrid(offset: number): number {
+  const snapped = Math.round(offset / STOP_OFFSET_STEP) * STOP_OFFSET_STEP
+  return Math.round(Math.min(Math.max(snapped, 0), 1) * 1e6) / 1e6
+}
+
+/**
+ * Moves every stop onto the offset grid while preserving order, count, and
+ * storage positions.
+ *
+ * The server only requires distinct finite offsets in `0..=1`, so a spec read
+ * from disk can carry neighbours closer together than one grid step (or off the
+ * grid entirely). Editing such a list on the grid would otherwise round two
+ * stops onto the same point and commit an offset pair the server rejects. This
+ * establishes the editor's invariant — offsets are distinct grid points in
+ * ascending order — before any edit is built, so every later operation can rely
+ * on it.
+ *
+ * Offsets are re-assigned by sorted rank back into their original slots, so the
+ * caller's indices stay valid and the stored order is left alone. Collisions are
+ * resolved by a forward sweep and, if that would push past `1`, a backward one;
+ * `MAX_GRADIENT_STOPS` stops need at most 31 of the grid's points, so both
+ * sweeps always fit.
+ */
+export function normalizeGradientStops(stops: GradientStop[]): GradientStop[] {
+  const ranked = stops
+    .map((stop, index) => ({ index, offset: snapToGrid(stop.offset) }))
+    .sort((left, right) => left.offset - right.offset || left.index - right.index)
+  for (let rank = 1; rank < ranked.length; rank += 1) {
+    if (ranked[rank].offset <= ranked[rank - 1].offset) {
+      ranked[rank].offset = snapToGrid(ranked[rank - 1].offset + STOP_OFFSET_STEP)
+    }
+  }
+  for (let rank = ranked.length - 2; rank >= 0; rank -= 1) {
+    if (ranked[rank].offset >= ranked[rank + 1].offset) {
+      ranked[rank].offset = snapToGrid(ranked[rank + 1].offset - STOP_OFFSET_STEP)
+    }
+  }
+  const offsets = new Map(ranked.map((entry) => [entry.index, entry.offset]))
+  return stops.map((stop, index) => ({ ...stop, offset: offsets.get(index)! }))
+}
+
+/** The spec with its stops normalised onto the offset grid. */
+export function normalizeGradientSpec(spec: GradientSpec): GradientSpec {
+  return { ...spec, stops: normalizeGradientStops(spec.stops) }
+}
+
+/**
+ * Adds a stop in the widest gap between two existing offsets, or returns `null`
+ * when no free grid point is left.
+ *
+ * The offset is the grid midpoint of the widest gap, so it is a distinct grid
+ * point strictly between two existing stops whenever that gap spans at least two
+ * steps; a gap of one step has no point between its ends and the insertion is
+ * refused rather than committed as a duplicate. The new stop copies its left
+ * neighbour's colour, so adding one does not change the gradient until the user
+ * edits it. The result is ordered by offset.
+ *
+ * `null` is the signal the caller uses to disable the add control, so the UI can
+ * never build the duplicate offsets or the out-of-range count the server rejects.
+ */
+export function addGradientStop(stops: GradientStop[]): GradientStop[] | null {
+  const normalized = normalizeGradientStops(stops)
+  const sorted = sortStops(normalized)
+  if (sorted.length >= MAX_GRADIENT_STOPS || sorted.length + 1 > GRID_POINTS) return null
   let widest = 0
-  for (let index = 1; index < sorted.length - 1; index += 1) {
-    if (sorted[index + 1].offset - sorted[index].offset > sorted[widest + 1].offset - sorted[widest].offset) {
+  let widestGap = 0
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const gap = sorted[index + 1].offset - sorted[index].offset
+    if (gap > widestGap) {
       widest = index
+      widestGap = gap
     }
   }
   const left = sorted[widest]
   const right = sorted[widest + 1]
-  // Six decimals always lands strictly inside the gap: editing a position keeps
-  // neighbours at least `STOP_OFFSET_STEP` apart, so no rounding collision is
-  // possible and the new offset never duplicates an existing one.
-  const offset = Math.round(((left.offset + right.offset) / 2) * 1e6) / 1e6
-  return sortStops([...stops, { offset, color: left.color }])
+  // A gap of one step leaves nothing strictly between its ends, and rounding a
+  // fractional midpoint would land on a neighbour.
+  if (Math.round(widestGap / STOP_OFFSET_STEP) < 2) return null
+  const offset = snapToGrid((left.offset + right.offset) / 2)
+  if (offset <= left.offset || offset >= right.offset) return null
+  return sortStops([...sorted, { offset, color: left.color }])
 }
 
-/** The finest offset a stop may be moved to, matching the offset slider. */
-export const STOP_OFFSET_STEP = 0.001
-
-/** The offsets a stop at sorted `index` may occupy without colliding. */
+/**
+ * The offsets a stop at sorted `index` may occupy without colliding.
+ *
+ * The ends are the grid points immediately inside the neighbours, so a value
+ * taken from this range is always strictly between them and never duplicates
+ * one. `lower > upper` means the neighbours leave no free grid point and the
+ * control must be disabled; the range always contains the stop's own offset,
+ * because normalisation places it on a grid point strictly between its
+ * neighbours, so a slider thumb is never clamped away from its value.
+ */
 export function gradientStopBounds(stops: GradientStop[], index: number): [number, number] {
-  const sorted = sortStops(stops)
-  // Snapping both ends to the step keeps the bounds exactly representable, so a
-  // step of 0.001 never leaves 0.30000000000000004-style noise in a slider.
-  const step = (value: number) =>
-    Math.round((Math.round(value / STOP_OFFSET_STEP) * STOP_OFFSET_STEP) * 1e6) / 1e6
-  return [
-    index === 0 ? 0 : step(sorted[index - 1].offset + STOP_OFFSET_STEP),
-    index === sorted.length - 1 ? 1 : step(sorted[index + 1].offset - STOP_OFFSET_STEP),
-  ]
+  const normalized = normalizeGradientStops(stops)
+  const sorted = sortStops(normalized)
+  const lower = index === 0 ? 0 : snapToGrid(sorted[index - 1].offset + STOP_OFFSET_STEP)
+  const upper =
+    index === sorted.length - 1 ? 1 : snapToGrid(sorted[index + 1].offset - STOP_OFFSET_STEP)
+  return [lower, upper]
 }
 
 /**
  * Moves one stop to `offset`, or returns `null` when the move is impossible.
  *
- * The offset is snapped and clamped inside the neighbours' bounds so a drag can
- * never produce the duplicate offsets the server rejects. Neighbours closer than
- * two steps leave no legal offset, and the caller simply keeps the old value.
+ * The offset is snapped to the grid and clamped inside the neighbours' bounds,
+ * so the result is always a distinct grid point strictly between them. When the
+ * neighbours leave no free grid point the move is refused and the caller keeps
+ * the old value, rather than committing a duplicate the server rejects.
  */
 export function moveGradientStop(
   spec: GradientSpec,
   index: number,
   offset: number,
 ): GradientSpec | null {
-  const sorted = sortStops(spec.stops)
+  const normalized = normalizeGradientSpec(spec)
+  const sorted = sortStops(normalized.stops)
   const [lower, upper] = gradientStopBounds(sorted, index)
   if (lower > upper) return null
-  const snapped =
-    Math.round(Math.round(Math.min(Math.max(offset, lower), upper) / STOP_OFFSET_STEP) * STOP_OFFSET_STEP * 1e6) / 1e6
+  const snapped = snapToGrid(Math.min(Math.max(offset, lower), upper))
+  if (snapped < lower || snapped > upper) return null
   return sortGradientStops(
-    replaceGradientStop(spec, spec.stops.indexOf(sorted[index]), { offset: snapped }),
+    replaceGradientStop(normalized, normalized.stops.indexOf(sorted[index]), { offset: snapped }),
   )
 }
 

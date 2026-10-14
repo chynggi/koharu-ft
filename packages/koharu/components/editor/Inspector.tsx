@@ -49,6 +49,7 @@ import {
   addGradientStop,
   gradientKindName,
   moveGradientStop,
+  normalizeGradientSpec,
   removeGradientStop,
   replaceGradientStop,
   withFillKind,
@@ -341,15 +342,33 @@ function GradientStops({
   onChange: (gradient: GradientSpec) => void
 }) {
   const { t } = useTranslation()
-  const stops = [...gradient.stops].sort((left, right) => left.offset - right.offset)
-  const kind = gradientKindName(gradient)
-  const at = (index: number) => gradient.stops.indexOf(stops[index])
+  // The server accepts neighbours closer than one grid step, so a spec read from
+  // disk can violate the editor's spacing invariant. Normalising before anything
+  // reads or writes means every control and every commit below works on distinct
+  // grid points, and a displayed offset is always one the slider can return to.
+  const spec = normalizeGradientSpec(gradient)
+  const stops = [...spec.stops].sort((left, right) => left.offset - right.offset)
+  const kind = gradientKindName(spec)
+  const at = (index: number) => spec.stops.indexOf(stops[index])
   const commitStop = (index: number, patch: Partial<GradientStop>) =>
-    onChange(replaceGradientStop(gradient, at(index), patch))
+    onChange(replaceGradientStop(spec, at(index), patch))
+  const added = stops.length < MAX_GRADIENT_STOPS ? addGradientStop(spec.stops) : null
+  const bounds = stops.map((_stop, index) => gradientStopBounds(spec.stops, index))
+  // Normalisation guarantees every stop sits on a grid point strictly between
+  // its neighbours, so a slider bound always contains its own stop and no slider
+  // is ever disabled. Only the add button can be refused, for two distinguishable
+  // reasons: the count ceiling, or every gap already being one grid step wide so
+  // no free point is left inside one. Only the second is worth explaining, and it
+  // is reachable by dragging stops together.
+  const noRoom = stops.length < MAX_GRADIENT_STOPS && added === null
 
   return (
     <div className='grid min-w-0 gap-1' data-testid='gradient-stops'>
-      <div className='flex min-w-0 items-center gap-1.5'>
+      <div
+        className='flex min-w-0 items-center gap-1.5'
+        role='radiogroup'
+        aria-label={t('inspector.shape.gradientKindLabel')}
+      >
         <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
           {t('inspector.shape.gradientKindLabel')}
         </span>
@@ -365,7 +384,7 @@ function GradientStops({
             // `sweep` is deliberately absent: the renderer supports it but the
             // editor does not expose it (spec G5).
             className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
-            onClick={() => onChange(withGradientKind(gradient, candidate))}
+            onClick={() => onChange(withGradientKind(spec, candidate))}
           >
             {t(`inspector.shape.gradientKind.${candidate}`)}
           </button>
@@ -382,7 +401,7 @@ function GradientStops({
             size='icon-xs'
             aria-label={t('inspector.shape.removeStop')}
             disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
-            onClick={() => onChange(removeGradientStop(gradient, at(stops.length - 1)))}
+            onClick={() => onChange(removeGradientStop(spec, at(stops.length - 1)))}
           >
             <Minus className='size-3' />
           </Button>
@@ -391,15 +410,22 @@ function GradientStops({
             variant='outline'
             size='icon-xs'
             aria-label={t('inspector.shape.addStop')}
-            disabled={disabled || stops.length >= MAX_GRADIENT_STOPS}
-            onClick={() => onChange({ ...gradient, stops: addGradientStop(gradient.stops) })}
+            disabled={disabled || added === null}
+            title={noRoom ? t('inspector.shape.stopsTooClose') : undefined}
+            onClick={() => {
+              const next = addGradientStop(spec.stops)
+              if (next) onChange({ ...spec, stops: next })
+            }}
           >
             <Plus className='size-3' />
           </Button>
         </div>
       </div>
+      {noRoom && (
+        <p className='text-[8px] text-muted-foreground'>{t('inspector.shape.stopsTooClose')}</p>
+      )}
       {stops.map((stop, index) => {
-        const bounds = gradientStopBounds(stops, index)
+        const [lower, upper] = bounds[index]
         return (
         <div
           key={`${index}-${stop.offset}`}
@@ -414,17 +440,17 @@ function GradientStops({
           />
           <Slider
             aria-label={t('inspector.shape.stopOffset', { index: index + 1 })}
-            min={bounds[0]}
-            max={bounds[1]}
+            min={lower}
+            max={Math.max(lower, upper)}
             step={STOP_OFFSET_STEP}
             value={stop.offset}
-            disabled={disabled || bounds[0] > bounds[1]}
+            disabled={disabled || lower > upper}
             className='[&_[data-slot=slider-thumb]]:size-2'
             // Only the committed value is written: the server cannot tell a
             // live drag's partial offset from a settled one, and each write is
             // a revision bump.
             onValueCommitted={(next) => {
-              const moved = moveGradientStop(gradient, index, next as number)
+              const moved = moveGradientStop(spec, index, next as number)
               if (moved) onChange(moved)
             }}
           />
@@ -438,7 +464,7 @@ function GradientStops({
             aria-label={t('inspector.shape.removeStop')}
             className='text-muted-foreground'
             disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
-            onClick={() => onChange(removeGradientStop(gradient, at(index)))}
+            onClick={() => onChange(removeGradientStop(spec, at(index)))}
           >
             <Trash2 className='size-3' />
           </Button>

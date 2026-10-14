@@ -239,6 +239,7 @@
       "stopColor": "Цвет точки {{index}}",
       "stopOffset": "Позиция точки {{index}}",
       "stops": "Точки",
+      "stopsTooClose": "Между точками нет места",
       "stroke": "Обводка",
       "strokeWidth": "Ширина обводки"
     },

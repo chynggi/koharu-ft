@@ -40,6 +40,7 @@ import {
   type PageSummary,
   type Preferences,
   type ProjectInfo,
+  type ShapeFill,
 } from '@koharu/bridge/protocol'
 import { TooltipProvider } from '@koharu/ui/components/tooltip'
 
@@ -888,6 +889,53 @@ describe('greenfield editor', () => {
     expect(stopCounts().every((stops) => stops.length <= 32)).toBe(true)
     expect(new Set(committed?.map((stop) => stop.offset)).size).toBe(32)
     expect(committed?.every((stop) => stop.offset >= 0 && stop.offset <= 1)).toBe(true)
+  })
+
+  it('never commits a duplicate offset when a gradient has tight neighbours', async () => {
+    // A spec read from disk may hold offsets closer than the editor's grid; the
+    // server accepts that. Rounding a midpoint between such neighbours lands on
+    // one of them, which the server then rejects. Every commit from the editor
+    // must stay server-valid: distinct offsets in 0..=1.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    const tightGradient: ShapeFill = {
+      gradient: {
+        kind: { linear: { start: [0, 0], end: [1, 0] } },
+        stops: [
+          { offset: 0.7865, color: [255, 255, 255, 255] },
+          { offset: 0.3, color: [255, 0, 0, 255] },
+          { offset: 0.7865004, color: [0, 255, 0, 255] },
+          { offset: 0.9, color: [0, 0, 255, 255] },
+        ],
+        extend: 'pad',
+      },
+    }
+    const tight: Layer = { ...gradientShapeLayer, style: { fill: tightGradient, stroke: null } }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, tight],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const committed = () =>
+      setShapeStyle.mock.calls.flatMap(([, updates]) => {
+        const fill = updates[0]?.style.fill
+        if (!fill || !('gradient' in fill)) return []
+        return [fill.gradient.stops.map((stop) => stop.offset)]
+      })
+
+    const add = screen.getByRole('button', { name: 'Add stop' })
+    for (let index = 0; index < 8 && !add.hasAttribute('disabled'); index += 1) {
+      await user.click(add)
+    }
+    for (const offsets of committed()) {
+      expect(new Set(offsets).size, `duplicate in ${offsets.join(', ')}`).toBe(offsets.length)
+      expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    }
+    // The tight pair was pulled apart rather than rounded together.
+    expect(setShapeStyle).toHaveBeenCalled()
   })
 
   it('does not show the shape controls for a text selection', () => {

@@ -239,6 +239,7 @@
       "stopColor": "스톱 {{index}} 색",
       "stopOffset": "스톱 {{index}} 위치",
       "stops": "스톱",
+      "stopsTooClose": "스톱 사이에 공간이 없습니다",
       "stroke": "테두리",
       "strokeWidth": "테두리 두께"
     },

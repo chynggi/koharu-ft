@@ -239,6 +239,7 @@
       "stopColor": "色標 {{index}} 顏色",
       "stopOffset": "色標 {{index}} 位置",
       "stops": "色標",
+      "stopsTooClose": "色標之間已無空間",
       "stroke": "描邊",
       "strokeWidth": "描邊寬度"
     },

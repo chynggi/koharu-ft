@@ -239,6 +239,7 @@
       "stopColor": "Cor da parada {{index}}",
       "stopOffset": "Posição da parada {{index}}",
       "stops": "Paradas",
+      "stopsTooClose": "Não há espaço entre as paradas",
       "stroke": "Contorno",
       "strokeWidth": "Largura do contorno"
     },

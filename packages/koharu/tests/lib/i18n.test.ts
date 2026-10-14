@@ -86,6 +86,7 @@ describe('interface language persistence', () => {
       'inspector.shape.stops',
       'inspector.shape.addStop',
       'inspector.shape.removeStop',
+      'inspector.shape.stopsTooClose',
       ...kinds.map((kind) => `inspector.shape.kind.${kind}`),
       ...fillKinds.map((kind) => `inspector.shape.fillKind.${kind}`),
       ...gradientKinds.map((kind) => `inspector.shape.gradientKind.${kind}`),
@@ -113,6 +114,13 @@ describe('interface language persistence', () => {
         const value = lookup(source, key)
         expect(typeof value, `${language}: ${key}`).toBe('string')
         expect(value, `${language}: ${key}`).toContain('{{index}}')
+      }
+      // The stop limits are enforced by disabling the add and remove controls,
+      // so no code path renders a message for them. These keys are deliberately
+      // absent rather than shipped as dead translations; this assertion is what
+      // keeps someone from re-adding them as unused strings.
+      for (const key of ['inspector.shape.tooFewStops', 'inspector.shape.tooManyStops']) {
+        expect(lookup(source, key), `${language}: ${key}`).toBeUndefined()
       }
     }
 
