@@ -462,6 +462,15 @@
       "title": "Görünüm"
     },
     "backToEditor": "Düzenleyiciye dön",
+    "features": {
+      "title": "NeKoharu Özellikleri",
+      "description": "Yalnızca NeKoharu çatalına özgü seçenekler.",
+      "pages": "Sayfalar",
+      "mergeDeleteOriginals": "Birleştirme sonrası orijinal sayfaları sil",
+      "mergeDeleteOriginalsDescription": "Sayfalar bir açılıma birleştirildikten sonra kaynak sayfaları siler. Kapalıyken orijinal sayfalar projede kalır ve yalnızca metin ve temizlik katmanları açılıma taşınır.",
+      "showPageNumbers": "Sayfa numaralarını göster",
+      "showPageNumbersDescription": "Sayfa şeridinde her sayfanın adının altındaki konum numarasını gösterir."
+    },
     "generation": {
       "description": "Dil modellerinin çevrilmiş metni nasıl ürettiğini ayarlayın.",
       "enableReasoning": "Akıl yürütmeyi etkinleştir",
@@ -621,6 +630,7 @@
     },
     "tabs": {
       "appearance": "Görünüm",
+      "features": "NeKoharu Özellikleri",
       "models": "Models",
       "pipeline": "İşlem hattı",
       "providers": "Sağlayıcılar",

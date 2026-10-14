@@ -462,6 +462,15 @@
       "title": "모양"
     },
     "backToEditor": "편집기로 돌아가기",
+    "features": {
+      "title": "NeKoharu 기능",
+      "description": "NeKoharu 포크 전용 옵션입니다.",
+      "pages": "페이지",
+      "mergeDeleteOriginals": "병합 후 원본 페이지 삭제",
+      "mergeDeleteOriginalsDescription": "페이지를 맞춤으로 병합한 후 원본 페이지를 삭제합니다. 꺼져 있으면 원본 페이지가 유지되고 텍스트 및 정리 레이어만 맞춤으로 이동합니다.",
+      "showPageNumbers": "페이지 번호 표시",
+      "showPageNumbersDescription": "페이지 레일에서 각 페이지 이름 아래에 위치 번호를 표시합니다."
+    },
     "generation": {
       "description": "언어 모델이 번역문을 생성하는 방식을 조정합니다.",
       "enableReasoning": "추론 활성화",
@@ -621,6 +630,7 @@
     },
     "tabs": {
       "appearance": "모양",
+      "features": "NeKoharu 기능",
       "models": "모델",
       "pipeline": "파이프라인",
       "providers": "제공자",

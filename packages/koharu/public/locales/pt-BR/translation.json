@@ -462,6 +462,15 @@
       "title": "Aparência"
     },
     "backToEditor": "Voltar ao editor",
+    "features": {
+      "title": "Recursos do NeKoharu",
+      "description": "Opções exclusivas do fork NeKoharu.",
+      "pages": "Páginas",
+      "mergeDeleteOriginals": "Excluir páginas originais após a fusão",
+      "mergeDeleteOriginalsDescription": "Remove as páginas de origem quando são fundidas em uma dupla. Quando desativado, as originais permanecem no projeto e apenas suas camadas de texto e limpeza são movidas para a dupla.",
+      "showPageNumbers": "Mostrar números de página",
+      "showPageNumbersDescription": "Mostra a posição de cada página abaixo de seu nome na tira de páginas."
+    },
     "generation": {
       "description": "Ajuste como os modelos de linguagem geram o texto traduzido.",
       "enableReasoning": "Ativar raciocínio",
@@ -621,6 +630,7 @@
     },
     "tabs": {
       "appearance": "Aparência",
+      "features": "Recursos do NeKoharu",
       "models": "Models",
       "pipeline": "Pipeline",
       "providers": "Provedores",

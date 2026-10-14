@@ -462,6 +462,15 @@
       "title": "外观"
     },
     "backToEditor": "返回编辑器",
+    "features": {
+      "title": "NeKoharu 功能",
+      "description": "NeKoharu 分支专属选项。",
+      "pages": "页面",
+      "mergeDeleteOriginals": "合并后删除原始页面",
+      "mergeDeleteOriginalsDescription": "页面合并为跨页后删除原始页面。关闭时，原始页面会保留，只有文字和清理图层会移动到跨页。",
+      "showPageNumbers": "显示页码",
+      "showPageNumbersDescription": "在页面栏中每个页面名称下方显示其位置编号。"
+    },
     "generation": {
       "description": "微调语言模型生成译文的方式。",
       "enableReasoning": "启用推理",
@@ -621,6 +630,7 @@
     },
     "tabs": {
       "appearance": "外观",
+      "features": "NeKoharu 功能",
       "models": "Models",
       "pipeline": "流水线",
       "providers": "提供商",

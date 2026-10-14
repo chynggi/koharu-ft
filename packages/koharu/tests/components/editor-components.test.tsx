@@ -34,6 +34,11 @@ import {
   useCommand,
 } from '@/lib/queries'
 import { FONT_FAVORITES_STORAGE_KEY, useFontFavorites } from '@/lib/fontFavorites'
+import {
+  FORK_PREFERENCES_STORAGE_KEY,
+  forkPreferenceDefaults,
+  useForkPreferences,
+} from '@/lib/forkPreferences'
 import { fillKind } from '@/lib/shapes'
 import { useKoharuStore } from '@/lib/store'
 import * as canvasRuntime from '@koharu/bridge/canvas'
@@ -343,6 +348,10 @@ describe('greenfield editor', () => {
     // store and a clean persisted value.
     window.localStorage.removeItem(FONT_FAVORITES_STORAGE_KEY)
     useFontFavorites.setState({ favorites: [] })
+    // Fork preferences live in a module-level store too, and their loader reads
+    // storage at import, so reset the store and drop any seeded value.
+    window.localStorage.removeItem(FORK_PREFERENCES_STORAGE_KEY)
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
   })
 
   afterEach(() => {
@@ -2424,6 +2433,71 @@ describe('greenfield editor', () => {
         configured.typesetting,
       ),
     )
+  })
+
+  it('toggles NeKoharu fork features from their own settings tab', async () => {
+    installProject()
+    const user = userEvent.setup()
+    useKoharuStore.setState({ settingsOpen: true })
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'NeKoharu Features' }))
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'NeKoharu Features' }),
+    ).toBeInTheDocument()
+
+    // N-D3: the fork defaults this to false, but merging has always deleted the
+    // originals here, so an empty store must render the switch already on.
+    const mergeDeleteOriginals = screen.getByRole('switch', {
+      name: 'Delete original pages after merging',
+    })
+    expect(mergeDeleteOriginals).toBeChecked()
+
+    await user.click(mergeDeleteOriginals)
+    expect(useForkPreferences.getState().preferences.mergeDeleteOriginals).toBe(false)
+    expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
+      mergeDeleteOriginals: false,
+      showPageNumbers: true,
+    })
+
+    await user.click(mergeDeleteOriginals)
+    expect(useForkPreferences.getState().preferences.mergeDeleteOriginals).toBe(true)
+    expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
+      mergeDeleteOriginals: true,
+      showPageNumbers: true,
+    })
+
+    await user.click(screen.getByRole('switch', { name: 'Show page numbers' }))
+    expect(useForkPreferences.getState().preferences.showPageNumbers).toBe(false)
+  })
+
+  it('recovers fork preferences from a corrupt or incomplete store', async () => {
+    // `loadForkPreferences` is private and runs once at import, so re-initialize
+    // the module against a seeded store, as `tests/lib/i18n.test.ts` does.
+    const cases: [string, boolean, boolean][] = [
+      ['not json', true, true],
+      ['[1,2,3]', true, true],
+      // An object that omits a key must fall back to that key's default.
+      ['{}', true, true],
+      ['{"mergeDeleteOriginals":false}', false, true],
+      ['{"showPageNumbers":false}', true, false],
+      ['{"mergeDeleteOriginals":true,"showPageNumbers":false}', true, false],
+    ]
+
+    for (const [stored, mergeDeleteOriginals, showPageNumbers] of cases) {
+      window.localStorage.setItem(FORK_PREFERENCES_STORAGE_KEY, stored)
+      vi.resetModules()
+      const { useForkPreferences: reinitialized } = await import('@/lib/forkPreferences')
+
+      expect(reinitialized.getState().preferences, stored).toEqual({
+        mergeDeleteOriginals,
+        showPageNumbers,
+      })
+    }
   })
 
   it('keeps a configured provider credential private and allows clearing it', async () => {

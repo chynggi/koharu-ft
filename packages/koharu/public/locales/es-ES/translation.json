@@ -462,6 +462,15 @@
       "title": "Apariencia"
     },
     "backToEditor": "Volver al editor",
+    "features": {
+      "title": "Funciones de NeKoharu",
+      "description": "Opciones exclusivas del fork NeKoharu.",
+      "pages": "Páginas",
+      "mergeDeleteOriginals": "Eliminar páginas originales al fusionar",
+      "mergeDeleteOriginalsDescription": "Elimina las páginas de origen cuando se fusionan en un pliego. Cuando está desactivado, las originales permanecen en el proyecto y solo sus capas de texto y limpieza se mueven al pliego.",
+      "showPageNumbers": "Mostrar números de página",
+      "showPageNumbersDescription": "Muestra la posición de cada página debajo de su nombre en la tira de páginas."
+    },
     "generation": {
       "description": "Ajusta cómo los modelos de lenguaje generan el texto traducido.",
       "enableReasoning": "Activar razonamiento",
@@ -621,6 +630,7 @@
     },
     "tabs": {
       "appearance": "Apariencia",
+      "features": "Funciones de NeKoharu",
       "models": "Models",
       "pipeline": "Canalización",
       "providers": "Proveedores",

@@ -10,6 +10,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  Sparkles,
   Sun,
   Type,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { FeaturesPreferences } from '@/components/preferences/FeaturesPreferences'
 import { LocalModelPreferences } from '@/components/preferences/LocalModelPreferences'
 import { PipelinePreferences } from '@/components/preferences/PipelinePreferences'
 import {
@@ -54,6 +56,9 @@ const tabs = [
   ['translation', Languages],
   ['models', Boxes],
   ['typesetting', Type],
+  // The fork appends `features` right before `shortcuts`; our `models` tab is
+  // the only entry it does not have, so the relative position is unchanged.
+  ['features', Sparkles],
   ['shortcuts', Keyboard],
 ] as const
 type Tab = (typeof tabs)[number][0]
@@ -239,6 +244,7 @@ export function SettingsPage() {
               ) : (
                 <LoadingPreferences />
               ))}
+            {tab === 'features' && <FeaturesPreferences />}
             {tab === 'shortcuts' && <ShortcutPreferences />}
           </div>
         </ScrollArea>
