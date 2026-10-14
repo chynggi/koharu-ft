@@ -3554,6 +3554,103 @@ mod tests {
         );
     }
 
+    /// `apply_raster_stroke` is the only caller of the shared asset path that can
+    /// **create** its layer, and until now it had no end-to-end test — only the
+    /// free `rasterize_stroke` function was covered. That branch and the shared
+    /// write helper are now one path, so a regression here would break painting
+    /// without any test failing.
+    #[tokio::test]
+    async fn painting_creates_a_layer_and_claims_both_origins() {
+        // A page with no raster layer yet, so the stroke has to create one.
+        let (mut project, existing) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let page = project
+            .snapshot()
+            .parent(existing)
+            .unwrap()
+            .expect("the fixture layer has a page");
+
+        let (commit, layer) = project
+            .apply_raster_stroke(
+                page,
+                None,
+                RasterStrokeMode::Paint,
+                [255, 0, 0, 255],
+                4.0,
+                vec![
+                    ScenePoint { x: 8.0, y: 8.0 },
+                    ScenePoint { x: 16.0, y: 8.0 },
+                ],
+            )
+            .await
+            .expect("painting without a target layer creates one");
+
+        assert!(commit.revision.get() > 0);
+        assert_ne!(layer, existing, "a new layer must be created");
+        let snapshot = project.snapshot();
+        let raster = snapshot
+            .component::<SceneRasterLayer>(layer)
+            .unwrap()
+            .expect("the new entity is a raster layer");
+        assert_eq!(
+            raster.origin,
+            Origin::User,
+            "a user stroke owns its layer, or a later pipeline pass may discard it"
+        );
+        assert_eq!(raster.kind, RasterLayerKind::Paint);
+
+        // `RasterLayer::origin` is persisted separately from the `EntityOrigin`
+        // component and the pipeline gates on both, so assert both were claimed.
+        assert_eq!(
+            snapshot
+                .component::<koharu_scene::EntityOrigin>(layer)
+                .unwrap()
+                .expect("the entity records an origin")
+                .origin,
+            Origin::User
+        );
+
+        let image = source_image(&snapshot, layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+    }
+
+    /// `apply_raster_stroke`'s existing-layer path goes through the same shared
+    /// read/write helpers as `adjust_raster` and `fill_raster`.
+    #[tokio::test]
+    async fn painting_an_existing_layer_keeps_its_identity() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let page = project
+            .snapshot()
+            .parent(layer)
+            .unwrap()
+            .expect("the layer has a page");
+
+        let (_, returned) = project
+            .apply_raster_stroke(
+                page,
+                Some(layer),
+                RasterStrokeMode::Paint,
+                [0, 255, 0, 255],
+                6.0,
+                vec![
+                    ScenePoint { x: 40.0, y: 40.0 },
+                    ScenePoint { x: 60.0, y: 40.0 },
+                ],
+            )
+            .await
+            .expect("painting an existing layer succeeds");
+
+        assert_eq!(
+            returned, layer,
+            "the existing layer is reused, not replaced"
+        );
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+        assert!(
+            image.pixels().any(|pixel| pixel.0[1] > 0),
+            "the stroke must have written green pixels somewhere"
+        );
+    }
+
     #[tokio::test]
     async fn a_typography_write_that_drops_the_size_is_rejected_by_name() {
         let mut session = Session::memory().await.unwrap();
