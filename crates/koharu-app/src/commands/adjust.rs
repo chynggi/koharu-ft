@@ -75,6 +75,21 @@ impl ColorAdjust {
 /// `brighten_in_place` uses), so it re-scales alpha along with the colour and
 /// turns alpha 200 into 255 at `percent: 50.0`. Copying alpha back is what
 /// makes that kernel usable here at all.
+///
+/// # Panics
+///
+/// The caller must run [`ColorAdjust::validate`] first. This function does not
+/// re-check the parameters, so an unvalidated adjustment panics inside the
+/// underlying kernel in one of two ways:
+///
+/// - `Levels` with `low >= high` trips `stretch_contrast_mut`'s
+///   `assert!(input_min < input_max)`.
+/// - `Brightness` with a `delta` far enough beyond `-255..=255` overflows the
+///   `c + value` addition in `brighten_in_place` (debug builds panic; release
+///   builds wrap).
+///
+/// Re-validating here would duplicate the boundary in two places, so the
+/// precondition is stated rather than enforced.
 pub fn apply_adjust(image: &mut RgbaImage, adjust: ColorAdjust) {
     let before = image.clone();
 
@@ -261,6 +276,42 @@ mod tests {
         let mut value = image(&[[10, 20, 30, 0]]);
         apply_adjust(&mut value, ColorAdjust::Brightness { delta: 50 });
         assert_eq!(*value.get_pixel(0, 0), pixel(10, 20, 30, 0));
+    }
+
+    /// The same guarantee under the one kernel that rewrites alpha. `Contrast`
+    /// is where the whole-pixel restore, rather than the alpha-channel restore,
+    /// does the work: `contrast_in_place` would otherwise pull this pixel's RGB
+    /// towards mid-grey and its alpha up from 0.
+    #[test]
+    fn a_fully_transparent_pixel_keeps_its_color_under_contrast() {
+        let mut value = image(&[[10, 20, 30, 0]]);
+        apply_adjust(&mut value, ColorAdjust::Contrast { percent: 50.0 });
+        assert_eq!(*value.get_pixel(0, 0), pixel(10, 20, 30, 0));
+    }
+
+    /// Kernels walk `width * height` pixels, so a zero-pixel image must produce
+    /// an empty image rather than a panic.
+    #[test]
+    fn an_empty_image_is_a_no_op() {
+        let adjusts = [
+            ColorAdjust::Brightness { delta: 20 },
+            ColorAdjust::Contrast { percent: 50.0 },
+            ColorAdjust::Levels {
+                low: 100,
+                high: 150,
+            },
+            ColorAdjust::Hue { degrees: 90 },
+            ColorAdjust::Grayscale,
+        ];
+        for adjust in adjusts {
+            let mut value = RgbaImage::new(0, 0);
+            apply_adjust(&mut value, adjust);
+            assert_eq!(
+                value.dimensions(),
+                (0, 0),
+                "empty must stay empty for {adjust:?}"
+            );
+        }
     }
 
     #[test]
