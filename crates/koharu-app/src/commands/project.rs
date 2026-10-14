@@ -1672,6 +1672,102 @@ impl Project {
         Ok((self.commit(patch).await?, layer))
     }
 
+    /// Flood-fills the connected region of `layer` under `point` with `color`.
+    ///
+    /// Only a [`SceneRasterLayer`] owns pixels, so a target without that
+    /// component is an error rather than a new layer. The colour is not
+    /// persisted: the committed result is the pixels.
+    ///
+    /// A fill whose start pixel already has `color` commits with no pixel
+    /// change. That is deliberate rather than an error — the user asked for the
+    /// pixel to be that colour and it is, so there is nothing to report.
+    pub async fn fill_raster(
+        &mut self,
+        layer: EntityId,
+        point: Point,
+        color: [u8; 4],
+    ) -> Result<(Commit, EntityId)> {
+        let snapshot = self.snapshot();
+        let page = owning_page(&snapshot, layer)?;
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        // `RasterLayer::origin` is persisted separately from `EntityOrigin`, and
+        // the pipeline stages gate on it (`inpainting.rs` computes `generated`
+        // from both), so a user fill has to claim both. Claiming only
+        // `EntityOrigin` would leave the layer looking pipeline-owned, and the
+        // next stage that reuses such a layer as its overlay would treat the
+        // user's pixels as its own generated output.
+        let mut raster_layer = snapshot
+            .component::<SceneRasterLayer>(layer)?
+            .context("only raster layers can be filled")?;
+        let promote_layer = raster_layer.origin != Origin::User
+            || snapshot
+                .component::<EntityOrigin>(layer)?
+                .is_some_and(|origin| origin.origin != Origin::User);
+        // The click point is `f64` page space and `flood_fill_mut` takes `u32`,
+        // so both axes are validated before the cast: a negative value would
+        // become a huge `u32` and a `NaN` slips past `< 0.0` and `>= width`
+        // because every comparison with it is false. `floor` rounds towards the
+        // pixel that contains the point, so `2.7` lands on pixel 2.
+        let x = point.x.floor();
+        let y = point.y.floor();
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
+            || y < 0.0
+            || x >= f64::from(width)
+            || y >= f64::from(height)
+        {
+            bail!("the fill point is outside the page");
+        }
+        let (x, y) = (x as u32, y as u32);
+        let source = AssetRole::new("source")?;
+        let mut image = match snapshot.asset(layer, &source)? {
+            Some(asset) => {
+                let bytes = snapshot.read_blob(asset.blob).await?;
+                image::load_from_memory(&bytes)?.to_rgba8()
+            }
+            // `apply_raster_stroke` treats a missing asset as an empty
+            // page-sized surface rather than an error; a fill over it is then a
+            // region of transparency that still commits.
+            None => RgbaImage::new(width, height),
+        };
+        if image.dimensions() != (width, height) {
+            bail!("raster layer dimensions must match the page");
+        }
+        // `flood_fill_mut` is 4-directional and compares with `PartialEq`, so
+        // the region is exactly the set of pixels equal to the start pixel —
+        // there is no tolerance to give it, and none is wanted here.
+        imageproc::drawing::flood_fill_mut(&mut image, x, y, image::Rgba(color));
+        let mut bytes = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+        let patch = snapshot.patch(|edit| {
+            if promote_layer {
+                edit.promote_entity_to_user(layer)?;
+                raster_layer.origin = Origin::User;
+                edit.set(layer, &raster_layer)?;
+            }
+            edit.set_asset(
+                layer,
+                &source,
+                AssetInput::new(
+                    bytes.into_inner(),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(width),
+                        height: Some(height),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
     pub async fn undo(&mut self) -> Result<Commit> {
         let revisions = self.undo.pop().ok_or_else(|| anyhow!("nothing to undo"))?;
         let commit = match self.session.undo_many(revisions.iter().copied()).await {
@@ -3235,6 +3331,152 @@ mod tests {
                 )
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn filling_replaces_only_the_connected_region() {
+        // A 4x1 image: the two left pixels are identical, the right two differ.
+        let mut source = RgbaImage::new(4, 1);
+        source.put_pixel(0, 0, image::Rgba([10, 10, 10, 255]));
+        source.put_pixel(1, 0, image::Rgba([10, 10, 10, 255]));
+        source.put_pixel(2, 0, image::Rgba([20, 20, 20, 255]));
+        source.put_pixel(3, 0, image::Rgba([20, 20, 20, 255]));
+        let (mut project, layer) = project_with_raster(source).await;
+
+        project
+            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [255, 0, 0, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(
+            image.get_pixel(0, 0),
+            &image::Rgba([255, 0, 0, 255]),
+            "the start pixel is filled"
+        );
+        assert_eq!(
+            image.get_pixel(1, 0),
+            &image::Rgba([255, 0, 0, 255]),
+            "the connected neighbour is filled"
+        );
+        assert_eq!(
+            image.get_pixel(2, 0),
+            &image::Rgba([20, 20, 20, 255]),
+            "a differently coloured neighbour is untouched"
+        );
+        assert_eq!(
+            image.get_pixel(3, 0),
+            &image::Rgba([20, 20, 20, 255]),
+            "the region must not leak past the boundary"
+        );
+    }
+
+    /// A raster layer's empty area is fully transparent, and a bucket must treat
+    /// it as a region like any other — otherwise the tool cannot fill the blank
+    /// space authors actually use it on.
+    #[tokio::test]
+    async fn filling_covers_a_transparent_region() {
+        let mut source = RgbaImage::new(4, 1);
+        source.put_pixel(0, 0, image::Rgba([0, 0, 0, 0]));
+        source.put_pixel(1, 0, image::Rgba([0, 0, 0, 0]));
+        source.put_pixel(2, 0, image::Rgba([200, 0, 0, 255]));
+        source.put_pixel(3, 0, image::Rgba([0, 0, 0, 0]));
+        let (mut project, layer) = project_with_raster(source).await;
+
+        project
+            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [255, 255, 0, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0), &image::Rgba([255, 255, 0, 255]));
+        assert_eq!(image.get_pixel(1, 0), &image::Rgba([255, 255, 0, 255]));
+        assert_eq!(
+            image.get_pixel(2, 0),
+            &image::Rgba([200, 0, 0, 255]),
+            "the opaque divider stops the fill"
+        );
+        assert_eq!(
+            image.get_pixel(3, 0),
+            &image::Rgba([0, 0, 0, 0]),
+            "the far transparent pixel is a different region and stays empty"
+        );
+    }
+
+    #[tokio::test]
+    async fn filling_with_the_existing_colour_is_a_harmless_commit() {
+        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
+            4,
+            1,
+            image::Rgba([10, 10, 10, 255]),
+        ))
+        .await;
+
+        let (commit, _) = project
+            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [10, 10, 10, 255])
+            .await
+            .expect("filling with the same colour is not an error");
+
+        assert!(commit.revision.get() > 0);
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0), &image::Rgba([10, 10, 10, 255]));
+    }
+
+    /// The click point is `f64` page space and `flood_fill_mut` takes `u32`.
+    /// Casting before checking would turn `-1.0` into a huge `u32` and panic or
+    /// fill the wrong pixel, so the bounds check must come first.
+    #[tokio::test]
+    async fn filling_outside_the_page_is_rejected() {
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(4, 4, image::Rgba([10, 10, 10, 255]))).await;
+
+        for point in [
+            Point { x: -1.0, y: 0.0 },
+            Point { x: 0.0, y: -1.0 },
+            Point { x: 4.0, y: 0.0 },
+            Point { x: 0.0, y: 4.0 },
+            Point { x: f64::NAN, y: 0.0 },
+        ] {
+            assert!(
+                project.fill_raster(layer, point, [1, 2, 3, 255]).await.is_err(),
+                "a point outside the page must be rejected: {point:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn filling_a_non_raster_layer_is_rejected() {
+        let (mut project, text) = project_with_text_layer().await;
+        let error = project
+            .fill_raster(text, Point { x: 0.0, y: 0.0 }, [1, 2, 3, 255])
+            .await
+            .expect_err("a text layer cannot be filled");
+        assert!(
+            error.to_string().contains("only raster layers"),
+            "expected the raster guard, got: {error}"
+        );
+    }
+
+    /// The bottom-right corner is the boundary case: the start pixel is valid
+    /// but has no in-bounds neighbour, so an off-by-one in the fill or the
+    /// bounds check shows up here and nowhere else.
+    #[tokio::test]
+    async fn filling_at_the_corner_stops_at_the_edge() {
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(3, 3, image::Rgba([5, 5, 5, 255]))).await;
+
+        project
+            .fill_raster(layer, Point { x: 2.0, y: 2.0 }, [9, 9, 9, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(2, 2), &image::Rgba([9, 9, 9, 255]));
+        assert_eq!(
+            image.get_pixel(0, 0),
+            &image::Rgba([9, 9, 9, 255]),
+            "a uniform image fills entirely, corner included"
         );
     }
 
