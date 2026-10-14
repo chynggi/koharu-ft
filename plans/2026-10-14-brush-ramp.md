@@ -47,10 +47,12 @@
 |---|---|
 | `crates/koharu-rasterizer/src/prepared.rs` | `BrushRamp`, `RampAxis` 타입 |
 | `crates/koharu-rasterizer/src/lib.rs` | 재수출 |
-| `crates/koharu-app/src/commands/project.rs` | `PaintBrush.ramp`, `rasterize_stroke`의 램프, `commit_paint` 전달 |
-| `crates/koharu-app/src/commands/canvas.rs` | `PaintBrush` 확장 반영 |
+| `crates/koharu-app/src/commands/project.rs` | `rasterize_stroke`의 램프, `apply_raster_stroke` 전달 |
+| `crates/koharu-app/src/commands/canvas.rs` | **`PaintBrush` 정의가 여기 있다**(`:32`). `ramp: Option<BrushRamp>` 추가 + `commit_raster_stroke`가 램프를 넘김 |
 | `crates/koharu-rpc/src/routes/canvas.rs` | 요청 타입에 램프 |
 | `crates/koharu-canvas/src/web.rs` | `begin_stroke`가 램프를 받고 `extend_stroke`가 세그먼트 색을 계산 |
+| `crates/koharu-canvas/src/ramp.rs` | **신규.** 세그먼트 램프 위치 계산을 `web.rs`에서 떼어낸 순수 함수 + 테스트. `web.rs`는 `wasm32`에서만 컴파일되므로 호스트 `--lib` 테스트가 닿지 않는다 — 이 분리가 없으면 미리보기 산술을 테스트할 수 없다 |
+| `crates/koharu-canvas/src/lib.rs` | `ramp` 모듈 등록 (`cfg(any(wasm32, test))`) |
 | `packages/bridge/src/protocol.ts` | `PaintBrush`에 `ramp`, `BrushRamp` 타입 |
 | `packages/koharu/lib/store.ts` | `CanvasBrush.ramp` |
 | `packages/koharu/components/editor/ToolBar.tsx` | 램프 종류 선택 + 두 색 |
@@ -229,6 +231,7 @@ git commit -m "feat(rasterizer): add the brush ramp type"
 
 **Files:**
 - Modify: `crates/koharu-app/src/commands/project.rs`
+- Modify: `crates/koharu-app/src/commands/canvas.rs` (`PaintBrush` 정의 + `commit_raster_stroke` 호출부)
 - Test: `crates/koharu-app/src/commands/project.rs` (인라인 `mod tests`)
 
 **Interfaces:**
@@ -453,7 +456,7 @@ let along = if total > 0.0 {
 
 **`cumulative`를 계산할 때 점 개수가 1이면 `total`이 0이다.** 위 `if total > 0.0` 분기가 그것을 처리하지만, 그 이유를 주석에 남긴다.
 
-`PaintBrush`에 `ramp: Option<BrushRamp>`를 추가하고 `commit_paint`가 `apply_raster_stroke`로 전달한다.
+`PaintBrush`는 **`project.rs`가 아니라 `canvas.rs:32`에 있다.** 거기에 `ramp: Option<BrushRamp>`를 추가하고, `commit_paint` → `apply_raster_stroke` → `rasterize_stroke`로 전달한다. `apply_raster_stroke`의 시그니처가 바뀌므로 **`canvas.rs`의 호출부(`commit_raster_stroke`)도 함께 고쳐야 한다** — `project.rs`만 커밋하면 HEAD가 컴파일되지 않는다. `commit_erase`는 색을 쓰지 않으므로 `None`을 넘긴다.
 
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
@@ -463,7 +466,7 @@ Expected: 기존 + 6 passed
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add crates/koharu-app/src/commands/project.rs
+git add crates/koharu-app/src/commands/project.rs crates/koharu-app/src/commands/canvas.rs
 git commit -m "feat(app): paint a stroke with a colour ramp"
 ```
 
@@ -584,7 +587,7 @@ Expected: 성공
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add crates/koharu-canvas/src/web.rs
+git add crates/koharu-canvas/src/web.rs crates/koharu-canvas/src/ramp.rs crates/koharu-canvas/src/lib.rs
 git commit -m "feat(canvas): preview a ramped stroke"
 ```
 
