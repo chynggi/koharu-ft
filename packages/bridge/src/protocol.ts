@@ -326,6 +326,12 @@ export const commands = {
 			points,
 			diameter,
 		}),
+	adjustRaster: (expectedRevision: Revision, layer: EntityId, adjust: ColorAdjust) =>
+		post<LayerCommit>("/canvas/raster/adjust", {
+			expected_revision: expectedRevision,
+			layer,
+			adjust,
+		}),
 	getMeta: () => get<{ name: string; version: string }>("/meta"),
 };
 
@@ -718,6 +724,18 @@ export type LayerCommit = {
 	revision: Revision,
 	layer: EntityId,
 };
+
+/**
+ * A raster colour adjustment. Command arguments, so this uses internal tagging
+ * (`{ type, ... }`) like `Layer` rather than the external tagging that the
+ * persisted scene components use.
+ */
+export type ColorAdjust =
+	| { type: "brightness"; delta: number }
+	| { type: "contrast"; percent: number }
+	| { type: "levels"; low: number; high: number }
+	| { type: "hue"; degrees: number }
+	| { type: "grayscale" };
 
 export type LayerVisibility = {
 	visible: boolean,
