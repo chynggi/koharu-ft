@@ -862,11 +862,15 @@ git commit -m "feat(ui): speak the gradient wire shape in the client"
 
 Inspector에서 채우기 종류를 고르고 스톱을 편집한다.
 
+**UI는 서버가 거부할 입력을 만들 수 없어야 한다.** 스톱 수(2..=32)와 offset 범위(`0.0..=1.0`)는 컨트롤 비활성화·clamp로 구조적으로 막는다. **offset 유일성도 같이 막아야 한다** — 검증은 "유한하고 범위 안이며 서로 다름"만 요구하므로(간격은 요구하지 않는다), 이웃 간격이 좁은 스펙은 **서버가 허용**한다. 스톱을 중간에 삽입할 때 offset을 반올림만 하면 간격이 `1e-6` 미만일 때 양 끝과 충돌해 서버가 거부하는 상태를 커밋한다. 삽입 지점은 격자에 맞추고, 맞출 자리가 없으면 **삽입을 거부**하라(중복을 커밋하지 않는다). 저장된 offset이 격자 밖이면 슬라이더 경계가 스톱 값보다 커져 손잡이가 값에서 밀려나므로, 로드 시 격자에 정규화하는 편이 낫다.
+
 **Files:**
 - Modify: `packages/koharu/components/editor/Inspector.tsx:144-280` (`ShapeInspector`)
 - Modify: `packages/koharu/components/editor/ToolBar.tsx` (스타일 팝오버의 기본 채우기)
+- Modify: `packages/koharu/lib/shapes.ts` (스톱 삽입·이동·경계 헬퍼)
 - Modify: `packages/koharu/public/locales/*/translation.json` (9개)
 - Modify: `packages/koharu/tests/components/editor-components.test.tsx`
+- Modify: `packages/koharu/tests/lib/shapes.test.ts`
 
 **Interfaces:**
 - Consumes: Task 5의 `defaultGradientSpec`, TS `GradientSpec` 계열
@@ -921,10 +925,12 @@ Expected: FAIL
 
 필요한 키:
 
-- `inspector.shape.fillKind.solid`, `.gradient`
-- `inspector.shape.gradientKind.linear`, `.radial`
-- `inspector.shape.stops`, `inspector.shape.addStop`, `inspector.shape.removeStop`, `inspector.shape.stopOffset`
-- `inspector.shape.tooFewStops`, `inspector.shape.tooManyStops`
+- `inspector.shape.fillKindLabel`, `inspector.shape.fillKind.solid`, `.gradient`
+- `inspector.shape.gradientKindLabel`, `inspector.shape.gradientKind.linear`, `.radial`
+- `inspector.shape.stops`, `inspector.shape.addStop`, `inspector.shape.removeStop`
+- `inspector.shape.stopColor`(`{{index}}` 포함), `inspector.shape.stopOffset`(`{{index}}` 포함)
+
+**스톱 상·하한 초과를 알리는 키는 요구하지 않는다.** UI가 버튼을 `disabled`로 막으므로 그 조건은 도달 불가이고, 메시지 키를 만들면 아무도 렌더하지 않는 죽은 번역이 된다. 대신 그 상수를 정의하는 자리에 "한계는 컨트롤 비활성화로 강제되며 메시지 키가 없다"는 주석을 남긴다. 편집자가 상·하한에 왜 걸렸는지 설명이 정말 필요해지면 **하나의** 키로 그 자리에서 쓰는 편이 unused 두 개보다 낫다.
 
 `ko-KR`은 실제 한국어로("도형" 용어를 1a의 `inspector.shape.*`와 통일). 나머지 8개는 각 파일의 기존 관행을 따른다(1a에서 8개 모두 실제 번역이 들어갔으므로 같은 수준을 유지한다).
 
