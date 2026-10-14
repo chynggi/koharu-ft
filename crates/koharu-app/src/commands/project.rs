@@ -1596,7 +1596,20 @@ impl Project {
         // is the other half of that contract.
         adjust.validate()?;
         let snapshot = self.snapshot();
-        let page = snapshot.parent(layer)?.context("the layer has no page")?;
+        // Walk up to the owning page rather than assuming the layer's parent is
+        // one. Layers are frequently nested under a group (`add_text_layer`
+        // creates text layers under a `TextGroup`), and `Snapshot::parent`
+        // returns the *immediate* parent while `Snapshot::page` only accepts a
+        // page id — so a single `parent` call would reject a grouped layer with
+        // `EntityNotFound` before the raster guard below ever ran.
+        //
+        // Only a page has no parent (`Snapshot::parent` returns `None` for it),
+        // so the walk terminates at the page; `page(entity)` then fails loudly
+        // if the chain did not in fact reach one.
+        let mut page = layer;
+        while let Some(parent) = snapshot.parent(page)? {
+            page = parent;
+        }
         let page_value = snapshot.page(page)?.page()?;
         let width = page_value.width.round() as u32;
         let height = page_value.height.round() as u32;
@@ -1604,8 +1617,11 @@ impl Project {
             bail!("page dimensions must be positive");
         }
         // `RasterLayer::origin` is persisted separately from `EntityOrigin`, and
-        // the pipeline stages gate on it (`inpainting.rs`), so a user adjustment
-        // has to claim both or a later stage would discard these pixels.
+        // the pipeline stages gate on it (`inpainting.rs` computes `generated`
+        // from both), so a user adjustment has to claim both. Claiming only
+        // `EntityOrigin` would leave the layer looking pipeline-owned, and the
+        // next stage that reuses such a layer as its overlay would treat the
+        // user's pixels as its own generated output.
         let mut raster_layer = snapshot
             .component::<SceneRasterLayer>(layer)?
             .context("only raster layers can be adjusted")?;
@@ -3004,12 +3020,18 @@ mod tests {
             "the fixture must start generated for the promotion below to mean anything"
         );
 
+        let before = project.revision().get();
         let (commit, element) = project
             .adjust_raster(layer, ColorAdjust::Brightness { delta: 50 })
             .await
             .unwrap();
         assert_eq!(element, layer);
-        assert!(commit.revision.get() > 0);
+        // Pin exactly one commit, not merely "some revision": B-D5 requires the
+        // pixels, the promotion, and the new asset to land atomically, so a
+        // regression that split this into two commits must fail here. The
+        // fixture already committed once when it built the page, hence the
+        // delta rather than an absolute revision.
+        assert_eq!(commit.revision.get(), before + 1);
 
         let image = source_image(&project.snapshot(), layer).await;
         assert_eq!(image.get_pixel(0, 0)[0], 150);
@@ -3092,12 +3114,103 @@ mod tests {
     #[tokio::test]
     async fn adjusting_a_non_raster_layer_is_rejected() {
         let (mut project, text) = project_with_text_layer().await;
+        let error = project
+            .adjust_raster(text, ColorAdjust::Grayscale)
+            .await
+            .expect_err("a text layer cannot be adjusted");
+        // Assert the *raster* guard fired, not that page resolution happened to
+        // fail. A text layer lives under a `TextGroup`, so if the page walk
+        // regressed to a single `parent` call this would instead be an
+        // `EntityNotFound` and the assertion below would catch it.
         assert!(
-            project
-                .adjust_raster(text, ColorAdjust::Grayscale)
-                .await
-                .is_err()
+            error.to_string().contains("only raster layers"),
+            "expected the raster guard, got: {error}"
         );
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_grouped_raster_layer_still_finds_its_page() {
+        // A raster layer nested in a group is still a layer on that page, so it
+        // must be adjustable. This is the case the immediate-parent lookup
+        // broke: `snapshot.parent` returns the group, and `snapshot.page(group)`
+        // is an error, so the adjustment used to fail with `EntityNotFound`.
+        //
+        // The layer is created directly under the group rather than moved there,
+        // because `Project` exposes no edit entry point to its tests.
+        let generation = Generation::new(
+            ProducerId::new("dev.koharu.pipeline.inpainting").expect("valid producer"),
+        );
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit_as(generation.clone());
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let group = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                group,
+                &SceneGroup {
+                    origin: Origin::Generated(generation.clone()),
+                    name: "Group 1".to_owned(),
+                },
+            )
+            .unwrap();
+        let layer = setup.add_entity(group, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .write_to(&mut encoded, ImageFormat::Png)
+        .unwrap();
+        setup
+            .set_asset(
+                layer,
+                &AssetRole::new("source").unwrap(),
+                AssetInput::new(
+                    Arc::<[u8]>::from(encoded.into_inner()),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(100),
+                        height: Some(100),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let snapshot = project.snapshot();
+        assert_eq!(
+            snapshot.parent(layer).unwrap(),
+            Some(group),
+            "the fixture must actually nest the layer under the group"
+        );
+        assert_eq!(
+            snapshot.page(group).is_err(),
+            true,
+            "the group is not a page, which is what broke the old lookup"
+        );
+
+        project
+            .adjust_raster(layer, ColorAdjust::Brightness { delta: 50 })
+            .await
+            .expect("a grouped raster layer is adjustable");
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[0], 150);
     }
 
     #[tokio::test]
