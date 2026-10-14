@@ -89,6 +89,7 @@ export function CanvasWorkspace() {
   const previousPageIndex = useRef<number | null>(null)
   const spaceHeld = useRef(false)
   const heldArrows = useRef(new Set<string>())
+  const nudgeTimer = useRef<number | null>(null)
   const transformActive = useRef(false)
   const transformRevision = useRef<number | null>(null)
   const transformFinal = useRef<TransformFrame[]>([])
@@ -178,9 +179,23 @@ export function CanvasWorkspace() {
     [transformUpdates],
   )
 
-  const finishTransform = useCallback(() => {
+  const nudge = useCallback(() => {
     if (!transformActive.current) return
+
+    const keys = heldArrows.current
+    const x = Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft'))
+    const y = Number(keys.has('ArrowDown')) - Number(keys.has('ArrowUp'))
+
+    if (x || y) {
+      updateTransform(translateFrames(transformFinal.current, { x, y }))
+    }
+  }, [updateTransform])
+
+  const finishTransform = useCallback(() => {
+    if (nudgeTimer.current !== null) window.clearTimeout(nudgeTimer.current)
+    nudgeTimer.current = null
     heldArrows.current.clear()
+    if (!transformActive.current) return
     transformUpdates.commit()
     transformActive.current = false
     const revision = transformRevision.current
@@ -209,6 +224,8 @@ export function CanvasWorkspace() {
   }, [canvas, enqueue, transformUpdates])
 
   const cancelGesture = useCallback(() => {
+    if (nudgeTimer.current !== null) window.clearTimeout(nudgeTimer.current)
+    nudgeTimer.current = null
     heldArrows.current.clear()
     const current = gesture.current
     gesture.current = null
@@ -571,6 +588,11 @@ export function CanvasWorkspace() {
             )
               return
 
+            if (event.repeat || keys.has(event.key)) {
+              if (keys.has(event.key)) event.preventDefault()
+              return
+            }
+
             if (keys.size === 0) {
               beginTransform(
                 framesFor(
@@ -583,12 +605,15 @@ export function CanvasWorkspace() {
             }
             keys.add(event.key)
             event.preventDefault()
-
-            const x = Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft'))
-            const y = Number(keys.has('ArrowDown')) - Number(keys.has('ArrowUp'))
-
-            if (x || y) {
-              updateTransform(translateFrames(transformFinal.current, {x,y}))
+            nudge()
+            if(nudgeTimer.current === null) {
+              const repeat = () => {
+                nudgeTimer.current = null
+                if (heldArrows.current.size === 0 || !transformActive.current) return
+                nudge()
+                nudgeTimer.current = window.setTimeout(repeat, 30)
+              }
+              nudgeTimer.current = window.setTimeout(repeat, 300)
             }
           }}
           onBlur={() => {

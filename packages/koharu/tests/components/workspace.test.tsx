@@ -92,7 +92,10 @@ beforeEach(() => {
   prefetchCanvasPages.mockClear()
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 function installProject() {
   const page = {
@@ -251,24 +254,35 @@ describe('canvas interaction adapter', () => {
     {
       keys: ['ArrowRight'],
       repeat: 'ArrowRight',
+      release: 'ArrowRight',
       expected: { x: 32, y: 40 },
     },
     {
       keys: ['ArrowUp', 'ArrowRight'],
       repeat: 'ArrowRight',
-      expected: { x: 32, y: 37 },
+      release: 'ArrowRight',
+      expected: { x: 32, y: 36 },
+    },
+    {
+      keys: ['ArrowRight', 'ArrowUp'],
+      repeat: 'ArrowUp',
+      release: 'ArrowRight',
+      expected: { x: 33, y: 37 },
     },
     {
       keys: ['ArrowLeft', 'ArrowRight'],
       repeat: 'ArrowRight',
-      expected: { x: 29, y: 40 },
+      release: 'ArrowRight',
+      expected: { x: 28, y: 40 },
     },
     {
       keys: ['ArrowUp', 'ArrowDown'],
       repeat: 'ArrowDown',
-      expected: { x: 30, y: 39 },
+      release: 'ArrowDown',
+      expected: { x: 30, y: 38 },
     },
-  ])('nudges held arrows: $keys', async ({ keys, repeat, expected }) => {
+  ])('text box nudge with arrow key: $keys', async ({ keys, repeat, release, expected }) => {
+    vi.useFakeTimers()
     installProject()
 
     queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
@@ -312,14 +326,29 @@ describe('canvas interaction adapter', () => {
     )
 
     for (const key of keys) fireEvent.keyDown(surface, { key })
+
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+
     fireEvent.keyDown(surface, { key: repeat, repeat: true })
 
-    for (const key of keys.slice(0, -1)) {
+    fireEvent.keyUp(surface, { key: release })
+    const remaining = keys.filter((key) => key !== release)
+
+    if (remaining.length) {
+      expect(commit).not.toHaveBeenCalled()
+    }
+
+    act(() => {
+      vi.advanceTimersByTime(30)
+    })
+
+    for (const key of remaining) {
       fireEvent.keyUp(surface, { key })
     }
-    expect(commit).not.toHaveBeenCalled()
 
-    fireEvent.keyUp(surface, { key: keys.at(-1)! })
+    vi.useRealTimers()
 
     await waitFor(() =>
       expect(commit).toHaveBeenCalledWith(1, [
