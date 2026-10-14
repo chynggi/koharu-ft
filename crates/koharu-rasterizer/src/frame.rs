@@ -884,6 +884,82 @@ mod tests {
         assert_encoding_matches(&preview, &expected);
     }
 
+    /// A rotated gradient must still vary *along its own axis* on a real
+    /// render. Passing the path affine as `brush_transform` double-applies it
+    /// (`Scene::fill` composes `transform * brush_transform`), which collapses
+    /// the ramp to one colour — a failure only a pixel test can see.
+    ///
+    /// The sample points are chosen carefully: the path transform is a 90°
+    /// rotation (`[0, 1, -1, 0, ...]`), so the gradient's local +x axis — the
+    /// direction the ramp varies in — maps to page +y. Two pixels differing
+    /// only in x are on the same iso-colour line and would compare equal even
+    /// when the code is correct.
+    #[test]
+    fn a_rotated_gradient_is_not_collapsed_to_one_colour() {
+        let path = PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 100.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([100.0, 0.0]),
+                PathElement::LineTo([100.0, 100.0]),
+                PathElement::LineTo([0.0, 100.0]),
+                PathElement::Close,
+            ],
+            // Built here rather than through `gradient_path`: that helper's
+            // local rect spans only `[1,2]`–`[9,2]`, far too small to place two
+            // pixel samples on the ramp's axis.
+            fill: Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind: PreparedGradientKind::Linear {
+                        start: [0.0, 0.0],
+                        end: [100.0, 0.0],
+                    },
+                    stops: vec![
+                        PreparedGradientStop {
+                            offset: 0.0,
+                            color: [255, 0, 0, 255],
+                        },
+                        PreparedGradientStop {
+                            offset: 1.0,
+                            color: [0, 0, 255, 255],
+                        },
+                    ],
+                    extend: PreparedGradientExtend::Pad,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        };
+        let mut scene = vello::Scene::new();
+        path.append_to(&mut scene);
+
+        let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
+        let image = rasterizer
+            .rasterize_scene(
+                &scene,
+                200,
+                200,
+                [0, 0, 0, 0],
+                crate::RasterOptions::default(),
+            )
+            .expect("the scene rasterizes");
+
+        // 회전 후 페이지상 사각형은 x∈[0,100], y∈[0,100] 을 덮고, 그라디언트
+        // 램프는 페이지 **y** 를 따라 변한다. 그러므로 같은 x, 다른 y 를
+        // 표본한다 — 둘 다 사각형 안이다.
+        let near = image.get_pixel(50, 30);
+        let far = image.get_pixel(50, 70);
+        assert_ne!(
+            (near[0], near[1], near[2]),
+            (far[0], far[1], far[2]),
+            "a rotated gradient collapsed to one colour — brush_transform is probably Some(affine)"
+        );
+        // 두 표본이 실제로 배경이 아님도 확인한다. 배경끼리 비교하면
+        // 커버리지 차이를 그라디언트 변화로 착각할 수 있다.
+        assert!(near[3] > 0, "the near sample missed the shape");
+        assert!(far[3] > 0, "the far sample missed the shape");
+    }
+
     /// `Scene`'s encoding carries the brush *transform* as a path tag but not
     /// the brush payload, which lives in the scene's resource list. The
     /// encoding comparison above therefore cannot see stop order or `extend`,
