@@ -180,6 +180,21 @@
     "stopProcessing": "処理を停止"
   },
   "inspector": {
+    "adjust": {
+      "apply": "適用",
+      "brightness": "明るさ",
+      "contrast": "コントラスト",
+      "degrees": "角度",
+      "delta": "増減",
+      "grayscale": "グレースケール",
+      "high": "最大",
+      "hue": "色相",
+      "invalidLevels": "最小値は最大値より小さくしてください。",
+      "levels": "レベル",
+      "low": "最小",
+      "percent": "割合",
+      "title": "調整の種類"
+    },
     "alignBottom": "下揃え",
     "alignCenter": "中央揃え",
     "alignLeft": "左揃え",

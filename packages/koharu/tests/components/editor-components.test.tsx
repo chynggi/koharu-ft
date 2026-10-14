@@ -188,6 +188,16 @@ const artworkLayer: Layer = {
   image: 'source',
 }
 
+const rasterLayer: Layer = {
+  type: 'raster',
+  id: 'raster',
+  parent: 'page',
+  visibility: { visible: true, opacity: 1 },
+  image: 'paint',
+  name: 'Paint 1',
+  kind: 'paint',
+}
+
 const preferences: Preferences = {
   pipeline: {
     detection: { model: 'koharu-layout-rfdetr-seg-2xl' },
@@ -943,6 +953,176 @@ describe('greenfield editor', () => {
     render(<Inspector />)
 
     expect(screen.queryByTestId('shape-inspector')).not.toBeInTheDocument()
+  })
+
+  it('applies a brightness adjustment to a selected raster layer', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.getByTestId('adjust-inspector')).toBeInTheDocument()
+    // Nothing is committed until the user applies: the adjustment is a single
+    // explicit commit, not a live preview.
+    expect(adjustRaster).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Delta' }), {
+      target: { value: '40' },
+    })
+    expect(adjustRaster).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'brightness', delta: 40 }),
+    )
+  })
+
+  it('shows the adjustment section only for a raster layer', () => {
+    installProject()
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('does not show the adjustment section for a shape or group selection', () => {
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('does not show the adjustment section for a group holding a raster child', () => {
+    // The shape inspector expands a group selection; the adjustment section must
+    // not, or selecting the group would offer a control aimed at one child.
+    installProject()
+    const group: Layer = {
+      type: 'group',
+      id: 'group',
+      parent: 'page',
+      visibility: { visible: true, opacity: 1 },
+      name: 'Group 1',
+      role: null,
+    }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, group, { ...rasterLayer, parent: 'group' }],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['group'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('applies the adjustment kind selected from the dropdown', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Levels' }))
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Low' }), { target: { value: '10' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'High' }), { target: { value: '240' } })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'levels', low: 10, high: 240 }),
+    )
+  })
+
+  it('refuses to apply inverted levels', async () => {
+    // The server rejects `low >= high`; the UI must not be able to send it.
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Levels' }))
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Low' }), { target: { value: '200' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'High' }), { target: { value: '50' } })
+
+    const apply = screen.getByRole('button', { name: 'Apply' })
+    expect(apply).toBeDisabled()
+    expect(screen.getByText('Low must be below high.')).toBeInTheDocument()
+    await user.click(apply)
+    expect(adjustRaster).not.toHaveBeenCalled()
+  })
+
+  it('clamps adjustment inputs to the server ranges', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // Brightness is -255..=255; a typed 9990 must not reach the command.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Delta' }), {
+      target: { value: '9990' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => expect(adjustRaster).toHaveBeenCalled())
+    expect(adjustRaster.mock.calls.at(-1)?.[2]).toEqual({ type: 'brightness', delta: 255 })
+
+    adjustRaster.mockClear()
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Hue' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Degrees' }), {
+      target: { value: '-900' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'hue', degrees: -180 }),
+    )
+  })
+
+  it('applies a grayscale adjustment with no parameters', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Grayscale' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'grayscale' }),
+    )
   })
 
   it('names a shape layer from its stored name and kind in the layer list', async () => {

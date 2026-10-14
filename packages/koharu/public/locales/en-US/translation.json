@@ -180,6 +180,21 @@
     "stopProcessing": "Stop processing"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Apply",
+      "brightness": "Brightness",
+      "contrast": "Contrast",
+      "degrees": "Degrees",
+      "delta": "Delta",
+      "grayscale": "Grayscale",
+      "high": "High",
+      "hue": "Hue",
+      "invalidLevels": "Low must be below high.",
+      "levels": "Levels",
+      "low": "Low",
+      "percent": "Percent",
+      "title": "Adjustment kind"
+    },
     "alignBottom": "Align bottom",
     "alignCenter": "Align center",
     "alignLeft": "Align left",

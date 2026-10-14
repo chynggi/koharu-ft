@@ -21,6 +21,7 @@ import {
   Plus,
   RotateCcw,
   Shapes,
+  SlidersHorizontal,
   Trash2,
   Type,
 } from 'lucide-react'
@@ -58,6 +59,7 @@ import {
 import { previewCanvasOpacity } from '@koharu/bridge/canvas'
 import {
   commands,
+  type ColorAdjust,
   type EntityId,
   type FontFamily,
   type FontStyle,
@@ -143,6 +145,8 @@ export function Inspector() {
       </section>
 
       <ShapeInspector />
+
+      <AdjustInspector />
 
       <section className='flex min-h-0 flex-1 flex-col'>
         <LayersInspector />
@@ -321,6 +325,196 @@ function ShapeInspector() {
         </Button>
       </div>
     </section>
+  )
+}
+
+type AdjustKind = ColorAdjust['type']
+
+const adjustKinds = ['brightness', 'contrast', 'levels', 'hue', 'grayscale'] as const
+
+const clampAdjust = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(value)))
+
+/**
+ * Colour adjustment for the selected raster layer.
+ *
+ * Nothing is committed while a control is being edited: the spec chose no live
+ * preview (B-D6), so a slider dragged across its range would otherwise post one
+ * revision-bumping commit per pixel of travel. The apply button is the single
+ * commit point, and every input is clamped to the range the server validates so
+ * the editor cannot build a rejected value.
+ */
+function AdjustInspector() {
+  const { t } = useTranslation()
+  const revision = useKoharuStore((state) => state.canvasRevision)
+  const page = usePage().data
+  const selectedIds = useKoharuStore((state) => state.selectedLayers)
+  // Only a directly selected raster qualifies. Unlike the shape inspector this
+  // does not expand a group selection, so selecting a group never surfaces the
+  // adjustment controls even when it holds a raster child.
+  const selected = (page?.layers ?? []).filter(
+    (layer): layer is Extract<Layer, { type: 'raster' }> =>
+      layer.type === 'raster' && selectedIds.includes(layer.id),
+  )
+  const current = selected[0]
+  const [kind, setKind] = useState<AdjustKind>('brightness')
+  const [brightness, setBrightness] = useState(0)
+  const [contrast, setContrast] = useState(0)
+  const [hue, setHue] = useState(0)
+  const [levels, setLevels] = useState({ low: 0, high: 255 })
+  if (!current || !page) return null
+
+  // The server rejects `low >= high`, so the apply control is unreachable while
+  // the levels are inverted; the range inputs are also clamped to 0..=255.
+  const levelsInvalid = kind === 'levels' && levels.low >= levels.high
+  const disabled = revision === null
+  const adjust: ColorAdjust =
+    kind === 'brightness'
+      ? { type: 'brightness', delta: brightness }
+      : kind === 'contrast'
+        ? { type: 'contrast', percent: contrast }
+        : kind === 'levels'
+          ? { type: 'levels', low: levels.low, high: levels.high }
+          : kind === 'hue'
+            ? { type: 'hue', degrees: hue }
+            : { type: 'grayscale' }
+  const apply = () => {
+    if (disabled || levelsInvalid) return
+    void call(commands.adjustRaster, revision, current.id, adjust)
+      .then(() => refresh(projectKey, pageKey))
+      .catch(() => undefined)
+  }
+
+  return (
+    <section className='shrink-0 border-b p-2' data-testid='adjust-inspector'>
+      <div className='grid min-w-0 gap-1.5'>
+        <InspectorField label={t('inspector.adjust.title')}>
+          <Select
+            disabled={disabled}
+            value={kind}
+            onValueChange={(next) => setKind(next as AdjustKind)}
+          >
+            <SelectTrigger
+              size='sm'
+              aria-label={t('inspector.adjust.title')}
+              className='w-full min-w-0'
+            >
+              <SelectValue>{t(`inspector.adjust.${kind}`)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align='end'>
+              {adjustKinds.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {t(`inspector.adjust.${option}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InspectorField>
+        {kind === 'brightness' && (
+          <AdjustNumber
+            label={t('inspector.adjust.delta')}
+            value={brightness}
+            min={-255}
+            max={255}
+            disabled={disabled}
+            onChange={setBrightness}
+          />
+        )}
+        {kind === 'contrast' && (
+          <AdjustNumber
+            label={t('inspector.adjust.percent')}
+            value={contrast}
+            min={-100}
+            max={100}
+            disabled={disabled}
+            onChange={setContrast}
+          />
+        )}
+        {kind === 'hue' && (
+          <AdjustNumber
+            label={t('inspector.adjust.degrees')}
+            value={hue}
+            min={-180}
+            max={180}
+            disabled={disabled}
+            onChange={setHue}
+          />
+        )}
+        {kind === 'levels' && (
+          <>
+            <div className='grid min-w-0 grid-cols-2 gap-1.5'>
+              <AdjustNumber
+                label={t('inspector.adjust.low')}
+                value={levels.low}
+                min={0}
+                max={255}
+                disabled={disabled}
+                onChange={(low) => setLevels((value) => ({ ...value, low }))}
+              />
+              <AdjustNumber
+                label={t('inspector.adjust.high')}
+                value={levels.high}
+                min={0}
+                max={255}
+                disabled={disabled}
+                onChange={(high) => setLevels((value) => ({ ...value, high }))}
+              />
+            </div>
+            {levelsInvalid && (
+              <p className='text-[9px] text-destructive'>{t('inspector.adjust.invalidLevels')}</p>
+            )}
+          </>
+        )}
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={disabled || levelsInvalid}
+          className='justify-start gap-1.5 text-[10px]'
+          onClick={apply}
+        >
+          <SlidersHorizontal className='size-3' />
+          {t('inspector.adjust.apply')}
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function AdjustNumber({
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  disabled: boolean
+  onChange: (value: number) => void
+}) {
+  return (
+    <InspectorField label={label}>
+      <NumberField
+        className='min-w-0'
+        disabled={disabled}
+        value={value}
+        min={min}
+        max={max}
+        step={1}
+        onValueChange={(next) => {
+          if (next === null) return
+          onChange(clampAdjust(next, min, max))
+        }}
+      >
+        <NumberFieldGroup>
+          <NumberFieldInput aria-label={label} />
+        </NumberFieldGroup>
+      </NumberField>
+    </InspectorField>
   )
 }
 

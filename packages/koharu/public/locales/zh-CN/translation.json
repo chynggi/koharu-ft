@@ -180,6 +180,21 @@
     "stopProcessing": "停止处理"
   },
   "inspector": {
+    "adjust": {
+      "apply": "应用",
+      "brightness": "亮度",
+      "contrast": "对比度",
+      "degrees": "角度",
+      "delta": "增减",
+      "grayscale": "灰度",
+      "high": "最高",
+      "hue": "色相",
+      "invalidLevels": "最低值必须小于最高值。",
+      "levels": "色阶",
+      "low": "最低",
+      "percent": "百分比",
+      "title": "调整类型"
+    },
     "alignBottom": "底端对齐",
     "alignCenter": "居中对齐",
     "alignLeft": "左对齐",

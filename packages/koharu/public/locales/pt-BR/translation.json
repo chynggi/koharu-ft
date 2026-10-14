@@ -180,6 +180,21 @@
     "stopProcessing": "Parar processamento"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Aplicar",
+      "brightness": "Brilho",
+      "contrast": "Contraste",
+      "degrees": "Graus",
+      "delta": "Variação",
+      "grayscale": "Escala de cinza",
+      "high": "Máximo",
+      "hue": "Matiz",
+      "invalidLevels": "O mínimo deve ser menor que o máximo.",
+      "levels": "Níveis",
+      "low": "Mínimo",
+      "percent": "Porcentagem",
+      "title": "Tipo de ajuste"
+    },
     "alignBottom": "Alinhar embaixo",
     "alignCenter": "Centralizar",
     "alignLeft": "Alinhar à esquerda",

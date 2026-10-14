@@ -180,6 +180,21 @@
     "stopProcessing": "처리 중지"
   },
   "inspector": {
+    "adjust": {
+      "apply": "적용",
+      "brightness": "밝기",
+      "contrast": "대비",
+      "degrees": "각도",
+      "delta": "증감",
+      "grayscale": "흑백",
+      "high": "최대",
+      "hue": "색조",
+      "invalidLevels": "최소값은 최대값보다 작아야 합니다.",
+      "levels": "레벨",
+      "low": "최소",
+      "percent": "비율",
+      "title": "보정 종류"
+    },
     "alignBottom": "아래 정렬",
     "alignCenter": "가운데 정렬",
     "alignLeft": "왼쪽 정렬",

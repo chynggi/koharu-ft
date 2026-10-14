@@ -180,6 +180,21 @@
     "stopProcessing": "İşlemeyi durdur"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Uygula",
+      "brightness": "Parlaklık",
+      "contrast": "Kontrast",
+      "degrees": "Derece",
+      "delta": "Değişim",
+      "grayscale": "Gri tonlama",
+      "high": "Yüksek",
+      "hue": "Ton",
+      "invalidLevels": "Düşük değer yüksek değerden küçük olmalıdır.",
+      "levels": "Seviyeler",
+      "low": "Düşük",
+      "percent": "Yüzde",
+      "title": "Ayar türü"
+    },
     "alignBottom": "Alta hizala",
     "alignCenter": "Ortala",
     "alignLeft": "Sola hizala",
