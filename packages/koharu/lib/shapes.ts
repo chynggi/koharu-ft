@@ -238,10 +238,13 @@ export const STOP_OFFSET_STEP = 0.001
 /** The offsets a stop at sorted `index` may occupy without colliding. */
 export function gradientStopBounds(stops: GradientStop[], index: number): [number, number] {
   const sorted = sortStops(stops)
-  const round = (value: number) => Math.round(value / STOP_OFFSET_STEP) * STOP_OFFSET_STEP
+  // Snapping both ends to the step keeps the bounds exactly representable, so a
+  // step of 0.001 never leaves 0.30000000000000004-style noise in a slider.
+  const step = (value: number) =>
+    Math.round((Math.round(value / STOP_OFFSET_STEP) * STOP_OFFSET_STEP) * 1e6) / 1e6
   return [
-    index === 0 ? 0 : round(sorted[index - 1].offset) + STOP_OFFSET_STEP,
-    index === sorted.length - 1 ? 1 : round(sorted[index + 1].offset) - STOP_OFFSET_STEP,
+    index === 0 ? 0 : step(sorted[index - 1].offset + STOP_OFFSET_STEP),
+    index === sorted.length - 1 ? 1 : step(sorted[index + 1].offset - STOP_OFFSET_STEP),
   ]
 }
 
@@ -260,9 +263,11 @@ export function moveGradientStop(
   const sorted = sortStops(spec.stops)
   const [lower, upper] = gradientStopBounds(sorted, index)
   if (lower > upper) return null
-  const snapped = Math.round(Math.min(Math.max(offset, lower), upper) / STOP_OFFSET_STEP) * STOP_OFFSET_STEP
-  const rounded = Math.round(snapped * 1e6) / 1e6
-  return sortGradientStops(replaceGradientStop(spec, spec.stops.indexOf(sorted[index]), { offset: rounded }))
+  const snapped =
+    Math.round(Math.round(Math.min(Math.max(offset, lower), upper) / STOP_OFFSET_STEP) * STOP_OFFSET_STEP * 1e6) / 1e6
+  return sortGradientStops(
+    replaceGradientStop(spec, spec.stops.indexOf(sorted[index]), { offset: snapped }),
+  )
 }
 
 export function replaceGradientStop(
