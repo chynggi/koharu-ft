@@ -43,6 +43,7 @@ import { commands, type Frame, type Point, type TransformFrame } from '@koharu/b
 import { Button } from '@koharu/ui/components/button'
 
 const BRUSH_DIAMETER_STEP = 4
+const arrowKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
 
 const canvasCursors = {
   select: undefined,
@@ -87,6 +88,7 @@ export function CanvasWorkspace() {
   const gesture = useRef<Gesture | null>(null)
   const previousPageIndex = useRef<number | null>(null)
   const spaceHeld = useRef(false)
+  const heldArrows = useRef(new Set<string>())
   const transformActive = useRef(false)
   const transformRevision = useRef<number | null>(null)
   const transformFinal = useRef<TransformFrame[]>([])
@@ -178,6 +180,7 @@ export function CanvasWorkspace() {
 
   const finishTransform = useCallback(() => {
     if (!transformActive.current) return
+    heldArrows.current.clear()
     transformUpdates.commit()
     transformActive.current = false
     const revision = transformRevision.current
@@ -206,6 +209,7 @@ export function CanvasWorkspace() {
   }, [canvas, enqueue, transformUpdates])
 
   const cancelGesture = useCallback(() => {
+    heldArrows.current.clear()
     const current = gesture.current
     gesture.current = null
     if (current?.kind === 'paint' || current?.kind === 'erase' || current?.kind === 'inpaint') {
@@ -371,9 +375,14 @@ export function CanvasWorkspace() {
     const up = (event: KeyboardEvent) => {
       if (event.key === 'Alt') event.preventDefault()
       if (event.code === 'Space') spaceHeld.current = false
+
+      if (heldArrows.current.delete(event.key) && heldArrows.current.size === 0) {
+        finishTransform()
+      }
     }
     const blur = () => {
       spaceHeld.current = false
+      if (heldArrows.current.size) finishTransform()
       cancelGesture()
     }
 
@@ -385,7 +394,14 @@ export function CanvasWorkspace() {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [cancelGesture, colorSampling, page, requestCanvasFit, selectLayers, setTool])
+  }, [cancelGesture,
+      colorSampling,
+      finishTransform,
+      page,
+      requestCanvasFit,
+      selectLayers,
+      setTool,
+    ])
 
   const clientPagePoint = (clientX: number, clientY: number) =>
     pagePoint(
@@ -538,6 +554,47 @@ export function CanvasWorkspace() {
           style={{
             cursor: page && canvasState.status === 'ready' ? canvasCursors[tool] : undefined,
           }}
+          onKeyDown={(event) => {
+            const keys = heldArrows.current
+            if (
+              !arrowKeys.includes(event.key) ||
+              event.defaultPrevented ||
+              event.target !== event.currentTarget ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.altKey ||
+              event.shiftKey ||
+              canvasState.status != 'ready' ||
+              canvasPage !== pageId ||
+              gesture.current ||
+              (transformActive.current && keys.size === 0)
+            )
+              return
+
+            if (keys.size === 0) {
+              beginTransform(
+                framesFor(
+                  selected.filter((id) =>
+                    page?.layers.some((layer) => layer.id === id && layer.type === 'text'),
+                  ),
+                ),
+              )
+              if (!transformActive.current) return
+            }
+            keys.add(event.key)
+            event.preventDefault()
+
+            const x = Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft'))
+            const y = Number(keys.has('ArrowDown')) - Number(keys.has('ArrowUp'))
+
+            if (x || y) {
+              updateTransform(translateFrames(transformFinal.current, {x,y}))
+            }
+          }}
+          onBlur={() => {
+            if (heldArrows.current.size) finishTransform()
+          }}
+
           onContextMenu={(event) => event.preventDefault()}
           onPointerDown={(event) => {
             if (
@@ -668,6 +725,12 @@ export function CanvasWorkspace() {
                 .catch((error: unknown) => receiveError(errorMessage(error)))
             }
             event.preventDefault()
+          }}
+          onPointerDownCapture={(event) => {
+            if (heldArrows.current.size) {
+              event.preventDefault()
+              event.stopPropagation()
+            }
           }}
           onPointerMove={(event) => {
             if (!page) return
