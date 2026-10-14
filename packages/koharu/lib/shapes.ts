@@ -5,11 +5,19 @@ import type {
   GradientExtend,
   GradientSpec,
   GradientStop,
+  PatternSpec,
   Point,
+  ShapeFill,
   ShapeGeometry,
   ShapeStyle,
 } from '@koharu/bridge/protocol'
-import type { CanvasGradient, CanvasPath, CanvasPathElement } from '@koharu/bridge/canvas'
+import type {
+  CanvasGradient,
+  CanvasPath,
+  CanvasPathElement,
+  CanvasPattern,
+  CanvasPatternImage,
+} from '@koharu/bridge/canvas'
 
 import type { CanvasTool } from './store'
 
@@ -126,6 +134,28 @@ export function defaultShapeStyle(kind: ShapeKind): ShapeStyle {
 
 export type GradientKindName = 'linear' | 'radial'
 
+/**
+ * The pattern a freshly created shape starts with.
+ *
+ * `tile` with a quarter-frame pitch reads as a texture rather than a single
+ * stretched image, which is what makes the mode's parameters visible
+ * immediately. The origin sits at the frame's top-left and the rotation is zero,
+ * so the initial state is the axis-aligned grid a user expects. `fallback` is
+ * the colour the renderer draws until an image is uploaded — it is deliberately
+ * the user's current colour, so switching kinds never changes what is on screen.
+ */
+export function defaultPatternSpec(
+  fallback: [number, number, number, number] = [255, 255, 255, 255],
+): PatternSpec {
+  return {
+    repeat: 'tile',
+    origin: [0, 0],
+    scale: 0.25,
+    rotation_degrees: 0,
+    fallback,
+  }
+}
+
 // The renderer's `PreparedGradient` validation rejects a stop count outside
 // this range, so the editor must never build one: the inspector disables the
 // add button at the ceiling and the remove button at the floor. Because the
@@ -176,19 +206,29 @@ export function gradientKindName(spec: GradientSpec): GradientKindName | null {
  * both stops identical the second stop takes the kind's default leading colour,
  * so a switch always produces a visible gradient instead of a flat fill.
  * A fill that is already the requested kind is returned untouched.
+ *
+ * `pattern` carries its colour in `fallback` rather than in stops, so converting
+ * to or from a pattern moves the colour through that field. The pattern's own
+ * parameters are replaced with defaults on the way in: a `PatternSpec` has no
+ * meaningful identity to preserve from a solid or a gradient.
  */
 export function withFillKind(
   style: ShapeStyle,
-  kind: 'solid' | 'gradient',
+  kind: 'solid' | 'gradient' | 'pattern',
   gradientKind: GradientKindName = 'linear',
 ): ShapeStyle {
   if (kind === 'solid') {
     if (style.fill && 'solid' in style.fill) return style
-    const color = style.fill?.gradient.stops[0].color ?? [255, 255, 255, 255]
+    const color = fillColor(style.fill) ?? [255, 255, 255, 255]
     return { ...style, fill: { solid: color } }
   }
+  if (kind === 'pattern') {
+    if (style.fill && 'pattern' in style.fill) return style
+    const color = fillColor(style.fill) ?? [255, 255, 255, 255]
+    return { ...style, fill: { pattern: defaultPatternSpec(color) } }
+  }
   if (style.fill && 'gradient' in style.fill) return style
-  const solid = style.fill?.solid ?? null
+  const solid = style.fill && 'solid' in style.fill ? style.fill.solid : null
   const spec = defaultGradientSpec(gradientKind)
   const stops = [...spec.stops] as GradientStop[]
   if (solid) {
@@ -204,6 +244,20 @@ export function withFillKind(
     }
   }
   return { ...style, fill: { gradient: { ...spec, stops } } }
+}
+
+/**
+ * The representative colour of a fill, for the flat colour well and for
+ * conversions between fill kinds that must not lose the user's colour.
+ *
+ * A pattern's `fallback` is exactly the colour it draws when its asset is
+ * missing, which is the closest thing it has to a colour of its own.
+ */
+export function fillColor(fill: ShapeFill | null): [number, number, number, number] | null {
+  if (!fill) return null
+  if ('solid' in fill) return fill.solid
+  if ('gradient' in fill) return fill.gradient.stops[0]?.color ?? null
+  return fill.pattern.fallback
 }
 
 /** Replaces a gradient's control geometry, keeping its stops and extend rule. */
@@ -381,6 +435,7 @@ export function shapePreviewPath(
   kind: ShapeKind,
   frame: Frame,
   style: ShapeStyle,
+  patternImage: CanvasPatternImage | null = null,
 ): CanvasPath {
   const points = shapePolygon(kind, frame).points
   const elements: CanvasPathElement[] = []
@@ -401,9 +456,16 @@ export function shapePreviewPath(
         ? { Solid: { color: fill.solid, rule: 'NonZero' } }
         : fill && 'gradient' in fill
           ? { Gradient: { gradient: previewGradient(fill.gradient, frame), rule: 'NonZero' } }
-          : arrow.length > 0 && style.stroke
-            ? { Solid: { color: style.stroke.color, rule: 'NonZero' } }
-            : null,
+          : fill && 'pattern' in fill
+            ? {
+                Pattern: {
+                  pattern: previewPattern(fill.pattern, frame, patternImage),
+                  rule: 'NonZero',
+                },
+              }
+            : arrow.length > 0 && style.stroke
+              ? { Solid: { color: style.stroke.color, rule: 'NonZero' } }
+              : null,
     stroke: style.stroke
       ? {
           color: style.stroke.color,
@@ -483,8 +545,52 @@ function previewGradient(spec: GradientSpec, frame: Frame): CanvasGradient {
   }
 }
 
-export function hexToColor(hex: string, alpha = 255): [number, number, number, number] {
-  const digits = hex.startsWith('#') ? hex.slice(1) : hex
+/**
+ * Lifts a persisted pattern into the WASM preview's page coordinates.
+ *
+ * This deliberately does **not** copy `previewGradient`'s rule, and the
+ * difference is structural rather than an oversight. A gradient is defined by
+ * its control points, so rotating those points rotates the ramp and nothing else
+ * is needed. A pattern's *tiling direction* must rotate as well, and rotating
+ * only the tile's origin leaves the grid upright.
+ *
+ * The server draws `composed = P · T(origin_local) · R(θ_pattern) · S(pitch)`
+ * where `P = R(θ_frame) + translate` (`shape_renderer::transform` is rotation
+ * and translation with no scale). That identity equals
+ * `T(P(origin_local)) · R(θ_frame + θ_pattern) · S(pitch)`, so with the preview's
+ * identity path transform the brush has to carry the page-space origin **and the
+ * summed rotation**. Hence `rotation_degrees` here is a sum, and hence
+ * `PreparedPattern::rotation_degrees` is an `f32` while the saved `PatternSpec`
+ * stays an integer.
+ */
+export function previewPattern(
+  spec: PatternSpec,
+  frame: Frame,
+  image: CanvasPatternImage | null,
+): CanvasPattern {
+  const width = Math.max(frame.width, MIN_FRAME_EXTENT)
+  const height = Math.max(frame.height, MIN_FRAME_EXTENT)
+  const center = { x: frame.x + width * 0.5, y: frame.y + height * 0.5 }
+  const origin = rotatePoint(
+    { x: frame.x + spec.origin[0] * width, y: frame.y + spec.origin[1] * height },
+    center,
+    frame.angle_degrees,
+  )
+  return {
+    repeat: spec.repeat === 'tile' ? 'Tile' : 'Stretch',
+    // The server spreads `scale` by the frame's width, the same convention the
+    // gradient's radius uses.
+    origin: [origin.x, origin.y],
+    scale: spec.scale * width,
+    // The sum the identity path transform cannot supply. See the note above.
+    rotation_degrees: frame.angle_degrees + spec.rotation_degrees,
+    fallback: spec.fallback,
+    extent: [width, height],
+    image,
+  }
+}
+
+export function hexToColor(hex: string, alpha = 255): [number, number, number, number] {  const digits = hex.startsWith('#') ? hex.slice(1) : hex
   return [
     Number.parseInt(digits.slice(0, 2), 16),
     Number.parseInt(digits.slice(2, 4), 16),

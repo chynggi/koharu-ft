@@ -20,7 +20,7 @@ import {
   withFillKind,
   withGradientKind,
 } from '@/lib/shapes'
-import type { GradientStop } from '@koharu/bridge/protocol'
+import type { GradientStop, PatternSpec } from '@koharu/bridge/protocol'
 
 const frame = { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 }
 
@@ -620,6 +620,134 @@ describe('shapePreviewPath with a gradient', () => {
     expect(sweep.Sweep.center[1]).toBeCloseTo(50, 6)
     expect(sweep.Sweep.start_degrees).toBeCloseTo(90, 6)
     expect(sweep.Sweep.end_degrees).toBeCloseTo(450, 6)
+  })
+})
+
+describe('shapePreviewPath with a pattern', () => {
+  type PreviewPath = ReturnType<typeof shapePreviewPath>
+
+  const patternOf = (path: PreviewPath) => {
+    const fill = path.fill
+    if (!fill || !('Pattern' in fill)) throw new Error('expected a pattern fill')
+    return fill.Pattern.pattern
+  }
+
+  const patternStyle = (overrides: Partial<PatternSpec> = {}) => ({
+    fill: {
+      pattern: {
+        repeat: 'tile' as const,
+        origin: [0.5, 0.25] as [number, number],
+        scale: 0.5,
+        rotation_degrees: 0,
+        fallback: [1, 2, 3, 255] as [number, number, number, number],
+        ...overrides,
+      },
+    },
+    stroke: null,
+  })
+
+  /**
+   * The single most important preview test in 1c.
+   *
+   * A pattern's tiling direction rotates, so the preview cannot use the
+   * gradient's rule of rotating the control points alone. The server draws
+   * `composed = P · T(origin_local) · R(θ_pattern) · S(pitch)` with
+   * `P = R(θ_frame) + translate`, which equals
+   * `T(P(origin_local)) · R(θ_frame + θ_pattern) · S(pitch)`. The expected
+   * numbers below are that identity evaluated independently for the frame
+   * `{10, 20, 100, 50, angle 90}` with `origin [0.5, 0.25]` and `scale 0.5`,
+   * so they fail if the preview forgets to add the frame angle.
+   */
+  it('adds the frame angle to the pattern rotation, not just to the origin', () => {
+    const pattern = patternOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 10, y: 20, width: 100, height: 50, angle_degrees: 90 },
+        patternStyle(),
+      ),
+    )
+    // P(origin_local) for that frame: rotating (50, 12.5) 90° about (60, 45)
+    // and replacing the box gives (72.5, 45).
+    expect(pattern.origin[0]).toBeCloseTo(72.5, 6)
+    expect(pattern.origin[1]).toBeCloseTo(45, 6)
+    // The frame's own 90° plus the author's 0°: a `0` here would leave the
+    // tiled grid upright inside a rotated shape.
+    expect(pattern.rotation_degrees).toBeCloseTo(90, 6)
+    // `scale` is a fraction of the frame's *width*, matching the gradient's
+    // radius convention.
+    expect(pattern.scale).toBeCloseTo(50, 6)
+    expect(pattern.repeat).toBe('Tile')
+    expect(pattern.extent).toEqual([100, 50])
+    expect(pattern.fallback).toEqual([1, 2, 3, 255])
+  })
+
+  it('sums the frame angle with an authored pattern angle', () => {
+    const pattern = patternOf(
+      shapePreviewPath(
+        'rectangle',
+        { x: 10, y: 20, width: 100, height: 50, angle_degrees: 37 },
+        patternStyle({ rotation_degrees: 15 }),
+      ),
+    )
+    // 37 + 15. Rounding this sum to an integer is the divergence P-D9 exists to
+    // prevent, so the value must stay exact.
+    expect(pattern.rotation_degrees).toBeCloseTo(52, 6)
+  })
+
+  it('spells the wire shape the Rust side deserializes', () => {
+    const path = shapePreviewPath('rectangle', frame, patternStyle())
+    expect(path).toEqual({
+      transform: [1, 0, 0, 1, 0, 0],
+      elements: [
+        { MoveTo: [10, 20] },
+        { LineTo: [110, 20] },
+        { LineTo: [110, 70] },
+        { LineTo: [10, 70] },
+        'Close',
+      ],
+      fill: {
+        Pattern: {
+          pattern: {
+            repeat: 'Tile',
+            origin: [60, 32.5],
+            scale: 50,
+            rotation_degrees: 0,
+            fallback: [1, 2, 3, 255],
+            extent: [100, 50],
+            image: null,
+          },
+          rule: 'NonZero',
+        },
+      },
+      stroke: null,
+    })
+  })
+
+  it('maps stretch to the stretch repeat and carries the pixels through', () => {
+    const pixels = new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255])
+    const pattern = patternOf(
+      shapePreviewPath('rectangle', frame, patternStyle({ repeat: 'stretch' }), {
+        width: 2,
+        height: 1,
+        pixels,
+      }),
+    )
+    expect(pattern.repeat).toBe('Stretch')
+    expect(pattern.image).toEqual({ width: 2, height: 1, pixels })
+  })
+
+  it('leaves the image null until an upload supplies pixels', () => {
+    // With no image the Rust side draws `fallback` as a solid fill (P-D6), so
+    // the preview must not invent an image either.
+    const pattern = patternOf(shapePreviewPath('rectangle', frame, patternStyle()))
+    expect(pattern.image).toBeNull()
+  })
+
+  it('keeps a pattern that is neither tiled nor stretched out of the preview', () => {
+    // The fill is `null` when no fill is set, so an arrow's head can borrow the
+    // stroke colour; a pattern must not be mistaken for that case.
+    const path = shapePreviewPath('rectangle', frame, { fill: null, stroke: null })
+    expect(path.fill).toBeNull()
   })
 })
 

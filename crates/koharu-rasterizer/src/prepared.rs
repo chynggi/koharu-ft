@@ -846,7 +846,65 @@ pub struct PreparedPatternImage {
     pub height: u32,
     /// `width * height * 4` bytes of RGBA8 with straight (unpremultiplied)
     /// alpha.
+    ///
+    /// Deserialized through [`deserialize_pixels`], **not** derived. serde's only
+    /// `Deserialize` for an `Arc` slice goes through `deserialize_seq`
+    /// (`serde-1.0.229/src/core/de/impls.rs:1029`) and then pulls one element at
+    /// a time (`:1020`); `serde_wasm_bindgen` fast-paths only a JS `Array` there
+    /// and otherwise falls back to `js_sys::try_iter`
+    /// (`serde-wasm-bindgen-0.6.5/src/de.rs:518-521`). A `Uint8Array` would
+    /// therefore cost one JS-to-Rust call **per byte**, per frame, while a
+    /// pattern is being dragged. Requesting a byte buffer instead takes
+    /// `as_bytes()`, which copies the whole image in one call (`:624-626`).
+    #[serde(deserialize_with = "deserialize_pixels")]
     pub pixels: Arc<[u8]>,
+}
+
+/// Reads `PreparedPatternImage::pixels` as one byte buffer rather than a
+/// sequence of numbers. See the field's documentation for why this matters.
+fn deserialize_pixels<'de, D>(deserializer: D) -> std::result::Result<Arc<[u8]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Pixels;
+
+    impl<'de> serde::de::Visitor<'de> for Pixels {
+        type Value = Arc<[u8]>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a byte buffer of RGBA8 pixels")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(
+            self,
+            value: &[u8],
+        ) -> std::result::Result<Self::Value, E> {
+            Ok(Arc::from(value))
+        }
+
+        fn visit_byte_buf<E: serde::de::Error>(
+            self,
+            value: Vec<u8>,
+        ) -> std::result::Result<Self::Value, E> {
+            Ok(Arc::from(value.into_boxed_slice()))
+        }
+
+        /// A JSON or postcard round trip of this type would otherwise regress to
+        /// the per-element path, so accept a sequence explicitly. It is not the
+        /// path the browser uses.
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut sequence: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            let mut bytes = Vec::with_capacity(sequence.size_hint().unwrap_or(0));
+            while let Some(byte) = sequence.next_element::<u8>()? {
+                bytes.push(byte);
+            }
+            Ok(Arc::from(bytes.into_boxed_slice()))
+        }
+    }
+
+    deserializer.deserialize_byte_buf(Pixels)
 }
 
 impl PreparedPattern {
@@ -1434,8 +1492,51 @@ fn finite_affine(affine: [f64; 6], label: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn prepared_pattern() -> PreparedPattern {
-        PreparedPattern {
+    /// The pixel field must round-trip through postcard's byte path, which the
+    /// native canvas transport uses. The browser sends bytes too (see
+    /// `deserialize_pixels`), but a custom deserializer that understood only one
+    /// of the two encodings would break the other silently.
+    #[test]
+    fn pattern_pixels_round_trip_through_postcard() {
+        let pattern = prepared_pattern();
+        let Some(expected) = pattern.image.as_ref() else {
+            panic!("expected an image");
+        };
+
+        let bytes = postcard::to_stdvec(&pattern).unwrap();
+        let decoded: PreparedPattern = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded.image.as_ref().unwrap().pixels, expected.pixels);
+        assert_eq!(decoded, pattern);
+    }
+
+    /// A sequence of numbers must still decode, because `serde_json` routes a
+    /// `[` in `deserialize_byte_buf` to `deserialize_seq`
+    /// (`serde_json-1.0.151/src/de.rs:1653`). Tested through postcard's decoder
+    /// for a `Vec<u8>` payload rather than adding a JSON dependency: what
+    /// matters is that `visit_seq` works at all.
+    #[test]
+    fn pattern_pixels_accept_a_numeric_sequence() {
+        #[derive(serde::Serialize)]
+        struct PixelsOnly {
+            pixels: Vec<u8>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ReadBack {
+            #[serde(deserialize_with = "deserialize_pixels")]
+            pixels: Arc<[u8]>,
+        }
+
+        let source = PixelsOnly {
+            pixels: vec![1, 2, 3, 4],
+        };
+        // `postcard` writes the `Vec<u8>` as bytes; decode it through the same
+        // `deserialize_byte_buf` entry point the browser uses.
+        let bytes = postcard::to_stdvec(&source).unwrap();
+        let decoded: ReadBack = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(&decoded.pixels[..], &[1, 2, 3, 4]);
+    }
+
+    fn prepared_pattern() -> PreparedPattern {        PreparedPattern {
             repeat: PreparedPatternRepeat::Tile,
             origin: [1.0, 2.0],
             scale: 4.0,

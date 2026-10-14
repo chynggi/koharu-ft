@@ -63,6 +63,36 @@ export interface CanvasGradientStop {
 export type CanvasPathFill =
   | { Solid: { color: CanvasColor; rule: 'NonZero' | 'EvenOdd' } }
   | { Gradient: { gradient: CanvasGradient; rule: 'NonZero' | 'EvenOdd' } }
+  | { Pattern: { pattern: CanvasPattern; rule: 'NonZero' | 'EvenOdd' } }
+
+/**
+ * A pattern as `koharu_rasterizer::PreparedPattern` deserializes it.
+ *
+ * Like `CanvasGradient`, the coordinates are **path-local with the normalized
+ * spread and any framing transform already applied**: this path is drawn with
+ * the identity transform, so the brush carries the frame's placement and angle
+ * as well as the author's own pattern angle. That is why `rotation_degrees` here
+ * is a number rather than the persisted integer — it is a sum.
+ *
+ * `image` is `null` until the pattern's asset is available; the renderer then
+ * draws `fallback` as a solid fill.
+ */
+export interface CanvasPattern {
+  repeat: 'Tile' | 'Stretch'
+  origin: [number, number]
+  scale: number
+  rotation_degrees: number
+  fallback: CanvasColor
+  extent: [number, number]
+  image: CanvasPatternImage | null
+}
+
+export interface CanvasPatternImage {
+  width: number
+  height: number
+  /** `width * height * 4` bytes of straight-alpha RGBA8. */
+  pixels: Uint8Array
+}
 
 export interface CanvasPathStroke {
   color: CanvasColor
