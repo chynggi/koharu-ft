@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 use vello::Scene;
 
 use super::{
+    adjust::{ColorAdjust, apply_adjust},
     canvas::Point,
     editing::{GeometryUpdate, TypographyUpdate},
 };
@@ -1577,6 +1578,81 @@ impl Project {
         ))
     }
 
+    /// Rewrites an existing raster layer's pixels in place.
+    ///
+    /// Unlike [`Project::apply_raster_stroke`] this never creates a layer: an
+    /// adjustment edits the pixels a layer already owns, so a target without a
+    /// [`SceneRasterLayer`] component is an error rather than a new layer. The
+    /// adjustment itself is not persisted — the committed result is the pixels.
+    pub async fn adjust_raster(
+        &mut self,
+        layer: EntityId,
+        adjust: ColorAdjust,
+    ) -> Result<(Commit, EntityId)> {
+        // `apply_adjust` documents that its caller must validate first:
+        // `Levels { low, high }` with `low >= high` trips the
+        // `assert!(input_min < input_max)` inside `stretch_contrast_mut`, and a
+        // far-out `Brightness` overflows the kernel's addition. Validating here
+        // is the other half of that contract.
+        adjust.validate()?;
+        let snapshot = self.snapshot();
+        let page = snapshot.parent(layer)?.context("the layer has no page")?;
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        // `RasterLayer::origin` is persisted separately from `EntityOrigin`, and
+        // the pipeline stages gate on it (`inpainting.rs`), so a user adjustment
+        // has to claim both or a later stage would discard these pixels.
+        let mut raster_layer = snapshot
+            .component::<SceneRasterLayer>(layer)?
+            .context("only raster layers can be adjusted")?;
+        let promote_layer = raster_layer.origin != Origin::User
+            || snapshot
+                .component::<EntityOrigin>(layer)?
+                .is_some_and(|origin| origin.origin != Origin::User);
+        let source = AssetRole::new("source")?;
+        let mut image = match snapshot.asset(layer, &source)? {
+            Some(asset) => {
+                let bytes = snapshot.read_blob(asset.blob).await?;
+                image::load_from_memory(&bytes)?.to_rgba8()
+            }
+            // `apply_raster_stroke` treats a missing asset as an empty
+            // page-sized surface rather than an error; an adjustment over it is
+            // then a no-op image that still commits.
+            None => RgbaImage::new(width, height),
+        };
+        if image.dimensions() != (width, height) {
+            bail!("raster layer dimensions must match the page");
+        }
+        apply_adjust(&mut image, adjust);
+        let mut bytes = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+        let patch = snapshot.patch(|edit| {
+            if promote_layer {
+                edit.promote_entity_to_user(layer)?;
+                raster_layer.origin = Origin::User;
+                edit.set(layer, &raster_layer)?;
+            }
+            edit.set_asset(
+                layer,
+                &source,
+                AssetInput::new(
+                    bytes.into_inner(),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(width),
+                        height: Some(height),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
     pub async fn undo(&mut self) -> Result<Commit> {
         let revisions = self.undo.pop().ok_or_else(|| anyhow!("nothing to undo"))?;
         let commit = match self.session.undo_many(revisions.iter().copied()).await {
@@ -2819,6 +2895,231 @@ mod tests {
             &[ScenePoint { x: 2.0, y: 2.0 }],
         );
         assert_eq!(white.get_pixel(2, 2).0, [255, 255, 255, 255]);
+    }
+
+    /// A committed project holding one 100x100 page whose single raster layer
+    /// owns a page-sized `source` asset filled with `pixel`.
+    ///
+    /// The layer is authored by a pipeline generation, which is how a cleanup or
+    /// import actually produces one: `Edit::prepare_value` stamps `Origin::User`
+    /// on any component written by the plain `edit()`, so only `edit_as` can
+    /// build a genuinely generated fixture.
+    async fn project_with_raster(image: RgbaImage) -> (Project, EntityId) {
+        let generation = Generation::new(
+            ProducerId::new("dev.koharu.pipeline.inpainting").expect("valid producer"),
+        );
+        let (width, height) = image.dimensions();
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit_as(generation);
+        let page = setup
+            .add_page(PageDraft::new("page", width as f64, height as f64), At::End)
+            .unwrap();
+        let layer = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(image)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        setup
+            .set_asset(
+                layer,
+                &AssetRole::new("source").unwrap(),
+                AssetInput::new(
+                    Arc::<[u8]>::from(encoded.into_inner()),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(width),
+                        height: Some(height),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        (Project::new(session, "test".to_owned()), layer)
+    }
+
+    /// A committed project holding one 100x100 page and one text layer.
+    async fn project_with_text_layer() -> (Project, EntityId) {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let content = setup.add_text_content(page, At::End).unwrap();
+        let layer = setup
+            .add_text_layer(
+                page,
+                At::End,
+                content,
+                &SceneTextLayout {
+                    origin: Origin::User,
+                    kind: TextLayoutKind::Point,
+                    angle_degrees: None,
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        (Project::new(session, "test".to_owned()), layer)
+    }
+
+    /// Decodes the `source` asset `entity` committed, so a test observes the
+    /// pixels that were actually persisted rather than the in-memory ones.
+    async fn source_image(snapshot: &Snapshot, entity: EntityId) -> RgbaImage {
+        let asset = snapshot
+            .asset(entity, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("the entity must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        image::load_from_memory(&bytes).unwrap().to_rgba8()
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_raster_rewrites_its_pixels() {
+        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .await;
+        assert_eq!(
+            project
+                .snapshot()
+                .component::<SceneRasterLayer>(layer)
+                .unwrap()
+                .unwrap()
+                .origin,
+            Origin::Generated(Generation::new(
+                ProducerId::new("dev.koharu.pipeline.inpainting").unwrap()
+            )),
+            "the fixture must start generated for the promotion below to mean anything"
+        );
+
+        let (commit, element) = project
+            .adjust_raster(layer, ColorAdjust::Brightness { delta: 50 })
+            .await
+            .unwrap();
+        assert_eq!(element, layer);
+        assert!(commit.revision.get() > 0);
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[0], 150);
+
+        // The layer is a generated one, so the adjustment has to claim both
+        // origins or a later pipeline stage would treat these pixels as its own.
+        let snapshot = project.snapshot();
+        let raster = snapshot
+            .component::<SceneRasterLayer>(layer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(raster.origin, Origin::User);
+        assert_eq!(
+            snapshot
+                .component::<EntityOrigin>(layer)
+                .unwrap()
+                .unwrap()
+                .origin,
+            Origin::User
+        );
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_raster_keeps_its_transparent_area_transparent() {
+        // One transparent and one opaque pixel: the opaque pixel proves the
+        // adjustment actually ran, so a no-op write cannot satisfy the alpha
+        // assertion below.
+        let mut original = RgbaImage::new(100, 100);
+        original.put_pixel(0, 0, image::Rgba([200, 100, 50, 0]));
+        original.put_pixel(1, 0, image::Rgba([200, 100, 50, 255]));
+        let (mut project, layer) = project_with_raster(original).await;
+
+        project
+            .adjust_raster(layer, ColorAdjust::Grayscale)
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        assert_eq!(
+            image.get_pixel(1, 0).0,
+            [118, 118, 118, 255],
+            "the opaque pixel must have been greyed"
+        );
+    }
+
+    /// `apply_raster_stroke` treats a missing `source` asset as an empty
+    /// page-sized surface rather than an error. Adjusting such a layer must do
+    /// the same instead of failing on the absent blob.
+    #[tokio::test]
+    async fn adjusting_a_raster_without_a_source_asset_keeps_the_page_size() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let layer = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        project
+            .adjust_raster(layer, ColorAdjust::Grayscale)
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_non_raster_layer_is_rejected() {
+        let (mut project, text) = project_with_text_layer().await;
+        assert!(
+            project
+                .adjust_raster(text, ColorAdjust::Grayscale)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn adjusting_with_an_invalid_parameter_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .await;
+        assert!(
+            project
+                .adjust_raster(
+                    layer,
+                    ColorAdjust::Levels {
+                        low: 200,
+                        high: 100
+                    }
+                )
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
