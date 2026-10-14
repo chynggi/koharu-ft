@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, anyhow, bail};
 use image::{GrayImage, ImageEncoder as _, codecs::png::PngEncoder};
 use koharu_desktop::{CanvasState, Desktop, Frame, TransformFrame};
-use koharu_rasterizer::ResourceId;
+use koharu_rasterizer::{BrushRamp, ResourceId};
 use koharu_scene::{EntityId, Revision, ShapeGeometry, ShapeStyle};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,14 @@ pub struct Point {
 pub struct PaintBrush {
     pub diameter: f32,
     pub color: [u8; 4],
+    /// A ramped brush ignores `color` and interpolates through the ramp
+    /// instead; the ramp is a command argument, so it is not stored (B-D7).
+    ///
+    /// `BrushRamp` lives in `koharu-rasterizer` and carries no `Type` impl, and
+    /// nothing here generates TypeScript: `protocol.ts` is hand-written and
+    /// declares this field itself.
+    #[specta(skip)]
+    pub ramp: Option<BrushRamp>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Type)]
@@ -302,6 +310,7 @@ pub async fn commit_paint(
         points,
         brush.diameter,
         brush.color,
+        brush.ramp,
         RasterStrokeMode::Paint,
         &desktop,
         &project,
@@ -333,6 +342,9 @@ pub async fn commit_erase(
         points,
         diameter,
         [0; 4],
+        // `Erase` composites by coverage and ignores the colour, so it has no
+        // ramp to pass.
+        None,
         RasterStrokeMode::Erase,
         &desktop,
         &project,
@@ -413,6 +425,7 @@ async fn commit_raster_stroke(
     points: Vec<Point>,
     diameter: f32,
     color: [u8; 4],
+    ramp: Option<BrushRamp>,
     mode: RasterStrokeMode,
     desktop: &Desktop,
     project: &CurrentProject,
@@ -431,6 +444,7 @@ async fn commit_raster_stroke(
                 layer,
                 mode,
                 color,
+                ramp,
                 diameter,
                 points
                     .into_iter()

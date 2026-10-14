@@ -8,6 +8,7 @@ use std::{
 use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use koharu_desktop::Frame;
+use koharu_rasterizer::{BrushRamp, RampAxis};
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, Edit, EntityId, EntityOrigin,
     FitsTo, Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
@@ -1563,12 +1564,14 @@ impl Project {
         self.commit(patch).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn apply_raster_stroke(
         &mut self,
         page: EntityId,
         layer: Option<EntityId>,
         mode: RasterStrokeMode,
         color: [u8; 4],
+        ramp: Option<BrushRamp>,
         diameter: f32,
         points: Vec<ScenePoint>,
     ) -> Result<(Commit, EntityId)> {
@@ -1607,7 +1610,7 @@ impl Project {
             }
             RgbaImage::new(width, height)
         };
-        rasterize_stroke(&mut image, mode, color, diameter, &points);
+        rasterize_stroke(&mut image, mode, color, ramp, diameter, &points);
         let bytes = encode_source_image(image)?;
         let name = format!(
             "Paint {}",
@@ -2311,14 +2314,31 @@ fn rasterize_stroke(
     image: &mut RgbaImage,
     mode: RasterStrokeMode,
     color: [u8; 4],
+    ramp: Option<BrushRamp>,
     diameter: f32,
     points: &[ScenePoint],
 ) {
     let radius = f64::from(diameter) * 0.5;
-    for (start, end) in points
+    // An `AlongStroke` ramp runs over the whole polyline, so it needs each
+    // point's *cumulative* distance: `t` below is only a per-segment projection
+    // parameter and restarts at 0 for every segment. A single-point stroke
+    // leaves `total` at zero, and the `total > 0.0` guard in the pixel loop
+    // turns that into position 0.0 instead of a NaN.
+    let mut cumulative = Vec::with_capacity(points.len());
+    let mut total = 0.0;
+    for (index, point) in points.iter().enumerate() {
+        if let Some(previous) = index.checked_sub(1).map(|previous| &points[previous]) {
+            total += (point.x - previous.x).hypot(point.y - previous.y);
+        }
+        cumulative.push(total);
+    }
+    let page_width = f64::from(image.width());
+    let page_height = f64::from(image.height());
+    for (index, (start, end)) in points
         .iter()
         .zip(points.iter().skip(1))
         .chain(points.last().map(|point| (point, point)))
+        .enumerate()
     {
         let left = (start.x.min(end.x) - radius - 0.5).floor().max(0.0) as u32;
         let top = (start.y.min(end.y) - radius - 0.5).floor().max(0.0) as u32;
@@ -2346,15 +2366,34 @@ fn rasterize_stroke(
                 if coverage == 0.0 {
                     continue;
                 }
+                // The ramp position is page-normalized for `FixedAxis`, so
+                // several strokes can share one ramp; a frame or viewport
+                // coordinate would make the colour depend on the camera.
+                let paint = ramp.map_or(color, |ramp| {
+                    let position = match ramp {
+                        BrushRamp::AlongStroke { .. } => {
+                            if total > 0.0 {
+                                (cumulative[index] + t * length_squared.sqrt()) / total
+                            } else {
+                                0.0
+                            }
+                        }
+                        BrushRamp::FixedAxis { axis, .. } => match axis {
+                            RampAxis::Horizontal => px / page_width,
+                            RampAxis::Vertical => py / page_height,
+                        },
+                    };
+                    ramp.color_at(position as f32)
+                });
                 let pixel = image.get_pixel_mut(x, y);
                 match mode {
                     RasterStrokeMode::Paint => {
-                        let source_alpha = f32::from(color[3]) / 255.0 * coverage;
+                        let source_alpha = f32::from(paint[3]) / 255.0 * coverage;
                         let destination_alpha = f32::from(pixel[3]) / 255.0;
                         let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
                         if output_alpha > 0.0 {
                             for channel in 0..3 {
-                                let source = f32::from(color[channel]) / 255.0;
+                                let source = f32::from(paint[channel]) / 255.0;
                                 let destination = f32::from(pixel[channel]) / 255.0;
                                 pixel[channel] = (((source * source_alpha
                                     + destination * destination_alpha * (1.0 - source_alpha))
@@ -2365,6 +2404,8 @@ fn rasterize_stroke(
                         }
                         pixel[3] = (output_alpha * 255.0).round() as u8;
                     }
+                    // `Erase` composites by coverage alone and never reads the
+                    // colour, so a ramp deliberately does not affect it.
                     RasterStrokeMode::Erase => {
                         pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
                     }
@@ -3036,6 +3077,7 @@ mod tests {
             &mut image,
             RasterStrokeMode::Paint,
             [210, 40, 20, 255],
+            None,
             5.0,
             &points,
         );
@@ -3047,6 +3089,7 @@ mod tests {
             &mut image,
             RasterStrokeMode::Erase,
             [0, 0, 0, 0],
+            None,
             5.0,
             &[ScenePoint { x: 16.0, y: 8.0 }],
         );
@@ -3058,10 +3101,198 @@ mod tests {
             &mut white,
             RasterStrokeMode::Paint,
             [255, 255, 255, 255],
+            None,
             3.0,
             &[ScenePoint { x: 2.0, y: 2.0 }],
         );
         assert_eq!(white.get_pixel(2, 2).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn an_along_stroke_ramp_varies_over_the_whole_stroke() {
+        // Two well-separated segments, so cumulative length differs per pixel.
+        let mut image = RgbaImage::new(64, 8);
+        let points = vec![
+            ScenePoint { x: 4.0, y: 4.0 },
+            ScenePoint { x: 60.0, y: 4.0 },
+        ];
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(BrushRamp::AlongStroke {
+                from: [255, 0, 0, 255],
+                to: [0, 0, 255, 255],
+            }),
+            4.0,
+            &points,
+        );
+        let start = image.get_pixel(4, 4);
+        let end = image.get_pixel(58, 4);
+        assert!(
+            start[0] > start[2],
+            "the stroke start must be red-heavy, got {start:?}"
+        );
+        assert!(
+            end[2] > end[0],
+            "the stroke end must be blue-heavy, got {end:?}"
+        );
+    }
+
+    /// A ramp must advance with *cumulative* length, not restart per segment.
+    /// Two segments of equal length should give the same colour at equal
+    /// cumulative fractions, and the second must not return to the first's
+    /// colour.
+    #[test]
+    fn an_along_stroke_ramp_does_not_restart_at_each_segment() {
+        let mut image = RgbaImage::new(64, 8);
+        let points = vec![
+            ScenePoint { x: 4.0, y: 4.0 },
+            ScenePoint { x: 32.0, y: 4.0 },
+            ScenePoint { x: 60.0, y: 4.0 },
+        ];
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(BrushRamp::AlongStroke {
+                from: [255, 0, 0, 255],
+                to: [0, 0, 255, 255],
+            }),
+            4.0,
+            &points,
+        );
+        let first = image.get_pixel(6, 4);
+        let second = image.get_pixel(34, 4);
+        // The second segment's start is past the halfway point, so it must be
+        // bluer than the first segment's start. A per-segment restart would make
+        // them nearly identical.
+        assert!(
+            second[2] > first[2],
+            "the ramp must not restart per segment: first {first:?}, second {second:?}"
+        );
+    }
+
+    #[test]
+    fn a_fixed_axis_ramp_uses_page_coordinates() {
+        // Horizontal: colour depends on x, and two points at the same x but
+        // different y must match.
+        let mut image = RgbaImage::new(64, 8);
+        let ramp = BrushRamp::FixedAxis {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+            axis: RampAxis::Horizontal,
+        };
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 2.0 },
+                ScenePoint { x: 4.0, y: 6.0 },
+                ScenePoint { x: 60.0, y: 6.0 },
+            ],
+        );
+        let left = image.get_pixel(4, 2);
+        let right = image.get_pixel(60, 6);
+        assert!(left[0] > left[2], "the left edge must be red-heavy");
+        assert!(right[2] > right[0], "the right edge must be blue-heavy");
+    }
+
+    #[test]
+    fn a_vertical_fixed_axis_ramp_ignores_x() {
+        let mut image = RgbaImage::new(8, 64);
+        let ramp = BrushRamp::FixedAxis {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+            axis: RampAxis::Vertical,
+        };
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 4.0 },
+                ScenePoint { x: 4.0, y: 60.0 },
+            ],
+        );
+        assert!(image.get_pixel(4, 4)[0] > image.get_pixel(4, 4)[2]);
+        assert!(image.get_pixel(4, 60)[2] > image.get_pixel(4, 60)[0]);
+    }
+
+    /// The two ramp kinds must be computed by the same arithmetic the preview
+    /// uses, so a single-point stroke cannot divide by zero and a reversed
+    /// stroke must not run its ramp backwards.
+    #[test]
+    fn a_ramp_survives_degenerate_strokes() {
+        let mut image = RgbaImage::new(16, 16);
+        let ramp = BrushRamp::AlongStroke {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+        };
+        // A single point has zero length.
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            6.0,
+            &[ScenePoint { x: 8.0, y: 8.0 }],
+        );
+        let single = image.get_pixel(8, 8);
+        assert!(
+            single[0] > single[2],
+            "a zero-length stroke takes the ramp's start colour, got {single:?}"
+        );
+
+        // A stroke drawn right-to-left must ramp from its own start, not invert.
+        let mut reversed = RgbaImage::new(64, 8);
+        rasterize_stroke(
+            &mut reversed,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 58.0, y: 4.0 },
+                ScenePoint { x: 6.0, y: 4.0 },
+            ],
+        );
+        let start = reversed.get_pixel(58, 4);
+        let end = reversed.get_pixel(8, 4);
+        assert!(
+            start[0] > start[2],
+            "the ramp follows the stroke direction, so its start is red: {start:?}"
+        );
+        assert!(end[2] > end[0], "and its end is blue: {end:?}");
+    }
+
+    #[test]
+    fn no_ramp_keeps_the_plain_stroke_colour() {
+        let mut image = RgbaImage::new(32, 8);
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [12, 34, 56, 255],
+            None,
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 4.0 },
+                ScenePoint { x: 28.0, y: 4.0 },
+            ],
+        );
+        // Every painted pixel must carry the flat colour; a ramp must not leak in.
+        for pixel in image.pixels().filter(|pixel| pixel[3] > 0) {
+            assert_eq!(
+                [pixel[0], pixel[1], pixel[2]],
+                [12, 34, 56],
+                "without a ramp the colour is uniform"
+            );
+        }
     }
 
     /// A committed project holding one 100x100 page whose single raster layer
@@ -3575,6 +3806,7 @@ mod tests {
                 None,
                 RasterStrokeMode::Paint,
                 [255, 0, 0, 255],
+                None,
                 4.0,
                 vec![
                     ScenePoint { x: 8.0, y: 8.0 },
@@ -3630,6 +3862,7 @@ mod tests {
                 Some(layer),
                 RasterStrokeMode::Paint,
                 [0, 255, 0, 255],
+                None,
                 6.0,
                 vec![
                     ScenePoint { x: 40.0, y: 40.0 },
