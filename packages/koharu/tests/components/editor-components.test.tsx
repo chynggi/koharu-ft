@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TitleBar } from '@/components/app/TitleBar'
 import { WindowControls } from '@/components/app/WindowChrome'
+import { FontPicker } from '@/components/controls/FontPicker'
 import { ActivityCenter } from '@/components/editor/ActivityCenter'
 import { CanvasCommandBar } from '@/components/editor/CanvasCommandBar'
 import { Inspector } from '@/components/editor/Inspector'
@@ -32,11 +33,13 @@ import {
   queryClient,
   useCommand,
 } from '@/lib/queries'
+import { FONT_FAVORITES_STORAGE_KEY, useFontFavorites } from '@/lib/fontFavorites'
 import { fillKind } from '@/lib/shapes'
 import { useKoharuStore } from '@/lib/store'
 import * as canvasRuntime from '@koharu/bridge/canvas'
 import {
   commands,
+  type FontFamily,
   type Layer,
   type PageSummary,
   type PatternSpec,
@@ -336,6 +339,10 @@ describe('greenfield editor', () => {
       configurable: true,
       value: {},
     })
+    // Favorites live in a module-level store, so each test starts from a clean
+    // store and a clean persisted value.
+    window.localStorage.removeItem(FONT_FAVORITES_STORAGE_KEY)
+    useFontFavorites.setState({ favorites: [] })
   })
 
   afterEach(() => {
@@ -1693,6 +1700,74 @@ describe('greenfield editor', () => {
 
     await userEvent.click(screen.getByRole('option', { name: '400' }))
     await waitFor(() => expect(written()).toEqual([400]))
+  })
+
+  it('favorites fonts, lists them first under a header, and persists the choice', async () => {
+    const user = userEvent.setup()
+    const families: FontFamily[] = ['Font 01', 'Font 02', 'Font 03'].map((name) => ({
+      name,
+      metadata: {
+        primary_script: 'latn',
+        scripts: ['latn'],
+        languages: [],
+        category: null,
+        classifications: [],
+        use_cases: [],
+      },
+      sources: ['system'],
+      faces: [
+        {
+          postscript_name: name.replaceAll(' ', ''),
+          weight: 400,
+          weight_range: null,
+          style: 'normal',
+        },
+      ],
+    }))
+    vi.spyOn(commands, 'getFontPreview').mockResolvedValue(new Uint8Array([1]).buffer)
+    const onChange = vi.fn()
+    render(<FontPicker value='' families={families} onChange={onChange} />)
+
+    await user.click(screen.getByTestId('type-font-picker'))
+    expect(screen.queryByText('Favorites')).not.toBeInTheDocument()
+
+    // The star must not bubble to the row, which would also select the font.
+    await user.click(screen.getByRole('button', { name: 'Add Font 02 to favorites' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(useFontFavorites.getState().favorites).toEqual(['Font 02'])
+    expect(JSON.parse(window.localStorage.getItem(FONT_FAVORITES_STORAGE_KEY) ?? '')).toEqual([
+      'Font 02',
+    ])
+
+    // The favorite pins above the remaining fonts under its own header.
+    expect(screen.getByText('Favorites')).toBeInTheDocument()
+    expect(screen.getByText('All fonts')).toBeInTheDocument()
+    const rows = screen.getAllByRole('option')
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual([
+      'Font 02, System',
+      'Font 01, System',
+      'Font 03, System',
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Remove Font 02 from favorites' }))
+    expect(useFontFavorites.getState().favorites).toEqual([])
+    expect(screen.queryByText('Favorites')).not.toBeInTheDocument()
+  })
+
+  it('writes a valid favorites store over one that held no JSON', async () => {
+    // `loadFontFavorites` runs once when the module is first imported, so a test
+    // cannot feed it a corrupt value through a fresh import without module-reset
+    // tricks. What the picker depends on is the store's post-toggle contract:
+    // whatever was on disk, a toggle leaves a sane, persisted array behind.
+    window.localStorage.setItem(FONT_FAVORITES_STORAGE_KEY, 'not json')
+    useFontFavorites.setState({ favorites: [] })
+
+    useFontFavorites.getState().toggle('Font 02')
+
+    expect(useFontFavorites.getState().favorites).toEqual(['Font 02'])
+    expect(JSON.parse(window.localStorage.getItem(FONT_FAVORITES_STORAGE_KEY) ?? '')).toEqual([
+      'Font 02',
+    ])
   })
 
   it('debounces layer text editing and flushes it when focus leaves the field', async () => {

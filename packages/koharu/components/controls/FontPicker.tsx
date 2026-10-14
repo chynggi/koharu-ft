@@ -2,10 +2,11 @@
 
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import type { TFunction } from 'i18next'
-import { ChevronDown, ListFilter, Search, X } from 'lucide-react'
+import { ChevronDown, ListFilter, Search, Star, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useFontFavorites } from '@/lib/fontFavorites'
 import { useFontPreview } from '@/lib/queries'
 import type { FontFamily, FontSource } from '@koharu/bridge/protocol'
 import { Badge } from '@koharu/ui/components/badge'
@@ -35,6 +36,7 @@ import { Separator } from '@koharu/ui/components/separator'
 import { cn } from '@koharu/ui/lib/utils'
 
 const rowHeight = 38
+const headerHeight = 24
 const listHeight = 248
 const allFonts = '__all_fonts__'
 
@@ -67,6 +69,8 @@ export function FontPicker({
   onChange: (family: string) => void
 }) {
   const { t } = useTranslation()
+  const favorites = useFontFavorites((state) => state.favorites)
+  const toggleFavorite = useFontFavorites((state) => state.toggle)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<Filters>(emptyFilters)
@@ -252,6 +256,7 @@ export function FontPicker({
           <FontList
             key={`${query}:${filters.source}:${filters.script}:${filters.category}:${filters.useCase}`}
             families={results}
+            favorites={favorites}
             value={value}
             activeIndex={activeIndex}
             listId={listId}
@@ -262,6 +267,7 @@ export function FontPicker({
             onActiveIndexChange={activateFont}
             keyboardNavigation={keyboardNavigation}
             onSelect={chooseFont}
+            onToggleFavorite={toggleFavorite}
           />
         )}
       </PopoverContent>
@@ -417,8 +423,21 @@ function FontResultSummary({
   )
 }
 
+type FontRow =
+  | { type: 'font'; family: FontFamily; index: number }
+  | { type: 'header'; label: string }
+
+function rowOffset(rows: FontRow[], rowIndex: number): number {
+  let offset = 0
+  for (let index = 0; index < rowIndex; index += 1) {
+    offset += rows[index]?.type === 'header' ? headerHeight : rowHeight
+  }
+  return offset
+}
+
 function FontList({
   families,
+  favorites,
   value,
   activeIndex,
   listId,
@@ -426,8 +445,10 @@ function FontList({
   onPointerMove,
   keyboardNavigation,
   onSelect,
+  onToggleFavorite,
 }: {
   families: FontFamily[]
+  favorites: string[]
   value: string
   activeIndex: number
   listId: string
@@ -435,21 +456,48 @@ function FontList({
   onPointerMove: (index: number) => void
   keyboardNavigation: { current: boolean }
   onSelect: (family: string) => void
+  onToggleFavorite: (family: string) => void
 }) {
   const { t } = useTranslation()
   const list = useRef<HTMLDivElement>(null)
-  const selectedIndex = families.findIndex(
-    (family) => normalizeFontName(family.name) === normalizeFontName(value),
+  const favoriteNames = useMemo(() => new Set(favorites), [favorites])
+  const rows = useMemo<FontRow[]>(() => {
+    const favoriteRows: FontRow[] = []
+    const otherRows: FontRow[] = []
+    families.forEach((family, index) => {
+      const row: FontRow = { type: 'font', family, index }
+      if (favoriteNames.has(family.name)) favoriteRows.push(row)
+      else otherRows.push(row)
+    })
+    if (favoriteRows.length === 0) return otherRows
+    const grouped: FontRow[] = [
+      { type: 'header', label: t('fontPicker.favorites') },
+      ...favoriteRows,
+    ]
+    if (otherRows.length > 0) {
+      grouped.push({ type: 'header', label: t('fontPicker.allFonts') }, ...otherRows)
+    }
+    return grouped
+  }, [favoriteNames, families, t])
+  const selectedRow = rows.findIndex(
+    (row) => row.type === 'font' && normalizeFontName(row.family.name) === normalizeFontName(value),
   )
+  const activeRow =
+    activeIndex >= 0
+      ? rows.findIndex((row) => row.type === 'font' && row.index === activeIndex)
+      : -1
   const virtualizer = useVirtualizer({
-    count: families.length,
+    count: rows.length,
     getScrollElement: () => list.current,
-    getItemKey: (index) => normalizeFontName(families[index]?.name ?? String(index)),
-    estimateSize: () => rowHeight,
+    getItemKey: (index) => {
+      const row = rows[index]
+      return row?.type === 'font' ? normalizeFontName(row.family.name) : `section-${index}`
+    },
+    estimateSize: (index) => (rows[index]?.type === 'header' ? headerHeight : rowHeight),
     overscan: 6,
     initialOffset: Math.max(
       0,
-      selectedIndex * rowHeight - Math.floor((listHeight / rowHeight - 1) / 2) * rowHeight,
+      rowOffset(rows, selectedRow) - Math.floor((listHeight / rowHeight - 1) / 2) * rowHeight,
     ),
     initialRect: { width: 240, height: listHeight },
     observeElementRect: (instance, callback) =>
@@ -459,10 +507,10 @@ function FontList({
   })
 
   useEffect(() => {
-    if (activeIndex >= 0 && activeIndex < families.length) {
-      virtualizer.scrollToIndex(activeIndex, { align: 'auto' })
+    if (activeRow >= 0 && activeRow < rows.length) {
+      virtualizer.scrollToIndex(activeRow, { align: 'auto' })
     }
-  }, [activeIndex, families.length, virtualizer])
+  }, [activeRow, rows.length, virtualizer])
 
   return (
     <ScrollArea
@@ -474,41 +522,56 @@ function FontList({
       viewportClassName='overflow-x-hidden'
       style={{
         height:
-          families.length === 0
+          rows.length === 0
             ? rowHeight * 2
-            : Math.min(listHeight, Math.max(rowHeight, families.length * rowHeight)),
+            : Math.min(listHeight, Math.max(headerHeight, rowOffset(rows, rows.length))),
       }}
     >
       <div className='relative' style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          const family = families[virtualRow.index]
-          if (!family) return null
+          const row = rows[virtualRow.index]
+          if (!row) return null
+          if (row.type === 'header') {
+            return (
+              <div
+                key={virtualRow.key}
+                aria-hidden='true'
+                className='absolute inset-x-0 top-0 flex h-6 items-center bg-muted/50 px-2 text-[9px] font-medium tracking-wide text-muted-foreground uppercase'
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                {row.label}
+              </div>
+            )
+          }
+          const { family, index } = row
           const selected = normalizeFontName(family.name) === normalizeFontName(value)
+          const isFavorite = favoriteNames.has(family.name)
           const source = t(
             family.sources.includes('bundled')
               ? 'fontPicker.sources.bundled'
               : 'fontPicker.sources.system',
           )
+          const favoriteLabel = isFavorite
+            ? t('fontPicker.removeFavorite', { family: family.name })
+            : t('fontPicker.addFavorite', { family: family.name })
           return (
-            <button
+            <div
               key={virtualRow.key}
-              type='button'
               role='option'
-              id={`${listId}-option-${virtualRow.index}`}
+              id={`${listId}-option-${index}`}
               aria-label={t('fontPicker.fontLabel', { family: family.name, source })}
               aria-selected={selected}
-              data-highlighted={activeIndex === virtualRow.index}
+              data-highlighted={activeIndex === index}
               className={cn(
-                'absolute inset-x-0 top-0 flex h-9.5 w-full items-center px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
-                (selected || activeIndex === virtualRow.index) &&
-                  'bg-accent text-accent-foreground',
+                'absolute inset-x-0 top-0 flex h-9.5 w-full cursor-default items-center px-2 text-left hover:bg-accent',
+                (selected || activeIndex === index) && 'bg-accent text-accent-foreground',
               )}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
               onPointerMove={(event) => {
-                if (event.pointerType === 'mouse') onPointerMove(virtualRow.index)
+                if (event.pointerType === 'mouse') onPointerMove(index)
               }}
               onMouseEnter={() => {
-                if (!keyboardNavigation.current) onActiveIndexChange(virtualRow.index)
+                if (!keyboardNavigation.current) onActiveIndexChange(index)
               }}
               onClick={() => onSelect(family.name)}
             >
@@ -519,7 +582,24 @@ function FontList({
                   <span className='shrink-0'>{source}</span>
                 </div>
               </div>
-            </button>
+              <button
+                type='button'
+                aria-label={favoriteLabel}
+                title={favoriteLabel}
+                className={cn(
+                  'ml-1 flex size-5 shrink-0 items-center justify-center rounded-md hover:bg-muted-foreground/10',
+                  isFavorite
+                    ? 'text-yellow-500'
+                    : 'text-muted-foreground/30 hover:text-muted-foreground',
+                )}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onToggleFavorite(family.name)
+                }}
+              >
+                <Star className={cn('size-3', isFavorite && 'fill-current')} />
+              </button>
+            </div>
           )
         })}
       </div>
