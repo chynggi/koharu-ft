@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 
 import { ResourceMonitor } from '@/components/editor/ResourceMonitor'
 import { call } from '@/lib/backend'
+import { useForkPreferences } from '@/lib/forkPreferences'
 import {
   pageKey,
   pagesKey,
@@ -428,6 +429,7 @@ export function PageRail() {
                   >
                     <PageItem
                       page={page}
+                      index={index}
                       active={active === page.id}
                       selected={selected.includes(page.id)}
                       dragged={dragged === page.id}
@@ -599,6 +601,7 @@ function PageImportMenu({
 
 function PageItem({
   page,
+  index,
   active,
   selected,
   dragged,
@@ -617,6 +620,7 @@ function PageItem({
   onDrop,
 }: {
   page: PageSummary
+  index: number
   active: boolean
   selected: boolean
   dragged: boolean
@@ -635,6 +639,7 @@ function PageItem({
   onDrop: (position: DropPosition, dataTransfer: DataTransfer) => void
 }) {
   const { t } = useTranslation()
+  const showPageNumbers = useForkPreferences((state) => state.preferences.showPageNumbers)
 
   return (
     <article
@@ -741,7 +746,19 @@ function PageItem({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        {/* Labels can be renamed to anything; this is the page's position. */}
         <p className='mt-1 text-[9px] leading-3.5 text-muted-foreground'>
+          {showPageNumbers && (
+            <>
+              <span
+                data-page-number={index + 1}
+                className='font-medium text-foreground tabular-nums'
+              >
+                {index + 1}
+              </span>
+              {' · '}
+            </>
+          )}
           {t('navigator.layerCount', { count: page.layer_count })}
         </p>
         <p className='mt-1 text-[9px] text-muted-foreground tabular-nums'>

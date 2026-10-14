@@ -517,6 +517,59 @@ describe('greenfield editor', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('3 selected')
   })
 
+  it("shows each page's position even when its label differs from the order", () => {
+    installProject()
+    const pages: PageSummary[] = ['Cover', 'Prologue'].map((label, index) => ({
+      id: `page-${index + 1}`,
+      label,
+      size: { width: 1000, height: 1500 },
+      source_asset: null,
+      chapter_start: false,
+      layer_count: 0,
+    }))
+    queryClient.setQueryData(pagesKey, pages)
+    vi.spyOn(commands, 'getPages').mockResolvedValue(pages)
+    render(<PageRail />)
+
+    const items = screen.getAllByRole('article')
+    const numbers = items.map((item) => item.querySelector('[data-page-number]')?.textContent)
+    expect(numbers).toEqual(['1', '2'])
+    // The number shares the text column with the layer count...
+    expect(items[0]!.querySelector('[data-page-number]')?.parentElement).toHaveTextContent(
+      '0 layers',
+    )
+    // ...and deliberately not the thumbnail, which the fork tried first.
+    expect(
+      items[0]!.querySelector('div')?.contains(items[0]!.querySelector('[data-page-number]')),
+    ).toBe(false)
+  })
+
+  it('hides the page numbers when the fork preference is off', () => {
+    useForkPreferences.setState({
+      preferences: { ...forkPreferenceDefaults, showPageNumbers: false },
+    })
+    const pages: PageSummary[] = [
+      {
+        id: 'page-1',
+        label: 'Page 1',
+        size: { width: 1000, height: 1500 },
+        source_asset: null,
+        chapter_start: false,
+        layer_count: 2,
+      },
+    ]
+    queryClient.setQueryData(pagesKey, pages)
+    vi.spyOn(commands, 'getPages').mockResolvedValue(pages)
+    render(<PageRail />)
+
+    const item = screen.getAllByRole('article')[0]!
+    expect(item.querySelector('[data-page-number]')).toBeNull()
+    expect(item).toHaveTextContent('2 layers')
+    // The store outlives the test, and other tests render the rail, so leave the
+    // default behind rather than a rail with its numbers switched off.
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
+  })
+
   it('loads page thumbnails into the filmstrip', async () => {
     installProject()
     const thumbnail = vi
