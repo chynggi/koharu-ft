@@ -11,8 +11,8 @@ use std::{
 use futures_channel::oneshot;
 use js_sys::{Array, Function, Uint8Array};
 use koharu_rasterizer::{
-    CompositionCommand, Frame as PreparedFrame, GpuCompositor, LayerId, LayerKind, PreparedContent,
-    PreparedFrameManifest, PreparedPath, PreparedRasterTile, PreparedResource,
+    BrushRamp, CompositionCommand, Frame as PreparedFrame, GpuCompositor, LayerId, LayerKind,
+    PreparedContent, PreparedFrameManifest, PreparedPath, PreparedRasterTile, PreparedResource,
     PreparedResourcePacket, PreparedResourceStore, Presentation, RasterDraw, ResourceId, Revision,
 };
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ use web_sys::{
     ImageBitmapOptions, ImageOrientation, PremultiplyAlpha, Window,
 };
 
-use crate::{cache::ResourceUsage, surface::SurfaceBlitter};
+use crate::{cache::ResourceUsage, ramp, surface::SurfaceBlitter};
 
 const RESOURCE_CACHE_BUDGET: u64 = 512 * 1024 * 1024;
 const MAX_CACHED_RESOURCES: usize = 1_024;
@@ -217,6 +217,12 @@ struct StrokeEdit {
     layer: Option<LayerId>,
     diameter: f32,
     color: [u8; 4],
+    /// The brush ramp being previewed, or `None` for the flat-colour path.
+    ramp: Option<BrushRamp>,
+    /// Distance travelled along `points` so far, in page units. Tracked here
+    /// because `AlongStroke` needs a cumulative length, and the next segment's
+    /// colour depends on it.
+    cumulative: f64,
     points: Vec<Point>,
     preview: Scene,
     pending: bool,
@@ -1555,8 +1561,14 @@ impl WebCanvas {
         point: JsValue,
         diameter: f32,
         color: &Uint8Array,
+        ramp: JsValue,
     ) -> Result<(), JsValue> {
         let point: Point = serde_wasm_bindgen::from_value(point).map_err(js_error)?;
+        // A ramp is an enum, so it cannot travel as a `Uint8Array` like `color`.
+        // `Option<BrushRamp>` is what lets the frontend pass nothing at all:
+        // serde_wasm_bindgen deserializes both `null` and `undefined` to `None`,
+        // so a frontend that omits `ramp` keeps the flat-colour path.
+        let ramp: Option<BrushRamp> = serde_wasm_bindgen::from_value(ramp).map_err(js_error)?;
         validate_brush(diameter)?;
         let color = rgba(color)?;
         let mut browser = self.browser_mut()?;
@@ -1599,12 +1611,21 @@ impl WebCanvas {
         } else if layer.is_some() {
             return Err(js_message("inpaint preview does not accept a layer target"));
         }
+        let mut preview = Scene::new();
+        let size = frame.size();
+        // The eraser and the inpaint previews ignore the ramp: neither carries a
+        // colour of its own into the commit, so a ramp would preview a gradient
+        // that never lands.
         let preview_color = match kind {
             StrokeKind::Erase => [0, 0, 0, 255],
             StrokeKind::Inpaint => [168, 85, 247, 255],
-            StrokeKind::Paint => [color[0], color[1], color[2], 255],
+            StrokeKind::Paint => ramp.map_or([color[0], color[1], color[2], 255], |ramp| {
+                // The opening dot sits at the stroke's start, so it takes the
+                // same position the commit path gives that pixel.
+                let position = ramp::segment_ramp_position(&ramp, point.x, point.y, 0.0, 0.0, size);
+                ramp.color_at(position)
+            }),
         };
-        let mut preview = Scene::new();
         draw_dot(&mut preview, point, diameter, preview_color);
         browser.canvas.stroke = Some(StrokeEdit {
             page: frame.page(),
@@ -1613,6 +1634,8 @@ impl WebCanvas {
             layer,
             diameter,
             color,
+            ramp,
+            cumulative: 0.0,
             points: vec![point],
             preview,
             pending: false,
@@ -1642,6 +1665,19 @@ impl WebCanvas {
             return Err(js_message("stroke is waiting for its replacement frame"));
         }
         let mut changed = false;
+        // `AlongStroke`'s commit path divides by the stroke's *real* total
+        // length, which does not exist until `finishStroke`. The preview cannot
+        // know the future, so the two will disagree at the end of a stroke that
+        // is not as long as its denominator. The preview deliberately does NOT
+        // rescale as the stroke grows: normalizing by the length so far makes
+        // every already-drawn segment change colour under the user's cursor,
+        // which is far more distracting than an early stroke reading as too
+        // light and settling at commit. A fixed denominator — the page diagonal
+        // — gives a stable ramp that shows the direction and rough progression.
+        //
+        // Consequence: the committed stroke is authoritative and the preview is
+        // an approximation. Do not "fix" this by renormalizing incrementally.
+        let total = ramp::page_diagonal(size);
         for point in points {
             if !point.x.is_finite() || !point.y.is_finite() {
                 return Err(js_message("stroke points must be finite"));
@@ -1651,13 +1687,28 @@ impl WebCanvas {
                 y: point.y.clamp(0.0, f64::from(size.1)),
             };
             let previous = *stroke.points.last().expect("stroke has an initial point");
-            if (previous.x - point.x).hypot(previous.y - point.y) < 0.25 / zoom {
+            let segment = (previous.x - point.x).hypot(previous.y - point.y);
+            if segment < 0.25 / zoom {
                 continue;
             }
+            // The committed path draws a continuous per-pixel ramp; the preview
+            // paints one flat colour per segment, so a sparse pointer stream can
+            // band. Pointer events arrive every few pixels, which keeps the
+            // steps below what the eye resolves; banding here is a preview
+            // artifact, not something the commit reproduces.
+            let cumulative = stroke.cumulative + segment;
             let preview_color = match stroke.kind {
                 StrokeKind::Erase => [0, 0, 0, 255],
                 StrokeKind::Inpaint => [168, 85, 247, 255],
-                StrokeKind::Paint => [stroke.color[0], stroke.color[1], stroke.color[2], 255],
+                StrokeKind::Paint => stroke.ramp.map_or(
+                    [stroke.color[0], stroke.color[1], stroke.color[2], 255],
+                    |ramp| {
+                        let position = ramp::segment_ramp_position(
+                            &ramp, point.x, point.y, cumulative, total, size,
+                        );
+                        ramp.color_at(position)
+                    },
+                ),
             };
             draw_segment(
                 &mut stroke.preview,
@@ -1666,6 +1717,7 @@ impl WebCanvas {
                 stroke.diameter,
                 preview_color,
             );
+            stroke.cumulative = cumulative;
             stroke.points.push(point);
             changed = true;
         }

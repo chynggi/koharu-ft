@@ -6,6 +6,11 @@
 
 #[cfg(any(target_arch = "wasm32", test))]
 mod cache;
+// The ramp preview arithmetic is target-independent and compiled for the host
+// under `cfg(test)` so `cargo test -p koharu-canvas --lib` can pin it, exactly
+// as `cache` is.
+#[cfg(any(target_arch = "wasm32", test))]
+mod ramp;
 #[cfg(target_arch = "wasm32")]
 mod surface;
 #[cfg(target_arch = "wasm32")]
