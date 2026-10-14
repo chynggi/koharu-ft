@@ -970,7 +970,12 @@ describe('greenfield editor', () => {
     })
   })
 
-  it('keeps the stop count within the validated range', async () => {
+  // This test clicks "Add stop" 32 times to reach the ceiling, and each click
+  // commits through the mocked command and re-renders the whole stop list from
+  // the query cache, so it does ~1000 row renders. That is real work and it
+  // measures just over vitest's 5s default; the budget is raised rather than
+  // shrinking the click count, which is the point of the test.
+  it('keeps the stop count within the validated range', { timeout: 30_000 }, async () => {
     installProject()
     const user = userEvent.setup()
     queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
