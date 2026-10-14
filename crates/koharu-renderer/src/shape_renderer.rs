@@ -817,7 +817,6 @@ mod tests {
             frame(40.0, 20.0, 0.0),
         );
         let image = PreparedPatternImage {
-            source: koharu_rasterizer::ResourceId::for_encoded_raster(1, 1, "image/png", &[7]),
             width: 1,
             height: 1,
             pixels: std::sync::Arc::from(&[9u8, 8, 7, 255][..]),
@@ -840,7 +839,6 @@ mod tests {
         );
         let before = path.fill.clone();
         let image = PreparedPatternImage {
-            source: koharu_rasterizer::ResourceId::for_encoded_raster(1, 1, "image/png", &[7]),
             width: 1,
             height: 1,
             pixels: std::sync::Arc::from(&[9u8, 8, 7, 255][..]),

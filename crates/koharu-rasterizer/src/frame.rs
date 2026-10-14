@@ -677,7 +677,8 @@ mod tests {
     use super::*;
     use crate::{
         Point, PreparedFrame, PreparedGradient, PreparedGradientExtend, PreparedGradientKind,
-        PreparedGradientStop, PreparedLayer, PreparedRaster, PreparedRasterTile, PreparedScene,
+        PreparedGradientStop, PreparedLayer, PreparedPattern, PreparedPatternImage,
+        PreparedPatternRepeat, PreparedRaster, PreparedRasterTile, PreparedScene,
         PreparedSceneCommand,
     };
     use vello::peniko::{ColorStop, GradientKind};
@@ -1066,7 +1067,6 @@ mod tests {
         // A 2x1 image: a red pixel then a blue one, so a change in tile pitch
         // moves the sampled colour.
         PreparedPatternImage {
-            source: ResourceId::for_encoded_raster(2, 1, "image/png", &[1, 2, 3]),
             width: 2,
             height: 1,
             pixels: Arc::from(&[255u8, 0, 0, 255, 0, 0, 255, 255][..]),

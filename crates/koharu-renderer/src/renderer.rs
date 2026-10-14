@@ -292,7 +292,11 @@ impl Renderer {
             .iter()
             .filter_map(|(_, descriptor)| match descriptor {
                 NodeDescriptor::Image(image) => Some(image.blob),
-                NodeDescriptor::Text(_) | NodeDescriptor::Shape(_) => None,
+                // A shape's pattern asset is decoded through the same cache and
+                // the same loader as any other image, so its blob belongs in the
+                // request set too. Omitting it would leave the brush with
+                // `None` and silently paint the fallback forever.
+                NodeDescriptor::Shape(shape) => shape.pattern,                NodeDescriptor::Text(_) => None,
             })
             .collect::<BTreeSet<_>>();
         let images = Arc::new(self.load_images(snapshot, image_ids).await?);
@@ -918,6 +922,27 @@ impl Traversal<'_> {
             .iter()
             .map(|point| (point.x, point.y))
             .collect();
+        // A pattern fill draws from the layer's `pattern` asset. Looking the blob
+        // up here is what lets `build_node` attach the pixels later, and adding
+        // it as a dependency is what makes an uploaded pattern rebuild the node
+        // instead of leaving the previous fallback colour on screen (P-D6).
+        let pattern_role = AssetRole::new("pattern")?;
+        let pattern = if matches!(
+            shape.style.fill,
+            Some(koharu_scene::ShapeFill::Pattern(_))
+        ) {
+            let asset = self.snapshot.asset(entity, &pattern_role)?;
+            dependencies.insert(RenderDependency::Component {
+                entity,
+                kind: ASSETS_KIND.to_owned(),
+            });
+            if let Some(asset) = asset.as_ref() {
+                dependencies.insert(RenderDependency::Blob(asset.blob));
+            }
+            asset.map(|asset| asset.blob)
+        } else {
+            None
+        };
         Ok(Some(LayerDraft {
             entity,
             geometry,
@@ -929,6 +954,7 @@ impl Traversal<'_> {
                 style: shape.style.clone(),
                 angle_degrees: shape.angle_degrees,
                 polygon,
+                pattern,
             })),
             metadata: DraftMetadata::Shape(ShapeMetadata {
                 geometry: shape.geometry,
@@ -1320,12 +1346,28 @@ fn build_node(
             // `Polygon`/`Freeform` to the entity's points and every other kind
             // to the shape's parameters. Calling `shape_path` directly would
             // silently draw the two point-backed kinds as an empty path.
-            let path = shape_renderer::shape_layer_path(
+            let mut path = shape_renderer::shape_layer_path(
                 &shape.geometry,
                 &geometry.points,
                 &shape.style,
                 frame,
             );
+            // P-D6: a pattern whose asset is missing, undecodable, or too large
+            // to load keeps a `None` image and `append_to` draws the fallback
+            // colour. That is not an error, so it must not fail the render — a
+            // single broken pattern asset cannot make a page unopenable.
+            if let Some(blob) = shape.pattern
+                && let Some(decoded) = images.get(&blob)
+            {
+                shape_renderer::attach_pattern_image(
+                    &mut path,
+                    koharu_rasterizer::PreparedPatternImage {
+                        width: decoded.width,
+                        height: decoded.height,
+                        pixels: Arc::clone(&decoded.pixels),
+                    },
+                );
+            }
             let bounds = rotated_bounds(frame, &path);
             let scene = koharu_rasterizer::PreparedScene {
                 commands: vec![koharu_rasterizer::PreparedSceneCommand::FillPath(path)],
@@ -2152,6 +2194,7 @@ mod tests {
             style: ellipse_style(),
             angle_degrees,
             polygon,
+            pattern: None,
         }))
     }
 
@@ -2164,6 +2207,26 @@ mod tests {
         geometry: &Geometry,
         angle_degrees: Option<f32>,
     ) -> koharu_scene::Result<EntityId> {
+        add_shape_layer_styled(
+            edit,
+            page,
+            shape,
+            geometry,
+            angle_degrees,
+            ellipse_style(),
+        )
+    }
+
+    /// `add_shape_layer` with an explicit style, so a test can install a
+    /// non-solid fill without depending on `Edit`'s private component reader.
+    fn add_shape_layer_styled(
+        edit: &mut koharu_scene::Edit,
+        page: EntityId,
+        shape: koharu_scene::ShapeGeometry,
+        geometry: &Geometry,
+        angle_degrees: Option<f32>,
+        style: koharu_scene::ShapeStyle,
+    ) -> koharu_scene::Result<EntityId> {
         let entity = edit.add_entity(page, koharu_scene::At::End)?;
         edit.set(
             entity,
@@ -2171,7 +2234,7 @@ mod tests {
                 origin: Origin::User,
                 name: "Ellipse 1".to_owned(),
                 geometry: shape,
-                style: ellipse_style(),
+                style,
                 angle_degrees,
                 rasterized: false,
             },
@@ -2180,11 +2243,171 @@ mod tests {
         Ok(entity)
     }
 
+    /// A shape with a pattern fill must reach the brush **with its decoded
+    /// pixels attached**, and a shape without a `pattern` asset must keep the
+    /// fallback instead of failing.
+    ///
+    /// This is the end-to-end guard for the renderer's half of the pattern
+    /// plumbing: `PatternSpec` references no asset, so only the traversal's blob
+    /// lookup can supply the pixels, and if that lookup or the image request set
+    /// were dropped the shape would silently paint its fallback colour forever
+    /// while every other test still passed.
+    #[tokio::test]
+    async fn a_shape_pattern_fill_gets_its_asset_pixels() {
+        // A 2x1 red/blue PNG, so the pixels are identifiable after decoding.
+        let png = {
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            let image = image::RgbaImage::from_raw(
+                2,
+                1,
+                vec![255, 0, 0, 255, 0, 0, 255, 255],
+            )
+            .unwrap();
+            image::DynamicImage::ImageRgba8(image)
+                .write_to(&mut bytes, image::ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        let pattern = koharu_scene::PatternSpec {
+            repeat: koharu_scene::PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.5,
+            rotation_degrees: 0,
+            fallback: [7, 8, 9, 255],
+        };
+        let pattern_role = AssetRole::new("pattern").unwrap();
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let shape = add_shape_layer_styled(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &rotated_ellipse(),
+                    None,
+                    koharu_scene::ShapeStyle {
+                        fill: Some(koharu_scene::ShapeFill::Pattern(pattern)),
+                        stroke: None,
+                    },
+                )?;
+                edit.set_asset(
+                    shape,
+                    &pattern_role,
+                    AssetInput::new(
+                        png.clone(),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(2),
+                            height: Some(1),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )?;
+                ids = Some((page, shape));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let prepared = frame.prepared();
+        let prepared_layer = prepared
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(shape))
+            .expect("the shape must have a prepared layer");
+        let koharu_rasterizer::PreparedContent::Vector(scene) = &prepared_layer.content else {
+            panic!("a shape must prepare as vector content");
+        };
+        let [koharu_rasterizer::PreparedSceneCommand::FillPath(path)] = &scene.commands[..] else {
+            panic!("a shape must prepare exactly one fill path");
+        };
+        let Some(koharu_rasterizer::PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill, got {:?}", path.fill);
+        };
+        let image = pattern
+            .image
+            .as_ref()
+            .expect("the pattern asset must have been resolved and attached");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(
+            &image.pixels[..],
+            &[255, 0, 0, 255, 0, 0, 255, 255],
+            "the decoded pixels must be the uploaded image"
+        );
+        // The spread still applies: `scale` is a fraction of the frame width.
+        assert!(pattern.scale > 0.0);
+    }
+
+    /// Without a `pattern` asset the same shape must still render: the fill
+    /// stays a pattern with no image, which `append_to` draws as the fallback
+    /// (P-D6). A missing asset is not an error.
+    #[tokio::test]
+    async fn a_shape_pattern_fill_without_an_asset_still_renders() {
+        let pattern = koharu_scene::PatternSpec {
+            repeat: koharu_scene::PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.5,
+            rotation_degrees: 0,
+            fallback: [7, 8, 9, 255],
+        };
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let shape = add_shape_layer_styled(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &rotated_ellipse(),
+                    None,
+                    koharu_scene::ShapeStyle {
+                        fill: Some(koharu_scene::ShapeFill::Pattern(pattern)),
+                        stroke: None,
+                    },
+                )?;
+                ids = Some((page, shape));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let prepared = frame.prepared();
+        let prepared_layer = prepared
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(shape))
+            .expect("the shape must have a prepared layer");
+        let koharu_rasterizer::PreparedContent::Vector(scene) = &prepared_layer.content else {
+            panic!("a shape must prepare as vector content");
+        };
+        let [koharu_rasterizer::PreparedSceneCommand::FillPath(path)] = &scene.commands[..] else {
+            panic!("a shape must prepare exactly one fill path");
+        };
+        let Some(koharu_rasterizer::PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill, got {:?}", path.fill);
+        };
+        assert!(
+            pattern.image.is_none(),
+            "no asset was uploaded, so there must be no image"
+        );
+        assert_eq!(pattern.fallback, [7, 8, 9, 255]);
+    }
+
     /// A 45°-rotated rx=50/ry=25 ellipse sampled as 32 points, centred at
     /// (100, 100). Its authored frame is 100×50 but its axis-aligned box is
     /// 79.06², so the angle is observable in both the frame and the bounds.
-    fn rotated_ellipse() -> Geometry {
-        let (rx, ry) = (50.0_f64, 25.0_f64);
+    fn rotated_ellipse() -> Geometry {        let (rx, ry) = (50.0_f64, 25.0_f64);
         let (sin, cos) = (45.0_f64).to_radians().sin_cos();
         Geometry {
             origin: Origin::User,

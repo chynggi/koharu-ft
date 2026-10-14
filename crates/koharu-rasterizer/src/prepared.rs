@@ -826,11 +826,13 @@ pub struct PreparedPattern {
 }
 
 /// Decoded, straight-alpha RGBA8 pixels for a [`PreparedPattern`].
+///
+/// There is deliberately no `ResourceId` here. The brush that consumes these
+/// pixels is a peniko `ImageBrush`, whose GPU atlas is keyed by the `Blob`'s own
+/// identity, so a resource id would be a second, unused name for the same image
+/// — the kind of duplicate authority this codebase removes rather than carries.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PreparedPatternImage {
-    /// Identity of the source asset, so a caller can tell two look-alike
-    /// patterns apart and cache an upload by content.
-    pub source: ResourceId,
     pub width: u32,
     pub height: u32,
     /// `width * height * 4` bytes of RGBA8 with straight (unpremultiplied)

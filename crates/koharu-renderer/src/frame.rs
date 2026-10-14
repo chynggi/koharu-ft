@@ -470,6 +470,14 @@ pub(crate) struct ShapeNodeDescriptor {
     pub(crate) style: koharu_scene::ShapeStyle,
     pub(crate) angle_degrees: Option<f32>,
     pub(crate) polygon: Vec<(f64, f64)>,
+    /// The blob holding this shape's `pattern` asset, when the entity has one.
+    ///
+    /// The pixels cannot travel in the descriptor because `build_node` runs off
+    /// the render thread with only the decoded-image map; the blob id is what
+    /// looks them up there. It is part of the descriptor so an asset change is
+    /// a descriptor change and therefore invalidates the retained node — a
+    /// pattern whose image changed must not keep drawing the old one.
+    pub(crate) pattern: Option<BlobId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -869,6 +877,7 @@ mod tests {
                     },
                     angle_degrees,
                     polygon: Vec::new(),
+                    pattern: None,
                 })),
                 scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
                 resources: Arc::from([]),
