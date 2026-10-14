@@ -885,9 +885,17 @@ mod tests {
     }
 
     /// A rotated gradient must still vary *along its own axis* on a real
-    /// render. Passing the path affine as `brush_transform` double-applies it
-    /// (`Scene::fill` composes `transform * brush_transform`), which collapses
-    /// the ramp to one colour — a failure only a pixel test can see.
+    /// render.
+    ///
+    /// Passing the path affine as `brush_transform` double-applies it
+    /// (`Scene::fill` composes `transform * brush_transform`). The path
+    /// transform is a 90° rotation, so the composition is a 180° over-rotation:
+    /// here `T² = [-1, 0, 0, -1, 100, 100]`, a half-turn about `(50, 50)`. That
+    /// makes the gradient's iso-colour lines vertical where they should be
+    /// horizontal, and the two samples below — which a correct render separates
+    /// along the ramp — land on one line and share the midpoint colour
+    /// `(127, 0, 128)`. That exact midpoint is the double-application
+    /// signature, and only a pixel test can see it.
     ///
     /// The sample points are chosen carefully: the path transform is a 90°
     /// rotation (`[0, 1, -1, 0, ...]`), so the gradient's local +x axis — the
@@ -906,8 +914,9 @@ mod tests {
                 PathElement::Close,
             ],
             // Built here rather than through `gradient_path`: that helper's
-            // local rect spans only `[1,2]`–`[9,2]`, far too small to place two
-            // pixel samples on the ramp's axis.
+            // shape is `MoveTo([1,2]) → LineTo([9,2]) → Close`, a zero-area
+            // segment with nothing to fill, so no pixel sample could land on it
+            // at all.
             fill: Some(PreparedFill::Gradient {
                 gradient: PreparedGradient {
                     kind: PreparedGradientKind::Linear {
@@ -954,8 +963,35 @@ mod tests {
             (far[0], far[1], far[2]),
             "a rotated gradient collapsed to one colour — brush_transform is probably Some(affine)"
         );
-        // 두 표본이 실제로 배경이 아님도 확인한다. 배경끼리 비교하면
-        // 커버리지 차이를 그라디언트 변화로 착각할 수 있다.
+        // Inequality alone would accept a backwards or displaced ramp, so pin
+        // the direction too: the ramp's low-y end is red and its high-y end is
+        // blue. A rotation-direction regression flips this.
+        assert!(
+            near[0] > near[2],
+            "the ramp's red end must sit at low page y, got {near:?}"
+        );
+        assert!(
+            far[0] < far[2],
+            "the ramp's blue end must sit at high page y, got {far:?}"
+        );
+        // Pin the position loosely as well. `t = page_y / 100`, so the two
+        // samples land near `t = 0.3` and `t = 0.7`: red ≈ 178.5 and blue ≈
+        // 76.5 (R + B ≈ 255). The ±8 tolerance leaves ample room for 8-bit
+        // rounding and the rasterizer's interpolation while still failing a ramp
+        // displaced by even a tenth of its length.
+        let within = |actual: u8, expected: f32| (f32::from(actual) - expected).abs() <= 8.0;
+        assert!(
+            within(near[0], 178.5) && within(near[2], 76.5),
+            "the low-y sample is not near t=0.3, got {near:?}"
+        );
+        assert!(
+            within(far[0], 76.5) && within(far[2], 178.5),
+            "the high-y sample is not near t=0.7, got {far:?}"
+        );
+        // Alpha separates "sample missed the shape" from real ramp variation.
+        // If only one sample missed, `assert_ne!` above would *pass* — a
+        // background pixel differs from a filled one — so these assertions are
+        // what keep that from reading as a working gradient.
         assert!(near[3] > 0, "the near sample missed the shape");
         assert!(far[3] > 0, "the far sample missed the shape");
     }
