@@ -4733,6 +4733,7 @@ dependencies = [
  "futures",
  "hayro",
  "image",
+ "imageproc",
  "koharu-agent",
  "koharu-desktop",
  "koharu-metrics",

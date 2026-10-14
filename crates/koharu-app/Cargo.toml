@@ -19,6 +19,7 @@ dirs = { workspace = true }
 futures = { workspace = true }
 hayro = { workspace = true }
 image = { workspace = true }
+imageproc = { workspace = true }
 koharu-agent = { workspace = true }
 koharu-desktop = { workspace = true }
 koharu-ml = { workspace = true }
