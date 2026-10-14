@@ -180,6 +180,22 @@
     "stopProcessing": "停止处理"
   },
   "inspector": {
+    "adjust": {
+      "apply": "应用",
+      "brightness": "亮度",
+      "contrast": "对比度",
+      "degrees": "角度",
+      "delta": "增减",
+      "grayscale": "灰度",
+      "high": "最高",
+      "hue": "色相",
+      "invalidLevels": "最低值必须小于最高值。",
+      "levels": "色阶",
+      "low": "最低",
+      "percent": "百分比",
+      "singleLayer": "请只选择一个栅格图层进行调整。",
+      "title": "调整类型"
+    },
     "alignBottom": "底端对齐",
     "alignCenter": "居中对齐",
     "alignLeft": "左对齐",
@@ -212,6 +228,53 @@
     "placement": "位置",
     "resetAutoFit": "重置为自动适配",
     "selectPage": "选择一个页面以检查其图层。",
+    "shape": {
+      "addStop": "添加色标",
+      "dash": "虚线",
+      "fill": "填充",
+      "fillKind": {
+        "gradient": "渐变",
+        "pattern": "图案",
+        "solid": "纯色"
+      },
+      "fillKindLabel": "填充类型",
+      "gradientKind": {
+        "linear": "线性",
+        "radial": "径向"
+      },
+      "gradientKindLabel": "渐变类型",
+      "kind": {
+        "arrow": "箭头",
+        "ellipse": "椭圆",
+        "line": "直线",
+        "rectangle": "矩形"
+      },
+      "kindLabel": "形状类型：{{kind}}",
+      "kindTitle": "形状类型",
+      "pattern": {
+        "ignoredForStretch": "拉伸时忽略原点和缩放。",
+        "originX": "原点 X",
+        "originY": "原点 Y",
+        "repeat": {
+          "stretch": "拉伸",
+          "tile": "平铺"
+        },
+        "repeatLabel": "重复",
+        "replace": "替换图片",
+        "rotation": "旋转",
+        "scale": "缩放",
+        "title": "图案",
+        "upload": "选择图片"
+      },
+      "rasterize": "栅格化",
+      "removeStop": "删除色标",
+      "stopColor": "色标 {{index}} 颜色",
+      "stopOffset": "色标 {{index}} 位置",
+      "stops": "色标",
+      "stopsTooClose": "色标之间已无空间",
+      "stroke": "描边",
+      "strokeWidth": "描边宽度"
+    },
     "size": "字号",
     "source": "原文",
     "style": "样式",
@@ -249,6 +312,7 @@
       "group": "组",
       "image": "图像",
       "paint": "绘制",
+      "shape": "形状",
       "text": "文本",
       "textGroup": "文本组"
     },
@@ -627,6 +691,12 @@
     "zoom": "缩放"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "沿笔画",
+      "fixedAxis": "固定轴",
+      "none": "无"
+    },
+    "brushRampTitle": "画笔渐变",
     "brushSize": "画笔大小",
     "brushSizeInput": "画笔大小",
     "brushSizePixels": "画笔大小：{{size}} 像素",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "减小画笔大小",
     "draw": "绘画",
     "eraser": "橡皮擦",
+    "fill": "填充",
+    "fillColor": "填充颜色",
     "increaseBrushSize": "增大画笔大小",
     "manual_ocr_box": "手动 OCR（矩形）",
     "manual_ocr_lasso": "手动 OCR（自由绘制）",
     "pan": "平移",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "轴",
+    "rampFrom": "起始颜色",
+    "rampTo": "结束颜色",
     "remove": "移除",
     "select": "选择",
+    "shape": "形状",
     "text": "文本"
   },
   "updater": {

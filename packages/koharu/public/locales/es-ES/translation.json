@@ -180,6 +180,22 @@
     "stopProcessing": "Detener procesamiento"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Aplicar",
+      "brightness": "Brillo",
+      "contrast": "Contraste",
+      "degrees": "Grados",
+      "delta": "Variación",
+      "grayscale": "Escala de grises",
+      "high": "Máximo",
+      "hue": "Tono",
+      "invalidLevels": "El mínimo debe ser menor que el máximo.",
+      "levels": "Niveles",
+      "low": "Mínimo",
+      "percent": "Porcentaje",
+      "singleLayer": "Selecciona una sola capa ráster para ajustarla.",
+      "title": "Tipo de ajuste"
+    },
     "alignBottom": "Alinear abajo",
     "alignCenter": "Centrar",
     "alignLeft": "Alinear a la izquierda",
@@ -212,6 +228,53 @@
     "placement": "Colocación",
     "resetAutoFit": "Restablecer ajuste automático",
     "selectPage": "Selecciona una página para inspeccionar sus capas.",
+    "shape": {
+      "addStop": "Añadir parada",
+      "dash": "Discontinua",
+      "fill": "Relleno",
+      "fillKind": {
+        "gradient": "Degradado",
+        "pattern": "Patrón",
+        "solid": "Sólido"
+      },
+      "fillKindLabel": "Tipo de relleno",
+      "gradientKind": {
+        "linear": "Lineal",
+        "radial": "Radial"
+      },
+      "gradientKindLabel": "Tipo de degradado",
+      "kind": {
+        "arrow": "Flecha",
+        "ellipse": "Elipse",
+        "line": "Línea",
+        "rectangle": "Rectángulo"
+      },
+      "kindLabel": "Tipo de forma: {{kind}}",
+      "kindTitle": "Tipo de forma",
+      "pattern": {
+        "ignoredForStretch": "El origen y la escala se ignoran al estirar.",
+        "originX": "Origen X",
+        "originY": "Origen Y",
+        "repeat": {
+          "stretch": "Estirar",
+          "tile": "Mosaico"
+        },
+        "repeatLabel": "Repetición",
+        "replace": "Reemplazar imagen",
+        "rotation": "Rotación",
+        "scale": "Escala",
+        "title": "Patrón",
+        "upload": "Elegir imagen"
+      },
+      "rasterize": "Rasterizar",
+      "removeStop": "Eliminar parada",
+      "stopColor": "Color de la parada {{index}}",
+      "stopOffset": "Posición de la parada {{index}}",
+      "stops": "Paradas",
+      "stopsTooClose": "No queda espacio entre las paradas",
+      "stroke": "Contorno",
+      "strokeWidth": "Grosor del contorno"
+    },
     "size": "Tamaño",
     "source": "Texto original",
     "style": "Estilo",
@@ -249,6 +312,7 @@
       "group": "Grupo",
       "image": "Imagen",
       "paint": "Pintura",
+      "shape": "Forma",
       "text": "Texto",
       "textGroup": "Grupo de texto"
     },
@@ -627,6 +691,12 @@
     "zoom": "Zoom"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "A lo largo del trazo",
+      "fixedAxis": "Eje fijo",
+      "none": "Ninguno"
+    },
+    "brushRampTitle": "Degradado del pincel",
     "brushSize": "Tamaño del pincel",
     "brushSizeInput": "Tamaño del pincel",
     "brushSizePixels": "Tamaño del pincel: {{size}} píxeles",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "Reducir tamaño del pincel",
     "draw": "Dibujar",
     "eraser": "Borrador",
+    "fill": "Relleno",
+    "fillColor": "Color de relleno",
     "increaseBrushSize": "Aumentar tamaño del pincel",
     "manual_ocr_box": "OCR manual (rectángulo)",
     "manual_ocr_lasso": "OCR manual (trazo libre)",
     "pan": "Desplazar",
+    "rampAxis": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "rampAxisTitle": "Eje",
+    "rampFrom": "Color inicial",
+    "rampTo": "Color final",
     "remove": "Eliminar",
     "select": "Seleccionar",
+    "shape": "Forma",
     "text": "Texto"
   },
   "updater": {

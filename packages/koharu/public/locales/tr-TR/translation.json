@@ -180,6 +180,22 @@
     "stopProcessing": "İşlemeyi durdur"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Uygula",
+      "brightness": "Parlaklık",
+      "contrast": "Kontrast",
+      "degrees": "Derece",
+      "delta": "Değişim",
+      "grayscale": "Gri tonlama",
+      "high": "Yüksek",
+      "hue": "Ton",
+      "invalidLevels": "Düşük değer yüksek değerden küçük olmalıdır.",
+      "levels": "Seviyeler",
+      "low": "Düşük",
+      "percent": "Yüzde",
+      "singleLayer": "Ayarlamak için tek bir raster katman seçin.",
+      "title": "Ayar türü"
+    },
     "alignBottom": "Alta hizala",
     "alignCenter": "Ortala",
     "alignLeft": "Sola hizala",
@@ -212,6 +228,53 @@
     "placement": "Yerleşim",
     "resetAutoFit": "Otomatik sığdırmaya sıfırla",
     "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
+    "shape": {
+      "addStop": "Durak ekle",
+      "dash": "Kesikli",
+      "fill": "Dolgu",
+      "fillKind": {
+        "gradient": "Gradyan",
+        "pattern": "Desen",
+        "solid": "Düz"
+      },
+      "fillKindLabel": "Dolgu türü",
+      "gradientKind": {
+        "linear": "Doğrusal",
+        "radial": "Radyal"
+      },
+      "gradientKindLabel": "Gradyan türü",
+      "kind": {
+        "arrow": "Ok",
+        "ellipse": "Elips",
+        "line": "Çizgi",
+        "rectangle": "Dikdörtgen"
+      },
+      "kindLabel": "Şekil türü: {{kind}}",
+      "kindTitle": "Şekil türü",
+      "pattern": {
+        "ignoredForStretch": "Uzatmada başlangıç ve ölçek yok sayılır.",
+        "originX": "Başlangıç X",
+        "originY": "Başlangıç Y",
+        "repeat": {
+          "stretch": "Uzat",
+          "tile": "Döşeme"
+        },
+        "repeatLabel": "Tekrar",
+        "replace": "Görseli değiştir",
+        "rotation": "Döndürme",
+        "scale": "Ölçek",
+        "title": "Desen",
+        "upload": "Görsel seç"
+      },
+      "rasterize": "Rasterleştir",
+      "removeStop": "Durağı kaldır",
+      "stopColor": "{{index}}. durak rengi",
+      "stopOffset": "{{index}}. durak konumu",
+      "stops": "Duraklar",
+      "stopsTooClose": "Duraklar arasında yer yok",
+      "stroke": "Kenarlık",
+      "strokeWidth": "Kenarlık genişliği"
+    },
     "size": "Boyut",
     "source": "Kaynak metin",
     "style": "Stil",
@@ -249,6 +312,7 @@
       "group": "Grup",
       "image": "Görüntü",
       "paint": "Boyama",
+      "shape": "Şekil",
       "text": "Metin",
       "textGroup": "Metin grubu"
     },
@@ -627,6 +691,12 @@
     "zoom": "Yakınlaştırma"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Fırça boyunca",
+      "fixedAxis": "Sabit eksen",
+      "none": "Yok"
+    },
+    "brushRampTitle": "Fırça degradesi",
     "brushSize": "Fırça boyutu",
     "brushSizeInput": "Fırça boyutu",
     "brushSizePixels": "Fırça boyutu: {{size}} piksel",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "Fırça boyutunu azalt",
     "draw": "Çizim",
     "eraser": "Silgi",
+    "fill": "Dolgu",
+    "fillColor": "Dolgu rengi",
     "increaseBrushSize": "Fırça boyutunu artır",
     "manual_ocr_box": "Elle OCR (dikdörtgen)",
     "manual_ocr_lasso": "Elle OCR (serbest çizim)",
     "pan": "Kaydır",
+    "rampAxis": {
+      "horizontal": "Yatay",
+      "vertical": "Dikey"
+    },
+    "rampAxisTitle": "Eksen",
+    "rampFrom": "Başlangıç rengi",
+    "rampTo": "Bitiş rengi",
     "remove": "Kaldır",
     "select": "Seç",
+    "shape": "Şekil",
     "text": "Metin"
   },
   "updater": {

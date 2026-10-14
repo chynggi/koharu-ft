@@ -1,3 +1,4 @@
+pub mod adjust;
 pub mod agent;
 pub mod canvas;
 pub mod editing;

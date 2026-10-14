@@ -4,14 +4,19 @@ use std::{collections::HashMap, sync::Arc};
 
 use vello::{
     FontEmbolden, Glyph, Scene,
-    kurbo::{Affine, BezPath, Diagonal2, Join, Rect},
-    peniko::{Blob, Color, Fill, FontData, Mix},
+    kurbo::{Affine, BezPath, Cap, Diagonal2, Join, Rect, Stroke},
+    peniko::{
+        Blob, Color, ColorStop, Extend, Fill, FontData, Gradient, ImageAlphaType, ImageBrush,
+        ImageData, ImageFormat, Mix,
+    },
 };
 
 use crate::{
     Bounds, CompositionCommand, Error, FillRule, LayerId, LayerKind, PathElement, PreparedContent,
-    PreparedElementFrame, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest, PreparedPath,
-    PreparedResource, PreparedResourceStore, PreparedScene, PreparedSceneCommand, Presentation,
+    PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest,
+    PreparedGradient, PreparedGradientExtend, PreparedGradientKind, PreparedLineCap,
+    PreparedLineJoin, PreparedPath, PreparedPatternRepeat, PreparedResource,
+    PreparedResourceStore, PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation,
     RasterDraw, ResourceId, Result, Revision,
 };
 
@@ -491,22 +496,142 @@ fn compile_scene(
                 });
                 run.brush(rgba(prepared.color)).draw(Fill::NonZero, glyphs);
             }
-            PreparedSceneCommand::FillPath(prepared) => {
-                let path = compile_path(prepared);
-                scene.fill(
-                    match prepared.fill {
-                        FillRule::NonZero => Fill::NonZero,
-                        FillRule::EvenOdd => Fill::EvenOdd,
-                    },
-                    Affine::new(prepared.transform),
-                    rgba(prepared.color),
-                    None,
-                    &path,
-                );
-            }
+            PreparedSceneCommand::FillPath(prepared) => prepared.append_to(&mut scene),
         }
     }
     Ok(scene)
+}
+
+impl PreparedPath {
+    /// Draws this path into a Vello scene.
+    ///
+    /// Committed frames and the browser's live shape preview both draw through
+    /// here, so a shape cannot look one way while it is being dragged and
+    /// another way once it is committed.
+    pub fn append_to(&self, scene: &mut Scene) {
+        let path = compile_path(self);
+        let affine = Affine::new(self.transform);
+        match &self.fill {
+            Some(PreparedFill::Solid { color, rule }) => {
+                scene.fill(fill(rule), affine, rgba(*color), None, &path);
+            }
+            Some(PreparedFill::Gradient { gradient, rule }) => {
+                // `brush_transform` must stay `None` here. Vello *composes* it
+                // with the path transform (`Transform::from_kurbo(&(transform *
+                // brush_transform))` at `vello-0.10.0/src/scene.rs:328-331`), so
+                // handing it the path affine would apply that affine to the
+                // brush twice: a rotated gradient would over-rotate or, at some
+                // angles, collapse to a single colour. The control points are
+                // already in path-local coordinates, so the path transform
+                // rotates the brush and the outline together with no extra work.
+                scene.fill(fill(rule), affine, &compile_gradient(gradient), None, &path);
+            }
+            Some(PreparedFill::Pattern { pattern, rule }) => {
+                // P-D6: a missing, undecodable, or empty pattern asset draws the
+                // stored fallback colour instead of failing. The decision lives
+                // here rather than in `fill()` because this is the one place that
+                // assembles the brush, so the committed render and the browser
+                // preview cannot disagree about what "no image" means — they both
+                // reach this arm.
+                //
+                // The fallback must not `return`: a shape with both a fill and a
+                // stroke still has to draw its stroke.
+                match pattern.image.as_ref().filter(|image| {
+                    image.width > 0 && image.height > 0
+                }) {
+                    None => {
+                        scene.fill(fill(rule), affine, rgba(pattern.fallback), None, &path);
+                    }
+                    Some(image) => {
+                        let brush = ImageBrush::new(ImageData {
+                            // `Blob` takes an `Arc<dyn AsRef<[u8]>>`, so the
+                            // pixel `Arc<[u8]>` is wrapped rather than cloned
+                            // (same idiom as the font blob above).
+                            data: Blob::new(Arc::new(Arc::clone(&image.pixels))),
+                            format: ImageFormat::Rgba8,
+                            // The decoded pixels carry straight alpha;
+                            // premultiplied ones would darken every
+                            // semi-transparent pattern pixel.
+                            alpha_type: ImageAlphaType::Alpha,
+                            width: image.width,
+                            height: image.height,
+                        })
+                        .with_extend(match pattern.repeat {
+                            PreparedPatternRepeat::Tile => Extend::Repeat,
+                            PreparedPatternRepeat::Stretch => Extend::Pad,
+                        });
+                        // Unlike the gradient arm, `brush_transform` here is
+                        // **not** `None` and must not become `None`. The image
+                        // brush indexes pixels, not path units, so the author's
+                        // scale/origin/rotation can only reach it through this
+                        // transform (see `PreparedPattern::brush_transform`).
+                        // `None` would silently make `scale` a no-op. Passing the
+                        // path affine instead would be 1b's double-apply bug.
+                        scene.fill(
+                            fill(rule),
+                            affine,
+                            &brush,
+                            Some(pattern.brush_transform()),
+                            &path,
+                        );
+                    }
+                }
+            }
+            None => {}
+        }
+        if let Some(stroke) = &self.stroke {
+            scene.stroke(
+                &compile_stroke(stroke),
+                affine,
+                rgba(stroke.color),
+                None,
+                &path,
+            );
+        }
+    }
+}
+
+fn fill(rule: &FillRule) -> Fill {
+    match rule {
+        FillRule::NonZero => Fill::NonZero,
+        FillRule::EvenOdd => Fill::EvenOdd,
+    }
+}
+
+fn compile_gradient(prepared: &PreparedGradient) -> Gradient {
+    let stops = crate::stops_sorted(&prepared.stops)
+        .into_iter()
+        .map(|stop| ColorStop {
+            offset: stop.offset,
+            color: rgba(stop.color).into(),
+        })
+        .collect::<Vec<_>>();
+    let gradient = match &prepared.kind {
+        PreparedGradientKind::Linear { start, end } => {
+            Gradient::new_linear((start[0], start[1]), (end[0], end[1]))
+        }
+        PreparedGradientKind::Radial { center, radius } => {
+            Gradient::new_radial((center[0], center[1]), *radius)
+        }
+        // Sweep angles are stored in degrees on the portable side; peniko
+        // measures them in radians.
+        PreparedGradientKind::Sweep {
+            center,
+            start_degrees,
+            end_degrees,
+        } => Gradient::new_sweep(
+            (center[0], center[1]),
+            start_degrees.to_radians(),
+            end_degrees.to_radians(),
+        ),
+    };
+    gradient
+        .with_extend(match prepared.extend {
+            PreparedGradientExtend::Pad => Extend::Pad,
+            PreparedGradientExtend::Repeat => Extend::Repeat,
+            PreparedGradientExtend::Reflect => Extend::Reflect,
+        })
+        .with_stops(&stops[..])
 }
 
 fn compile_path(prepared: &PreparedPath) -> BezPath {
@@ -525,6 +650,24 @@ fn compile_path(prepared: &PreparedPath) -> BezPath {
     path
 }
 
+fn compile_stroke(prepared: &PreparedStroke) -> Stroke {
+    let mut stroke = Stroke::new(f64::from(prepared.width))
+        .with_caps(match prepared.cap {
+            PreparedLineCap::Butt => Cap::Butt,
+            PreparedLineCap::Round => Cap::Round,
+            PreparedLineCap::Square => Cap::Square,
+        })
+        .with_join(match prepared.join {
+            PreparedLineJoin::Miter => Join::Miter,
+            PreparedLineJoin::Round => Join::Round,
+            PreparedLineJoin::Bevel => Join::Bevel,
+        });
+    if let Some(dash) = &prepared.dash {
+        stroke = stroke.with_dashes(0.0, dash.iter().map(|length| f64::from(*length)));
+    }
+    stroke
+}
+
 fn rgba([r, g, b, a]: [u8; 4]) -> Color {
     Color::from_rgba8(r, g, b, a)
 }
@@ -532,7 +675,716 @@ fn rgba([r, g, b, a]: [u8; 4]) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Point, PreparedFrame, PreparedLayer, PreparedRaster, PreparedRasterTile};
+    use crate::{
+        Point, PreparedFrame, PreparedGradient, PreparedGradientExtend, PreparedGradientKind,
+        PreparedGradientStop, PreparedLayer, PreparedPattern, PreparedPatternImage,
+        PreparedPatternRepeat, PreparedRaster, PreparedRasterTile, PreparedScene,
+        PreparedSceneCommand,
+    };
+    use vello::peniko::{ColorStop, GradientKind};
+    // `kurbo` is not a direct dependency of this crate; `Point` alone is already
+    // taken by this crate's own geometry type, so the alias keeps both usable.
+    use vello::kurbo::Point as KurboPoint;
+
+    /// A gradient path whose kind, stops, extend, and transform are all
+    /// non-trivial.
+    ///
+    /// The encoding comparison this feeds cannot see the brush payload, so stop
+    /// order and `extend` are pinned by the direct `compile_gradient` tests
+    /// below, not here. What it *can* see is the brush transform and the kind's
+    /// numeric payload (including a missing degree→radian conversion), which is
+    /// why the transform is non-identity and the kind is a sweep.
+    fn gradient_path(kind: PreparedGradientKind) -> PreparedPath {
+        PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 30.0, 40.0],
+            elements: vec![
+                PathElement::MoveTo([1.0, 2.0]),
+                PathElement::LineTo([9.0, 2.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind,
+                    stops: vec![
+                        PreparedGradientStop {
+                            offset: 0.75,
+                            color: [255, 0, 0, 255],
+                        },
+                        PreparedGradientStop {
+                            offset: 0.25,
+                            color: [0, 0, 255, 255],
+                        },
+                    ],
+                    extend: PreparedGradientExtend::Reflect,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
+    }
+
+    /// Paths whose transform, fill, and stroke are all non-trivial, so a preview
+    /// that drops or reorders any of them changes the encoding.
+    fn shape_path() -> PreparedPath {
+        PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 30.0, 40.0],
+            elements: vec![
+                PathElement::MoveTo([1.0, 2.0]),
+                PathElement::LineTo([9.0, 2.0]),
+                PathElement::QuadTo([11.0, 6.0, 9.0, 10.0]),
+                PathElement::CurveTo([7.0, 14.0, 3.0, 14.0, 1.0, 10.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Solid {
+                color: [10, 20, 30, 255],
+                rule: FillRule::EvenOdd,
+            }),
+            stroke: Some(PreparedStroke {
+                color: [1, 2, 3, 128],
+                width: 3.0,
+                dash: Some(vec![5.0, 2.0]),
+                cap: PreparedLineCap::Square,
+                join: PreparedLineJoin::Bevel,
+            }),
+        }
+    }
+
+    fn shape_layer_frame(path: PreparedPath) -> Frame {
+        let bundle = PreparedFrameBundle {
+            frame: PreparedFrame {
+                revision: Revision::new(1),
+                page: LayerId::from_bytes([7; 16]),
+                width: 100,
+                height: 100,
+                origin: (0, 0),
+                normalization: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                layers: vec![PreparedLayer {
+                    id: LayerId::from_bytes([3; 16]),
+                    geometry: vec![
+                        Point { x: 0.0, y: 0.0 },
+                        Point { x: 1.0, y: 0.0 },
+                        Point { x: 0.0, y: 1.0 },
+                    ],
+                    bounds: Bounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                    local_bounds: Bounds {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                    presentation: Presentation {
+                        visible: true,
+                        opacity: 1.0,
+                    },
+                    kind: LayerKind::Shape,
+                    placement: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                    content: PreparedContent::Vector(PreparedScene {
+                        commands: vec![PreparedSceneCommand::FillPath(path)],
+                    }),
+                    element_frame: None,
+                }],
+            },
+            resources: Vec::new(),
+        };
+        bundle
+            .into_frame_with_raster_sources(&HashMap::new())
+            .unwrap()
+    }
+
+    /// The browser's live shape preview appends a prepared path straight into a
+    /// scene instead of going through a committed frame. That path must issue
+    /// the same draws the committed frame does, or a shape would change
+    /// appearance when the drag ends.
+    ///
+    /// The expected scene is built with raw Vello calls rather than by reusing
+    /// `append_to`, so dropping the fill, the stroke, or the transform fails
+    /// this test instead of moving both sides together.
+    #[test]
+    fn appending_a_prepared_path_issues_the_same_draws_as_a_committed_frame() {
+        let path = shape_path();
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.quad_to((11.0, 6.0), (9.0, 10.0));
+        bez.curve_to((7.0, 14.0), (3.0, 14.0), (1.0, 10.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::EvenOdd,
+            affine,
+            Color::from_rgba8(10, 20, 30, 255),
+            None,
+            &bez,
+        );
+        expected.stroke(
+            &Stroke::new(3.0)
+                .with_caps(Cap::Square)
+                .with_join(Join::Bevel)
+                .with_dashes(0.0, [5.0, 2.0]),
+            affine,
+            Color::from_rgba8(1, 2, 3, 128),
+            None,
+            &bez,
+        );
+
+        let frame = shape_layer_frame(path);
+        let mut committed = Scene::new();
+        frame.layers()[0].append_vector_with_presentation(
+            &mut committed,
+            None,
+            Presentation {
+                visible: true,
+                opacity: 1.0,
+            },
+        );
+
+        assert_encoding_matches(&preview, &expected);
+        assert_encoding_matches(&committed, &preview);
+    }
+
+    /// The browser's live shape preview appends a prepared path straight into a
+    /// scene instead of going through a committed frame. A gradient path must
+    /// issue the same draws there too, with the gradient control points left in
+    /// path-local coordinates and **no** brush transform.
+    ///
+    /// The expected scene is built with `brush_transform: None`. Vello composes
+    /// any brush transform with the path transform, so `Some(affine)` here would
+    /// apply the path affine to the brush twice — a bug the committed frame and
+    /// the preview would share, which is exactly why this test pins `None`
+    /// rather than merely agreeing with `append_to`.
+    #[test]
+    fn appending_a_gradient_path_passes_no_brush_transform() {
+        let path = gradient_path(PreparedGradientKind::Sweep {
+            center: [5.0, 5.0],
+            start_degrees: 0.0,
+            end_degrees: 90.0,
+        });
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::NonZero,
+            affine,
+            &Gradient::new_sweep((5.0, 5.0), 0.0f32.to_radians(), 90.0f32.to_radians())
+                .with_extend(Extend::Reflect)
+                .with_stops([
+                    ColorStop {
+                        offset: 0.25,
+                        color: Color::from_rgba8(0, 0, 255, 255).into(),
+                    },
+                    ColorStop {
+                        offset: 0.75,
+                        color: Color::from_rgba8(255, 0, 0, 255).into(),
+                    },
+                ]),
+            None,
+            &bez,
+        );
+
+        let frame = shape_layer_frame(path);
+        let mut committed = Scene::new();
+        frame.layers()[0].append_vector_with_presentation(
+            &mut committed,
+            None,
+            Presentation {
+                visible: true,
+                opacity: 1.0,
+            },
+        );
+
+        assert_encoding_matches(&preview, &expected);
+        assert_encoding_matches(&committed, &preview);
+    }
+
+    /// A pattern with no resolved asset must draw its fallback as a **solid**
+    /// fill, and must still draw its stroke. The fallback is not an error: one
+    /// broken pattern asset must not make a page unopenable (P-D6).
+    #[test]
+    fn a_pattern_without_an_asset_draws_its_fallback() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 10.0);
+        path.stroke = Some(PreparedStroke {
+            color: [1, 2, 3, 255],
+            width: 1.0,
+            dash: None,
+            cap: PreparedLineCap::Butt,
+            join: PreparedLineJoin::Miter,
+        });
+        let Some(PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill");
+        };
+        assert!(pattern.image.is_none());
+        let fallback = pattern.fallback;
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        // The whole scene must be byte-identical to one built from a solid fill
+        // of the fallback colour plus the same stroke. Comparing the encoding
+        // rather than sampling pixels makes "no image brush was encoded" exact.
+        let mut expected = Scene::new();
+        let mut solid = path.clone();
+        solid.fill = Some(PreparedFill::Solid {
+            color: fallback,
+            rule: FillRule::NonZero,
+        });
+        solid.append_to(&mut expected);
+
+        assert_encoding_matches(&preview, &expected);
+    }
+
+    /// The single most important consequence of the shader's pixel-space
+    /// indexing: `scale` must be able to change the render at all.
+    ///
+    /// With `brush_transform: None` — the plan's original, wrong rule — one image
+    /// pixel equals one path-local unit, so `scale` cannot affect the tile pitch
+    /// and both renders below would be identical.
+    #[test]
+    fn a_patterns_scale_changes_the_render() {
+        let sample = |scale: f32| {
+            let mut path = pattern_path(PreparedPatternRepeat::Tile, scale);
+            let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+                panic!("expected a pattern fill");
+            };
+            pattern.image = Some(pattern_image());
+
+            let mut scene = Scene::new();
+            path.append_to(&mut scene);
+            let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
+            let image = rasterizer
+                .rasterize_scene(
+                    &scene,
+                    100,
+                    100,
+                    [0, 0, 0, 0],
+                    crate::RasterOptions::default(),
+                )
+                .expect("the scene rasterizes");
+            let pixel = image.get_pixel(37, 50);
+            [pixel[0], pixel[1], pixel[2], pixel[3]]
+        };
+        let wide = sample(40.0);
+        let narrow = sample(4.0);
+        assert!(wide[3] > 0 && narrow[3] > 0, "a sample missed the shape");
+        assert_ne!(
+            (wide[0], wide[1], wide[2]),
+            (narrow[0], narrow[1], narrow[2]),
+            "scale did not change the render — brush_transform is probably None"
+        );
+    }
+
+    /// `Stretch` ignores `origin` and `scale` and fits one image to the box.
+    #[test]
+    fn a_stretched_pattern_scales_one_image_to_the_box() {
+        let mut path = pattern_path(PreparedPatternRepeat::Stretch, 7.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        pattern.origin = [0.9, 0.9];
+        let stretched = pattern.brush_transform();
+
+        let mut other = pattern.clone();
+        other.origin = [0.0, 0.0];
+        other.scale = 999.0;
+        assert_eq!(
+            stretched,
+            other.brush_transform(),
+            "Stretch must ignore origin and scale"
+        );
+
+        // The image's right edge must land on the box's right edge: the
+        // transform maps image pixels onto the box, so pixel `width` maps to
+        // `extent[0]`.
+        let Some(image) = pattern.image.as_ref() else {
+            panic!("expected an image");
+        };
+        let right = stretched * KurboPoint::new(f64::from(image.width), 0.0);
+        assert!(
+            (right.x - f64::from(pattern.extent[0])).abs() < 1e-9,
+            "the image's right edge must reach the box's right edge, got {right:?}"
+        );
+        let bottom = stretched * KurboPoint::new(0.0, f64::from(image.height));
+        assert!(
+            (bottom.y - f64::from(pattern.extent[1])).abs() < 1e-9,
+            "the image's bottom edge must reach the box's bottom edge, got {bottom:?}"
+        );
+    }
+
+    /// `Tile` places image pixel `(0, 0)` at the origin, with one pixel spanning
+    /// `scale` path-local units.
+    #[test]
+    fn a_tiled_pattern_transform_places_the_origin_and_pitch() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 12.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        pattern.origin = [30.0, 40.0];
+        let transform = pattern.brush_transform();
+        let origin = transform * KurboPoint::new(0.0, 0.0);
+        assert!((origin.x - 30.0).abs() < 1e-9 && (origin.y - 40.0).abs() < 1e-9);
+        let next = transform * KurboPoint::new(1.0, 0.0);
+        assert!((next.x - (30.0 + 12.0)).abs() < 1e-9);
+    }
+
+    /// The path affine must never be the brush transform: vello composes
+    /// `transform * brush_transform`, so applying the path affine twice is a
+    /// half-turn over-rotation (1b's Critical).
+    #[test]
+    fn a_pattern_never_reuses_the_path_affine_as_its_brush() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 10.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        // A decidedly non-identity path affine.
+        path.transform = [0.0, 1.0, -1.0, 0.0, 30.0, 40.0];
+        assert_ne!(
+            pattern.brush_transform(),
+            Affine::new(path.transform),
+            "the path affine must not be handed to the brush"
+        );
+    }
+
+    fn pattern_image() -> PreparedPatternImage {
+        // A 2x1 image: a red pixel then a blue one, so a change in tile pitch
+        // moves the sampled colour.
+        PreparedPatternImage {
+            width: 2,
+            height: 1,
+            pixels: Arc::from(&[255u8, 0, 0, 255, 0, 0, 255, 255][..]),
+        }
+    }
+
+    fn pattern_path(repeat: PreparedPatternRepeat, scale: f32) -> PreparedPath {
+        PreparedPath {
+            // A square with area, so a pixel sample can land inside it: the
+            // gradient helper's shape is a zero-area segment.
+            transform: Affine::IDENTITY.as_coeffs(),
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([100.0, 0.0]),
+                PathElement::LineTo([100.0, 100.0]),
+                PathElement::LineTo([0.0, 100.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Pattern {
+                pattern: PreparedPattern {
+                    repeat,
+                    origin: [0.0, 0.0],
+                    scale,
+                    rotation_degrees: 0.0,
+                    fallback: [7, 8, 9, 255],
+                    extent: [100.0, 100.0],
+                    image: None,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
+    }
+
+    /// A solid fill must keep passing `brush_transform: None`; a regression that
+    /// started rotating solid colours would still paint identically, so only the
+    /// encoding comparison can catch it.
+    #[test]
+    fn a_solid_fill_keeps_no_brush_transform() {
+        let mut path = shape_path();
+        path.stroke = None;
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        let mut expected = Scene::new();
+        let mut bez = BezPath::new();
+        bez.move_to((1.0, 2.0));
+        bez.line_to((9.0, 2.0));
+        bez.quad_to((11.0, 6.0), (9.0, 10.0));
+        bez.curve_to((7.0, 14.0), (3.0, 14.0), (1.0, 10.0));
+        bez.close_path();
+        let affine = Affine::new([0.0, 1.0, -1.0, 0.0, 30.0, 40.0]);
+        expected.fill(
+            Fill::EvenOdd,
+            affine,
+            Color::from_rgba8(10, 20, 30, 255),
+            None,
+            &bez,
+        );
+
+        assert_encoding_matches(&preview, &expected);
+    }
+
+    /// A rotated gradient must still vary *along its own axis* on a real
+    /// render.
+    ///
+    /// Passing the path affine as `brush_transform` double-applies it
+    /// (`Scene::fill` composes `transform * brush_transform`). The path
+    /// transform is a 90° rotation, so the composition is a 180° over-rotation:
+    /// here `T² = [-1, 0, 0, -1, 100, 100]`, a half-turn about `(50, 50)`. That
+    /// makes the gradient's iso-colour lines vertical where they should be
+    /// horizontal, and the two samples below — which a correct render separates
+    /// along the ramp — land on one line and share the midpoint colour
+    /// `(127, 0, 128)`. That exact midpoint is the double-application
+    /// signature, and only a pixel test can see it.
+    ///
+    /// The sample points are chosen carefully: the path transform is a 90°
+    /// rotation (`[0, 1, -1, 0, ...]`), so the gradient's local +x axis — the
+    /// direction the ramp varies in — maps to page +y. Two pixels differing
+    /// only in x are on the same iso-colour line and would compare equal even
+    /// when the code is correct.
+    #[test]
+    fn a_rotated_gradient_is_not_collapsed_to_one_colour() {
+        let path = PreparedPath {
+            transform: [0.0, 1.0, -1.0, 0.0, 100.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([100.0, 0.0]),
+                PathElement::LineTo([100.0, 100.0]),
+                PathElement::LineTo([0.0, 100.0]),
+                PathElement::Close,
+            ],
+            // Built here rather than through `gradient_path`: that helper's
+            // shape is `MoveTo([1,2]) → LineTo([9,2]) → Close`, a zero-area
+            // segment with nothing to fill, so no pixel sample could land on it
+            // at all.
+            fill: Some(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind: PreparedGradientKind::Linear {
+                        start: [0.0, 0.0],
+                        end: [100.0, 0.0],
+                    },
+                    stops: vec![
+                        PreparedGradientStop {
+                            offset: 0.0,
+                            color: [255, 0, 0, 255],
+                        },
+                        PreparedGradientStop {
+                            offset: 1.0,
+                            color: [0, 0, 255, 255],
+                        },
+                    ],
+                    extend: PreparedGradientExtend::Pad,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        };
+        let mut scene = vello::Scene::new();
+        path.append_to(&mut scene);
+
+        let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
+        let image = rasterizer
+            .rasterize_scene(
+                &scene,
+                200,
+                200,
+                [0, 0, 0, 0],
+                crate::RasterOptions::default(),
+            )
+            .expect("the scene rasterizes");
+
+        // 회전 후 페이지상 사각형은 x∈[0,100], y∈[0,100] 을 덮고, 그라디언트
+        // 램프는 페이지 **y** 를 따라 변한다. 그러므로 같은 x, 다른 y 를
+        // 표본한다 — 둘 다 사각형 안이다.
+        let near = image.get_pixel(50, 30);
+        let far = image.get_pixel(50, 70);
+        assert_ne!(
+            (near[0], near[1], near[2]),
+            (far[0], far[1], far[2]),
+            "a rotated gradient collapsed to one colour — brush_transform is probably Some(affine)"
+        );
+        // Inequality alone would accept a backwards or displaced ramp, so pin
+        // the direction too: the ramp's low-y end is red and its high-y end is
+        // blue. A rotation-direction regression flips this.
+        assert!(
+            near[0] > near[2],
+            "the ramp's red end must sit at low page y, got {near:?}"
+        );
+        assert!(
+            far[0] < far[2],
+            "the ramp's blue end must sit at high page y, got {far:?}"
+        );
+        // Pin the position loosely as well. `t = page_y / 100`, so the two
+        // samples land near `t = 0.3` and `t = 0.7`: red ≈ 178.5 and blue ≈
+        // 76.5 (R + B ≈ 255). The ±8 tolerance leaves ample room for 8-bit
+        // rounding and the rasterizer's interpolation while still failing a ramp
+        // displaced by even a tenth of its length.
+        let within = |actual: u8, expected: f32| (f32::from(actual) - expected).abs() <= 8.0;
+        assert!(
+            within(near[0], 178.5) && within(near[2], 76.5),
+            "the low-y sample is not near t=0.3, got {near:?}"
+        );
+        assert!(
+            within(far[0], 76.5) && within(far[2], 178.5),
+            "the high-y sample is not near t=0.7, got {far:?}"
+        );
+        // Alpha separates "sample missed the shape" from real ramp variation.
+        // If only one sample missed, `assert_ne!` above would *pass* — a
+        // background pixel differs from a filled one — so these assertions are
+        // what keep that from reading as a working gradient.
+        assert!(near[3] > 0, "the near sample missed the shape");
+        assert!(far[3] > 0, "the far sample missed the shape");
+    }
+
+    /// `Scene`'s encoding carries the brush *transform* as a path tag but not
+    /// the brush payload, which lives in the scene's resource list. The
+    /// encoding comparison above therefore cannot see stop order or `extend`,
+    /// so the assembled gradient is compared directly here. A wrong kind or a
+    /// missing degree-to-radian conversion *is* visible there, via `draw_data`.
+    #[test]
+    fn a_gradient_compiles_with_sorted_stops_and_mapped_extend() {
+        let gradient = compile_gradient(&PreparedGradient {
+            kind: PreparedGradientKind::Radial {
+                center: [5.0, 6.0],
+                radius: 25.0,
+            },
+            stops: vec![
+                PreparedGradientStop {
+                    offset: 0.75,
+                    color: [255, 0, 0, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.25,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: PreparedGradientExtend::Repeat,
+        });
+
+        let expected = Gradient::new_radial((5.0f32, 6.0f32), 25.0)
+            .with_extend(Extend::Repeat)
+            .with_stops([
+                ColorStop {
+                    offset: 0.25,
+                    color: Color::from_rgba8(0, 0, 255, 255).into(),
+                },
+                ColorStop {
+                    offset: 0.75,
+                    color: Color::from_rgba8(255, 0, 0, 255).into(),
+                },
+            ]);
+        assert_eq!(gradient, expected);
+    }
+
+    /// Sweep is the only kind whose stored units differ from peniko's: degrees
+    /// on the portable side, radians in the assembled gradient.
+    #[test]
+    fn sweep_angles_are_converted_from_degrees_to_radians() {
+        let gradient = compile_gradient(&PreparedGradient {
+            kind: PreparedGradientKind::Sweep {
+                center: [1.0, 2.0],
+                start_degrees: 0.0,
+                end_degrees: 180.0,
+            },
+            stops: vec![
+                PreparedGradientStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                PreparedGradientStop {
+                    offset: 1.0,
+                    color: [255, 255, 255, 255],
+                },
+            ],
+            extend: PreparedGradientExtend::Pad,
+        });
+
+        let expected =
+            Gradient::new_sweep((1.0f32, 2.0f32), 0.0f32.to_radians(), 180.0f32.to_radians())
+                .with_extend(Extend::Pad)
+                .with_stops([
+                    ColorStop {
+                        offset: 0.0,
+                        color: Color::from_rgba8(0, 0, 0, 255).into(),
+                    },
+                    ColorStop {
+                        offset: 1.0,
+                        color: Color::from_rgba8(255, 255, 255, 255).into(),
+                    },
+                ]);
+        assert_eq!(gradient, expected);
+
+        let GradientKind::Sweep(position) = gradient.kind else {
+            panic!("a sweep gradient must assemble as a sweep");
+        };
+        assert_eq!(position.end_angle, std::f32::consts::PI);
+    }
+
+    /// Every `PreparedGradientExtend` value must reach peniko unchanged; a
+    /// wildcard arm that fell back to `Pad` would otherwise go unnoticed.
+    #[test]
+    fn every_extend_mode_maps_across() {
+        for (prepared, expected) in [
+            (PreparedGradientExtend::Pad, Extend::Pad),
+            (PreparedGradientExtend::Repeat, Extend::Repeat),
+            (PreparedGradientExtend::Reflect, Extend::Reflect),
+        ] {
+            let gradient = compile_gradient(&PreparedGradient {
+                kind: PreparedGradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [1.0, 0.0],
+                },
+                stops: vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset: 1.0,
+                        color: [255, 255, 255, 255],
+                    },
+                ],
+                extend: prepared,
+            });
+            assert_eq!(gradient.extend, expected, "{prepared:?}");
+        }
+    }
+
+    /// Compares the encoded draw streams of two scenes.
+    ///
+    /// `PathTag`/`DrawTag` have no `Debug`, so the tag streams are compared by
+    /// length and the data they index is compared exactly.
+    fn assert_encoding_matches(left: &Scene, right: &Scene) {
+        let left = left.encoding();
+        let right = right.encoding();
+        assert_eq!(left.n_paths, right.n_paths, "path count differs");
+        assert_eq!(
+            left.n_path_segments, right.n_path_segments,
+            "path segment count differs"
+        );
+        assert_eq!(left.n_clips, right.n_clips, "clip count differs");
+        assert_eq!(
+            left.path_tags.len(),
+            right.path_tags.len(),
+            "path tag count differs"
+        );
+        assert_eq!(
+            left.draw_tags.len(),
+            right.draw_tags.len(),
+            "draw tag count differs"
+        );
+        assert_eq!(left.path_data, right.path_data, "path data differs");
+        assert_eq!(left.draw_data, right.draw_data, "draw data differs");
+        assert_eq!(left.transforms, right.transforms, "transforms differ");
+        assert_eq!(left.styles, right.styles, "styles differ");
+    }
 
     #[test]
     fn compiled_frame_preserves_raster_identity_and_metadata() {

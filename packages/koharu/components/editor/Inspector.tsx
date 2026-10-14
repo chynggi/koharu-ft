@@ -15,15 +15,18 @@ import {
   EyeOff,
   Folder,
   Image as ImageIcon,
+  ImagePlus,
   Layers3,
   Lock,
   Minus,
   Plus,
   RotateCcw,
+  Shapes,
+  SlidersHorizontal,
   Trash2,
   Type,
 } from 'lucide-react'
-import { type MouseEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, type MouseEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ColorWell } from '@/components/controls/ColorWell'
@@ -40,13 +43,32 @@ import {
 import { copySelectedTextLayers, pasteCopiedTextLayers } from '@/lib/layerClipboard'
 import { pageKey, projectKey, queryClient, refresh, useFonts, usePage } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
+import {
+  MAX_GRADIENT_STOPS,
+  MIN_GRADIENT_STOPS,
+  STOP_OFFSET_STEP,
+  gradientStopBounds,
+  addGradientStop,
+  gradientKindName,
+  moveGradientStop,
+  normalizeGradientSpec,
+  removeGradientStop,
+  replaceGradientStop,
+  withFillKind,
+  withGradientKind,
+} from '@/lib/shapes'
 import { previewCanvasOpacity } from '@koharu/bridge/canvas'
 import {
   commands,
+  type ColorAdjust,
   type EntityId,
   type FontFamily,
   type FontStyle,
+  type GradientSpec,
+  type GradientStop,
   type Layer,
+  type PatternSpec,
+  type ShapeStyle,
   type TextAlignment,
   type Typography,
   type WritingMode,
@@ -124,11 +146,792 @@ export function Inspector() {
         <TypeInspector />
       </section>
 
+      <ShapeInspector />
+
+      <AdjustInspector />
+
       <section className='flex min-h-0 flex-1 flex-col'>
         <LayersInspector />
       </section>
     </aside>
   )
+}
+
+/**
+ * Style controls for the selected shape layers.
+ *
+ * The run itself is rendered only when a shape is selected, so the type
+ * inspector keeps its fixed height on text layers.
+ */
+function ShapeInspector() {
+  const { t } = useTranslation()
+  const revision = useKoharuStore((state) => state.canvasRevision)
+  const page = usePage().data
+  const selectedIds = useKoharuStore((state) => state.selectedLayers)
+  const expanded = page ? expandLayerSelection(page.layers, selectedIds) : []
+  const selected = (page?.layers ?? []).filter(
+    (layer): layer is Extract<Layer, { type: 'shape' }> =>
+      layer.type === 'shape' && expanded.includes(layer.id),
+  )
+  const current = selected[0]
+  const [rasterizing, setRasterizing] = useState(false)
+  const [uploadingPattern, setUploadingPattern] = useState(false)
+  const patternFile = useRef<HTMLInputElement>(null)
+  if (!current || !page) return null
+  const style = current.style
+  const stroke = style.stroke
+  const disabled = revision === null
+  const apply = (update: (value: ShapeStyle) => ShapeStyle) => {
+    if (disabled) return
+    void call(
+      commands.setShapeStyle,
+      revision,
+      selected.map((layer) => ({ element: layer.id, style: update(layer.style) })),
+    )
+      .then(() => refresh(projectKey, pageKey))
+      .catch(() => undefined)
+  }
+  // One fill kind is active at a time, so the controls that own the fill are
+  // chosen here and nowhere else — that is what keeps `withFillKind` the only
+  // path that changes kind (see below).
+  const solidFill = style.fill && 'solid' in style.fill ? style.fill.solid : null
+  const gradient = style.fill && 'gradient' in style.fill ? style.fill.gradient : null
+  const pattern = style.fill && 'pattern' in style.fill ? style.fill.pattern : null
+  const fillKind = pattern !== null ? 'pattern' : gradient !== null ? 'gradient' : 'solid'
+  const setFill = (kind: 'solid' | 'gradient' | 'pattern') =>
+    apply((value) => withFillKind(value, kind))
+  const updatePattern = (update: (spec: PatternSpec) => PatternSpec) =>
+    // A pattern parameter edit writes the fill through `withFillKind`, whose
+    // pattern arm returns the style untouched. An edit therefore cannot demote
+    // the committed fill to `{ solid }` — the data loss this branch is here to
+    // prevent (B3 Task 6).
+    apply((value) => {
+      const spec = value.fill && 'pattern' in value.fill ? value.fill.pattern : null
+      return spec === null ? value : withFillKind({ ...value, fill: { pattern: update(spec) } }, 'pattern')
+    })
+  const uploadPattern = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    // Reset so re-picking the same file fires `change` again.
+    event.target.value = ''
+    if (!file || disabled || uploadingPattern) return
+    setUploadingPattern(true)
+    try {
+      // The server decodes and validates the bytes, so an unreadable file is
+      // simply not committed; the pattern keeps drawing its fallback (P-D6).
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
+      await call(
+        commands.setShapePatternAsset,
+        revision,
+        current.id,
+        bytes,
+        file.type || 'application/octet-stream',
+      )
+      await refresh(projectKey, pageKey)
+    } catch {
+      // `call` has already reported the failure.
+    } finally {
+      setUploadingPattern(false)
+    }
+  }
+
+  return (
+    <section className='shrink-0 border-b p-2' data-testid='shape-inspector'>
+      <div className='grid min-w-0 gap-1.5'>
+        <div className='grid min-w-0 grid-cols-[2.75rem_minmax(5.5rem,1fr)] items-end gap-1.5'>
+          <InspectorField label={t('inspector.shape.fill')}>
+            {/* A pattern reuses this well to edit its `fallback`, which is the
+                colour the renderer draws until an image is uploaded (P-D6). It
+                is the one authority for that colour: the pattern panel below
+                deliberately has no colour control of its own. */}
+            {gradient === null && (
+              <ColorWell
+                label={t(
+                  pattern === null ? 'inspector.shape.fill' : 'inspector.shape.pattern.title',
+                )}
+                size='sm'
+                disabled={disabled}
+                allowTransparent
+                value={pattern !== null ? rgbaToHex(pattern.fallback) : solidFill ? rgbaToHex(solidFill) : null}
+                onChange={(color) =>
+                  pattern !== null
+                    ? updatePattern((spec) => ({
+                        ...spec,
+                        // The well has no transparent state for a pattern: the
+                        // renderer still needs a colour to draw.
+                        fallback: color === null ? spec.fallback : hexToRgba(color),
+                      }))
+                    : apply((value) => ({
+                        ...value,
+                        fill: color === null ? null : { solid: hexToRgba(color) },
+                      }))
+                }
+              />
+            )}
+          </InspectorField>
+          <InspectorField label={t('inspector.shape.stroke')}>
+            <ColorWell
+              label={t('inspector.shape.stroke')}
+              size='sm'
+              disabled={disabled}
+              allowTransparent
+              value={stroke ? rgbaToHex(stroke.color) : null}
+              onChange={(color) =>
+                apply((value) => ({
+                  ...value,
+                  stroke: color === null ? null : { ...(stroke ?? defaultStroke), color: hexToRgba(color) },
+                }))
+              }
+            />
+          </InspectorField>
+        </div>
+        <fieldset
+          className='flex min-w-0 items-center gap-1.5 border-0 p-0'
+          aria-label={t('inspector.shape.fill')}
+          disabled={disabled}
+        >
+          <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+            {t('inspector.shape.fill')}
+          </span>
+          {(['solid', 'gradient', 'pattern'] as const).map((kind) => (
+            <button
+              key={kind}
+              type='button'
+              role='radio'
+              aria-label={t(`inspector.shape.fillKind.${kind}`)}
+              aria-checked={kind === fillKind}
+              disabled={disabled}
+              data-active={kind === fillKind}
+              className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+              onClick={() => setFill(kind)}
+            >
+              {t(`inspector.shape.fillKind.${kind}`)}
+            </button>
+          ))}
+        </fieldset>
+        {gradient && (
+          <GradientStops
+            disabled={disabled}
+            gradient={gradient}
+            onChange={(next) => apply((value) => ({ ...value, fill: { gradient: next } }))}
+          />
+        )}
+        {pattern && (
+          <PatternFill
+            disabled={disabled}
+            spec={pattern}
+            uploading={uploadingPattern}
+            fileInput={patternFile}
+            onChange={(update) => updatePattern(update)}
+            onUpload={uploadPattern}
+          />
+        )}
+        <div className='grid min-w-0 grid-cols-[minmax(5.5rem,1fr)_auto] items-end gap-1.5'>
+          <InspectorField label={t('inspector.shape.strokeWidth')}>
+            <NumberField
+              className='min-w-0'
+              disabled={disabled}
+              value={stroke?.width ?? defaultStroke.width}
+              min={0.5}
+              max={64}
+              step={0.5}
+              onValueChange={(next) => {
+                if (next === null || next < 0.5 || next > 64) return
+                apply((value) => ({
+                  ...value,
+                  stroke: { ...(stroke ?? defaultStroke), width: next },
+                }))
+              }}
+            >
+              <NumberFieldGroup>
+                <NumberFieldInput aria-label={t('inspector.shape.strokeWidth')} />
+              </NumberFieldGroup>
+            </NumberField>
+          </InspectorField>
+          <InspectorField label={t('inspector.shape.dash')}>
+            <button
+              type='button'
+              role='switch'
+              aria-label={t('inspector.shape.dash')}
+              aria-checked={stroke?.dash != null}
+              disabled={disabled}
+              data-active={stroke?.dash != null}
+              className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+              onClick={() =>
+                apply((value) => ({
+                  ...value,
+                  stroke: {
+                    ...(stroke ?? defaultStroke),
+                    dash: stroke?.dash ? null : [8, 6],
+                  },
+                }))
+              }
+            />
+          </InspectorField>
+        </div>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={disabled || rasterizing || current.rasterized}
+          className='justify-start gap-1.5 text-[10px]'
+          onClick={() => {
+            if (disabled) return
+            setRasterizing(true)
+            void call(commands.rasterizeShapes, revision, page.id, [current.id])
+              .then(() => refresh(projectKey, pageKey))
+              .catch(() => undefined)
+              .finally(() => setRasterizing(false))
+          }}
+        >
+          <ImageIcon className='size-3' />
+          {t('inspector.shape.rasterize')}
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+type AdjustKind = ColorAdjust['type']
+
+const adjustKinds = ['brightness', 'contrast', 'levels', 'hue', 'grayscale'] as const
+
+const clampAdjust = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(value)))
+
+/**
+ * Colour adjustment for the selected raster layer.
+ *
+ * Nothing is committed while a control is being edited: the spec chose no live
+ * preview (B-D6), so a slider dragged across its range would otherwise post one
+ * revision-bumping commit per pixel of travel. The apply button is the single
+ * commit point, and every input is clamped to the range the server validates so
+ * the editor cannot build a rejected value.
+ */
+function AdjustInspector() {
+  const { t } = useTranslation()
+  const revision = useKoharuStore((state) => state.canvasRevision)
+  const page = usePage().data
+  const selectedIds = useKoharuStore((state) => state.selectedLayers)
+  // Only a directly selected raster qualifies. Unlike the shape inspector this
+  // does not expand a group selection, so selecting a group never surfaces the
+  // adjustment controls even when it holds a raster child.
+  const selected = (page?.layers ?? []).filter(
+    (layer): layer is Extract<Layer, { type: 'raster' }> =>
+      layer.type === 'raster' && selectedIds.includes(layer.id),
+  )
+  const current = selected[0]
+  const [kind, setKind] = useState<AdjustKind>('brightness')
+  const [brightness, setBrightness] = useState(0)
+  const [contrast, setContrast] = useState(0)
+  const [hue, setHue] = useState(0)
+  const [levels, setLevels] = useState({ low: 0, high: 255 })
+  const [applying, setApplying] = useState(false)
+  // The fields describe one layer, so a new target starts from neutral values
+  // rather than carrying numbers that were never chosen for it.
+  const currentId = current?.id
+  useEffect(() => {
+    setBrightness(0)
+    setContrast(0)
+    setHue(0)
+    setLevels({ low: 0, high: 255 })
+  }, [currentId])
+  if (!current || !page) return null
+
+  // The command takes a single layer and one apply is one commit (B-D5/B-D6), so
+  // a multi-layer selection cannot be served by one click. Applying to the first
+  // layer silently would be worse than saying which selection is supported.
+  const multipleSelected = selected.length > 1
+  // The server rejects `low >= high`, so the apply control is unreachable while
+  // the levels are inverted; the range inputs are also clamped to 0..=255.
+  const levelsInvalid = kind === 'levels' && levels.low >= levels.high
+  const disabled = revision === null
+  const busy = disabled || applying || multipleSelected || levelsInvalid
+  const adjust: ColorAdjust =
+    kind === 'brightness'
+      ? { type: 'brightness', delta: brightness }
+      : kind === 'contrast'
+        ? { type: 'contrast', percent: contrast }
+        : kind === 'levels'
+          ? { type: 'levels', low: levels.low, high: levels.high }
+          : kind === 'hue'
+            ? { type: 'hue', degrees: hue }
+            : { type: 'grayscale' }
+  const apply = () => {
+    if (busy) return
+    setApplying(true)
+    void call(commands.adjustRaster, revision, current.id, adjust)
+      .then(() => refresh(projectKey, pageKey))
+      .catch(() => undefined)
+      .finally(() => setApplying(false))
+  }
+
+  return (
+    <section className='shrink-0 border-b p-2' data-testid='adjust-inspector'>
+      <div className='grid min-w-0 gap-1.5'>
+        <InspectorField label={t('inspector.adjust.title')}>
+          <Select
+            disabled={disabled}
+            value={kind}
+            onValueChange={(next) => setKind(next as AdjustKind)}
+          >
+            <SelectTrigger
+              size='sm'
+              aria-label={t('inspector.adjust.title')}
+              className='w-full min-w-0'
+            >
+              <SelectValue>{t(`inspector.adjust.${kind}`)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align='end'>
+              {adjustKinds.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {t(`inspector.adjust.${option}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InspectorField>
+        {kind === 'brightness' && (
+          <AdjustNumber
+            label={t('inspector.adjust.delta')}
+            value={brightness}
+            min={-255}
+            max={255}
+            disabled={disabled}
+            onChange={setBrightness}
+          />
+        )}
+        {kind === 'contrast' && (
+          <AdjustNumber
+            label={t('inspector.adjust.percent')}
+            value={contrast}
+            min={-100}
+            max={100}
+            disabled={disabled}
+            onChange={setContrast}
+          />
+        )}
+        {kind === 'hue' && (
+          <AdjustNumber
+            label={t('inspector.adjust.degrees')}
+            value={hue}
+            min={-180}
+            max={180}
+            disabled={disabled}
+            onChange={setHue}
+          />
+        )}
+        {kind === 'levels' && (
+          <>
+            <div className='grid min-w-0 grid-cols-2 gap-1.5'>
+              <AdjustNumber
+                label={t('inspector.adjust.low')}
+                value={levels.low}
+                min={0}
+                max={255}
+                disabled={disabled}
+                onChange={(low) => setLevels((value) => ({ ...value, low }))}
+              />
+              <AdjustNumber
+                label={t('inspector.adjust.high')}
+                value={levels.high}
+                min={0}
+                max={255}
+                disabled={disabled}
+                onChange={(high) => setLevels((value) => ({ ...value, high }))}
+              />
+            </div>
+            {levelsInvalid && (
+              <p className='text-[9px] text-destructive'>{t('inspector.adjust.invalidLevels')}</p>
+            )}
+          </>
+        )}
+        {multipleSelected && (
+          <p className='text-[9px] text-muted-foreground'>{t('inspector.adjust.singleLayer')}</p>
+        )}
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={busy}
+          className='justify-start gap-1.5 text-[10px]'
+          onClick={apply}
+        >
+          <SlidersHorizontal className='size-3' />
+          {t('inspector.adjust.apply')}
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function AdjustNumber({
+  label,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  disabled: boolean
+  onChange: (value: number) => void
+}) {
+  return (
+    <InspectorField label={label}>
+      <NumberField
+        className='min-w-0'
+        disabled={disabled}
+        value={value}
+        min={min}
+        max={max}
+        step={1}
+        onValueChange={(next) => {
+          if (next === null) return
+          onChange(clampAdjust(next, min, max))
+        }}
+      >
+        <NumberFieldGroup>
+          <NumberFieldInput aria-label={label} />
+        </NumberFieldGroup>
+      </NumberField>
+    </InspectorField>
+  )
+}
+
+/**
+ * The stop editor for a gradient fill.
+ *
+ * Stops are displayed in offset order even though storage order is free,
+ * because a position edit would otherwise move a row out from under the
+ * pointer. The offset slider is bounded to the neighbouring stops so dragging
+ * can never create the duplicate offsets the server rejects.
+ */
+function GradientStops({
+  gradient,
+  disabled,
+  onChange,
+}: {
+  gradient: GradientSpec
+  disabled: boolean
+  onChange: (gradient: GradientSpec) => void
+}) {
+  const { t } = useTranslation()
+  // The server accepts neighbours closer than one grid step, so a spec read from
+  // disk can violate the editor's spacing invariant. Normalising before anything
+  // reads or writes means every control and every commit below works on distinct
+  // grid points, and a displayed offset is always one the slider can return to.
+  const spec = normalizeGradientSpec(gradient)
+  const stops = [...spec.stops].sort((left, right) => left.offset - right.offset)
+  const kind = gradientKindName(spec)
+  const at = (index: number) => spec.stops.indexOf(stops[index])
+  const commitStop = (index: number, patch: Partial<GradientStop>) =>
+    onChange(replaceGradientStop(spec, at(index), patch))
+  const added = stops.length < MAX_GRADIENT_STOPS ? addGradientStop(spec.stops) : null
+  const bounds = stops.map((_stop, index) => gradientStopBounds(spec.stops, index))
+  // Normalisation guarantees every stop sits on a grid point strictly between
+  // its neighbours, so a slider bound always contains its own stop and no slider
+  // is ever disabled. Only the add button can be refused, for two distinguishable
+  // reasons: the count ceiling, or every gap already being one grid step wide so
+  // no free point is left inside one. Only the second is worth explaining, and it
+  // is reachable by dragging stops together.
+  const noRoom = stops.length < MAX_GRADIENT_STOPS && added === null
+
+  return (
+    <div className='grid min-w-0 gap-1' data-testid='gradient-stops'>
+      <div
+        className='flex min-w-0 items-center gap-1.5'
+        role='radiogroup'
+        aria-label={t('inspector.shape.gradientKindLabel')}
+      >
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.gradientKindLabel')}
+        </span>
+        {(['linear', 'radial'] as const).map((candidate) => (
+          <button
+            key={candidate}
+            type='button'
+            role='radio'
+            aria-label={t(`inspector.shape.gradientKind.${candidate}`)}
+            aria-checked={kind === candidate}
+            disabled={disabled}
+            data-active={kind === candidate}
+            // `sweep` is deliberately absent: the renderer supports it but the
+            // editor does not expose it (spec G5).
+            className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+            onClick={() => onChange(withGradientKind(spec, candidate))}
+          >
+            {t(`inspector.shape.gradientKind.${candidate}`)}
+          </button>
+        ))}
+      </div>
+      <div className='flex min-w-0 items-center justify-between gap-1.5'>
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.stops')}
+        </span>
+        <div className='flex items-center gap-1'>
+          <Button
+            type='button'
+            variant='outline'
+            size='icon-xs'
+            aria-label={t('inspector.shape.removeStop')}
+            disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
+            onClick={() => onChange(removeGradientStop(spec, at(stops.length - 1)))}
+          >
+            <Minus className='size-3' />
+          </Button>
+          <Button
+            type='button'
+            variant='outline'
+            size='icon-xs'
+            aria-label={t('inspector.shape.addStop')}
+            disabled={disabled || added === null}
+            title={noRoom ? t('inspector.shape.stopsTooClose') : undefined}
+            onClick={() => {
+              const next = addGradientStop(spec.stops)
+              if (next) onChange({ ...spec, stops: next })
+            }}
+          >
+            <Plus className='size-3' />
+          </Button>
+        </div>
+      </div>
+      {noRoom && (
+        <p className='text-[8px] text-muted-foreground'>{t('inspector.shape.stopsTooClose')}</p>
+      )}
+      {stops.map((stop, index) => {
+        const [lower, upper] = bounds[index]
+        return (
+        <div
+          key={`${index}-${stop.offset}`}
+          className='grid min-w-0 grid-cols-[2.75rem_minmax(4rem,1fr)_2.5rem_auto] items-center gap-1.5'
+        >
+          <ColorWell
+            label={t('inspector.shape.stopColor', { index: index + 1 })}
+            size='sm'
+            disabled={disabled}
+            value={rgbaToHex(stop.color)}
+            onChange={(color) => commitStop(index, { color: hexToRgba(color) })}
+          />
+          <Slider
+            aria-label={t('inspector.shape.stopOffset', { index: index + 1 })}
+            min={lower}
+            max={Math.max(lower, upper)}
+            step={STOP_OFFSET_STEP}
+            value={stop.offset}
+            disabled={disabled || lower > upper}
+            className='[&_[data-slot=slider-thumb]]:size-2'
+            // Only the committed value is written: the server cannot tell a
+            // live drag's partial offset from a settled one, and each write is
+            // a revision bump.
+            onValueCommitted={(next) => {
+              const moved = moveGradientStop(spec, index, next as number)
+              if (moved) onChange(moved)
+            }}
+          />
+          <span className='text-right text-[8px] text-muted-foreground tabular-nums'>
+            {stop.offset.toFixed(3)}
+          </span>
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon-xs'
+            aria-label={t('inspector.shape.removeStop')}
+            className='text-muted-foreground'
+            disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
+            onClick={() => onChange(removeGradientStop(spec, at(index)))}
+          >
+            <Trash2 className='size-3' />
+          </Button>
+        </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The bounds the server validates for a persisted `PatternSpec`: a positive
+// finite scale and a rotation inside one turn. Every control clamps to these, so
+// the editor cannot build a spec the scene rejects.
+const MIN_PATTERN_SCALE = 0.001
+const MAX_PATTERN_SCALE = 16
+const MAX_PATTERN_ROTATION = 360
+
+const clampPatternValue = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value))
+
+/**
+ * The parameter editor for a pattern fill, plus its image upload.
+ *
+ * `origin` and `scale` are disabled under `stretch` because the server ignores
+ * them there (P-D4): leaving them editable would show values that change
+ * nothing, which is a trap rather than an affordance. They are disabled rather
+ * than hidden so the stored spec stays visible and the note below explains why
+ * they are inert.
+ *
+ * The colour of a pattern is its `fallback`, and the fill colour well above owns
+ * it — this panel has no colour control, so the two cannot disagree (P-D6).
+ */
+function PatternFill({
+  spec,
+  disabled,
+  uploading,
+  fileInput,
+  onChange,
+  onUpload,
+}: {
+  spec: PatternSpec
+  disabled: boolean
+  uploading: boolean
+  fileInput: React.RefObject<HTMLInputElement | null>
+  onChange: (update: (spec: PatternSpec) => PatternSpec) => void
+  onUpload: (event: ChangeEvent<HTMLInputElement>) => void
+}) {
+  const { t } = useTranslation()
+  const stretched = spec.repeat === 'stretch'
+  // The origin is normalized frame-local, so any finite value is storable; the
+  // field still clamps to a range wide enough to move a tile on and off the
+  // shape without letting a stray keystroke store a meaningless magnitude.
+  const originFloor = -8
+  const originCeiling = 8
+  const origin = (axis: 0 | 1) => (
+    <NumberField
+      className='min-w-0'
+      disabled={disabled || stretched}
+      value={spec.origin[axis]}
+      min={originFloor}
+      max={originCeiling}
+      step={0.05}
+      onValueChange={(next) => {
+        if (next === null) return
+        onChange((current) => ({
+          ...current,
+          origin: axis === 0
+            ? [clampPatternValue(next, originFloor, originCeiling), current.origin[1]]
+            : [current.origin[0], clampPatternValue(next, originFloor, originCeiling)],
+        }))
+      }}
+    >
+      <NumberFieldGroup>
+        <NumberFieldInput
+          aria-label={t(axis === 0 ? 'inspector.shape.pattern.originX' : 'inspector.shape.pattern.originY')}
+        />
+      </NumberFieldGroup>
+    </NumberField>
+  )
+
+  return (
+    <div className='grid min-w-0 gap-1' data-testid='pattern-fill'>
+      <div
+        className='flex min-w-0 items-center gap-1.5'
+        role='radiogroup'
+        aria-label={t('inspector.shape.pattern.repeatLabel')}
+      >
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.pattern.repeatLabel')}
+        </span>
+        {(['tile', 'stretch'] as const).map((candidate) => (
+          <button
+            key={candidate}
+            type='button'
+            role='radio'
+            aria-label={t(`inspector.shape.pattern.repeat.${candidate}`)}
+            aria-checked={spec.repeat === candidate}
+            disabled={disabled}
+            data-active={spec.repeat === candidate}
+            className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+            onClick={() => onChange((current) => ({ ...current, repeat: candidate }))}
+          >
+            {t(`inspector.shape.pattern.repeat.${candidate}`)}
+          </button>
+        ))}
+      </div>
+      <div className='grid min-w-0 grid-cols-[2.75rem_minmax(3.5rem,1fr)_2.75rem_minmax(3.5rem,1fr)] items-end gap-1.5'>
+        <InspectorField label={t('inspector.shape.pattern.originX')}>{origin(0)}</InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.originY')}>{origin(1)}</InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.scale')}>
+          <NumberField
+            className='min-w-0'
+            disabled={disabled || stretched}
+            value={spec.scale}
+            min={MIN_PATTERN_SCALE}
+            max={MAX_PATTERN_SCALE}
+            step={0.01}
+            onValueChange={(next) => {
+              // A scale of zero or below is rejected by `PatternSpec::validate`,
+              // so it is clamped rather than committed.
+              if (next === null) return
+              onChange((current) => ({
+                ...current,
+                scale: clampPatternValue(next, MIN_PATTERN_SCALE, MAX_PATTERN_SCALE),
+              }))
+            }}
+          >
+            <NumberFieldGroup>
+              <NumberFieldInput aria-label={t('inspector.shape.pattern.scale')} />
+            </NumberFieldGroup>
+          </NumberField>
+        </InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.rotation')}>
+          <NumberField
+            className='min-w-0'
+            disabled={disabled}
+            value={spec.rotation_degrees}
+            min={-MAX_PATTERN_ROTATION}
+            max={MAX_PATTERN_ROTATION}
+            step={1}
+            onValueChange={(next) => {
+              // The stored rotation is an integer degree count inside one turn.
+              if (next === null) return
+              onChange((current) => ({
+                ...current,
+                rotation_degrees: Math.round(
+                  clampPatternValue(next, -MAX_PATTERN_ROTATION, MAX_PATTERN_ROTATION),
+                ),
+              }))
+            }}
+          >
+            <NumberFieldGroup>
+              <NumberFieldInput aria-label={t('inspector.shape.pattern.rotation')} />
+            </NumberFieldGroup>
+          </NumberField>
+        </InspectorField>
+      </div>
+      {stretched && (
+        <p className='text-[8px] text-muted-foreground'>
+          {t('inspector.shape.pattern.ignoredForStretch')}
+        </p>
+      )}
+      <input
+        ref={fileInput}
+        type='file'
+        accept='image/*'
+        className='hidden'
+        onChange={onUpload}
+      />
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        disabled={disabled || uploading}
+        className='justify-start gap-1.5 text-[10px]'
+        onClick={() => fileInput.current?.click()}
+      >
+        <ImagePlus className='size-3' />
+        {t('inspector.shape.pattern.upload')}
+      </Button>
+    </div>
+  )
+}
+
+const defaultStroke: NonNullable<ShapeStyle['stroke']> = {
+  color: [0, 0, 0, 255],
+  width: 2,
+  dash: null,
+  cap: 'butt',
+  join: 'miter',
 }
 
 function TypeInspector() {
@@ -1077,11 +1880,13 @@ function layerIcon(layer: Layer): typeof Type {
   if (layer.type === 'group') return Folder
   if (layer.type === 'raster') return Brush
   if (layer.type === 'text') return Type
+  if (layer.type === 'shape') return Shapes
   return ImageIcon
 }
 
 function localizedLayerName(layer: Layer, index: number, t: TFunction): string {
-  if (layer.type === 'group' || layer.type === 'raster') return layer.name
+  if (layer.type === 'group' || layer.type === 'raster' || layer.type === 'shape')
+    return layer.name
   if (layer.type === 'text') {
     const text = layer.content.translation?.text || layer.content.source?.text
     return text?.trim() || t('layers.textName', { index: index + 1 })
@@ -1103,5 +1908,6 @@ function localizedLayerKind(layer: Layer, t: TFunction): string {
     if (role === 'free-text') return t('layers.kinds.freeText')
     return t('layers.kinds.text')
   }
+  if (layer.type === 'shape') return t('layers.kinds.shape')
   return t('layers.kinds.image')
 }

@@ -11,10 +11,10 @@ use futures::future::try_join_all;
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_scene::{
     Asset, AssetRole, BlobId, Change, Component, ComponentOwner, EntityChange, EntityId, FitsTo,
-    FlowsIn, Geometry, Group, OcrAnalysis, Origin, Page, Presents, RasterLayer, RasterLayerKind,
-    RecognizedFrom, Region, RelationChange, RelationId, RelationSpec, Revision, Snapshot,
-    TextAlignment, TextDirection, TextLayout as SceneTextLayout, TextLayoutKind, Translation,
-    Typography, Visibility,
+    FlowsIn, Geometry, Group, OcrAnalysis, Origin, Page, Point, Presents, RasterLayer,
+    RasterLayerKind, RecognizedFrom, Region, RelationChange, RelationId, RelationSpec, Revision,
+    ShapeLayer, Snapshot, TextAlignment, TextDirection, TextLayout as SceneTextLayout,
+    TextLayoutKind, Translation, Typography, Visibility,
 };
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -33,15 +33,16 @@ use vello::{
 use crate::{
     Error, FontFamily, FontStyle, Frame, ImageKind, ImageMetadata, Layer, LayerKind, Presentation,
     RasterImage, RenderBounds, RenderDependency, RenderDiagnostic, Result, RetentionStats,
-    TextAlign, TextMetadata, TypesettingConfig, WritingMode,
+    ShapeMetadata, TextAlign, TextMetadata, TypesettingConfig, WritingMode,
     bubble::{GeometryFrame, LayoutBox, contour, flow_cells, geometry_bounds, geometry_frame},
     fonts::{FontPreview, FontRequest, Fonts},
     frame::{
         FrameData, ImageNodeDescriptor, LayerData, LocalTextMetadata, NodeDescriptor, RetainedNode,
-        prepare_frame,
+        ShapeNodeDescriptor, prepare_frame,
     },
     images::{DecodedImage, ImageCache, decode},
     script::{is_chinese_or_japanese_text, shaping_direction_for_text},
+    shape_renderer,
     text_renderer::{StrokeOptions, TextNodeDescriptor, TextRenderer},
 };
 
@@ -291,7 +292,11 @@ impl Renderer {
             .iter()
             .filter_map(|(_, descriptor)| match descriptor {
                 NodeDescriptor::Image(image) => Some(image.blob),
-                NodeDescriptor::Text(_) => None,
+                // A shape's pattern asset is decoded through the same cache and
+                // the same loader as any other image, so its blob belongs in the
+                // request set too. Omitting it would leave the brush with
+                // `None` and silently paint the fallback forever.
+                NodeDescriptor::Shape(shape) => shape.pattern,                NodeDescriptor::Text(_) => None,
             })
             .collect::<BTreeSet<_>>();
         let images = Arc::new(self.load_images(snapshot, image_ids).await?);
@@ -474,6 +479,7 @@ enum DraftMetadata {
         writing_mode: WritingMode,
         angle_degrees: f32,
     },
+    Shape(crate::ShapeMetadata),
 }
 
 struct CompiledPage {
@@ -684,6 +690,17 @@ impl Traversal<'_> {
                 self.dependencies.extend(common);
                 continue;
             }
+            if self.snapshot.component::<ShapeLayer>(entity)?.is_some() {
+                common.insert(component_dependency::<ShapeLayer>(entity));
+                common.insert(component_dependency::<Geometry>(entity));
+                if let Some(draft) =
+                    self.shape_draft(entity, presentation, Arc::from(ancestry), &mut common)?
+                {
+                    self.layers.push(draft);
+                }
+                self.dependencies.extend(common);
+                continue;
+            }
             common.insert(component_dependency::<Geometry>(entity));
             common.insert(RenderDependency::Component {
                 entity,
@@ -838,6 +855,112 @@ impl Traversal<'_> {
                 writing_mode,
                 angle_degrees: frame.angle_degrees,
             },
+            dependencies: dependencies.iter().cloned().collect(),
+        }))
+    }
+
+    /// Builds the layer draft for a `ShapeLayer` entity.
+    ///
+    /// The polygon points live in the entity's `Geometry` component and the
+    /// drawable parameters in `ShapeLayer`, so both are read here and the
+    /// points are copied into the descriptor for `build_node`.
+    ///
+    /// A shape whose `rasterized` flag is set draws from its raster asset
+    /// instead of its parameters (spec "렌더링 우선순위"). This is the only
+    /// place that can decide that, because it is the only one holding the
+    /// snapshot; `prepare_frame` later sees just the attached image and treats
+    /// it as authoritative. When the asset is absent the vector descriptor is
+    /// built instead, so a rasterized shape still draws.
+    fn shape_draft(
+        &self,
+        entity: EntityId,
+        presentation: Presentation,
+        ancestry: Arc<[EntityId]>,
+        dependencies: &mut BTreeSet<RenderDependency>,
+    ) -> Result<Option<LayerDraft>> {
+        let Some(shape) = self.snapshot.component::<ShapeLayer>(entity)? else {
+            return Ok(None);
+        };
+        let Some(geometry) = self.snapshot.component::<Geometry>(entity)? else {
+            return Ok(None);
+        };
+        // A shape cannot be measured without a usable frame; skipping it here
+        // keeps `placement` and `bounds` meaningful downstream.
+        let Some(frame) = geometry_frame(&geometry, shape.angle_degrees) else {
+            return Ok(None);
+        };
+        if shape.rasterized
+            && let Some(asset) = self.snapshot.asset(entity, self.source_role)?
+        {
+            dependencies.insert(RenderDependency::Component {
+                entity,
+                kind: ASSETS_KIND.to_owned(),
+            });
+            // Task 7 bakes this asset from the whole page (`rasterize_scene`
+            // with the page surface), so the geometry must be the page
+            // rectangle, not the shape's polygon. `image_draft` derives the
+            // frame from this geometry and `placement`'s image arm scales
+            // `frame / local_bounds`; passing the shape's polygon would divide
+            // the shape's size by the page size and shrink the page raster
+            // into the shape's box. Task 7 guarantees the asset is the shape
+            // already positioned on a transparent page.
+            return Ok(Some(image_draft(
+                entity,
+                Geometry::rectangle(0.0, 0.0, f64::from(self.width), f64::from(self.height)),
+                ImageNodeDescriptor::from_asset(asset, None),
+                ImageMetadata {
+                    name: Some(shape.name),
+                    kind: ImageKind::Paint,
+                },
+                presentation,
+                ancestry,
+                dependencies,
+            )?));
+        }
+        let polygon = geometry
+            .points
+            .iter()
+            .map(|point| (point.x, point.y))
+            .collect();
+        // A pattern fill draws from the layer's `pattern` asset. Looking the blob
+        // up here is what lets `build_node` attach the pixels later, and adding
+        // it as a dependency is what makes an uploaded pattern rebuild the node
+        // instead of leaving the previous fallback colour on screen (P-D6).
+        let pattern_role = AssetRole::new("pattern")?;
+        let pattern = if matches!(
+            shape.style.fill,
+            Some(koharu_scene::ShapeFill::Pattern(_))
+        ) {
+            let asset = self.snapshot.asset(entity, &pattern_role)?;
+            dependencies.insert(RenderDependency::Component {
+                entity,
+                kind: ASSETS_KIND.to_owned(),
+            });
+            if let Some(asset) = asset.as_ref() {
+                dependencies.insert(RenderDependency::Blob(asset.blob));
+            }
+            asset.map(|asset| asset.blob)
+        } else {
+            None
+        };
+        Ok(Some(LayerDraft {
+            entity,
+            geometry,
+            frame,
+            presentation,
+            ancestry,
+            descriptor: NodeDescriptor::Shape(Box::new(ShapeNodeDescriptor {
+                geometry: shape.geometry.clone(),
+                style: shape.style.clone(),
+                angle_degrees: shape.angle_degrees,
+                polygon,
+                pattern,
+            })),
+            metadata: DraftMetadata::Shape(ShapeMetadata {
+                geometry: shape.geometry,
+                style: shape.style,
+                angle_degrees: shape.angle_degrees,
+            }),
             dependencies: dependencies.iter().cloned().collect(),
         }))
     }
@@ -1177,6 +1300,166 @@ fn build_node(
                 diagnostics: rendered.diagnostics.into(),
             })
         }
+        NodeDescriptor::Shape(shape) => {
+            // Only the point-backed kinds draw from the polygon. A polygon
+            // needs three points to bound any area, and fewer yields an empty
+            // scene with a warning rather than a panic. `Rectangle`, `Ellipse`,
+            // and `Line` draw from their parameters, so their polygon is only
+            // the hit-testing approximation and its length is irrelevant.
+            let point_backed = matches!(
+                &shape.geometry,
+                koharu_scene::ShapeGeometry::Polygon | koharu_scene::ShapeGeometry::Freeform
+            );
+            if point_backed && shape.polygon.len() < 3 {
+                tracing::warn!("shape layer has fewer than three polygon points; skipping it");
+                return Ok(RetainedNode {
+                    descriptor,
+                    scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                    resources: Arc::from([]),
+                    local_bounds: RenderBounds::default(),
+                    image: None,
+                    text: None,
+                    diagnostics: Arc::from([]),
+                });
+            }
+            let geometry = Geometry {
+                origin: Origin::User,
+                points: shape
+                    .polygon
+                    .iter()
+                    .map(|(x, y)| Point { x: *x, y: *y })
+                    .collect(),
+            };
+            let Some(frame) = shape_renderer::shape_frame(&geometry, shape.angle_degrees) else {
+                tracing::warn!("shape layer has no measurable frame; skipping it");
+                return Ok(RetainedNode {
+                    descriptor,
+                    scene: Arc::new(koharu_rasterizer::PreparedScene::default()),
+                    resources: Arc::from([]),
+                    local_bounds: RenderBounds::default(),
+                    image: None,
+                    text: None,
+                    diagnostics: Arc::from([]),
+                });
+            };
+            // `shape_layer_path` is the single entry point: it delegates
+            // `Polygon`/`Freeform` to the entity's points and every other kind
+            // to the shape's parameters. Calling `shape_path` directly would
+            // silently draw the two point-backed kinds as an empty path.
+            let mut path = shape_renderer::shape_layer_path(
+                &shape.geometry,
+                &geometry.points,
+                &shape.style,
+                frame,
+            );
+            // P-D6: a pattern whose asset is missing, undecodable, or too large
+            // to load keeps a `None` image and `append_to` draws the fallback
+            // colour. That is not an error, so it must not fail the render — a
+            // single broken pattern asset cannot make a page unopenable.
+            if let Some(blob) = shape.pattern
+                && let Some(decoded) = images.get(&blob)
+            {
+                shape_renderer::attach_pattern_image(
+                    &mut path,
+                    koharu_rasterizer::PreparedPatternImage {
+                        width: decoded.width,
+                        height: decoded.height,
+                        pixels: Arc::clone(&decoded.pixels),
+                    },
+                );
+            }
+            let bounds = rotated_bounds(frame, &path);
+            let scene = koharu_rasterizer::PreparedScene {
+                commands: vec![koharu_rasterizer::PreparedSceneCommand::FillPath(path)],
+            };
+            Ok(RetainedNode {
+                descriptor,
+                scene: Arc::new(scene),
+                resources: Arc::from([]),
+                local_bounds: bounds,
+                image: None,
+                text: None,
+                diagnostics: Arc::from([]),
+            })
+        }
+    }
+}
+
+/// The page-space bounds of everything a shape draws.
+///
+/// The shape's scene is built in the frame's local axes with the rotation baked
+/// into the prepared path's transform, and the layer's placement for a shape is
+/// the identity. `local_bounds` is therefore consumed in page coordinates — both
+/// as the opacity clip rect in `Layer::append_vector_with_presentation` and, via
+/// `transform_bounds`, as the `Layer::bounds` that `Frame::cropped` clips
+/// exports to. The un-rotated frame box would leave the swept corners of a
+/// rotated shape outside those bounds and cut them off in export, so the local
+/// extent is rotated and swept into an axis-aligned box.
+///
+/// The local extent is the union of the frame box and the drawn path, not the
+/// box alone: a horizontal arrow's drag box is a hair tall while its head is
+/// `width` high, and a wide stroke reaches half its width past the geometry on
+/// every side, so either one would be clipped by a box-only bound. Miter joins
+/// can spike further than the stroke half-width allowed here; this bound is not
+/// a guarantee about join geometry.
+fn rotated_bounds(
+    frame: crate::shape_renderer::ShapeFrame,
+    path: &koharu_rasterizer::PreparedPath,
+) -> RenderBounds {
+    let half_stroke = path
+        .stroke
+        .as_ref()
+        .map_or(0.0, |stroke| f64::from(stroke.width) * 0.5);
+    let (mut min_x, mut min_y): (f64, f64) = (0.0, 0.0);
+    let (mut max_x, mut max_y): (f64, f64) = (f64::from(frame.width), f64::from(frame.height));
+    for element in &path.elements {
+        let control_points: &[f64] = match element {
+            koharu_rasterizer::PathElement::MoveTo(values)
+            | koharu_rasterizer::PathElement::LineTo(values) => values,
+            koharu_rasterizer::PathElement::QuadTo(values) => values,
+            koharu_rasterizer::PathElement::CurveTo(values) => values,
+            koharu_rasterizer::PathElement::Close => continue,
+        };
+        // Every variant's coordinate list is a whole number of `(x, y)` pairs.
+        for [x, y] in control_points.as_chunks::<2>().0 {
+            min_x = min_x.min(*x);
+            min_y = min_y.min(*y);
+            max_x = max_x.max(*x);
+            max_y = max_y.max(*y);
+        }
+    }
+    let (min_x, min_y) = (min_x - half_stroke, min_y - half_stroke);
+    let (max_x, max_y) = (max_x + half_stroke, max_y + half_stroke);
+
+    let (sin, cos) = f64::from(frame.angle_degrees).to_radians().sin_cos();
+    let center_x = f64::from(frame.x) + f64::from(frame.width) * 0.5;
+    let center_y = f64::from(frame.y) + f64::from(frame.height) * 0.5;
+    let (mut left, mut top): (f64, f64) = (f64::INFINITY, f64::INFINITY);
+    let (mut right, mut bottom): (f64, f64) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (x, y) in [
+        (min_x, min_y),
+        (max_x, min_y),
+        (max_x, max_y),
+        (min_x, max_y),
+    ] {
+        // Local coordinates are relative to the frame box's top-left; the
+        // rotation is about the box's centre, matching `shape_renderer`.
+        let (x, y) = (
+            x - f64::from(frame.width) * 0.5,
+            y - f64::from(frame.height) * 0.5,
+        );
+        let page_x = center_x + x * cos - y * sin;
+        let page_y = center_y + x * sin + y * cos;
+        left = left.min(page_x);
+        top = top.min(page_y);
+        right = right.max(page_x);
+        bottom = bottom.max(page_y);
+    }
+    RenderBounds {
+        x: left as f32,
+        y: top as f32,
+        width: (right - left) as f32,
+        height: (bottom - top) as f32,
     }
 }
 
@@ -1216,6 +1499,7 @@ fn assemble_frame(
                     angle_degrees,
                 })
             }
+            DraftMetadata::Shape(metadata) => LayerKind::Shape(metadata),
         };
         diagnostics.extend(
             node.diagnostics
@@ -1287,6 +1571,10 @@ fn placement(draft: &LayerDraft, node: &RetainedNode) -> Affine {
                     -f64::from(frame.height * 0.5),
                 ))
         }
+        // A shape's prepared path already places and rotates its own frame in
+        // page coordinates (`shape_renderer::transform`), so an outer placement
+        // would apply the frame twice.
+        NodeDescriptor::Shape(_) => Affine::IDENTITY,
     }
 }
 
@@ -1686,6 +1974,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::frame::layer_id;
 
     #[test]
     fn vertical_alignment_defaults_to_start_and_uses_the_inline_axis() {
@@ -1884,6 +2173,532 @@ mod tests {
 
         let compiled = Renderer::default().compile(&snapshot, page).unwrap();
         assert!(compiled.layers.iter().all(|layer| layer.entity != region));
+    }
+
+    /// The shape parameters a shape entity is created with.
+    fn ellipse_style() -> koharu_scene::ShapeStyle {
+        koharu_scene::ShapeStyle {
+            fill: Some(koharu_scene::ShapeFill::Solid([255, 0, 0, 255])),
+            stroke: None,
+        }
+    }
+
+    /// A shape node descriptor with the given parameters and raw polygon points.
+    fn shape_descriptor(
+        geometry: koharu_scene::ShapeGeometry,
+        polygon: Vec<(f64, f64)>,
+        angle_degrees: Option<f32>,
+    ) -> NodeDescriptor {
+        NodeDescriptor::Shape(Box::new(ShapeNodeDescriptor {
+            geometry,
+            style: ellipse_style(),
+            angle_degrees,
+            polygon,
+            pattern: None,
+        }))
+    }
+
+    /// Adds a `ShapeLayer` entity under `page`, mirroring `add_text_layer`:
+    /// the component and a `Geometry` polygon coexist on one entity.
+    fn add_shape_layer(
+        edit: &mut koharu_scene::Edit,
+        page: EntityId,
+        shape: koharu_scene::ShapeGeometry,
+        geometry: &Geometry,
+        angle_degrees: Option<f32>,
+    ) -> koharu_scene::Result<EntityId> {
+        add_shape_layer_styled(
+            edit,
+            page,
+            shape,
+            geometry,
+            angle_degrees,
+            ellipse_style(),
+        )
+    }
+
+    /// `add_shape_layer` with an explicit style, so a test can install a
+    /// non-solid fill without depending on `Edit`'s private component reader.
+    fn add_shape_layer_styled(
+        edit: &mut koharu_scene::Edit,
+        page: EntityId,
+        shape: koharu_scene::ShapeGeometry,
+        geometry: &Geometry,
+        angle_degrees: Option<f32>,
+        style: koharu_scene::ShapeStyle,
+    ) -> koharu_scene::Result<EntityId> {
+        let entity = edit.add_entity(page, koharu_scene::At::End)?;
+        edit.set(
+            entity,
+            &ShapeLayer {
+                origin: Origin::User,
+                name: "Ellipse 1".to_owned(),
+                geometry: shape,
+                style,
+                angle_degrees,
+                rasterized: false,
+            },
+        )?;
+        edit.set(entity, geometry)?;
+        Ok(entity)
+    }
+
+    /// A shape with a pattern fill must reach the brush **with its decoded
+    /// pixels attached**, and a shape without a `pattern` asset must keep the
+    /// fallback instead of failing.
+    ///
+    /// This is the end-to-end guard for the renderer's half of the pattern
+    /// plumbing: `PatternSpec` references no asset, so only the traversal's blob
+    /// lookup can supply the pixels, and if that lookup or the image request set
+    /// were dropped the shape would silently paint its fallback colour forever
+    /// while every other test still passed.
+    #[tokio::test]
+    async fn a_shape_pattern_fill_gets_its_asset_pixels() {
+        // A 2x1 red/blue PNG, so the pixels are identifiable after decoding.
+        let png = {
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            let image = image::RgbaImage::from_raw(
+                2,
+                1,
+                vec![255, 0, 0, 255, 0, 0, 255, 255],
+            )
+            .unwrap();
+            image::DynamicImage::ImageRgba8(image)
+                .write_to(&mut bytes, image::ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        let pattern = koharu_scene::PatternSpec {
+            repeat: koharu_scene::PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.5,
+            rotation_degrees: 0,
+            fallback: [7, 8, 9, 255],
+        };
+        let pattern_role = AssetRole::new("pattern").unwrap();
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let shape = add_shape_layer_styled(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &rotated_ellipse(),
+                    None,
+                    koharu_scene::ShapeStyle {
+                        fill: Some(koharu_scene::ShapeFill::Pattern(pattern)),
+                        stroke: None,
+                    },
+                )?;
+                edit.set_asset(
+                    shape,
+                    &pattern_role,
+                    AssetInput::new(
+                        png.clone(),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(2),
+                            height: Some(1),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )?;
+                ids = Some((page, shape));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let prepared = frame.prepared();
+        let prepared_layer = prepared
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(shape))
+            .expect("the shape must have a prepared layer");
+        let koharu_rasterizer::PreparedContent::Vector(scene) = &prepared_layer.content else {
+            panic!("a shape must prepare as vector content");
+        };
+        let [koharu_rasterizer::PreparedSceneCommand::FillPath(path)] = &scene.commands[..] else {
+            panic!("a shape must prepare exactly one fill path");
+        };
+        let Some(koharu_rasterizer::PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill, got {:?}", path.fill);
+        };
+        let image = pattern
+            .image
+            .as_ref()
+            .expect("the pattern asset must have been resolved and attached");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(
+            &image.pixels[..],
+            &[255, 0, 0, 255, 0, 0, 255, 255],
+            "the decoded pixels must be the uploaded image"
+        );
+        // The spread still applies: `scale` is a fraction of the frame width.
+        assert!(pattern.scale > 0.0);
+    }
+
+    /// Without a `pattern` asset the same shape must still render: the fill
+    /// stays a pattern with no image, which `append_to` draws as the fallback
+    /// (P-D6). A missing asset is not an error.
+    #[tokio::test]
+    async fn a_shape_pattern_fill_without_an_asset_still_renders() {
+        let pattern = koharu_scene::PatternSpec {
+            repeat: koharu_scene::PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.5,
+            rotation_degrees: 0,
+            fallback: [7, 8, 9, 255],
+        };
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let shape = add_shape_layer_styled(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &rotated_ellipse(),
+                    None,
+                    koharu_scene::ShapeStyle {
+                        fill: Some(koharu_scene::ShapeFill::Pattern(pattern)),
+                        stroke: None,
+                    },
+                )?;
+                ids = Some((page, shape));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let prepared = frame.prepared();
+        let prepared_layer = prepared
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(shape))
+            .expect("the shape must have a prepared layer");
+        let koharu_rasterizer::PreparedContent::Vector(scene) = &prepared_layer.content else {
+            panic!("a shape must prepare as vector content");
+        };
+        let [koharu_rasterizer::PreparedSceneCommand::FillPath(path)] = &scene.commands[..] else {
+            panic!("a shape must prepare exactly one fill path");
+        };
+        let Some(koharu_rasterizer::PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill, got {:?}", path.fill);
+        };
+        assert!(
+            pattern.image.is_none(),
+            "no asset was uploaded, so there must be no image"
+        );
+        assert_eq!(pattern.fallback, [7, 8, 9, 255]);
+    }
+
+    /// A 45°-rotated rx=50/ry=25 ellipse sampled as 32 points, centred at
+    /// (100, 100). Its authored frame is 100×50 but its axis-aligned box is
+    /// 79.06², so the angle is observable in both the frame and the bounds.
+    fn rotated_ellipse() -> Geometry {        let (rx, ry) = (50.0_f64, 25.0_f64);
+        let (sin, cos) = (45.0_f64).to_radians().sin_cos();
+        Geometry {
+            origin: Origin::User,
+            points: (0..32)
+                .map(|index| {
+                    let theta = std::f64::consts::TAU * f64::from(index) / 32.0;
+                    let x = rx * theta.cos();
+                    let y = ry * theta.sin();
+                    Point {
+                        x: 100.0 + x * cos - y * sin,
+                        y: 100.0 + x * sin + y * cos,
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_shape_entity_becomes_a_vector_layer_with_a_prepared_path() {
+        // This covers the traversal wiring and `build_node` end to end: a
+        // `ShapeLayer` entity must reach the frame as `LayerKind::Shape` with a
+        // real prepared fill command, not an empty scene.
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let shape = add_shape_layer(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &rotated_ellipse(),
+                    Some(45.0),
+                )?;
+                ids = Some((page, shape));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let layer = frame.layer(shape).expect("the shape must reach the frame");
+        let LayerKind::Shape(metadata) = layer.kind() else {
+            panic!("expected a shape layer, got {:?}", layer.kind());
+        };
+        assert_eq!(metadata.angle_degrees, Some(45.0));
+
+        let prepared = frame.prepared();
+        let prepared_layer = prepared
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(shape))
+            .expect("the shape must have a prepared layer");
+        assert_eq!(prepared_layer.kind, koharu_rasterizer::LayerKind::Shape);
+        let koharu_rasterizer::PreparedContent::Vector(scene) = &prepared_layer.content else {
+            panic!("a shape must prepare as vector content");
+        };
+        let [koharu_rasterizer::PreparedSceneCommand::FillPath(path)] = &scene.commands[..] else {
+            panic!("a shape must prepare exactly one fill path");
+        };
+        assert!(
+            path.elements.len() > 3,
+            "the ellipse path must be non-empty"
+        );
+        assert!(path.fill.is_some());
+        // The frame the renderer restores is the authored 100x50, not the
+        // 79.06 axis-aligned box.
+        let element_frame = prepared_layer
+            .element_frame()
+            .expect("a shape layer must expose an element frame");
+        assert!(
+            (element_frame.width - 100.0).abs() < 1.0,
+            "width was {}",
+            element_frame.width
+        );
+        assert!(
+            (element_frame.height - 50.0).abs() < 1.0,
+            "height was {}",
+            element_frame.height
+        );
+    }
+
+    #[test]
+    fn a_parameter_driven_shape_draws_even_with_a_degenerate_polygon() {
+        // `Rectangle` draws from its parameters; the polygon is only the
+        // hit-testing approximation, so a short polygon must not suppress it.
+        // The point-count guard therefore applies to `Polygon`/`Freeform` only.
+        //
+        // `build_node` is called directly because the scene layer rejects a
+        // `Geometry` with fewer than three points, so this degenerate state is
+        // only reachable through the descriptor — which is exactly the contract
+        // under test here.
+        let node = build_node(
+            shape_descriptor(
+                koharu_scene::ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                vec![(10.0, 20.0), (110.0, 70.0)],
+                None,
+            ),
+            &Fonts::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let koharu_rasterizer::PreparedSceneCommand::FillPath(path) = &node.scene.commands[0]
+        else {
+            panic!("a rectangle must produce a fill path");
+        };
+        assert!(
+            path.elements.len() > 3,
+            "the rectangle path must be non-empty despite the two-point polygon"
+        );
+    }
+
+    #[test]
+    fn a_polygon_shape_without_enough_points_yields_an_empty_scene() {
+        // `Polygon` draws from the entity's points, so fewer than three points
+        // is a degenerate shape: an empty scene, no panic.
+        let node = build_node(
+            shape_descriptor(
+                koharu_scene::ShapeGeometry::Polygon,
+                vec![(10.0, 20.0), (110.0, 70.0)],
+                None,
+            ),
+            &Fonts::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        assert!(
+            node.scene.commands.is_empty(),
+            "a degenerate polygon draws nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_wide_stroke_shape_layer_bounds_cover_its_stroke() {
+        // `Frame::cropped` clips to `bounds`, so a bound that stopped at the
+        // frame box would cut a stroke off along the box's edge. A 40-unit
+        // stroke centred on a 100x50 rectangle reaches 20 past every side.
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let entity = edit.add_entity(page, At::End)?;
+                edit.set(
+                    entity,
+                    &ShapeLayer {
+                        origin: Origin::User,
+                        name: "Rectangle 1".to_owned(),
+                        geometry: koharu_scene::ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                        style: koharu_scene::ShapeStyle {
+                            fill: None,
+                            stroke: Some(koharu_scene::StrokeStyle {
+                                color: [0, 0, 0, 255],
+                                width: 40.0,
+                                dash: None,
+                                cap: koharu_scene::LineCap::Butt,
+                                join: koharu_scene::LineJoin::Miter,
+                            }),
+                        },
+                        angle_degrees: Some(0.0),
+                        rasterized: false,
+                    },
+                )?;
+                edit.set(entity, &Geometry::rectangle(100.0, 100.0, 100.0, 50.0))?;
+                ids = Some((page, entity));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let bounds = frame.layer(shape).unwrap().bounds();
+        assert!(
+            f64::from(bounds.x) <= 80.0 && f64::from(bounds.y) <= 80.0,
+            "a 40-wide stroke must reach 20 past the box, bounds were {bounds:?}"
+        );
+        assert!(
+            f64::from(bounds.x + bounds.width) >= 220.0
+                && f64::from(bounds.y + bounds.height) >= 170.0,
+            "a 40-wide stroke must reach 20 past the box, bounds were {bounds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rotated_shape_layer_bounds_cover_its_drawn_area() {
+        // A rotated shape bakes its rotation into the prepared path, and its
+        // placement is the identity, so `bounds` is consumed in page space and
+        // must cover the swept corners. `Frame::cropped` clips exports to these
+        // bounds, so a frame box that ignored the rotation would cut the shape
+        // off — the drawn AABB of this ellipse reaches y = 139.53 while the
+        // unrotated frame only reaches y = 125.
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let geometry = rotated_ellipse();
+                let shape = add_shape_layer(
+                    edit,
+                    page,
+                    koharu_scene::ShapeGeometry::Ellipse,
+                    &geometry,
+                    Some(45.0),
+                )?;
+                ids = Some((page, shape, geometry));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, shape, geometry) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let bounds = frame.layer(shape).unwrap().bounds();
+        let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+        let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for point in &geometry.points {
+            min_x = min_x.min(point.x);
+            min_y = min_y.min(point.y);
+            max_x = max_x.max(point.x);
+            max_y = max_y.max(point.y);
+        }
+        assert!(
+            f64::from(bounds.x) <= min_x + 1.0
+                && f64::from(bounds.y) <= min_y + 1.0
+                && f64::from(bounds.x + bounds.width) >= max_x - 1.0
+                && f64::from(bounds.y + bounds.height) >= max_y - 1.0,
+            "bounds {bounds:?} must cover the drawn polygon [{min_x}, {min_y}]-[{max_x}, {max_y}]"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rasterized_shape_draws_its_page_sized_asset_at_full_scale() {
+        // Task 7 bakes a rasterized shape as a page-sized image. If the shape's
+        // polygon were used as the image geometry, `placement` would scale the
+        // page raster down into the shape's box (100/300 x 50/300 here). The
+        // layer must instead place the page raster at 1:1.
+        let mut session = Session::memory().await.unwrap();
+        let mut ids = None;
+        let create = session
+            .snapshot()
+            .patch(|edit| {
+                let page = edit.add_page(PageDraft::new("page", 300.0, 300.0), At::End)?;
+                let entity = edit.add_entity(page, At::End)?;
+                edit.set(
+                    entity,
+                    &ShapeLayer {
+                        origin: Origin::User,
+                        name: "Ellipse 1".to_owned(),
+                        geometry: koharu_scene::ShapeGeometry::Ellipse,
+                        style: ellipse_style(),
+                        angle_degrees: Some(0.0),
+                        rasterized: true,
+                    },
+                )?;
+                edit.set(entity, &Geometry::rectangle(10.0, 20.0, 100.0, 50.0))?;
+                edit.set_asset(
+                    entity,
+                    &AssetRole::new("source").unwrap(),
+                    asset(png(300, 300, [9, 9, 9, 255]), 300, 300),
+                )?;
+                ids = Some((page, entity));
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(create).await.unwrap().snapshot;
+        let (page, entity) = ids.unwrap();
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        // The raster branch of `prepare_frame` must win over the vector path.
+        let prepared_layer = frame
+            .prepared()
+            .frame
+            .layers
+            .iter()
+            .find(|candidate| candidate.id == layer_id(entity))
+            .unwrap();
+        assert_eq!(prepared_layer.kind, koharu_rasterizer::LayerKind::Raster);
+        // Identity scale: a rasterized shape is already positioned on its page,
+        // so the placement must not shrink it into the shape's own box.
+        let [a, b, c, d, ..] = prepared_layer.placement;
+        assert!(
+            (a - 1.0).abs() < 1e-6 && b.abs() < 1e-6 && c.abs() < 1e-6 && (d - 1.0).abs() < 1e-6,
+            "placement must be identity, was {:?}",
+            prepared_layer.placement
+        );
     }
 
     #[tokio::test]

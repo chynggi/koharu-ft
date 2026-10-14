@@ -8,20 +8,24 @@ use std::{
 use anyhow::{Context as _, Result, anyhow, bail};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use koharu_desktop::Frame;
+use koharu_rasterizer::{BrushRamp, RampAxis};
 use koharu_scene::{
-    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, EntityId, EntityOrigin, FitsTo,
-    Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
-    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom,
-    Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, Snapshot,
+    AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, Edit, EntityId, EntityOrigin,
+    FitsTo, Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, PatternSpec,
+    Point as ScenePoint, Presents, RasterLayer as SceneRasterLayer, RasterLayerKind,
+    RecognizedFrom, Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, ShapeFill,
+    ShapeGeometry, ShapeLayer as SceneShapeLayer, ShapeStyle, Snapshot,
     SourceText as SceneSourceText, TextGroup as SceneTextGroup, TextLayout as SceneTextLayout,
     TextLayoutKind, TextRegion, TextRole, Translation as SceneTranslation,
     Typography as SceneTypography, Visibility as SceneVisibility,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use tokio::sync::Mutex;
+use vello::Scene;
 
 use super::{
+    adjust::{ColorAdjust, apply_adjust},
     canvas::Point,
     editing::{GeometryUpdate, TypographyUpdate},
 };
@@ -101,6 +105,19 @@ pub enum Layer {
         name: String,
         kind: RasterLayerKind,
     },
+    Shape {
+        id: EntityId,
+        parent: Option<EntityId>,
+        geometry: Option<Geometry>,
+        angle_degrees: Option<f32>,
+        visibility: LayerVisibility,
+        /// Decision D4: a shape identifies itself in the layer list by name,
+        /// the way `Raster` does, instead of falling back to "Image N".
+        name: String,
+        shape: ShapeGeometry,
+        style: ShapeStyle,
+        rasterized: bool,
+    },
     Image {
         id: EntityId,
         parent: Option<EntityId>,
@@ -141,9 +158,27 @@ pub struct AnalysisRegion {
     pub label: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Type)]
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
 pub struct Geometry {
     pub points: Vec<Point>,
+}
+
+impl Geometry {
+    /// The transport view carries only points; the scene component also carries
+    /// authorship, which every caller of this promotes to `User` anyway.
+    pub fn into_scene(self) -> SceneGeometry {
+        SceneGeometry {
+            origin: Origin::User,
+            points: self
+                .points
+                .into_iter()
+                .map(|point| ScenePoint {
+                    x: point.x,
+                    y: point.y,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Type)]
@@ -264,6 +299,113 @@ pub struct Project {
     pub active_page: Option<EntityId>,
     pub undo: Vec<Vec<Revision>>,
     pub redo: Vec<Vec<Revision>>,
+}
+
+/// The page an entity ultimately belongs to.
+///
+/// [`Snapshot::parent`] returns the *immediate* parent and [`Snapshot::page`]
+/// only accepts a page id, so a single `parent` call rejects any nested layer
+/// with a misleading `EntityNotFound`. Only a page has no parent, so walking up
+/// until `parent` returns `None` terminates at the owning page; the caller's
+/// `page(entity)` then fails loudly if the chain did not in fact reach one,
+/// which is why this helper performs no page check of its own.
+fn owning_page(snapshot: &Snapshot, entity: EntityId) -> Result<EntityId> {
+    let mut page = entity;
+    while let Some(parent) = snapshot.parent(page)? {
+        page = parent;
+    }
+    Ok(page)
+}
+
+/// The pixels a raster layer owns, decoded and pinned to the page size.
+///
+/// A layer that carries no `source` asset — a paint layer a user has not drawn
+/// on yet — is an empty page-sized surface rather than an error, so callers can
+/// mutate and re-encode it uniformly. A stored image whose dimensions do not
+/// match the page is rejected instead of being silently rescaled, because every
+/// raster consumer indexes by page coordinates.
+async fn read_source_image(
+    snapshot: &Snapshot,
+    entity: EntityId,
+    role: &AssetRole,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage> {
+    let image = match snapshot.asset(entity, role)? {
+        Some(asset) => {
+            let bytes = snapshot.read_blob(asset.blob).await?;
+            image::load_from_memory(&bytes)?.to_rgba8()
+        }
+        None => RgbaImage::new(width, height),
+    };
+    if image.dimensions() != (width, height) {
+        bail!("raster layer dimensions must match the page");
+    }
+    Ok(image)
+}
+
+/// Whether a user edit must claim both of a raster layer's origin records.
+fn raster_layer_needs_promotion(
+    snapshot: &Snapshot,
+    entity: EntityId,
+    raster: &SceneRasterLayer,
+) -> Result<bool> {
+    Ok(raster.origin != Origin::User
+        || snapshot
+            .component::<EntityOrigin>(entity)?
+            .is_some_and(|origin| origin.origin != Origin::User))
+}
+
+/// Encodes a raster surface as the PNG payload of a layer's `source` asset.
+fn encode_source_image(image: RgbaImage) -> Result<Vec<u8>> {
+    let mut bytes = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+    Ok(bytes.into_inner())
+}
+
+/// Stores `bytes` as the layer's `source` asset, promoting user ownership first
+/// when `promote` is set.
+///
+/// [`SceneRasterLayer::origin`] is persisted separately from the [`EntityOrigin`]
+/// component, and pipeline stages gate on it
+/// (`crates/koharu-pipeline/src/stages/inpainting.rs` derives `generated` from
+/// both), so a user pixel write has to claim *both* records. Claiming only
+/// `EntityOrigin` would leave the layer looking pipeline-owned, and the next
+/// stage that reuses such a layer as its overlay would treat the user's pixels
+/// as its own generated output. That invariant lives here, next to the write
+/// that must uphold it, so no caller can uphold half of it.
+///
+/// This returns a scene result rather than `anyhow::Result` because it runs
+/// inside [`Snapshot::patch`], whose closure is typed by the scene crate; PNG
+/// encoding, which is not, stays in [`encode_source_image`].
+fn write_source_image(
+    edit: &mut Edit,
+    entity: EntityId,
+    raster: &mut SceneRasterLayer,
+    promote: bool,
+    role: &AssetRole,
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+) -> koharu_scene::Result<()> {
+    if promote {
+        edit.promote_entity_to_user(entity)?;
+        raster.origin = Origin::User;
+        edit.set(entity, raster)?;
+    }
+    edit.set_asset(
+        entity,
+        role,
+        AssetInput::new(
+            bytes,
+            "image/png",
+            AssetMetadata {
+                width: Some(width),
+                height: Some(height),
+                attributes: Default::default(),
+            },
+        ),
+    )
 }
 
 impl Project {
@@ -446,13 +588,18 @@ impl Project {
             bail!("the merged page is larger than Koharu supports");
         }
 
-        // Cleanup and paint layers are full-page pixel layers, so the renderer
-        // stretches them across the spread. Re-pad each to the merged width so its
-        // pixels stay in the correct half.
+        // Cleanup, paint, and rasterized shape layers are full-page pixel
+        // layers (`rasterize_shapes` bakes onto the whole page surface), so the
+        // renderer stretches them across the spread. Re-pad each to the merged
+        // width so its pixels stay in the correct half.
         let mut raster_blobs = Vec::new();
         for (index, &page) in pages.iter().enumerate() {
             for child in snapshot.children(page)? {
-                if snapshot.component::<SceneRasterLayer>(child)?.is_none() {
+                let is_page_pixels = snapshot.component::<SceneRasterLayer>(child)?.is_some()
+                    || snapshot
+                        .component::<SceneShapeLayer>(child)?
+                        .is_some_and(|shape| shape.rasterized);
+                if !is_page_pixels {
                     continue;
                 }
                 if let Some(asset) = snapshot.asset(child, &source_role)? {
@@ -576,8 +723,13 @@ impl Project {
                         continue;
                     }
                     if let Some(geometry) = snapshot.component::<SceneGeometry>(id)? {
-                        edit.set(
+                        // A merge shifts the polygon; a line shape has to take
+                        // its derived endpoints along through the same helper
+                        // the transform path uses.
+                        Self::write_geometry(
+                            edit,
                             id,
+                            snapshot.component::<SceneShapeLayer>(id)?,
                             &SceneGeometry {
                                 origin: geometry.origin,
                                 points: geometry
@@ -1101,42 +1253,452 @@ impl Project {
         self.commit(patch).await
     }
 
+    /// Moves any transformable layer. `commit_transform` routes every element
+    /// the desktop reports as transformable through here, so a shape has to be
+    /// accepted alongside a text layer and get the shape treatment (rotation on
+    /// `ShapeLayer`, endpoints resynced from the polygon).
     pub async fn set_geometries(
         &mut self,
         geometries: impl IntoIterator<Item = (EntityId, SceneGeometry, f32)>,
     ) -> Result<Commit> {
         let snapshot = self.snapshot();
+        enum Target {
+            Text {
+                content: EntityId,
+                layout: SceneTextLayout,
+            },
+            Shape {
+                layer: SceneShapeLayer,
+            },
+        }
         let geometries = geometries
             .into_iter()
             .map(|(element, geometry, angle_degrees)| {
-                let mut layout = snapshot
-                    .component::<SceneTextLayout>(element)?
-                    .context("only text layers can change geometry")?;
-                layout.origin = Origin::User;
-                layout.angle_degrees = Some(angle_degrees);
-                let content = Self::text_content(&snapshot, element)?;
-                Ok((element, geometry, content, layout))
+                let target =
+                    if let Some(mut layer) = snapshot.component::<SceneShapeLayer>(element)? {
+                        layer.origin = Origin::User;
+                        layer.angle_degrees = Some(angle_degrees);
+                        Target::Shape { layer }
+                    } else {
+                        let mut layout = snapshot
+                            .component::<SceneTextLayout>(element)?
+                            .context("only text and shape layers can change geometry")?;
+                        layout.origin = Origin::User;
+                        layout.angle_degrees = Some(angle_degrees);
+                        let content = Self::text_content(&snapshot, element)?;
+                        Target::Text { content, layout }
+                    };
+                Ok((element, geometry, target))
             })
             .collect::<Result<Vec<_>>>()?;
         let patch = snapshot.patch(|edit| {
-            for (element, mut geometry, content, layout) in geometries {
+            for (element, mut geometry, target) in geometries {
                 edit.promote_entity_to_user(element)?;
-                edit.promote_entity_to_user(content)?;
                 geometry.origin = Origin::User;
-                edit.set(element, &geometry)?;
-                edit.set(element, &layout)?;
+                match target {
+                    Target::Text { content, layout } => {
+                        edit.promote_entity_to_user(content)?;
+                        edit.set(element, &geometry)?;
+                        edit.set(element, &layout)?;
+                    }
+                    Target::Shape { layer } => {
+                        Self::write_geometry(edit, element, Some(layer), &geometry)?;
+                    }
+                }
             }
             Ok(())
         })?;
         self.commit(patch).await
     }
 
+    /// Creates a user shape layer. The outline polygon is the entity's
+    /// `Geometry` and the regenerable parameters live in a separate
+    /// `ShapeLayer` on the same entity (decision D8); the entity is placed
+    /// before the page's text group so text keeps painting on top.
+    pub async fn add_shape(
+        &mut self,
+        page: EntityId,
+        geometry: SceneGeometry,
+        shape: ShapeGeometry,
+        style: ShapeStyle,
+        angle_degrees: f32,
+    ) -> Result<(Commit, EntityId)> {
+        if !angle_degrees.is_finite() {
+            bail!("shape angle must be finite");
+        }
+        let snapshot = self.snapshot();
+        snapshot.page(page)?;
+        let name = format!(
+            "{} {}",
+            Self::shape_kind_name(&shape),
+            snapshot
+                .children(page)?
+                .filter(|entity| {
+                    snapshot
+                        .component::<SceneShapeLayer>(*entity)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|layer| Self::same_shape_kind(&layer.geometry, &shape))
+                })
+                .count()
+                + 1
+        );
+        let mut added = None;
+        let patch = snapshot.patch(|edit| {
+            let at = snapshot
+                .page(page)?
+                .text_group()?
+                .map_or(At::End, |group| At::Before(group.id()));
+            let entity = edit.add_entity(page, at)?;
+            let mut geometry = geometry;
+            geometry.origin = Origin::User;
+            // The layer is created in this patch and never reaches the
+            // snapshot, but the helper takes it by value, so it resyncs the
+            // endpoints here exactly as it does on the other write paths.
+            Self::write_geometry(
+                edit,
+                entity,
+                Some(SceneShapeLayer {
+                    origin: Origin::User,
+                    name,
+                    geometry: shape,
+                    style,
+                    angle_degrees: Some(angle_degrees),
+                    rasterized: false,
+                }),
+                &geometry,
+            )?;
+            added = Some(entity);
+            Ok(())
+        })?;
+        Ok((
+            self.commit(patch).await?,
+            added.expect("shape layer was added while building the patch"),
+        ))
+    }
+
+    pub async fn set_shape_style(
+        &mut self,
+        updates: Vec<(EntityId, ShapeStyle)>,
+    ) -> Result<Commit> {
+        let snapshot = self.snapshot();
+        let updates = updates
+            .into_iter()
+            .map(|(element, style)| {
+                let layer = snapshot
+                    .component::<SceneShapeLayer>(element)?
+                    .context("only shape layers can change style")?;
+                Ok((element, style, layer))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let patch = snapshot.patch(|edit| {
+            for (element, style, mut layer) in updates {
+                edit.promote_entity_to_user(element)?;
+                layer.origin = Origin::User;
+                layer.style = style;
+                edit.set(element, &layer)?;
+            }
+            Ok(())
+        })?;
+        self.commit(patch).await
+    }
+
+    /// Sets or clears the image pattern of a shape layer's fill.
+    ///
+    /// `None` restores [`ShapeFill::Solid`], keeping the colour the user already
+    /// sees: a solid fill keeps its own colour and every other fill falls back to
+    /// [`PatternSpec::fallback`], which is the colour a pattern draws when its
+    /// asset is missing (P-D6). So switching a pattern off never changes what is
+    /// on screen.
+    ///
+    /// The pattern's image is *not* written here — [`Project::set_shape_pattern_asset`]
+    /// owns that. `PatternSpec` references no asset (P-D2), so this method only
+    /// records how the owning layer's `pattern` asset should repeat.
+    pub async fn set_shape_pattern(
+        &mut self,
+        layer: EntityId,
+        pattern: Option<PatternSpec>,
+    ) -> Result<(Commit, EntityId)> {
+        if let Some(spec) = &pattern {
+            spec.validate()?;
+        }
+        let snapshot = self.snapshot();
+        let mut shape = snapshot
+            .component::<SceneShapeLayer>(layer)?
+            .context("only shape layers can carry a pattern")?;
+        let fill = match pattern {
+            Some(spec) => ShapeFill::Pattern(spec),
+            None => ShapeFill::Solid(match shape.style.fill {
+                Some(ShapeFill::Solid(color)) => color,
+                Some(ShapeFill::Pattern(spec)) => spec.fallback,
+                // A gradient has no colour of its own to keep and an absent fill
+                // has none at all, so both take the white a fresh pattern starts
+                // with — the same default `defaultPatternSpec` uses in the editor.
+                Some(ShapeFill::Gradient(_)) | None => [255, 255, 255, 255],
+            }),
+        };
+        let patch = snapshot.patch(|edit| {
+            edit.promote_entity_to_user(layer)?;
+            shape.origin = Origin::User;
+            shape.style.fill = Some(fill);
+            edit.set(layer, &shape)?;
+            Ok(())
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
+    /// Writes the `pattern` asset a shape layer's pattern fill samples.
+    ///
+    /// Only a shape layer may own this role. A raster layer does not carry a
+    /// pattern (P-D2): the shape layer owns the asset so the two live and die
+    /// together, and accepting the write on a raster layer would create a
+    /// second owner that no fill ever reads.
+    ///
+    /// The bytes are decoded here rather than at read time because the stored
+    /// [`AssetMetadata`] dimensions are what the renderer uploads; a caller that
+    /// supplied dimensions the pixels do not have would produce a brush that
+    /// disagrees with its own texture.
+    pub async fn set_shape_pattern_asset(
+        &mut self,
+        layer: EntityId,
+        bytes: Vec<u8>,
+        media_type: String,
+    ) -> Result<(Commit, EntityId)> {
+        let snapshot = self.snapshot();
+        snapshot
+            .component::<SceneShapeLayer>(layer)?
+            .context("only shape layers can carry a pattern")?;
+        let dimensions = image::load_from_memory(&bytes)
+            .context("the pattern asset is not a decodable image")?
+            .into_rgba8()
+            .dimensions();
+        // A zero-sized image is a valid PNG but not a usable pattern: the brush
+        // would divide by its extents. The renderer draws `fallback` for it, so
+        // refusing the write here keeps the stored asset always drawable.
+        if dimensions.0 == 0 || dimensions.1 == 0 {
+            bail!("the pattern asset must have positive dimensions");
+        }
+        let role = AssetRole::new("pattern")?;
+        let patch = snapshot.patch(|edit| {
+            edit.set_asset(
+                layer,
+                &role,
+                AssetInput::new(
+                    bytes,
+                    media_type,
+                    AssetMetadata {
+                        width: Some(dimensions.0),
+                        height: Some(dimensions.1),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
+    /// Writes a polygon and keeps a `ShapeLayer`'s derived values in step with it.
+    ///
+    /// The polygon is authoritative and `Line`'s `start`/`end` are derived from
+    /// its first and last points, while `line_path` strokes the endpoints and
+    /// `element_frame` reads the polygon. Every path that writes a polygon for a
+    /// shape must therefore come through here, or a moved line's selection box
+    /// separates from its stroke. The callers are `add_shape` (the creation
+    /// path), `set_geometries` (the transform path), and `merge_pages` (the
+    /// spread path); all three are covered by a regression test. A new write
+    /// path must call this too.
+    fn write_geometry(
+        edit: &mut koharu_scene::Edit,
+        entity: EntityId,
+        mut layer: Option<SceneShapeLayer>,
+        geometry: &SceneGeometry,
+    ) -> koharu_scene::Result<()> {
+        if let Some(layer) = layer.as_mut() {
+            layer.geometry.resync_with_polygon(&geometry.points);
+        }
+        edit.set(entity, geometry)?;
+        if let Some(layer) = layer {
+            edit.set(entity, &layer)?;
+        }
+        Ok(())
+    }
+
+    /// The layer-name stem, mirroring the raster convention.
+    fn shape_kind_name(shape: &ShapeGeometry) -> &'static str {
+        match shape {
+            ShapeGeometry::Rectangle { .. } => "Rectangle",
+            ShapeGeometry::Ellipse => "Ellipse",
+            ShapeGeometry::Line { .. } => "Line",
+            ShapeGeometry::Polygon => "Polygon",
+            ShapeGeometry::Freeform => "Freeform",
+        }
+    }
+
+    /// Name numbering counts only shapes of the same kind, so a page can hold
+    /// "Rectangle 1" and "Ellipse 1" at once.
+    fn same_shape_kind(left: &ShapeGeometry, right: &ShapeGeometry) -> bool {
+        std::mem::discriminant(left) == std::mem::discriminant(right)
+    }
+
+    /// Bakes shapes into pixels and marks them rasterized.
+    ///
+    /// This is a one-way action: the baked asset becomes authoritative for
+    /// rendering (`rasterized == true` makes the renderer consume the raster),
+    /// so the shape can no longer be re-rendered from its parameters.
+    ///
+    /// One scene and one bake per shape, because each shape owns its own
+    /// `source` asset: batching several shapes into one surface would hand them
+    /// all the same image. Supersampling happens inside the rasterizer, so the
+    /// per-shape cost is one page-sized render either way.
+    pub async fn rasterize_shapes(
+        &mut self,
+        page: EntityId,
+        shapes: Vec<EntityId>,
+    ) -> Result<Commit> {
+        let snapshot = self.snapshot();
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        let mut targets = Vec::with_capacity(shapes.len());
+        let pattern_role = AssetRole::new("pattern")?;
+        for shape in shapes {
+            if snapshot.parent(shape)? != Some(page) {
+                bail!("a rasterized shape must be a layer on the active page");
+            }
+            let layer = snapshot
+                .component::<SceneShapeLayer>(shape)?
+                .context("only shape layers can be rasterized")?;
+            let geometry = snapshot
+                .component::<SceneGeometry>(shape)?
+                .context("a shape layer must have an outline geometry")?;
+            // A shape cannot be measured without a usable frame; skipping it
+            // matches the renderer, which draws nothing for it either.
+            let Some(frame) =
+                koharu_renderer::shape_renderer::shape_frame(&geometry, layer.angle_degrees)
+            else {
+                continue;
+            };
+            // `shape_layer_path` is the single entry point: it delegates
+            // `Polygon`/`Freeform` to the entity's points and every other kind
+            // to the shape's parameters. Calling `shape_path` directly would
+            // bake the two point-backed kinds as an empty path.
+            let mut path = koharu_renderer::shape_renderer::shape_layer_path(
+                &layer.geometry,
+                &geometry.points,
+                &layer.style,
+                frame,
+            );
+            // A pattern fill needs its pixels before it can draw. `PatternSpec`
+            // references no asset (P-D2), so this is the only place that can
+            // resolve the owning layer's `pattern` blob, and without it
+            // `append_to` would paint `fallback` — a baked pattern would become a
+            // flat colour. Decoding failures are deliberately not fatal here:
+            // `append_to` draws the fallback for a missing image (P-D6), and one
+            // broken pattern asset must not make rasterizing a page fail.
+            if let Some(asset) = snapshot.asset(shape, &pattern_role)? {
+                let bytes = snapshot.read_blob(asset.blob).await?;
+                match image::load_from_memory(&bytes) {
+                    Ok(decoded) => {
+                        let decoded = decoded.to_rgba8();
+                        let attached = koharu_renderer::shape_renderer::attach_pattern_image(
+                            &mut path,
+                            koharu_rasterizer::PreparedPatternImage {
+                                width: decoded.width(),
+                                height: decoded.height(),
+                                pixels: Arc::from(decoded.into_raw()),
+                            },
+                        );
+                        if !attached {
+                            tracing::warn!(
+                                ?shape,
+                                "a pattern asset was found but the fill is not a pattern"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(?shape, %error, "the pattern asset could not be decoded");
+                    }
+                }
+            }
+            targets.push((shape, layer, path));
+        }
+        if targets.is_empty() {
+            return self.commit(snapshot.patch(|_| Ok(()))?).await;
+        }
+        let baked = tokio_rayon::spawn(
+            move || -> Result<Vec<(EntityId, SceneShapeLayer, Vec<u8>)>> {
+                // `Rasterizer::new` and the readback both block on WGPU, so the
+                // whole bake stays off the async executor.
+                let rasterizer = koharu_rasterizer::Rasterizer::new()?;
+                targets
+                    .into_iter()
+                    .map(|(entity, layer, path)| {
+                        // The scene is drawn through the same Vello entry point
+                        // as the live preview (`PreparedPath::append_to`), so a
+                        // baked shape cannot look different from the shape the
+                        // user dragged. `rasterize_scene` is used rather than a
+                        // pixel loop because it supersamples and Lanczos
+                        // downsamples that draw for antialiasing.
+                        let mut scene = Scene::new();
+                        path.append_to(&mut scene);
+                        // A transparent background is load-bearing: any other
+                        // alpha paints the whole page rectangle over whatever
+                        // sits underneath the shape.
+                        let image = rasterizer.rasterize_scene(
+                            &scene,
+                            width,
+                            height,
+                            [0, 0, 0, 0],
+                            koharu_rasterizer::RasterOptions::supersampled(4),
+                        )?;
+                        let mut bytes = Cursor::new(Vec::new());
+                        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
+                        Ok((entity, layer, bytes.into_inner()))
+                    })
+                    .collect()
+            },
+        )
+        .await?;
+        let source = AssetRole::new("source")?;
+        // The flag and the asset land in one patch, so one commit either writes
+        // both or neither. Splitting them would let a crash leave a rasterized
+        // shape with no image (it renders nothing) or an unattached image.
+        let patch = snapshot.patch(|edit| {
+            for (entity, mut layer, png) in baked {
+                edit.promote_entity_to_user(entity)?;
+                layer.origin = Origin::User;
+                layer.rasterized = true;
+                edit.set(entity, &layer)?;
+                edit.set_asset(
+                    entity,
+                    &source,
+                    AssetInput::new(
+                        png,
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )?;
+            }
+            Ok(())
+        })?;
+        self.commit(patch).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub async fn apply_raster_stroke(
         &mut self,
         page: EntityId,
         layer: Option<EntityId>,
         mode: RasterStrokeMode,
         color: [u8; 4],
+        ramp: Option<BrushRamp>,
         diameter: f32,
         points: Vec<ScenePoint>,
     ) -> Result<(Commit, EntityId)> {
@@ -1158,6 +1720,7 @@ impl Project {
         }
         let mut raster_layer = None;
         let mut promote_layer = false;
+        let source = AssetRole::new("source")?;
         let mut image = if let Some(layer) = layer {
             if snapshot.parent(layer)? != Some(page) {
                 bail!("the raster target must be a layer on the active page");
@@ -1165,31 +1728,17 @@ impl Project {
             let target = snapshot
                 .component::<SceneRasterLayer>(layer)?
                 .context("the raster target must be a layer on the active page")?;
-            promote_layer = target.origin != Origin::User
-                || snapshot
-                    .component::<EntityOrigin>(layer)?
-                    .is_some_and(|origin| origin.origin != Origin::User);
+            promote_layer = raster_layer_needs_promotion(&snapshot, layer, &target)?;
             raster_layer = Some(target);
-            match snapshot.asset(layer, &AssetRole::new("source")?)? {
-                Some(asset) => {
-                    let bytes = snapshot.read_blob(asset.blob).await?;
-                    image::load_from_memory(&bytes)?.to_rgba8()
-                }
-                None => RgbaImage::new(width, height),
-            }
+            read_source_image(&snapshot, layer, &source, width, height).await?
         } else {
             if mode == RasterStrokeMode::Erase {
                 bail!("eraser requires a raster layer target");
             }
             RgbaImage::new(width, height)
         };
-        if image.dimensions() != (width, height) {
-            bail!("raster layer dimensions must match the page");
-        }
-        rasterize_stroke(&mut image, mode, color, diameter, &points);
-        let mut bytes = Cursor::new(Vec::new());
-        DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
-        let source = AssetRole::new("source")?;
+        rasterize_stroke(&mut image, mode, color, ramp, diameter, &points);
+        let bytes = encode_source_image(image)?;
         let name = format!(
             "Paint {}",
             snapshot
@@ -1206,51 +1755,199 @@ impl Project {
         );
         let mut committed_layer = layer;
         let patch = snapshot.patch(|edit| {
-            let layer = if let Some(layer) = committed_layer {
-                if promote_layer {
-                    edit.promote_entity_to_user(layer)?;
-                    let raster = raster_layer
-                        .as_mut()
-                        .expect("an existing raster target has a layer component");
-                    raster.origin = Origin::User;
-                    edit.set(layer, raster)?;
-                }
-                layer
+            if let Some(layer) = committed_layer {
+                let raster = raster_layer
+                    .as_mut()
+                    .expect("an existing raster target has a layer component");
+                write_source_image(
+                    edit,
+                    layer,
+                    raster,
+                    promote_layer,
+                    &source,
+                    bytes,
+                    width,
+                    height,
+                )?;
             } else {
                 let at = snapshot
                     .page(page)?
                     .text_group()?
                     .map_or(At::End, |group| At::Before(group.id()));
                 let layer = edit.add_entity(page, at)?;
-                edit.set(
+                // The creation branch belongs to this method alone: it is the
+                // only raster command that can conjure a layer. A freshly added
+                // entity already carries `Origin::User`, so the asset write is
+                // not a promotion.
+                let mut raster = SceneRasterLayer {
+                    origin: Origin::User,
+                    name,
+                    kind: RasterLayerKind::Paint,
+                };
+                edit.set(layer, &raster)?;
+                write_source_image(
+                    edit,
                     layer,
-                    &SceneRasterLayer {
-                        origin: Origin::User,
-                        name,
-                        kind: RasterLayerKind::Paint,
-                    },
+                    &mut raster,
+                    false,
+                    &source,
+                    bytes,
+                    width,
+                    height,
                 )?;
                 committed_layer = Some(layer);
-                layer
-            };
-            edit.set_asset(
-                layer,
-                &source,
-                AssetInput::new(
-                    bytes.into_inner(),
-                    "image/png",
-                    AssetMetadata {
-                        width: Some(width),
-                        height: Some(height),
-                        attributes: Default::default(),
-                    },
-                ),
-            )
+            }
+            Ok(())
         })?;
         Ok((
             self.commit(patch).await?,
             committed_layer.expect("raster layer was selected or added while building the patch"),
         ))
+    }
+
+    /// Rewrites an existing raster layer's pixels in place.
+    ///
+    /// Unlike [`Project::apply_raster_stroke`] this never creates a layer: an
+    /// adjustment edits the pixels a layer already owns, so a target without a
+    /// [`SceneRasterLayer`] component is an error rather than a new layer. The
+    /// adjustment itself is not persisted — the committed result is the pixels.
+    pub async fn adjust_raster(
+        &mut self,
+        layer: EntityId,
+        adjust: ColorAdjust,
+    ) -> Result<(Commit, EntityId)> {
+        // `apply_adjust` documents that its caller must validate first:
+        // `Levels { low, high }` with `low >= high` trips the
+        // `assert!(input_min < input_max)` inside `stretch_contrast_mut`, and a
+        // far-out `Brightness` overflows the kernel's addition. Validating here
+        // is the other half of that contract.
+        adjust.validate()?;
+        let snapshot = self.snapshot();
+        let page = owning_page(&snapshot, layer)?;
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        // `RasterLayer::origin` is persisted separately from `EntityOrigin`, and
+        // the pipeline stages gate on it (`inpainting.rs` computes `generated`
+        // from both), so a user adjustment has to claim both. Claiming only
+        // `EntityOrigin` would leave the layer looking pipeline-owned, and the
+        // next stage that reuses such a layer as its overlay would treat the
+        // user's pixels as its own generated output. `write_source_image` owns
+        // the promotion step; this comment records why it must happen at all.
+        let mut raster_layer = snapshot
+            .component::<SceneRasterLayer>(layer)?
+            .context("only raster layers can be adjusted")?;
+        let promote_layer = raster_layer_needs_promotion(&snapshot, layer, &raster_layer)?;
+        let source = AssetRole::new("source")?;
+        // `apply_raster_stroke` treats a missing asset as an empty
+        // page-sized surface rather than an error; an adjustment over it is
+        // then a no-op image that still commits.
+        let mut image = read_source_image(&snapshot, layer, &source, width, height).await?;
+        apply_adjust(&mut image, adjust);
+        let bytes = encode_source_image(image)?;
+        let patch = snapshot.patch(|edit| {
+            write_source_image(
+                edit,
+                layer,
+                &mut raster_layer,
+                promote_layer,
+                &source,
+                bytes,
+                width,
+                height,
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
+    /// Flood-fills the connected region of `layer` under `point` with `color`.
+    ///
+    /// Only a [`SceneRasterLayer`] owns pixels, so a target without that
+    /// component is an error rather than a new layer. The colour is not
+    /// persisted: the committed result is the pixels.
+    ///
+    /// A fill whose start pixel already has `color` commits with no pixel
+    /// change. That is deliberate rather than an error — the user asked for the
+    /// pixel to be that colour and it is, so there is nothing to report.
+    pub async fn fill_raster(
+        &mut self,
+        layer: EntityId,
+        point: Point,
+        color: [u8; 4],
+    ) -> Result<(Commit, EntityId)> {
+        let snapshot = self.snapshot();
+        let page = owning_page(&snapshot, layer)?;
+        let page_value = snapshot.page(page)?.page()?;
+        let width = page_value.width.round() as u32;
+        let height = page_value.height.round() as u32;
+        if width == 0 || height == 0 {
+            bail!("page dimensions must be positive");
+        }
+        // `RasterLayer::origin` is persisted separately from `EntityOrigin`, and
+        // the pipeline stages gate on it (`inpainting.rs` computes `generated`
+        // from both), so a user fill has to claim both. Claiming only
+        // `EntityOrigin` would leave the layer looking pipeline-owned, and the
+        // next stage that reuses such a layer as its overlay would treat the
+        // user's pixels as its own generated output. `write_source_image` owns
+        // the promotion step; this comment records why it must happen at all.
+        let mut raster_layer = snapshot
+            .component::<SceneRasterLayer>(layer)?
+            .context("only raster layers can be filled")?;
+        let promote_layer = raster_layer_needs_promotion(&snapshot, layer, &raster_layer)?;
+        // The click point is `f64` page space and `flood_fill_mut` takes `u32`,
+        // so both axes are validated before the cast: a negative value would
+        // become a huge `u32` and a `NaN` slips past `< 0.0` and `>= width`
+        // because every comparison with it is false. `floor` rounds towards the
+        // pixel that contains the point, so `2.7` lands on pixel 2.
+        let x = point.x.floor();
+        let y = point.y.floor();
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
+            || y < 0.0
+            || x >= f64::from(width)
+            || y >= f64::from(height)
+        {
+            bail!("the fill point is outside the page");
+        }
+        let (x, y) = (x as u32, y as u32);
+        let source = AssetRole::new("source")?;
+        // `apply_raster_stroke` treats a missing asset as an empty
+        // page-sized surface rather than an error; a fill over it is then a
+        // region of transparency that still commits.
+        let mut image = read_source_image(&snapshot, layer, &source, width, height).await?;
+        // `flood_fill_mut` is 4-directional and compares with `PartialEq`, so
+        // the region is exactly the set of pixels equal to the start pixel —
+        // there is no tolerance to give it, and none is wanted here.
+        //
+        // It must be skipped when the colour already matches, because its loop
+        // terminates only once `inside` turns false and `inside` is "the pixel
+        // still equals the start pixel". Writing the same colour back never
+        // changes that, so every span re-covers its row and pushes fresh spans
+        // to the rows above and below without bound — a hang, not a no-op. A
+        // single-row image cannot expose this (the neighbouring rows are out of
+        // bounds), so the guard cannot be validated with one. Skipping is
+        // semantically identical: nothing would have changed.
+        if image.get_pixel(x, y).0 != color {
+            imageproc::drawing::flood_fill_mut(&mut image, x, y, image::Rgba(color));
+        }
+        let bytes = encode_source_image(image)?;
+        let patch = snapshot.patch(|edit| {
+            write_source_image(
+                edit,
+                layer,
+                &mut raster_layer,
+                promote_layer,
+                &source,
+                bytes,
+                width,
+                height,
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
     }
 
     pub async fn undo(&mut self) -> Result<Commit> {
@@ -1436,6 +2133,21 @@ impl Project {
                 kind: raster.kind,
             });
         }
+        if let Some(shape) = snapshot.component::<SceneShapeLayer>(layer)? {
+            return Ok(Layer::Shape {
+                id: layer,
+                parent,
+                geometry: snapshot
+                    .component::<SceneGeometry>(layer)?
+                    .map(Self::geometry_view),
+                angle_degrees: shape.angle_degrees,
+                visibility,
+                name: shape.name,
+                shape: shape.geometry,
+                style: shape.style,
+                rasterized: shape.rasterized,
+            });
+        }
         let geometry = snapshot
             .component::<SceneGeometry>(layer)?
             .map(Self::geometry_view)
@@ -1525,6 +2237,7 @@ impl Project {
         Ok(snapshot.component::<SceneGroup>(entity)?.is_some()
             || snapshot.component::<SceneTextLayout>(entity)?.is_some()
             || snapshot.component::<SceneRasterLayer>(entity)?.is_some()
+            || snapshot.component::<SceneShapeLayer>(entity)?.is_some()
             || (snapshot.component::<SceneGeometry>(entity)?.is_some()
                 && snapshot
                     .asset(entity, &AssetRole::new("source")?)?
@@ -1728,14 +2441,31 @@ fn rasterize_stroke(
     image: &mut RgbaImage,
     mode: RasterStrokeMode,
     color: [u8; 4],
+    ramp: Option<BrushRamp>,
     diameter: f32,
     points: &[ScenePoint],
 ) {
     let radius = f64::from(diameter) * 0.5;
-    for (start, end) in points
+    // An `AlongStroke` ramp runs over the whole polyline, so it needs each
+    // point's *cumulative* distance: `t` below is only a per-segment projection
+    // parameter and restarts at 0 for every segment. A single-point stroke
+    // leaves `total` at zero, and the `total > 0.0` guard in the pixel loop
+    // turns that into position 0.0 instead of a NaN.
+    let mut cumulative = Vec::with_capacity(points.len());
+    let mut total = 0.0;
+    for (index, point) in points.iter().enumerate() {
+        if let Some(previous) = index.checked_sub(1).map(|previous| &points[previous]) {
+            total += (point.x - previous.x).hypot(point.y - previous.y);
+        }
+        cumulative.push(total);
+    }
+    let page_width = f64::from(image.width());
+    let page_height = f64::from(image.height());
+    for (index, (start, end)) in points
         .iter()
         .zip(points.iter().skip(1))
         .chain(points.last().map(|point| (point, point)))
+        .enumerate()
     {
         let left = (start.x.min(end.x) - radius - 0.5).floor().max(0.0) as u32;
         let top = (start.y.min(end.y) - radius - 0.5).floor().max(0.0) as u32;
@@ -1763,15 +2493,34 @@ fn rasterize_stroke(
                 if coverage == 0.0 {
                     continue;
                 }
+                // The ramp position is page-normalized for `FixedAxis`, so
+                // several strokes can share one ramp; a frame or viewport
+                // coordinate would make the colour depend on the camera.
+                let paint = ramp.map_or(color, |ramp| {
+                    let position = match ramp {
+                        BrushRamp::AlongStroke { .. } => {
+                            if total > 0.0 {
+                                (cumulative[index] + t * length_squared.sqrt()) / total
+                            } else {
+                                0.0
+                            }
+                        }
+                        BrushRamp::FixedAxis { axis, .. } => match axis {
+                            RampAxis::Horizontal => px / page_width,
+                            RampAxis::Vertical => py / page_height,
+                        },
+                    };
+                    ramp.color_at(position as f32)
+                });
                 let pixel = image.get_pixel_mut(x, y);
                 match mode {
                     RasterStrokeMode::Paint => {
-                        let source_alpha = f32::from(color[3]) / 255.0 * coverage;
+                        let source_alpha = f32::from(paint[3]) / 255.0 * coverage;
                         let destination_alpha = f32::from(pixel[3]) / 255.0;
                         let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
                         if output_alpha > 0.0 {
                             for channel in 0..3 {
-                                let source = f32::from(color[channel]) / 255.0;
+                                let source = f32::from(paint[channel]) / 255.0;
                                 let destination = f32::from(pixel[channel]) / 255.0;
                                 pixel[channel] = (((source * source_alpha
                                     + destination * destination_alpha * (1.0 - source_alpha))
@@ -1782,6 +2531,8 @@ fn rasterize_stroke(
                         }
                         pixel[3] = (output_alpha * 255.0).round() as u8;
                     }
+                    // `Erase` composites by coverage alone and never reads the
+                    // colour, so a ramp deliberately does not affect it.
                     RasterStrokeMode::Erase => {
                         pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
                     }
@@ -1793,9 +2544,26 @@ fn rasterize_stroke(
 
 #[cfg(test)]
 mod tests {
-    use koharu_scene::{Generation, ProducerId, WritingMode};
+    use koharu_scene::{
+        ArrowHead, Generation, GradientExtend, GradientKind, GradientSpec, GradientStop, LineCap,
+        LineJoin, PatternRepeat, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle, StrokeStyle,
+        WritingMode,
+    };
 
     use super::*;
+
+    /// `Layer` carries its id inside each variant, so tests need this to pick
+    /// one out of a page view.
+    fn layer_id(layer: &Layer) -> EntityId {
+        match layer {
+            Layer::Group { id, .. }
+            | Layer::Text { id, .. }
+            | Layer::Raster { id, .. }
+            | Layer::Shape { id, .. }
+            | Layer::Image { id, .. }
+            | Layer::Artwork { id, .. } => *id,
+        }
+    }
 
     #[tokio::test]
     async fn merging_adjacent_pages_composes_a_wide_spread_and_keeps_layers() {
@@ -1884,6 +2652,310 @@ mod tests {
         // Undo restores the two source pages.
         project.undo().await.unwrap();
         assert_eq!(Project::pages(&project.snapshot()).unwrap().len(), 2);
+    }
+
+    /// A merge shifts every entity's polygon by the page offset. A `Line` draws
+    /// from its stored endpoints while `element_frame` reads the polygon, so
+    /// shifting only the polygon recreates the defect `set_geometries` resyncs
+    /// away: the selection box moves and the drawn stroke stays behind.
+    #[tokio::test]
+    async fn merging_pages_shifts_a_line_shape_with_its_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let entity = setup.add_entity(right, At::End).unwrap();
+        setup
+            .set(
+                entity,
+                &SceneShapeLayer {
+                    origin: Origin::User,
+                    name: "Line 1".to_owned(),
+                    geometry: ShapeGeometry::Line {
+                        start: [0.0, 0.0],
+                        end: [10.0, 4.0],
+                        head: None,
+                    },
+                    style: ShapeStyle {
+                        fill: None,
+                        stroke: None,
+                    },
+                    angle_degrees: Some(0.0),
+                    rasterized: false,
+                },
+            )
+            .unwrap();
+        setup
+            .set(
+                entity,
+                &SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 2.0 },
+                        ScenePoint { x: 10.0, y: 4.0 },
+                    ],
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+
+        let snapshot = project.snapshot();
+        assert_eq!(
+            snapshot.page(merged).unwrap().page().unwrap().width,
+            50.0,
+            "the spread must be as wide as both pages"
+        );
+        let geometry = snapshot
+            .component::<SceneGeometry>(entity)
+            .unwrap()
+            .unwrap();
+        let first = *geometry.points.first().unwrap();
+        let last = *geometry.points.last().unwrap();
+        assert_eq!(first.x, 20.0, "the right page's polygon must shift left");
+
+        let ShapeGeometry::Line { start, end, .. } = snapshot
+            .component::<SceneShapeLayer>(entity)
+            .unwrap()
+            .unwrap()
+            .geometry
+        else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(
+            start,
+            [first.x, first.y],
+            "Line.start must follow the polygon"
+        );
+        assert_eq!(end, [last.x, last.y], "Line.end must follow the polygon");
+
+        // `element_frame` restores its frame from the polygon, so the drawn
+        // endpoints have to stay inside that frame.
+        let frame = koharu_renderer::shape_renderer::shape_frame(&geometry, Some(0.0)).unwrap();
+        for endpoint in [start, end] {
+            assert!(
+                endpoint[0] >= f64::from(frame.x) - 1e-6
+                    && endpoint[0] <= f64::from(frame.x + frame.width) + 1e-6,
+                "{endpoint:?} is outside the frame {frame:?}"
+            );
+            assert!(
+                endpoint[1] >= f64::from(frame.y) - 1e-6
+                    && endpoint[1] <= f64::from(frame.y + frame.height) + 1e-6,
+                "{endpoint:?} is outside the frame {frame:?}"
+            );
+        }
+    }
+
+    /// A rasterized shape's asset is a full page surface and the renderer fits
+    /// it to the layer's frame, which the shape branch repoints at the merged
+    /// page rectangle. Re-padding it is therefore what keeps its pixels in the
+    /// correct half; an old page-width image would be stretched over the spread.
+    #[tokio::test]
+    async fn merging_pages_repads_a_rasterized_shape_asset() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        // A rasterized shape owns a page-sized `source` asset, exactly like a
+        // cleanup or paint raster layer.
+        let (_, element) = project
+            .add_shape(
+                right,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([255, 0, 0, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        project
+            .rasterize_shapes(right, vec![element])
+            .await
+            .unwrap();
+        assert_eq!(
+            asset_dimensions(&project.snapshot(), element).await,
+            (30, 10),
+            "the bake is the source page's surface"
+        );
+
+        let (commit, _) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+
+        assert_eq!(
+            asset_dimensions(&project.snapshot(), element).await,
+            (50, 10),
+            "a rasterized shape must be re-padded to the merged page width"
+        );
+    }
+
+    /// Merging pages must carry a non-rasterized shape's `pattern` asset across,
+    /// so the merged page's pattern still draws.
+    ///
+    /// `merge_pages` moves every child of each source page onto the merged page
+    /// and shifts its polygon. Assets are stored per entity rather than per page,
+    /// so they should move with the entity — but 1a's Critical was exactly this
+    /// function losing a piece of shape state while moving the geometry, so the
+    /// asset is asserted rather than assumed.
+    #[tokio::test]
+    async fn merging_pages_keeps_a_shapes_pattern_asset() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let pattern_role = AssetRole::new("pattern").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                right,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle {
+                    fill: Some(ShapeFill::Pattern(PatternSpec {
+                        repeat: PatternRepeat::Tile,
+                        origin: [0.0, 0.0],
+                        scale: 0.5,
+                        rotation_degrees: 0,
+                        fallback: [1, 2, 3, 255],
+                    })),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        let tile = {
+            let mut bytes = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, image::Rgba([9, 8, 7, 255])))
+                .write_to(&mut bytes, ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        project
+            .set_shape_pattern_asset(element, tile, "image/png".to_owned())
+            .await
+            .unwrap();
+
+        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+        let snapshot = project.snapshot();
+
+        // The shape moved to the merged page...
+        assert_eq!(snapshot.parent(element).unwrap(), Some(merged));
+        // ...and its pattern asset came with it, with its pixels intact.
+        let asset = snapshot
+            .asset(element, &pattern_role)
+            .unwrap()
+            .expect("the merged page's shape must still own its pattern asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (2, 2));
+        assert_eq!(decoded.get_pixel(0, 0)[0], 9);
+    }
+
+    /// The pixel dimensions of an entity's `source` asset.
+    async fn asset_dimensions(snapshot: &Snapshot, entity: EntityId) -> (u32, u32) {
+        let asset = snapshot
+            .asset(entity, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("the entity must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        image::load_from_memory(&bytes)
+            .unwrap()
+            .to_rgba8()
+            .dimensions()
     }
 
     #[test]
@@ -2226,6 +3298,7 @@ mod tests {
             &mut image,
             RasterStrokeMode::Paint,
             [210, 40, 20, 255],
+            None,
             5.0,
             &points,
         );
@@ -2237,6 +3310,7 @@ mod tests {
             &mut image,
             RasterStrokeMode::Erase,
             [0, 0, 0, 0],
+            None,
             5.0,
             &[ScenePoint { x: 16.0, y: 8.0 }],
         );
@@ -2248,10 +3322,787 @@ mod tests {
             &mut white,
             RasterStrokeMode::Paint,
             [255, 255, 255, 255],
+            None,
             3.0,
             &[ScenePoint { x: 2.0, y: 2.0 }],
         );
         assert_eq!(white.get_pixel(2, 2).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn an_along_stroke_ramp_varies_over_the_whole_stroke() {
+        // Two well-separated segments, so cumulative length differs per pixel.
+        let mut image = RgbaImage::new(64, 8);
+        let points = vec![
+            ScenePoint { x: 4.0, y: 4.0 },
+            ScenePoint { x: 60.0, y: 4.0 },
+        ];
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(BrushRamp::AlongStroke {
+                from: [255, 0, 0, 255],
+                to: [0, 0, 255, 255],
+            }),
+            4.0,
+            &points,
+        );
+        let start = image.get_pixel(4, 4);
+        let end = image.get_pixel(58, 4);
+        assert!(
+            start[0] > start[2],
+            "the stroke start must be red-heavy, got {start:?}"
+        );
+        assert!(
+            end[2] > end[0],
+            "the stroke end must be blue-heavy, got {end:?}"
+        );
+    }
+
+    /// A ramp must advance with *cumulative* length, not restart per segment.
+    /// Two segments of equal length should give the same colour at equal
+    /// cumulative fractions, and the second must not return to the first's
+    /// colour.
+    #[test]
+    fn an_along_stroke_ramp_does_not_restart_at_each_segment() {
+        let mut image = RgbaImage::new(64, 8);
+        let points = vec![
+            ScenePoint { x: 4.0, y: 4.0 },
+            ScenePoint { x: 32.0, y: 4.0 },
+            ScenePoint { x: 60.0, y: 4.0 },
+        ];
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(BrushRamp::AlongStroke {
+                from: [255, 0, 0, 255],
+                to: [0, 0, 255, 255],
+            }),
+            4.0,
+            &points,
+        );
+        let first = image.get_pixel(6, 4);
+        let second = image.get_pixel(34, 4);
+        // The second segment's start is past the halfway point, so it must be
+        // bluer than the first segment's start. A per-segment restart would make
+        // them nearly identical.
+        assert!(
+            second[2] > first[2],
+            "the ramp must not restart per segment: first {first:?}, second {second:?}"
+        );
+    }
+
+    #[test]
+    fn a_fixed_axis_ramp_uses_page_coordinates() {
+        // Horizontal: colour depends on x, and two points at the same x but
+        // different y must match.
+        let mut image = RgbaImage::new(64, 8);
+        let ramp = BrushRamp::FixedAxis {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+            axis: RampAxis::Horizontal,
+        };
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 2.0 },
+                ScenePoint { x: 4.0, y: 6.0 },
+                ScenePoint { x: 60.0, y: 6.0 },
+            ],
+        );
+        let left = image.get_pixel(4, 2);
+        let right = image.get_pixel(60, 6);
+        assert!(left[0] > left[2], "the left edge must be red-heavy");
+        assert!(right[2] > right[0], "the right edge must be blue-heavy");
+    }
+
+    #[test]
+    fn a_vertical_fixed_axis_ramp_ignores_x() {
+        let mut image = RgbaImage::new(8, 64);
+        let ramp = BrushRamp::FixedAxis {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+            axis: RampAxis::Vertical,
+        };
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 4.0 },
+                ScenePoint { x: 4.0, y: 60.0 },
+            ],
+        );
+        assert!(image.get_pixel(4, 4)[0] > image.get_pixel(4, 4)[2]);
+        assert!(image.get_pixel(4, 60)[2] > image.get_pixel(4, 60)[0]);
+    }
+
+    /// The two ramp kinds must be computed by the same arithmetic the preview
+    /// uses, so a single-point stroke cannot divide by zero and a reversed
+    /// stroke must not run its ramp backwards.
+    #[test]
+    fn a_ramp_survives_degenerate_strokes() {
+        let mut image = RgbaImage::new(16, 16);
+        let ramp = BrushRamp::AlongStroke {
+            from: [255, 0, 0, 255],
+            to: [0, 0, 255, 255],
+        };
+        // A single point has zero length.
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            6.0,
+            &[ScenePoint { x: 8.0, y: 8.0 }],
+        );
+        let single = image.get_pixel(8, 8);
+        assert!(
+            single[0] > single[2],
+            "a zero-length stroke takes the ramp's start colour, got {single:?}"
+        );
+
+        // A stroke drawn right-to-left must ramp from its own start, not invert.
+        let mut reversed = RgbaImage::new(64, 8);
+        rasterize_stroke(
+            &mut reversed,
+            RasterStrokeMode::Paint,
+            [0, 0, 0, 255],
+            Some(ramp),
+            4.0,
+            &[
+                ScenePoint { x: 58.0, y: 4.0 },
+                ScenePoint { x: 6.0, y: 4.0 },
+            ],
+        );
+        let start = reversed.get_pixel(58, 4);
+        let end = reversed.get_pixel(8, 4);
+        assert!(
+            start[0] > start[2],
+            "the ramp follows the stroke direction, so its start is red: {start:?}"
+        );
+        assert!(end[2] > end[0], "and its end is blue: {end:?}");
+    }
+
+    #[test]
+    fn no_ramp_keeps_the_plain_stroke_colour() {
+        let mut image = RgbaImage::new(32, 8);
+        rasterize_stroke(
+            &mut image,
+            RasterStrokeMode::Paint,
+            [12, 34, 56, 255],
+            None,
+            4.0,
+            &[
+                ScenePoint { x: 4.0, y: 4.0 },
+                ScenePoint { x: 28.0, y: 4.0 },
+            ],
+        );
+        // Every painted pixel must carry the flat colour; a ramp must not leak in.
+        for pixel in image.pixels().filter(|pixel| pixel[3] > 0) {
+            assert_eq!(
+                [pixel[0], pixel[1], pixel[2]],
+                [12, 34, 56],
+                "without a ramp the colour is uniform"
+            );
+        }
+    }
+
+    /// A committed project holding one 100x100 page whose single raster layer
+    /// owns a page-sized `source` asset filled with `pixel`.
+    ///
+    /// The layer is authored by a pipeline generation, which is how a cleanup or
+    /// import actually produces one: `Edit::prepare_value` stamps `Origin::User`
+    /// on any component written by the plain `edit()`, so only `edit_as` can
+    /// build a genuinely generated fixture.
+    async fn project_with_raster(image: RgbaImage) -> (Project, EntityId) {
+        let generation = Generation::new(
+            ProducerId::new("dev.koharu.pipeline.inpainting").expect("valid producer"),
+        );
+        let (width, height) = image.dimensions();
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit_as(generation);
+        let page = setup
+            .add_page(PageDraft::new("page", width as f64, height as f64), At::End)
+            .unwrap();
+        let layer = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(image)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        setup
+            .set_asset(
+                layer,
+                &AssetRole::new("source").unwrap(),
+                AssetInput::new(
+                    Arc::<[u8]>::from(encoded.into_inner()),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(width),
+                        height: Some(height),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        (Project::new(session, "test".to_owned()), layer)
+    }
+
+    /// A committed project holding one 100x100 page and one text layer.
+    async fn project_with_text_layer() -> (Project, EntityId) {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let content = setup.add_text_content(page, At::End).unwrap();
+        let layer = setup
+            .add_text_layer(
+                page,
+                At::End,
+                content,
+                &SceneTextLayout {
+                    origin: Origin::User,
+                    kind: TextLayoutKind::Point,
+                    angle_degrees: None,
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        (Project::new(session, "test".to_owned()), layer)
+    }
+
+    /// Decodes the `source` asset `entity` committed, so a test observes the
+    /// pixels that were actually persisted rather than the in-memory ones.
+    async fn source_image(snapshot: &Snapshot, entity: EntityId) -> RgbaImage {
+        let asset = snapshot
+            .asset(entity, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("the entity must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        image::load_from_memory(&bytes).unwrap().to_rgba8()
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_raster_rewrites_its_pixels() {
+        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .await;
+        assert_eq!(
+            project
+                .snapshot()
+                .component::<SceneRasterLayer>(layer)
+                .unwrap()
+                .unwrap()
+                .origin,
+            Origin::Generated(Generation::new(
+                ProducerId::new("dev.koharu.pipeline.inpainting").unwrap()
+            )),
+            "the fixture must start generated for the promotion below to mean anything"
+        );
+
+        let before = project.revision().get();
+        let (commit, element) = project
+            .adjust_raster(layer, ColorAdjust::Brightness { delta: 50 })
+            .await
+            .unwrap();
+        assert_eq!(element, layer);
+        // Pin exactly one commit, not merely "some revision": B-D5 requires the
+        // pixels, the promotion, and the new asset to land atomically, so a
+        // regression that split this into two commits must fail here. The
+        // fixture already committed once when it built the page, hence the
+        // delta rather than an absolute revision.
+        assert_eq!(commit.revision.get(), before + 1);
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[0], 150);
+
+        // The layer is a generated one, so the adjustment has to claim both
+        // origins or a later pipeline stage would treat these pixels as its own.
+        let snapshot = project.snapshot();
+        let raster = snapshot
+            .component::<SceneRasterLayer>(layer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(raster.origin, Origin::User);
+        assert_eq!(
+            snapshot
+                .component::<EntityOrigin>(layer)
+                .unwrap()
+                .unwrap()
+                .origin,
+            Origin::User
+        );
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_raster_keeps_its_transparent_area_transparent() {
+        // One transparent and one opaque pixel: the opaque pixel proves the
+        // adjustment actually ran, so a no-op write cannot satisfy the alpha
+        // assertion below.
+        let mut original = RgbaImage::new(100, 100);
+        original.put_pixel(0, 0, image::Rgba([200, 100, 50, 0]));
+        original.put_pixel(1, 0, image::Rgba([200, 100, 50, 255]));
+        let (mut project, layer) = project_with_raster(original).await;
+
+        project
+            .adjust_raster(layer, ColorAdjust::Grayscale)
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        assert_eq!(
+            image.get_pixel(1, 0).0,
+            [118, 118, 118, 255],
+            "the opaque pixel must have been greyed"
+        );
+    }
+
+    /// `apply_raster_stroke` treats a missing `source` asset as an empty
+    /// page-sized surface rather than an error. Adjusting such a layer must do
+    /// the same instead of failing on the absent blob.
+    #[tokio::test]
+    async fn adjusting_a_raster_without_a_source_asset_keeps_the_page_size() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let layer = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        project
+            .adjust_raster(layer, ColorAdjust::Grayscale)
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_non_raster_layer_is_rejected() {
+        let (mut project, text) = project_with_text_layer().await;
+        let error = project
+            .adjust_raster(text, ColorAdjust::Grayscale)
+            .await
+            .expect_err("a text layer cannot be adjusted");
+        // Assert the *raster* guard fired, not that page resolution happened to
+        // fail. A text layer lives under a `TextGroup`, so if the page walk
+        // regressed to a single `parent` call this would instead be an
+        // `EntityNotFound` and the assertion below would catch it.
+        assert!(
+            error.to_string().contains("only raster layers"),
+            "expected the raster guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn adjusting_a_grouped_raster_layer_still_finds_its_page() {
+        // A raster layer nested in a group is still a layer on that page, so it
+        // must be adjustable. This is the case the immediate-parent lookup
+        // broke: `snapshot.parent` returns the group, and `snapshot.page(group)`
+        // is an error, so the adjustment used to fail with `EntityNotFound`.
+        //
+        // The layer is created directly under the group rather than moved there,
+        // because `Project` exposes no edit entry point to its tests.
+        let generation = Generation::new(
+            ProducerId::new("dev.koharu.pipeline.inpainting").expect("valid producer"),
+        );
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit_as(generation.clone());
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let group = setup.add_entity(page, At::End).unwrap();
+        setup
+            .set(
+                group,
+                &SceneGroup {
+                    origin: Origin::Generated(generation.clone()),
+                    name: "Group 1".to_owned(),
+                },
+            )
+            .unwrap();
+        let layer = setup.add_entity(group, At::End).unwrap();
+        setup
+            .set(
+                layer,
+                &SceneRasterLayer {
+                    origin: Origin::User,
+                    name: "Paint 1".to_owned(),
+                    kind: RasterLayerKind::Paint,
+                },
+            )
+            .unwrap();
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .write_to(&mut encoded, ImageFormat::Png)
+        .unwrap();
+        setup
+            .set_asset(
+                layer,
+                &AssetRole::new("source").unwrap(),
+                AssetInput::new(
+                    Arc::<[u8]>::from(encoded.into_inner()),
+                    "image/png",
+                    AssetMetadata {
+                        width: Some(100),
+                        height: Some(100),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let snapshot = project.snapshot();
+        assert_eq!(
+            snapshot.parent(layer).unwrap(),
+            Some(group),
+            "the fixture must actually nest the layer under the group"
+        );
+        assert_eq!(
+            snapshot.page(group).is_err(),
+            true,
+            "the group is not a page, which is what broke the old lookup"
+        );
+
+        project
+            .adjust_raster(layer, ColorAdjust::Brightness { delta: 50 })
+            .await
+            .expect("a grouped raster layer is adjustable");
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0)[0], 150);
+    }
+
+    #[tokio::test]
+    async fn adjusting_with_an_invalid_parameter_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
+            100,
+            100,
+            image::Rgba([100, 100, 100, 255]),
+        ))
+        .await;
+        assert!(
+            project
+                .adjust_raster(
+                    layer,
+                    ColorAdjust::Levels {
+                        low: 200,
+                        high: 100
+                    }
+                )
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn filling_replaces_only_the_connected_region() {
+        // A 4x1 image: the two left pixels are identical, the right two differ.
+        let mut source = RgbaImage::new(4, 1);
+        source.put_pixel(0, 0, image::Rgba([10, 10, 10, 255]));
+        source.put_pixel(1, 0, image::Rgba([10, 10, 10, 255]));
+        source.put_pixel(2, 0, image::Rgba([20, 20, 20, 255]));
+        source.put_pixel(3, 0, image::Rgba([20, 20, 20, 255]));
+        let (mut project, layer) = project_with_raster(source).await;
+
+        project
+            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [255, 0, 0, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(
+            image.get_pixel(0, 0),
+            &image::Rgba([255, 0, 0, 255]),
+            "the start pixel is filled"
+        );
+        assert_eq!(
+            image.get_pixel(1, 0),
+            &image::Rgba([255, 0, 0, 255]),
+            "the connected neighbour is filled"
+        );
+        assert_eq!(
+            image.get_pixel(2, 0),
+            &image::Rgba([20, 20, 20, 255]),
+            "a differently coloured neighbour is untouched"
+        );
+        assert_eq!(
+            image.get_pixel(3, 0),
+            &image::Rgba([20, 20, 20, 255]),
+            "the region must not leak past the boundary"
+        );
+    }
+
+    /// A raster layer's empty area is fully transparent, and a bucket must treat
+    /// it as a region like any other — otherwise the tool cannot fill the blank
+    /// space authors actually use it on.
+    #[tokio::test]
+    async fn filling_covers_a_transparent_region() {
+        let mut source = RgbaImage::new(4, 1);
+        source.put_pixel(0, 0, image::Rgba([0, 0, 0, 0]));
+        source.put_pixel(1, 0, image::Rgba([0, 0, 0, 0]));
+        source.put_pixel(2, 0, image::Rgba([200, 0, 0, 255]));
+        source.put_pixel(3, 0, image::Rgba([0, 0, 0, 0]));
+        let (mut project, layer) = project_with_raster(source).await;
+
+        project
+            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [255, 255, 0, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(0, 0), &image::Rgba([255, 255, 0, 255]));
+        assert_eq!(image.get_pixel(1, 0), &image::Rgba([255, 255, 0, 255]));
+        assert_eq!(
+            image.get_pixel(2, 0),
+            &image::Rgba([200, 0, 0, 255]),
+            "the opaque divider stops the fill"
+        );
+        assert_eq!(
+            image.get_pixel(3, 0),
+            &image::Rgba([0, 0, 0, 0]),
+            "the far transparent pixel is a different region and stays empty"
+        );
+    }
+
+    /// Filling with the colour already present must commit with no pixel change.
+    ///
+    /// The image is deliberately taller than one row. `flood_fill_mut`'s loop
+    /// only ends when `inside` turns false, and `inside` asks whether a pixel
+    /// still equals the start pixel — so passing the same colour back makes it
+    /// push spans forever. A single-row image cannot reproduce that, because the
+    /// rows above and below are out of bounds and nothing gets pushed; that is
+    /// why this regression needs `H >= 2` to be worth anything.
+    #[tokio::test]
+    async fn filling_with_the_existing_colour_is_a_harmless_commit() {
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(4, 4, image::Rgba([10, 10, 10, 255]))).await;
+
+        let (commit, _) = project
+            .fill_raster(layer, Point { x: 1.0, y: 1.0 }, [10, 10, 10, 255])
+            .await
+            .expect("filling with the same colour is not an error");
+
+        assert!(commit.revision.get() > 0);
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.dimensions(), (4, 4));
+        for (x, y) in [(0, 0), (3, 0), (1, 1), (3, 3)] {
+            assert_eq!(
+                image.get_pixel(x, y),
+                &image::Rgba([10, 10, 10, 255]),
+                "no pixel changes when the fill colour is already present"
+            );
+        }
+    }
+
+    /// The click point is `f64` page space and `flood_fill_mut` takes `u32`.
+    /// Casting before checking would turn `-1.0` into a huge `u32` and panic or
+    /// fill the wrong pixel, so the bounds check must come first.
+    #[tokio::test]
+    async fn filling_outside_the_page_is_rejected() {
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(4, 4, image::Rgba([10, 10, 10, 255]))).await;
+
+        for point in [
+            Point { x: -1.0, y: 0.0 },
+            Point { x: 0.0, y: -1.0 },
+            Point { x: 4.0, y: 0.0 },
+            Point { x: 0.0, y: 4.0 },
+            Point {
+                x: f64::NAN,
+                y: 0.0,
+            },
+        ] {
+            assert!(
+                project
+                    .fill_raster(layer, point, [1, 2, 3, 255])
+                    .await
+                    .is_err(),
+                "a point outside the page must be rejected: {point:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn filling_a_non_raster_layer_is_rejected() {
+        let (mut project, text) = project_with_text_layer().await;
+        let error = project
+            .fill_raster(text, Point { x: 0.0, y: 0.0 }, [1, 2, 3, 255])
+            .await
+            .expect_err("a text layer cannot be filled");
+        // Pin the *fill* wording, not just the raster guard: "can be adjusted"
+        // would satisfy a looser substring check while telling the user the
+        // wrong tool failed.
+        assert!(
+            error
+                .to_string()
+                .contains("only raster layers can be filled"),
+            "expected the fill-specific raster guard, got: {error}"
+        );
+    }
+
+    /// The bottom-right corner is the boundary case: the start pixel is valid
+    /// but has no in-bounds neighbour, so an off-by-one in the fill or the
+    /// bounds check shows up here and nowhere else.
+    #[tokio::test]
+    async fn filling_at_the_corner_stops_at_the_edge() {
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(3, 3, image::Rgba([5, 5, 5, 255]))).await;
+
+        project
+            .fill_raster(layer, Point { x: 2.0, y: 2.0 }, [9, 9, 9, 255])
+            .await
+            .unwrap();
+
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.get_pixel(2, 2), &image::Rgba([9, 9, 9, 255]));
+        assert_eq!(
+            image.get_pixel(0, 0),
+            &image::Rgba([9, 9, 9, 255]),
+            "a uniform image fills entirely, corner included"
+        );
+    }
+
+    /// `apply_raster_stroke` is the only caller of the shared asset path that can
+    /// **create** its layer, and until now it had no end-to-end test — only the
+    /// free `rasterize_stroke` function was covered. That branch and the shared
+    /// write helper are now one path, so a regression here would break painting
+    /// without any test failing.
+    #[tokio::test]
+    async fn painting_creates_a_layer_and_claims_both_origins() {
+        // A page with no raster layer yet, so the stroke has to create one.
+        let (mut project, existing) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let page = project
+            .snapshot()
+            .parent(existing)
+            .unwrap()
+            .expect("the fixture layer has a page");
+
+        let (commit, layer) = project
+            .apply_raster_stroke(
+                page,
+                None,
+                RasterStrokeMode::Paint,
+                [255, 0, 0, 255],
+                None,
+                4.0,
+                vec![
+                    ScenePoint { x: 8.0, y: 8.0 },
+                    ScenePoint { x: 16.0, y: 8.0 },
+                ],
+            )
+            .await
+            .expect("painting without a target layer creates one");
+
+        assert!(commit.revision.get() > 0);
+        assert_ne!(layer, existing, "a new layer must be created");
+        let snapshot = project.snapshot();
+        let raster = snapshot
+            .component::<SceneRasterLayer>(layer)
+            .unwrap()
+            .expect("the new entity is a raster layer");
+        assert_eq!(
+            raster.origin,
+            Origin::User,
+            "a user stroke owns its layer, or a later pipeline pass may discard it"
+        );
+        assert_eq!(raster.kind, RasterLayerKind::Paint);
+
+        // `RasterLayer::origin` is persisted separately from the `EntityOrigin`
+        // component and the pipeline gates on both, so assert both were claimed.
+        assert_eq!(
+            snapshot
+                .component::<koharu_scene::EntityOrigin>(layer)
+                .unwrap()
+                .expect("the entity records an origin")
+                .origin,
+            Origin::User
+        );
+
+        let image = source_image(&snapshot, layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+    }
+
+    /// `apply_raster_stroke`'s existing-layer path goes through the same shared
+    /// read/write helpers as `adjust_raster` and `fill_raster`.
+    #[tokio::test]
+    async fn painting_an_existing_layer_keeps_its_identity() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let page = project
+            .snapshot()
+            .parent(layer)
+            .unwrap()
+            .expect("the layer has a page");
+
+        let (_, returned) = project
+            .apply_raster_stroke(
+                page,
+                Some(layer),
+                RasterStrokeMode::Paint,
+                [0, 255, 0, 255],
+                None,
+                6.0,
+                vec![
+                    ScenePoint { x: 40.0, y: 40.0 },
+                    ScenePoint { x: 60.0, y: 40.0 },
+                ],
+            )
+            .await
+            .expect("painting an existing layer succeeds");
+
+        assert_eq!(
+            returned, layer,
+            "the existing layer is reused, not replaced"
+        );
+        let image = source_image(&project.snapshot(), layer).await;
+        assert_eq!(image.dimensions(), (100, 100));
+        assert!(
+            image.pixels().any(|pixel| pixel.0[1] > 0),
+            "the stroke must have written green pixels somewhere"
+        );
     }
 
     #[tokio::test]
@@ -2317,5 +4168,858 @@ mod tests {
             }])
             .await
             .unwrap();
+    }
+
+    /// `commit_transform` moves every transformable layer through
+    /// `set_geometries`, so that path has to accept shapes too — otherwise
+    /// dragging a shape fails outright. It must resync a line's endpoints the
+    /// same way every other polygon write does (`Project::write_geometry`).
+    #[tokio::test]
+    async fn a_line_moves_through_the_general_transform_path() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 10.0, y: 10.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [10.0, 10.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        let moved = SceneGeometry {
+            origin: Origin::User,
+            points: vec![
+                ScenePoint { x: 100.0, y: 50.0 },
+                ScenePoint { x: 105.0, y: 55.0 },
+                ScenePoint { x: 110.0, y: 60.0 },
+            ],
+        };
+        project
+            .set_geometries(vec![(element, moved.clone(), 30.0)])
+            .await
+            .unwrap();
+
+        let snapshot = project.snapshot();
+        let stored = snapshot
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.angle_degrees, Some(30.0));
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [100.0, 50.0]);
+        assert_eq!(end, [110.0, 60.0]);
+        assert_eq!(
+            snapshot
+                .component::<SceneGeometry>(element)
+                .unwrap()
+                .unwrap()
+                .points
+                .len(),
+            3
+        );
+    }
+
+    /// The polygon is authoritative for a `Line`; `start`/`end` are derived.
+    /// Without the resync the polygon moves, `line_path` keeps drawing the old
+    /// endpoints, and the selection box visibly separates from the stroke.
+    #[tokio::test]
+    async fn moving_a_line_resyncs_its_endpoints_from_the_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 0.0, y: 0.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 10.0, y: 10.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [10.0, 10.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        // Translate the polygon by (100, 50); the stored endpoints must follow.
+        let moved = SceneGeometry {
+            origin: Origin::User,
+            points: vec![
+                ScenePoint { x: 100.0, y: 50.0 },
+                ScenePoint { x: 105.0, y: 55.0 },
+                ScenePoint { x: 110.0, y: 60.0 },
+            ],
+        };
+        project
+            .set_geometries(vec![(element, moved, 0.0)])
+            .await
+            .unwrap();
+
+        let stored = project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [100.0, 50.0]);
+        assert_eq!(end, [110.0, 60.0]);
+    }
+
+    /// `add_shape` is a polygon write path too, so it resyncs a `Line`'s derived
+    /// endpoints through the same helper as the transform and spread paths. The
+    /// client always sends matching values, so this drives the mismatch in
+    /// directly: the polygon is authoritative whatever the caller passed.
+    #[tokio::test]
+    async fn adding_a_line_resyncs_its_endpoints_from_the_polygon() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry {
+                    origin: Origin::User,
+                    points: vec![
+                        ScenePoint { x: 1.0, y: 2.0 },
+                        ScenePoint { x: 5.0, y: 5.0 },
+                        ScenePoint { x: 9.0, y: 8.0 },
+                    ],
+                },
+                ShapeGeometry::Line {
+                    start: [0.0, 0.0],
+                    end: [999.0, 999.0],
+                    head: None,
+                },
+                ShapeStyle {
+                    fill: None,
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+
+        let stored = project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .unwrap();
+        let ShapeGeometry::Line { start, end, .. } = stored.geometry else {
+            panic!("expected a line shape");
+        };
+        assert_eq!(start, [1.0, 2.0]);
+        assert_eq!(end, [9.0, 8.0]);
+    }
+
+    #[tokio::test]
+    async fn a_shape_layer_round_trips_through_the_page_view() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let geometry = SceneGeometry::rectangle(10.0, 20.0, 100.0, 50.0);
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Solid([1, 2, 3, 255])),
+            stroke: None,
+        };
+
+        let (commit, element) = project
+            .add_shape(
+                page,
+                geometry,
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style.clone(),
+                0.0,
+            )
+            .await
+            .unwrap();
+        assert!(commit.revision.get() > 0);
+
+        let view = Project::page(&project.snapshot(), page).unwrap();
+        let layer = view
+            .layers
+            .iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap();
+        let Layer::Shape {
+            name,
+            shape,
+            style: view_style,
+            angle_degrees,
+            rasterized,
+            ..
+        } = layer
+        else {
+            panic!("expected a shape layer");
+        };
+        // Decision D4: the layer list must be able to identify a shape by name
+        // rather than falling back to "Image N".
+        assert_eq!(name, "Rectangle 1");
+        assert!(matches!(shape, ShapeGeometry::Rectangle { .. }));
+        assert_eq!(*angle_degrees, Some(0.0));
+        assert!(!rasterized);
+        assert_eq!(view_style.fill, Some(ShapeFill::Solid([1, 2, 3, 255])));
+    }
+
+    #[tokio::test]
+    async fn changing_shape_style_keeps_the_geometry() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Ellipse,
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([0, 0, 0, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        let next = ShapeStyle {
+            fill: None,
+            stroke: None,
+        };
+        project
+            .set_shape_style(vec![(element, next.clone())])
+            .await
+            .unwrap();
+
+        let view = Project::page(&project.snapshot(), page).unwrap();
+        let Layer::Shape { style, shape, .. } = view
+            .layers
+            .iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap()
+        else {
+            panic!("expected a shape layer");
+        };
+        assert_eq!(*style, next);
+        assert!(matches!(shape, ShapeGeometry::Ellipse));
+    }
+
+    /// A committed project holding one 100x100 page and one rectangle shape.
+    async fn project_with_shape(fill: Option<ShapeFill>) -> (Project, EntityId) {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle { fill, stroke: None },
+                0.0,
+            )
+            .await
+            .unwrap();
+        (project, element)
+    }
+
+    /// Reads back the fill `set_shape_pattern` stored on `element`.
+    fn stored_fill(project: &Project, element: EntityId) -> Option<ShapeFill> {
+        project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .expect("the element is a shape layer")
+            .style
+            .fill
+    }
+
+    fn pattern_spec() -> PatternSpec {
+        PatternSpec {
+            repeat: PatternRepeat::Tile,
+            origin: [0.25, 0.5],
+            scale: 0.75,
+            rotation_degrees: 45,
+            fallback: [7, 8, 9, 255],
+        }
+    }
+
+    /// A PNG of `width` by `height`, which is what the asset command has to
+    /// decode to learn the true dimensions the renderer will upload.
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba([1, 2, 3, 255]),
+        ))
+        .write_to(&mut encoded, ImageFormat::Png)
+        .unwrap();
+        encoded.into_inner()
+    }
+
+    #[tokio::test]
+    async fn clearing_a_pattern_restores_the_previous_solid_colour() {
+        let (mut project, element) =
+            project_with_shape(Some(ShapeFill::Solid([4, 5, 6, 255]))).await;
+        project
+            .set_shape_pattern(element, Some(pattern_spec()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Pattern(_))
+        ));
+
+        let (_, returned) = project.set_shape_pattern(element, None).await.unwrap();
+        assert_eq!(returned, element);
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Solid([7, 8, 9, 255])),
+            "clearing a pattern keeps the fallback colour the pattern was drawing"
+        );
+    }
+
+    /// A gradient and an absent fill carry no colour to keep, so clearing a
+    /// pattern over them must still produce a usable solid rather than failing.
+    #[tokio::test]
+    async fn clearing_a_pattern_over_a_gradient_uses_the_default_colour() {
+        let gradient = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Linear {
+                start: [0.0, 0.0],
+                end: [1.0, 0.0],
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 255, 255, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 0, 255],
+                },
+            ],
+            extend: GradientExtend::Pad,
+        });
+        let (mut project, element) = project_with_shape(Some(gradient)).await;
+
+        project.set_shape_pattern(element, None).await.unwrap();
+
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Solid([255, 255, 255, 255]))
+        );
+    }
+
+    #[tokio::test]
+    async fn setting_a_pattern_on_a_raster_layer_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let error = project
+            .set_shape_pattern(layer, Some(pattern_spec()))
+            .await
+            .expect_err("a raster layer cannot carry a pattern");
+        assert!(
+            error.to_string().contains("only shape layers"),
+            "expected the shape guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_pattern_spec_round_trips_through_the_layer() {
+        let (mut project, element) = project_with_shape(None).await;
+        let spec = pattern_spec();
+
+        project
+            .set_shape_pattern(element, Some(spec))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Pattern(spec)),
+            "every field must survive the store, not just the variant"
+        );
+    }
+
+    /// Validating before the patch is what keeps a rejected spec from leaving a
+    /// half-written layer behind: `ShapeLayer::validate` would reject it anyway,
+    /// but after the promotion had already been committed.
+    #[tokio::test]
+    async fn setting_an_invalid_pattern_is_rejected() {
+        let (mut project, element) = project_with_shape(None).await;
+        let mut spec = pattern_spec();
+        spec.scale = 0.0;
+
+        let error = project
+            .set_shape_pattern(element, Some(spec))
+            .await
+            .expect_err("a non-positive scale is not a usable pattern");
+        assert!(error.to_string().contains("scale"), "{error}");
+        assert_eq!(stored_fill(&project, element), None);
+    }
+
+    #[tokio::test]
+    async fn writing_a_pattern_asset_to_a_raster_layer_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let error = project
+            .set_shape_pattern_asset(layer, png_bytes(2, 2), "image/png".to_owned())
+            .await
+            .expect_err("a raster layer does not own a pattern");
+        assert!(
+            error.to_string().contains("only shape layers"),
+            "expected the shape guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn writing_undecodable_pattern_bytes_is_rejected() {
+        let (mut project, element) = project_with_shape(None).await;
+        let error = project
+            .set_shape_pattern_asset(element, b"not an image".to_vec(), "image/png".to_owned())
+            .await
+            .expect_err("undecodable bytes must not be stored");
+        assert!(
+            error.to_string().contains("decodable"),
+            "expected the decode guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pattern_asset_records_the_decoded_dimensions() {
+        let (mut project, element) = project_with_shape(None).await;
+
+        let (_, returned) = project
+            .set_shape_pattern_asset(element, png_bytes(3, 7), "image/webp".to_owned())
+            .await
+            .unwrap();
+        assert_eq!(returned, element);
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("pattern").unwrap())
+            .unwrap()
+            .expect("the shape layer owns a pattern asset");
+        // The dimensions come from the decoded pixels, not from the caller, so a
+        // renderer upload can never disagree with the texture it uploaded.
+        assert_eq!(asset.metadata.width, Some(3));
+        assert_eq!(asset.metadata.height, Some(7));
+        assert_eq!(asset.media_type, "image/webp");
+        assert_eq!(
+            image::load_from_memory(&snapshot.read_blob(asset.blob).await.unwrap())
+                .unwrap()
+                .into_rgba8()
+                .dimensions(),
+            (3, 7)
+        );
+    }
+
+    /// The pattern half of the wire contract, alongside the shape and gradient
+    /// assertions above. `ShapeFill::Pattern` is a newtype variant, so it stays
+    /// externally tagged, and `PatternRepeat` is a unit-variant enum, so it is a
+    /// bare lowercase string. The field order and the integer formatting of
+    /// `rotation_degrees` follow the struct declaration.
+    #[test]
+    fn the_pattern_wire_shape_matches_the_typescript_client() {
+        let tile = PatternSpec {
+            repeat: PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.25,
+            rotation_degrees: 0,
+            fallback: [255, 255, 255, 255],
+        };
+        assert_eq!(
+            serde_json::to_string(&ShapeFill::Pattern(tile)).unwrap(),
+            r#"{"pattern":{"repeat":"tile","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}}"#
+        );
+        // The fill is one member of `ShapeStyle`, so pin the enclosing key too:
+        // the TypeScript client reads `fill.pattern`, not a bare pattern.
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: Some(ShapeFill::Pattern(tile)),
+                stroke: None,
+            })
+            .unwrap(),
+            r#"{"fill":{"pattern":{"repeat":"tile","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}},"stroke":null}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeFill::Pattern(PatternSpec {
+                repeat: PatternRepeat::Stretch,
+                ..tile
+            }))
+            .unwrap(),
+            r#"{"pattern":{"repeat":"stretch","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rasterized_shape_keeps_a_transparent_background() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Solid([255, 0, 0, 255])),
+            stroke: None,
+        };
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(10.0, 10.0, 20.0, 20.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style,
+                0.0,
+            )
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let image = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        // 도형 밖은 완전히 투명해야 한다.
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        assert_eq!(image.get_pixel(image.width() - 1, image.height() - 1)[3], 0);
+        // 도형 안쪽은 불투명한 빨강이어야 한다.
+        let center = image.get_pixel(20, 20);
+        assert_eq!(center[3], 255);
+        assert!(center[0] > 200);
+
+        let Layer::Shape { rasterized, .. } = Project::page(&snapshot, page)
+            .unwrap()
+            .layers
+            .into_iter()
+            .find(|layer| layer_id(layer) == element)
+            .unwrap()
+        else {
+            panic!("expected a shape layer");
+        };
+        assert!(rasterized);
+    }
+
+    /// A rasterized shape with a pattern fill must bake **the pattern**, not its
+    /// fallback colour.
+    ///
+    /// `rasterize_shapes` builds the path with `shape_layer_path` and draws it
+    /// directly, and `shape_layer_path` has no way to reach the layer's `pattern`
+    /// asset — `PatternSpec` references no asset by design (P-D2), so only a
+    /// caller holding the snapshot can attach the pixels. Without that
+    /// attachment `append_to` sees `image: None` and paints `fallback`, so a
+    /// baked pattern would silently become a flat colour.
+    ///
+    /// The uploaded pattern is one red pixel, and the fallback is a distinct
+    /// blue, so the two outcomes cannot be confused.
+    #[tokio::test]
+    async fn a_rasterized_shape_bakes_its_pattern_not_its_fallback() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let fallback = [0, 0, 255, 255];
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Pattern(PatternSpec {
+                repeat: PatternRepeat::Tile,
+                origin: [0.0, 0.0],
+                scale: 0.25,
+                rotation_degrees: 0,
+                fallback,
+            })),
+            stroke: None,
+        };
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(10.0, 10.0, 80.0, 80.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style,
+                0.0,
+            )
+            .await
+            .unwrap();
+        // One opaque red pixel: every tile is red, so a correct bake is red
+        // everywhere inside the shape and never the blue fallback.
+        let red = {
+            let mut bytes = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255]).unwrap())
+                .write_to(&mut bytes, ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        project
+            .set_shape_pattern_asset(element, red, "image/png".to_owned())
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("a rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let baked = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        let center = baked.get_pixel(50, 50);
+        assert_eq!(center[3], 255, "the pattern must fill the shape");
+        assert!(
+            center[0] > 200 && center[2] < 60,
+            "the baked shape must show the uploaded red pattern, not the blue \
+             fallback; got {center:?}"
+        );
+    }
+
+    /// A `Polygon` has no drawing parameters of its own: its path comes from
+    /// the polygon. Baking it therefore proves `rasterize_shapes` goes through
+    /// `shape_layer_path` — `shape_path` would produce an empty path and this
+    /// asset would be entirely transparent.
+    #[tokio::test]
+    async fn a_rasterized_polygon_draws_from_its_points() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(20.0, 20.0, 60.0, 60.0),
+                ShapeGeometry::Polygon,
+                ShapeStyle {
+                    fill: Some(ShapeFill::Solid([0, 0, 255, 255])),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let image = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        let inside = image.get_pixel(50, 50);
+        assert_eq!(inside[3], 255);
+        assert!(inside[2] > 200);
+    }
+
+    /// The TypeScript client in `packages/bridge/src/protocol.ts` reproduces
+    /// these strings by hand, so the wire shape has to be pinned here rather
+    /// than inferred from the Rust types. `ShapeFill` is a newtype variant and
+    /// `ShapeGeometry` a struct-variant enum, so both use serde's external
+    /// tagging: `{"solid":[...]}` and `{"rectangle":{...}}` / `"ellipse"`.
+    #[test]
+    fn the_shape_wire_shape_matches_the_typescript_client() {
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: Some(ShapeFill::Solid([1, 2, 3, 255])),
+                stroke: None,
+            })
+            .unwrap(),
+            r#"{"fill":{"solid":[1,2,3,255]},"stroke":null}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: None,
+                stroke: Some(StrokeStyle {
+                    color: [0, 0, 0, 255],
+                    width: 2.0,
+                    dash: Some(vec![4.0, 2.0]),
+                    cap: LineCap::Round,
+                    join: LineJoin::Bevel,
+                }),
+            })
+            .unwrap(),
+            r#"{"fill":null,"stroke":{"color":[0,0,0,255],"width":2.0,"dash":[4.0,2.0],"cap":"round","join":"bevel"}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Rectangle { corner_radius: 4.0 }).unwrap(),
+            r#"{"rectangle":{"corner_radius":4.0}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Ellipse).unwrap(),
+            r#""ellipse""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Polygon).unwrap(),
+            r#""polygon""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Freeform).unwrap(),
+            r#""freeform""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeGeometry::Line {
+                start: [0.0, 0.0],
+                end: [10.0, 0.0],
+                head: Some(ArrowHead {
+                    length: 4.0,
+                    width: 2.0,
+                }),
+            })
+            .unwrap(),
+            r#"{"line":{"start":[0.0,0.0],"end":[10.0,0.0],"head":{"length":4.0,"width":2.0}}}"#
+        );
+    }
+
+    /// The gradient half of the same contract. `ShapeFill::Gradient` is a
+    /// newtype variant, so it stays externally tagged; `GradientKind` is a
+    /// struct-variant enum, so each kind is `{"kind_name":{...}}`; and
+    /// `GradientExtend` is a unit-variant enum, so it is a bare lowercase
+    /// string. The `f32` fields follow the `2.0` notation the `StrokeStyle`
+    /// assertion above already pins.
+    ///
+    /// The `Solid` regression is deliberately *not* repeated here: the first
+    /// assertion of `the_shape_wire_shape_matches_the_typescript_client` is
+    /// already byte-identical to the one this task's brief specifies, so a copy
+    /// would assert the same literal twice.
+    #[test]
+    fn the_gradient_wire_shape_matches_the_typescript_client() {
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Gradient(GradientSpec {
+                kind: GradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [1.0, 1.0],
+                },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: [1, 2, 3, 255],
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: [4, 5, 6, 255],
+                    },
+                ],
+                extend: GradientExtend::Repeat,
+            })),
+            stroke: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&style).unwrap(),
+            r#"{"fill":{"gradient":{"kind":{"linear":{"start":[0.0,0.0],"end":[1.0,1.0]}},"stops":[{"offset":0.0,"color":[1,2,3,255]},{"offset":1.0,"color":[4,5,6,255]}],"extend":"repeat"}},"stroke":null}"#
+        );
+
+        let radial = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Radial {
+                center: [0.5, 0.5],
+                radius: 0.25,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [255, 255, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Pad,
+        });
+        assert_eq!(
+            serde_json::to_string(&radial).unwrap(),
+            r#"{"gradient":{"kind":{"radial":{"center":[0.5,0.5],"radius":0.25}},"stops":[{"offset":0.0,"color":[0,0,0,255]},{"offset":1.0,"color":[255,255,255,255]}],"extend":"pad"}}"#
+        );
+
+        let sweep = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Sweep {
+                center: [0.5, 0.5],
+                start_degrees: 0.0,
+                end_degrees: 360.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 0, 0, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 255, 255],
+                },
+            ],
+            extend: GradientExtend::Reflect,
+        });
+        assert_eq!(
+            serde_json::to_string(&sweep).unwrap(),
+            r#"{"gradient":{"kind":{"sweep":{"center":[0.5,0.5],"start_degrees":0.0,"end_degrees":360.0}},"stops":[{"offset":0.0,"color":[255,0,0,255]},{"offset":1.0,"color":[0,0,255,255]}],"extend":"reflect"}}"#
+        );
     }
 }

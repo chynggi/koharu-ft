@@ -180,6 +180,22 @@
     "stopProcessing": "Stop processing"
   },
   "inspector": {
+    "adjust": {
+      "apply": "Apply",
+      "brightness": "Brightness",
+      "contrast": "Contrast",
+      "degrees": "Degrees",
+      "delta": "Amount",
+      "grayscale": "Grayscale",
+      "high": "High",
+      "hue": "Hue",
+      "invalidLevels": "Low must be below high.",
+      "levels": "Levels",
+      "low": "Low",
+      "percent": "Percent",
+      "singleLayer": "Select a single raster layer to adjust it.",
+      "title": "Adjustment kind"
+    },
     "alignBottom": "Align bottom",
     "alignCenter": "Align center",
     "alignLeft": "Align left",
@@ -212,6 +228,53 @@
     "placement": "Placement",
     "resetAutoFit": "Reset to auto fit",
     "selectPage": "Select a page to inspect its layers.",
+    "shape": {
+      "addStop": "Add stop",
+      "dash": "Dashed",
+      "fill": "Fill",
+      "fillKind": {
+        "gradient": "Gradient",
+        "pattern": "Pattern",
+        "solid": "Solid"
+      },
+      "fillKindLabel": "Fill type",
+      "gradientKind": {
+        "linear": "Linear",
+        "radial": "Radial"
+      },
+      "gradientKindLabel": "Gradient type",
+      "kind": {
+        "arrow": "Arrow",
+        "ellipse": "Ellipse",
+        "line": "Line",
+        "rectangle": "Rectangle"
+      },
+      "kindLabel": "Shape kind: {{kind}}",
+      "kindTitle": "Shape kind",
+      "pattern": {
+        "ignoredForStretch": "Origin and scale are ignored while stretching.",
+        "originX": "Origin X",
+        "originY": "Origin Y",
+        "repeat": {
+          "stretch": "Stretch",
+          "tile": "Tile"
+        },
+        "repeatLabel": "Repeat",
+        "replace": "Replace image",
+        "rotation": "Rotation",
+        "scale": "Scale",
+        "title": "Pattern",
+        "upload": "Choose image"
+      },
+      "rasterize": "Rasterize",
+      "removeStop": "Remove stop",
+      "stopColor": "Stop {{index}} color",
+      "stopOffset": "Stop {{index}} position",
+      "stops": "Stops",
+      "stopsTooClose": "No room between stops",
+      "stroke": "Stroke",
+      "strokeWidth": "Stroke width"
+    },
     "size": "Size",
     "source": "Source text",
     "style": "Style",
@@ -249,6 +312,7 @@
       "group": "Group",
       "image": "Image",
       "paint": "Paint",
+      "shape": "Shape",
       "text": "Text",
       "textGroup": "Text group"
     },
@@ -627,6 +691,12 @@
     "zoom": "Zoom"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Along stroke",
+      "fixedAxis": "Fixed axis",
+      "none": "None"
+    },
+    "brushRampTitle": "Brush gradient",
     "brushSize": "Brush size",
     "brushSizeInput": "Brush size",
     "brushSizePixels": "Brush size: {{size}} pixels",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "Decrease brush size",
     "draw": "Brush",
     "eraser": "Eraser",
+    "fill": "Fill",
+    "fillColor": "Fill color",
     "increaseBrushSize": "Increase brush size",
     "manual_ocr_box": "Manual OCR (box)",
     "manual_ocr_lasso": "Manual OCR (lasso)",
     "pan": "Pan",
+    "rampAxis": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "rampAxisTitle": "Axis",
+    "rampFrom": "Start color",
+    "rampTo": "End color",
     "remove": "Remove",
     "select": "Select",
+    "shape": "Shape",
     "text": "Text"
   },
   "updater": {

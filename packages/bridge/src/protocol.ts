@@ -271,6 +271,56 @@ export const commands = {
 		bytes(`/pages/${page}/canvas/resource/${revision}/${encodeURIComponent(resource)}`),
 	addPointText: (point: Point) => post<LayerCommit>("/canvas/text/point", { point }),
 	addTextBox: (frame: Frame) => post<LayerCommit>("/canvas/text/box", { frame }),
+	addShape: (
+		expectedRevision: Revision,
+		page: EntityId,
+		geometry: Geometry,
+		shape: ShapeGeometry,
+		style: ShapeStyle,
+		angleDegrees: number,
+	) =>
+		post<LayerCommit>("/canvas/shape", {
+			expected_revision: expectedRevision,
+			page,
+			geometry,
+			shape,
+			style,
+			angle_degrees: angleDegrees,
+		}),
+	setShapeStyle: (expectedRevision: Revision, updates: ShapeStyleUpdate[]) =>
+		post<Revision>("/canvas/shape/style", { expected_revision: expectedRevision, updates }),
+	/**
+	 * Sets or clears a shape's pattern fill. `null` restores a solid fill.
+	 *
+	 * Separate from `setShapePatternAsset` because uploading an image is large
+	 * and can fail, while changing a parameter is immediate; one command would
+	 * let a slow upload block a parameter change.
+	 */
+	setShapePattern: (expectedRevision: Revision, layer: EntityId, pattern: PatternSpec | null) =>
+		post<LayerCommit>("/canvas/shape/pattern", {
+			expected_revision: expectedRevision,
+			layer,
+			pattern,
+		}),
+	/** Uploads the `pattern` asset of a shape layer. Shape layers only. */
+	setShapePatternAsset: (
+		expectedRevision: Revision,
+		layer: EntityId,
+		bytes: number[],
+		mediaType: string,
+	) =>
+		post<LayerCommit>("/canvas/shape/pattern/asset", {
+			expected_revision: expectedRevision,
+			layer,
+			bytes,
+			media_type: mediaType,
+		}),
+	rasterizeShapes: (expectedRevision: Revision, page: EntityId, shapes: EntityId[]) =>
+		post<Revision>("/canvas/shape/rasterize", {
+			expected_revision: expectedRevision,
+			page,
+			shapes,
+		}),
 	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
 	commitPaint: (
 		expectedRevision: Revision,
@@ -301,6 +351,24 @@ export const commands = {
 			expected_revision: expectedRevision,
 			points,
 			diameter,
+		}),
+	adjustRaster: (expectedRevision: Revision, layer: EntityId, adjust: ColorAdjust) =>
+		post<LayerCommit>("/canvas/raster/adjust", {
+			expected_revision: expectedRevision,
+			layer,
+			adjust,
+		}),
+	fillRaster: (
+		expectedRevision: Revision,
+		layer: EntityId,
+		point: Point,
+		color: [number, number, number, number],
+	) =>
+		post<LayerCommit>("/canvas/raster/fill", {
+			expected_revision: expectedRevision,
+			layer,
+			point,
+			color,
 		}),
 	getMeta: () => get<{ name: string; version: string }>("/meta"),
 };
@@ -375,6 +443,11 @@ export type AnalysisRegion = {
 	geometry: Geometry,
 	kind: string,
 	label: string | null,
+};
+
+export type ArrowHead = {
+	length: number,
+	width: number,
 };
 
 export type Bounds = {
@@ -683,17 +756,43 @@ export type LanguageChoice = {
 	name: string,
 };
 
-export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
+export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; name: string; role: GroupRole | null } | { type: "text"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; content: TextContent; typography: Typography | null; layout: TextLayoutKind; automatic_region: EntityId | null } | { type: "raster"; id: EntityId; parent: EntityId | null; visibility: LayerVisibility; image: string | null; name: string; kind: RasterLayerKind } | { type: "shape"; id: EntityId; parent: EntityId | null; geometry: Geometry | null; angle_degrees: number | null; visibility: LayerVisibility; name: string; shape: ShapeGeometry; style: ShapeStyle; rasterized: boolean } | { type: "image"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string } | { type: "artwork"; id: EntityId; parent: EntityId | null; geometry: Geometry; visibility: LayerVisibility; image: string };
 
 export type LayerCommit = {
 	revision: Revision,
 	layer: EntityId,
 };
 
+/**
+ * A bucket fill. `point` is the click location in page pixels; `color` is the
+ * colour to flood the connected region with. No tolerance is configurable: the
+ * server fills exactly-matching connected pixels.
+ */
+export type FillRequest = {
+	point: Point,
+	color: [number, number, number, number],
+};
+
+/**
+ * A raster colour adjustment. Command arguments, so this uses internal tagging
+ * (`{ type, ... }`) like `Layer` rather than the external tagging that the
+ * persisted scene components use.
+ */
+export type ColorAdjust =
+	| { type: "brightness"; delta: number }
+	| { type: "contrast"; percent: number }
+	| { type: "levels"; low: number; high: number }
+	| { type: "hue"; degrees: number }
+	| { type: "grayscale" };
+
 export type LayerVisibility = {
 	visible: boolean,
 	opacity: number,
 };
+
+export type LineCap = "butt" | "round" | "square";
+
+export type LineJoin = "miter" | "round" | "bevel";
 
 /**
  *  What the current build and device actually support.
@@ -866,9 +965,31 @@ export type PageSummary = {
 	layer_count: number,
 };
 
+export type RampAxis = "horizontal" | "vertical";
+
+/**
+ * A two-colour ramp for the brush. Command arguments, so this is internally
+ * tagged (`kind`) like `ColorAdjust` rather than externally tagged like the
+ * persisted scene components.
+ */
+export type BrushRamp =
+	| {
+			kind: "along_stroke",
+			from: [number, number, number, number],
+			to: [number, number, number, number],
+	  }
+	| {
+			kind: "fixed_axis",
+			from: [number, number, number, number],
+			to: [number, number, number, number],
+			axis: RampAxis,
+	  };
+
 export type PaintBrush = {
 	diameter: number,
 	color: [number, number, number, number],
+	/** Absent (`null`) means a flat `color` stroke. */
+	ramp: BrushRamp | null,
 };
 
 export type PipelineConfig = {
@@ -954,6 +1075,106 @@ export type Quantization = {
 };
 
 export type RasterLayerKind = "cleanup" | "paint";
+
+/**
+ *  Regenerable shape parameters. The outline polygon is the entity's separate
+ *  `Geometry`, not part of this type (decision D8).
+ *
+ *  These match serde's external tagging exactly — `Rectangle`/`Line` are
+ *  struct variants and serialize as `{ rectangle: { corner_radius } }`, while
+ *  `Ellipse`/`Polygon`/`Freeform` are unit variants and serialize as bare
+ *  strings. `ShapeFill::Solid` is a newtype variant, so it is
+ *  `{ solid: [r,g,b,a] }` with no `kind` key, while `ShapeFill::Gradient` is a
+ *  newtype variant over a struct, so it is a one-key `{ gradient: {...} }`.
+ *  `GradientKind` is likewise externally tagged and `GradientExtend` is a unit
+ *  enum, so it stays a bare lowercase string.
+ *  `the_shape_wire_shape_matches_the_typescript_client` and
+ *  `the_gradient_wire_shape_matches_the_typescript_client` in
+ *  `crates/koharu-app/src/commands/project.rs` pin every one of these strings;
+ *  change those tests and these types together.
+ */
+export type ShapeGeometry = { rectangle: { corner_radius: number } } | "ellipse" | { line: {
+	start: [number, number],
+	end: [number, number],
+	head: ArrowHead | null,
+} } | "polygon" | "freeform";
+
+/**
+ *  Gradient control points are **normalized frame-local** values: the frame's
+ *  top-left is `(0,0)` and its bottom-right is `(1,1)`. They are never page
+ *  coordinates, so moving or resizing the shape does not invalidate them.
+ *
+ *  Stops may be stored in any order; the renderer sorts them stably by offset.
+ *  Only duplicate offsets are rejected, because which color wins would
+ *  otherwise be undefined.
+ */
+export type GradientSpec = {
+	kind: GradientKind,
+	stops: GradientStop[],
+	extend: GradientExtend,
+};
+
+/**
+ *  `radial`'s radius is a fraction of the frame's **width**, not of its height
+ *  or of either diagonal. `sweep`'s angles are absolute degrees rather than
+ *  normalized values, so no frame factor applies to them.
+ */
+export type GradientKind = { linear: { start: [number, number], end: [number, number] } } | { radial: {
+	center: [number, number],
+	radius: number,
+} } | { sweep: {
+	center: [number, number],
+	start_degrees: number,
+	end_degrees: number,
+} };
+
+export type GradientStop = {
+	offset: number,
+	color: [number, number, number, number],
+};
+
+export type GradientExtend = "pad" | "repeat" | "reflect";
+
+export type PatternRepeat = "tile" | "stretch";
+
+/**
+ * An image-pattern fill for a shape.
+ *
+ * The pattern image is owned by the shape's own layer under the `pattern` asset
+ * role and is uploaded separately by `setShapePatternAsset`, so this type
+ * references nothing. `origin` and `scale` are ignored when `repeat` is
+ * `"stretch"`, which fits one image to the shape's box instead.
+ */
+export type PatternSpec = {
+	repeat: PatternRepeat,
+	origin: [number, number],
+	scale: number,
+	rotation_degrees: number,
+	fallback: [number, number, number, number],
+};
+
+export type ShapeFill =
+	| { solid: [number, number, number, number] }
+	| { gradient: GradientSpec }
+	| { pattern: PatternSpec };
+
+export type StrokeStyle = {
+	color: [number, number, number, number],
+	width: number,
+	dash: number[] | null,
+	cap: LineCap,
+	join: LineJoin,
+};
+
+export type ShapeStyle = {
+	fill: ShapeFill | null,
+	stroke: StrokeStyle | null,
+};
+
+export type ShapeStyleUpdate = {
+	element: EntityId,
+	style: ShapeStyle,
+};
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 

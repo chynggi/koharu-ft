@@ -25,4 +25,18 @@ describe('editor state', () => {
   it('defaults paint brush color to pure white (#FFFFFF)', () => {
     expect(useKoharuStore.getState().brush.color).toBe('#FFFFFF')
   })
+
+  it('reseeds the shape style so a new kind can actually draw itself', () => {
+    expect(useKoharuStore.getState().shapeKind).toBe('rectangle')
+    expect(useKoharuStore.getState().shapeStyle).toEqual({
+      fill: { solid: [255, 255, 255, 255] },
+      stroke: null,
+    })
+
+    useKoharuStore.getState().setShapeKind('line')
+
+    expect(useKoharuStore.getState().shapeKind).toBe('line')
+    expect(useKoharuStore.getState().shapeStyle.stroke).not.toBeNull()
+    expect(useKoharuStore.getState().shapeStyle.fill).toBeNull()
+  })
 })

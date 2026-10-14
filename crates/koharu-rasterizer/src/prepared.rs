@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use vello::kurbo::Affine;
 
 use crate::{Error, Result};
 
@@ -445,6 +446,11 @@ impl PreparedLayer {
             (LayerKind::Text, PreparedContent::Vector(scene)) => {
                 scene.validate(resources, referenced)?;
             }
+            // A shape's content is a vector scene exactly like text's: the
+            // renderer draws the prepared path the shape parameters produce.
+            (LayerKind::Shape, PreparedContent::Vector(scene)) => {
+                scene.validate(resources, referenced)?;
+            }
             _ => {
                 return Err(Error::invalid(
                     "prepared layer kind and content do not match",
@@ -459,6 +465,7 @@ impl PreparedLayer {
 pub enum LayerKind {
     Raster,
     Text,
+    Shape,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -690,14 +697,16 @@ pub struct PreparedGlyph {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PreparedPath {
-    pub fill: FillRule,
     pub transform: [f64; 6],
-    pub color: [u8; 4],
     pub elements: Vec<PathElement>,
+    pub fill: Option<PreparedFill>,
+    pub stroke: Option<PreparedStroke>,
 }
 
 impl PreparedPath {
-    fn validate(&self) -> Result<()> {
+    /// Public because the renderer builds prepared paths and must be able to
+    /// check that what it produced is drawable before handing it to a frame.
+    pub fn validate(&self) -> Result<()> {
         finite_affine(self.transform, "path transform")?;
         if self.elements.is_empty() {
             return Err(Error::invalid("prepared path is empty"));
@@ -715,8 +724,523 @@ impl PreparedPath {
                 return Err(Error::invalid("prepared path contains a non-finite point"));
             }
         }
+        if let Some(fill) = &self.fill {
+            match fill {
+                PreparedFill::Gradient { gradient, .. } => gradient.validate()?,
+                PreparedFill::Pattern { pattern, .. } => pattern.validate()?,
+                PreparedFill::Solid { .. } => {}
+            }
+        }
+        if let Some(stroke) = &self.stroke {
+            if !stroke.width.is_finite() || stroke.width < 0.0 {
+                return Err(Error::invalid(
+                    "prepared path stroke width must be finite and non-negative",
+                ));
+            }
+            if let Some(dash) = &stroke.dash
+                && (dash.is_empty()
+                    || dash
+                        .iter()
+                        .any(|length| !length.is_finite() || *length <= 0.0))
+            {
+                return Err(Error::invalid(
+                    "prepared path dash lengths must be finite and positive",
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PreparedFill {
+    Solid {
+        color: [u8; 4],
+        rule: FillRule,
+    },
+    Gradient {
+        gradient: PreparedGradient,
+        rule: FillRule,
+    },
+    Pattern {
+        pattern: PreparedPattern,
+        rule: FillRule,
+    },
+}
+
+/// How a [`PreparedPattern`] lays its image out across the shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedPatternRepeat {
+    Tile,
+    Stretch,
+}
+
+/// A pattern ready for a renderer, with its coordinates in the **path's local
+/// coordinate system** — the same one [`PreparedPath::elements`] uses.
+///
+/// Like [`PreparedGradient`], the coordinates are never page coordinates and
+/// never normalized frame coordinates, so [`PreparedPath::transform`] applies to
+/// the pattern and the outline alike and a rotated shape's pattern rotates with
+/// it. The normalized-to-local spread happens before a path is built.
+///
+/// Unlike a gradient, a pattern is an *image*: no renderer can paint it from
+/// numbers alone. [`PreparedPattern::image`] carries the decoded pixels when a
+/// caller has resolved the owning layer's `pattern` asset.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedPattern {
+    pub repeat: PreparedPatternRepeat,
+    /// Tile origin in path-local coordinates.
+    ///
+    /// **Ignored when `repeat` is [`PreparedPatternRepeat::Stretch`]**, which
+    /// fits exactly one image to [`PreparedPattern::extent`].
+    pub origin: [f32; 2],
+    /// Tile pitch in path-local units: the width one tile occupies. Finite and
+    /// positive.
+    ///
+    /// **Ignored when `repeat` is [`PreparedPatternRepeat::Stretch`].**
+    pub scale: f32,
+    /// Clockwise degrees applied about the tile origin (`Tile`) or the box
+    /// centre (`Stretch`).
+    ///
+    /// This is the *pattern's* own rotation plus, for a brush whose path
+    /// transform carries no rotation, the shape's angle — see
+    /// [`PreparedPattern::brush_transform`]. It is `f32` rather than the
+    /// persisted `PatternSpec`'s `i32` **on purpose**: this type is a transient
+    /// command argument, never stored, and the browser preview has to express a
+    /// sum of the author's integer angle and the shape's fractional one. Rounding
+    /// that sum would put the live preview up to half a degree away from the
+    /// committed shape. The integer type still governs the saved spec, where it
+    /// is what prevents serialization drift (P-D7).
+    ///
+    /// The shape's angle must not be folded in when the renderer emits a path
+    /// transform that already rotates: `fill()` passes only the author's angle,
+    /// or a rotated shape would rotate its pattern twice.
+    pub rotation_degrees: f32,
+    /// Drawn as a solid fill when [`PreparedPattern::image`] is `None`.
+    pub fallback: [u8; 4],
+    /// The shape's box in path-local coordinates: `(0, 0)` to this extent.
+    ///
+    /// `Stretch` needs it to fit one image to the shape; `Tile` ignores it.
+    pub extent: [f32; 2],
+    /// The decoded pattern pixels, or `None` when no `pattern` asset has been
+    /// resolved for the layer that owns this fill.
+    ///
+    /// `koharu-scene`'s `PatternSpec` deliberately references no asset (the
+    /// shape layer owns it, so a deleted layer cannot leave a dangling
+    /// reference), which means the asset must be resolved per layer and handed
+    /// down here. The pixels are carried rather than only their [`ResourceId`]
+    /// because [`PreparedPath::append_to`] — the one place that assembles the
+    /// brush — is given no resource registry to look an id up in.
+    pub image: Option<PreparedPatternImage>,
+}
+
+/// Decoded, straight-alpha RGBA8 pixels for a [`PreparedPattern`].
+///
+/// There is deliberately no `ResourceId` here. The brush that consumes these
+/// pixels is a peniko `ImageBrush`, whose GPU atlas is keyed by the `Blob`'s own
+/// identity, so a resource id would be a second, unused name for the same image
+/// — the kind of duplicate authority this codebase removes rather than carries.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedPatternImage {
+    pub width: u32,
+    pub height: u32,
+    /// `width * height * 4` bytes of RGBA8 with straight (unpremultiplied)
+    /// alpha.
+    ///
+    /// Deserialized through [`deserialize_pixels`], **not** derived. serde's only
+    /// `Deserialize` for an `Arc` slice goes through `deserialize_seq`
+    /// (`serde-1.0.229/src/core/de/impls.rs:1029`) and then pulls one element at
+    /// a time (`:1020`); `serde_wasm_bindgen` fast-paths only a JS `Array` there
+    /// and otherwise falls back to `js_sys::try_iter`
+    /// (`serde-wasm-bindgen-0.6.5/src/de.rs:518-521`). A `Uint8Array` would
+    /// therefore cost one JS-to-Rust call **per byte**, per frame, while a
+    /// pattern is being dragged. Requesting a byte buffer instead takes
+    /// `as_bytes()`, which copies the whole image in one call (`:624-626`).
+    #[serde(deserialize_with = "deserialize_pixels")]
+    pub pixels: Arc<[u8]>,
+}
+
+/// Reads `PreparedPatternImage::pixels` as one byte buffer rather than a
+/// sequence of numbers. See the field's documentation for why this matters.
+fn deserialize_pixels<'de, D>(deserializer: D) -> std::result::Result<Arc<[u8]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Pixels;
+
+    impl<'de> serde::de::Visitor<'de> for Pixels {
+        type Value = Arc<[u8]>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a byte buffer of RGBA8 pixels")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(
+            self,
+            value: &[u8],
+        ) -> std::result::Result<Self::Value, E> {
+            Ok(Arc::from(value))
+        }
+
+        fn visit_byte_buf<E: serde::de::Error>(
+            self,
+            value: Vec<u8>,
+        ) -> std::result::Result<Self::Value, E> {
+            Ok(Arc::from(value.into_boxed_slice()))
+        }
+
+        /// A JSON or postcard round trip of this type would otherwise regress to
+        /// the per-element path, so accept a sequence explicitly. It is not the
+        /// path the browser uses.
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut sequence: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            let mut bytes = Vec::with_capacity(sequence.size_hint().unwrap_or(0));
+            while let Some(byte) = sequence.next_element::<u8>()? {
+                bytes.push(byte);
+            }
+            Ok(Arc::from(bytes.into_boxed_slice()))
+        }
+    }
+
+    deserializer.deserialize_byte_buf(Pixels)
+}
+
+impl PreparedPattern {
+    /// The mapping from the pattern image's own pixel space to this path's
+    /// local space, as Vello's `brush_transform` argument.
+    ///
+    /// This is **not** optional and deliberately not `None`. Vello composes the
+    /// path transform with this one (`transform * brush_transform`,
+    /// `vello-0.10.0/src/scene.rs:328-331`) and the fine rasterizer inverts the
+    /// result to index the image (`vello-0.10.0`'s `draw_leaf.wgsl:250`), then
+    /// wraps that coordinate with `extend_mode(..., image.extents)`
+    /// (`fine.wgsl:1326`) — so the composed transform maps **image pixels** to
+    /// page space. With an identity brush transform one image pixel would equal
+    /// one path-local unit and [`PreparedPattern::scale`] could not affect the
+    /// tile pitch at all.
+    ///
+    /// Passing the *path* affine here instead would double-apply it, because the
+    /// path transform is already the composition's other factor. That was 1b's
+    /// Critical bug; it is a different mistake from passing a brush transform.
+    #[must_use]
+    pub fn brush_transform(&self) -> Affine {
+        let Some(image) = self.image.as_ref() else {
+            // No pixels, so no brush will be built. The identity keeps the
+            // caller's single `fill` call uniform rather than branching here.
+            return Affine::IDENTITY;
+        };
+        let degrees = f64::from(self.rotation_degrees);        match self.repeat {
+            PreparedPatternRepeat::Tile => {
+                // Image pixel (0,0) lands on the tile origin, and one pixel
+                // spans `scale` path-local units, so `scale` is the pitch the
+                // author set. Applied scale -> rotate -> translate.
+                Affine::translate((
+                    f64::from(self.origin[0]),
+                    f64::from(self.origin[1]),
+                )) * Affine::rotate(degrees.to_radians())
+                    * Affine::scale(f64::from(self.scale))
+            }
+            PreparedPatternRepeat::Stretch => {
+                // One image fills the whole box, so the scale factors are the
+                // box/image ratios per axis. Non-uniform on purpose: stretching
+                // to the box is what this mode promises, and preserving the
+                // image's aspect ratio would leave part of the box unfilled.
+                //
+                // The rotation is taken about the box centre rather than the
+                // origin so a stretched pattern turns in place.
+                let width = f64::from(self.extent[0]);
+                let height = f64::from(self.extent[1]);
+                let center = (width * 0.5, height * 0.5);
+                Affine::translate(center)
+                    * Affine::rotate(degrees.to_radians())
+                    * Affine::translate((-center.0, -center.1))
+                    * Affine::scale_non_uniform(
+                        width / f64::from(image.width.max(1)),
+                        height / f64::from(image.height.max(1)),
+                    )
+            }
+        }
+    }
+
+    /// Boundary validation for prepared patterns.
+    ///
+    /// `koharu-scene` validates the persisted `PatternSpec` with the same rules,
+    /// and this crate deliberately does **not** depend on that crate: the
+    /// rasterizer must stay usable from a backend that has never seen a scene.
+    /// Re-checking here is boundary validation, not duplication.
+    fn validate(&self) -> Result<()> {
+        if !self.scale.is_finite() || self.scale <= 0.0 {
+            return Err(Error::invalid(
+                "prepared pattern scale must be finite and positive",
+            ));
+        }
+        if self.origin.iter().any(|value| !value.is_finite()) {
+            return Err(Error::invalid("prepared pattern origin must be finite"));
+        }
+        // Only finiteness is required. This value is a *sum* of the author's
+        // pattern angle and, for a transform-free brush, the shape's angle, so
+        // any magnitude is a legitimate rotation and rotation is periodic:
+        // bounding it at ±360 would reject a preview at 450° that is perfectly
+        // drawable. `brush_transform` normalizes before use.
+        if !self.rotation_degrees.is_finite() {
+            return Err(Error::invalid("prepared pattern rotation must be finite"));
+        }
+        if self
+            .extent
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+        {
+            return Err(Error::invalid(
+                "prepared pattern extent must be finite and non-negative",
+            ));
+        }
+        if let Some(image) = &self.image {
+            validate_surface(image.width, image.height)?;
+            let expected = usize::try_from(
+                u64::from(image.width)
+                    .checked_mul(u64::from(image.height))
+                    .and_then(|pixels| pixels.checked_mul(4))
+                    .ok_or_else(|| Error::invalid("pattern image size overflows"))?,
+            )
+            .map_err(|_| Error::invalid("pattern image size exceeds usize"))?;
+            if image.pixels.len() != expected {
+                return Err(Error::invalid(
+                    "pattern image byte length does not match its dimensions",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A gradient ready for a renderer, with its control points in the **path's
+/// local coordinate system** — the same one [`PreparedPath::elements`] uses.
+///
+/// They are never page coordinates and never normalized frame coordinates.
+/// Keeping the gradient in the path's own space means [`PreparedPath::transform`]
+/// applies to the gradient and to the outline alike, so a rotated shape's
+/// gradient rotates with it without anyone hand-transforming the control points.
+/// The normalized-to-local spread happens before a path is built.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedGradient {
+    pub kind: PreparedGradientKind,
+    /// May be in any order; renderers sort stably by offset before assembling.
+    pub stops: Vec<PreparedGradientStop>,
+    pub extend: PreparedGradientExtend,
+}
+
+impl PreparedGradient {
+    /// Boundary validation for prepared gradients.
+    ///
+    /// `koharu-scene` validates the persisted `GradientSpec` with the same
+    /// rules, and this crate deliberately does **not** depend on that crate: the
+    /// rasterizer must stay usable from a backend that has never seen a scene.
+    /// Re-checking the rules here is therefore boundary validation, not
+    /// duplication — a prepared gradient can arrive from the WASM canvas or a
+    /// native caller that never built one from `GradientSpec` at all.
+    fn validate(&self) -> Result<()> {
+        if !(2..=32).contains(&self.stops.len()) {
+            return Err(Error::invalid(
+                "prepared gradient must have between 2 and 32 stops",
+            ));
+        }
+        for stop in &self.stops {
+            if !stop.offset.is_finite() || !(0.0..=1.0).contains(&stop.offset) {
+                return Err(Error::invalid(
+                    "prepared gradient stop offset must be finite and within 0.0..=1.0",
+                ));
+            }
+        }
+        for (index, stop) in self.stops.iter().enumerate() {
+            if self.stops[index + 1..]
+                .iter()
+                .any(|other| other.offset == stop.offset)
+            {
+                return Err(Error::invalid(
+                    "prepared gradient stop offsets must be unique",
+                ));
+            }
+        }
+        match &self.kind {
+            PreparedGradientKind::Linear { start, end } => {
+                if start.iter().chain(end).any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient endpoints must be finite"));
+                }
+                if start == end {
+                    return Err(Error::invalid(
+                        "prepared gradient linear endpoints must differ",
+                    ));
+                }
+            }
+            PreparedGradientKind::Radial { center, radius } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient center must be finite"));
+                }
+                if !radius.is_finite() || *radius <= 0.0 {
+                    return Err(Error::invalid(
+                        "prepared gradient radial radius must be finite and positive",
+                    ));
+                }
+            }
+            PreparedGradientKind::Sweep {
+                center,
+                start_degrees,
+                end_degrees,
+            } => {
+                if center.iter().any(|value| !value.is_finite()) {
+                    return Err(Error::invalid("prepared gradient center must be finite"));
+                }
+                if !start_degrees.is_finite() || !end_degrees.is_finite() {
+                    return Err(Error::invalid(
+                        "prepared gradient sweep angles must be finite",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PreparedGradientKind {
+    Linear {
+        start: [f32; 2],
+        end: [f32; 2],
+    },
+    Radial {
+        center: [f32; 2],
+        radius: f32,
+    },
+    Sweep {
+        center: [f32; 2],
+        /// Degrees, measured from the positive X axis. The renderer converts
+        /// these to radians for peniko; the sign convention is peniko's own, so
+        /// the angle is passed through without a flip.
+        start_degrees: f32,
+        end_degrees: f32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedGradientStop {
+    /// `0.0..=1.0`.
+    pub offset: f32,
+    pub color: [u8; 4],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedGradientExtend {
+    Pad,
+    Repeat,
+    Reflect,
+}
+
+/// Stably sorts stops by offset. Unsorted input is legal, so renderers cannot
+/// reject it; they normalize it here instead.
+///
+/// A public helper rather than an inline sort because the stable ordering is a
+/// contract the design spec pins, and a test can only pin it if the sort is
+/// reachable on its own.
+pub fn stops_sorted(stops: &[PreparedGradientStop]) -> Vec<PreparedGradientStop> {
+    let mut sorted = stops.to_vec();
+    // `total_cmp` is a total order, so sorting is deterministic even for values
+    // validation has not yet rejected (for example `NaN`).
+    sorted.sort_by(|left, right| left.offset.total_cmp(&right.offset));
+    sorted
+}
+
+/// Which page-normalized axis a [`BrushRamp::FixedAxis`] ramp runs along.
+///
+/// Page-normalized coordinates (not frame-local ones) let several strokes share
+/// one ramp, so the axis is what the caller picks instead of a pair of points.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RampAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// A two-colour brush ramp: the brush paints `from` at the low end of the ramp
+/// and `to` at the high end.
+///
+/// This is deliberately not [`PreparedGradient`]: a gradient's control points
+/// are frame-local and its stops are open-ended, while a ramp is exactly two
+/// colours plus a rule for turning a position into a parameter. Reusing the
+/// gradient type would store `kind`/`stops`/`extend` fields that mean nothing
+/// for a brush.
+///
+/// It lives in this crate because both the native commit path and the WASM live
+/// preview interpolate through [`BrushRamp::color_at`], so the two cannot drift
+/// apart. It is a command argument rather than a persisted component, so it is
+/// internally tagged (`kind`) like this workspace's command arguments.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrushRamp {
+    /// Runs along the stroke: the stroke start is `from`, the stroke end is `to`.
+    AlongStroke { from: [u8; 4], to: [u8; 4] },
+    /// Runs along a fixed page axis: the `0.0` side of `axis` is `from`, the
+    /// `1.0` side is `to`. Page-normalized coordinates let several strokes
+    /// continue one ramp.
+    FixedAxis {
+        from: [u8; 4],
+        to: [u8; 4],
+        axis: RampAxis,
+    },
+}
+
+impl BrushRamp {
+    /// The colour at `position`, with `position` clamped to `0.0..=1.0`.
+    ///
+    /// All four channels interpolate, alpha included: the ramp's alpha
+    /// participates in stroke compositing, so a ramp that lerped only RGB would
+    /// silently drop transparency.
+    pub fn color_at(&self, position: f32) -> [u8; 4] {
+        let (from, to) = match self {
+            Self::AlongStroke { from, to } | Self::FixedAxis { from, to, .. } => (from, to),
+        };
+        // Clamp before the cast: a NaN position survives a comparison-based
+        // clamp (every comparison with NaN is false) and would then produce a
+        // garbage channel via `as u8`. Rounding can likewise overshoot past
+        // 255.0, so the value is clamped once more after interpolation.
+        let t = if position.is_nan() {
+            0.0
+        } else {
+            position.clamp(0.0, 1.0)
+        };
+        let mut out = [0u8; 4];
+        for (index, channel) in out.iter_mut().enumerate() {
+            let start = f32::from(from[index]);
+            let end = f32::from(to[index]);
+            *channel = (start + (end - start) * t).round().clamp(0.0, 255.0) as u8;
+        }
+        out
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedStroke {
+    pub color: [u8; 4],
+    pub width: f32,
+    /// On/off lengths in path units; when present, every element must be finite and positive.
+    pub dash: Option<Vec<f32>>,
+    pub cap: PreparedLineCap,
+    pub join: PreparedLineJoin,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedLineCap {
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedLineJoin {
+    Miter,
+    Round,
+    Bevel,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -968,6 +1492,181 @@ fn finite_affine(affine: [f64; 6], label: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// The pixel field must round-trip through postcard's byte path, which the
+    /// native canvas transport uses. The browser sends bytes too (see
+    /// `deserialize_pixels`), but a custom deserializer that understood only one
+    /// of the two encodings would break the other silently.
+    #[test]
+    fn pattern_pixels_round_trip_through_postcard() {
+        let pattern = prepared_pattern();
+        let Some(expected) = pattern.image.as_ref() else {
+            panic!("expected an image");
+        };
+
+        let bytes = postcard::to_stdvec(&pattern).unwrap();
+        let decoded: PreparedPattern = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded.image.as_ref().unwrap().pixels, expected.pixels);
+        assert_eq!(decoded, pattern);
+    }
+
+    /// A sequence of numbers must still decode, because `serde_json` routes a
+    /// `[` in `deserialize_byte_buf` to `deserialize_seq`
+    /// (`serde_json-1.0.151/src/de.rs:1653`). Tested through postcard's decoder
+    /// for a `Vec<u8>` payload rather than adding a JSON dependency: what
+    /// matters is that `visit_seq` works at all.
+    #[test]
+    fn pattern_pixels_accept_a_numeric_sequence() {
+        #[derive(serde::Serialize)]
+        struct PixelsOnly {
+            pixels: Vec<u8>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ReadBack {
+            #[serde(deserialize_with = "deserialize_pixels")]
+            pixels: Arc<[u8]>,
+        }
+
+        let source = PixelsOnly {
+            pixels: vec![1, 2, 3, 4],
+        };
+        // `postcard` writes the `Vec<u8>` as bytes; decode it through the same
+        // `deserialize_byte_buf` entry point the browser uses.
+        let bytes = postcard::to_stdvec(&source).unwrap();
+        let decoded: ReadBack = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(&decoded.pixels[..], &[1, 2, 3, 4]);
+    }
+
+    fn prepared_pattern() -> PreparedPattern {        PreparedPattern {
+            repeat: PreparedPatternRepeat::Tile,
+            origin: [1.0, 2.0],
+            scale: 4.0,
+            rotation_degrees: 30.0,
+            fallback: [1, 2, 3, 255],
+            extent: [10.0, 20.0],
+            image: Some(PreparedPatternImage {
+                width: 1,
+                height: 1,
+                pixels: Arc::from(&[0u8, 0, 0, 255][..]),
+            }),
+        }
+    }
+
+    fn pattern_path_with(pattern: PreparedPattern) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([1.0, 0.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Pattern {
+                pattern,
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
+    }
+
+    /// `PreparedPath::validate` must actually reach a pattern fill. The gradient
+    /// arm was once the only checked one, so a broken pattern would have been
+    /// accepted and then divided by its own extents at draw time.
+    #[test]
+    fn a_prepared_path_validates_its_pattern_fill() {
+        assert!(pattern_path_with(prepared_pattern()).validate().is_ok());
+        for broken in [
+            PreparedPattern {
+                scale: 0.0,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                scale: f32::NAN,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                origin: [f32::INFINITY, 0.0],
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                rotation_degrees: f32::NAN,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                extent: [-1.0, 10.0],
+                ..prepared_pattern()
+            },
+        ] {
+            assert!(
+                pattern_path_with(broken.clone()).validate().is_err(),
+                "a prepared path must reject {broken:?}"
+            );
+        }
+    }
+
+    /// A rotation outside `-360..=360` is legal: the value is the sum of the
+    /// author's angle and, for a transform-free brush, the shape's, and rotation
+    /// is periodic, so a preview at 450° draws fine. Only non-finite values are
+    /// rejected. Pinning this stops someone re-adding a range check that would
+    /// break the browser preview at large shape angles.
+    #[test]
+    fn a_prepared_pattern_rotation_is_periodic_not_bounded() {
+        assert!(
+            pattern_path_with(PreparedPattern {
+                rotation_degrees: 450.0,
+                ..prepared_pattern()
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            pattern_path_with(PreparedPattern {
+                rotation_degrees: -720.0,
+                ..prepared_pattern()
+            })
+            .validate()
+            .is_ok()
+        );
+    }
+
+    /// A pattern's pixel buffer must match its declared dimensions, or the brush
+    /// would read past the upload.
+    #[test]
+    fn a_prepared_pattern_image_length_must_match_its_dimensions() {
+        let truncated = PreparedPattern {
+            image: Some(PreparedPatternImage {
+                width: 2,
+                height: 2,
+                pixels: Arc::from(&[0u8; 4][..]),
+            }),
+            ..prepared_pattern()
+        };
+        assert!(pattern_path_with(truncated).validate().is_err());
+    }
+
+    /// The identity is returned when there are no pixels, so the one `fill` call
+    /// site stays uniform. With pixels, the transform must actually scale: a
+    /// `None`-equivalent identity would make `scale` inert (the bug this whole
+    /// design exists to avoid).
+    #[test]
+    fn a_prepared_pattern_brush_transform_carries_its_scale() {
+        let without_image = PreparedPattern {
+            image: None,
+            ..prepared_pattern()
+        };
+        assert_eq!(without_image.brush_transform(), Affine::IDENTITY);
+
+        let with_image = prepared_pattern();
+        let transform = with_image.brush_transform();
+        let origin = transform * vello::kurbo::Point::new(0.0, 0.0);
+        assert!((origin.x - 1.0).abs() < 1e-9 && (origin.y - 2.0).abs() < 1e-9);
+        // One image pixel spans `scale` path-local units.
+        let next = transform * vello::kurbo::Point::new(1.0, 0.0);
+        let span = ((next.x - origin.x).powi(2) + (next.y - origin.y).powi(2)).sqrt();
+        assert!(
+            (span - 4.0).abs() < 1e-9,
+            "one pixel must span the scale, got {span}"
+        );
+    }
+
     fn bundle() -> PreparedFrameBundle {
         let resource =
             PreparedResource::encoded_raster(1, 1, "image/png", Arc::from(&b"png"[..])).unwrap();
@@ -1135,6 +1834,63 @@ mod tests {
     }
 
     #[test]
+    fn a_shape_layer_accepts_a_vector_scene() {
+        // A shape draws through the same vector content path as text: the
+        // renderer compiles its parameters into one prepared fill path.
+        let mut bundle = bundle();
+        bundle.resources.clear();
+        let layer = &mut bundle.frame.layers[0];
+        layer.kind = LayerKind::Shape;
+        layer.content = PreparedContent::Vector(PreparedScene {
+            commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
+                transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                elements: vec![
+                    PathElement::MoveTo([0.0, 0.0]),
+                    PathElement::LineTo([10.0, 0.0]),
+                    PathElement::LineTo([10.0, 10.0]),
+                    PathElement::Close,
+                ],
+                fill: Some(PreparedFill::Solid {
+                    color: [255, 0, 0, 255],
+                    rule: FillRule::NonZero,
+                }),
+                stroke: None,
+            })],
+        });
+        assert!(bundle.manifest().is_ok());
+    }
+
+    #[test]
+    fn a_shape_layers_vector_content_is_validated() {
+        // Accepting the pairing is not enough: the scene must actually go
+        // through validation. A non-finite path transform is invalid for any
+        // vector kind, so if the shape arm skipped `scene.validate` this would
+        // wrongly pass.
+        let mut bundle = bundle();
+        bundle.resources.clear();
+        let layer = &mut bundle.frame.layers[0];
+        layer.kind = LayerKind::Shape;
+        layer.content = PreparedContent::Vector(PreparedScene {
+            commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
+                transform: [f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0],
+                elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+                fill: None,
+                stroke: None,
+            })],
+        });
+        assert!(matches!(bundle.manifest(), Err(Error::Invalid(_))));
+    }
+
+    #[test]
+    fn a_shape_layer_rejects_raster_content() {
+        // Only the `(Shape, Vector)` pairing is legal; a shape is never
+        // raster-backed through this kind.
+        let mut bundle = bundle();
+        bundle.frame.layers[0].kind = LayerKind::Shape;
+        assert!(matches!(bundle.manifest(), Err(Error::Invalid(_))));
+    }
+
+    #[test]
     fn packets_reject_unknown_versions() {
         let manifest = bundle().manifest().unwrap();
         let bytes = postcard::to_stdvec(&ManifestPacket {
@@ -1171,5 +1927,477 @@ mod tests {
         assert_eq!(text.parse::<ResourceId>().unwrap(), id);
         assert_eq!(text.to_ascii_uppercase().parse::<ResourceId>().unwrap(), id);
         assert!("ab".parse::<ResourceId>().is_err());
+    }
+
+    #[test]
+    fn a_path_may_have_a_fill_and_a_stroke() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([10.0, 0.0]),
+                PathElement::LineTo([10.0, 10.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Solid {
+                color: [255, 0, 0, 255],
+                rule: FillRule::NonZero,
+            }),
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width: 2.0,
+                dash: None,
+                cap: PreparedLineCap::Round,
+                join: PreparedLineJoin::Round,
+            }),
+        };
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn a_path_without_fill_or_stroke_validates() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: None,
+        };
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn a_negative_stroke_width_is_rejected() {
+        let path = PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width: -1.0,
+                dash: None,
+                cap: PreparedLineCap::Butt,
+                join: PreparedLineJoin::Miter,
+            }),
+        };
+        assert!(path.validate().is_err());
+    }
+
+    fn stroked(width: f32, dash: Option<Vec<f32>>) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: None,
+            stroke: Some(PreparedStroke {
+                color: [0, 0, 0, 255],
+                width,
+                dash,
+                cap: PreparedLineCap::Butt,
+                join: PreparedLineJoin::Miter,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_non_finite_stroke_width_is_rejected() {
+        assert!(stroked(f32::NAN, None).validate().is_err());
+        assert!(stroked(f32::INFINITY, None).validate().is_err());
+    }
+
+    #[test]
+    fn a_zero_stroke_width_is_allowed() {
+        assert!(stroked(0.0, None).validate().is_ok());
+    }
+
+    #[test]
+    fn a_dash_list_must_be_non_empty_and_positive() {
+        assert!(stroked(1.0, Some(vec![8.0, 0.0])).validate().is_err());
+        assert!(stroked(1.0, Some(vec![8.0, -1.0])).validate().is_err());
+        assert!(stroked(1.0, Some(vec![f32::NAN])).validate().is_err());
+        assert!(stroked(1.0, Some(Vec::new())).validate().is_err());
+        assert!(stroked(1.0, Some(vec![4.0, 2.0])).validate().is_ok());
+    }
+
+    fn gradient_fill() -> PreparedFill {
+        PreparedFill::Gradient {
+            gradient: PreparedGradient {
+                kind: PreparedGradientKind::Linear {
+                    start: [0.0, 0.0],
+                    end: [100.0, 0.0],
+                },
+                stops: vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset: 1.0,
+                        color: [255, 255, 255, 255],
+                    },
+                ],
+                extend: PreparedGradientExtend::Pad,
+            },
+            rule: FillRule::NonZero,
+        }
+    }
+
+    fn filled(fill: PreparedFill) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![PathElement::MoveTo([0.0, 0.0]), PathElement::Close],
+            fill: Some(fill),
+            stroke: None,
+        }
+    }
+
+    fn with_stops(stops: Vec<PreparedGradientStop>) -> PreparedGradient {
+        let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+            unreachable!()
+        };
+        PreparedGradient { stops, ..gradient }
+    }
+
+    #[test]
+    fn a_gradient_fill_validates() {
+        assert!(filled(gradient_fill()).validate().is_ok());
+    }
+
+    /// The stop-count band is inclusive on both ends: an implementation that
+    /// checked `< 2` or `<= 32` instead of `!(2..=32).contains(...)` fails here.
+    #[test]
+    fn the_stop_count_band_is_inclusive() {
+        let stop = |offset| PreparedGradientStop {
+            offset,
+            color: [1, 2, 3, 255],
+        };
+        let stops_of = |count: u32| {
+            (0..count)
+                .map(|index| stop(index as f32 / (count - 1) as f32))
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            filled(PreparedFill::Gradient {
+                gradient: with_stops(stops_of(2)),
+                rule: FillRule::NonZero,
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            filled(PreparedFill::Gradient {
+                gradient: with_stops(stops_of(32)),
+                rule: FillRule::NonZero,
+            })
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_gradient_with_one_stop_is_rejected() {
+        let mut gradient = with_stops(vec![PreparedGradientStop {
+            offset: 0.0,
+            color: [0, 0, 0, 255],
+        }]);
+        gradient.stops.truncate(1);
+        let path = filled(PreparedFill::Gradient {
+            gradient,
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    #[test]
+    fn a_gradient_with_thirty_three_stops_is_rejected() {
+        let stops = (0..33)
+            .map(|index| PreparedGradientStop {
+                offset: index as f32 / 32.0,
+                color: [1, 2, 3, 255],
+            })
+            .collect();
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(stops),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    #[test]
+    fn gradient_stop_offsets_must_be_finite_and_in_range() {
+        for offset in [f32::NAN, f32::INFINITY, -0.5, 1.5] {
+            let path = filled(PreparedFill::Gradient {
+                gradient: with_stops(vec![
+                    PreparedGradientStop {
+                        offset: 0.0,
+                        color: [0, 0, 0, 255],
+                    },
+                    PreparedGradientStop {
+                        offset,
+                        color: [255, 255, 255, 255],
+                    },
+                ]),
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_err(), "offset {offset} must be rejected");
+        }
+    }
+
+    #[test]
+    fn duplicate_gradient_stop_offsets_are_rejected() {
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(vec![
+                PreparedGradientStop {
+                    offset: 0.5,
+                    color: [1, 1, 1, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.5,
+                    color: [2, 2, 2, 255],
+                },
+            ]),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_err());
+    }
+
+    /// Unsorted stops are legal because the renderer sorts them; rejecting them
+    /// here would contradict `stops_sorted` and the design spec's failure table.
+    #[test]
+    fn unsorted_gradient_stops_validate() {
+        let path = filled(PreparedFill::Gradient {
+            gradient: with_stops(vec![
+                PreparedGradientStop {
+                    offset: 0.9,
+                    color: [1, 1, 1, 255],
+                },
+                PreparedGradientStop {
+                    offset: 0.1,
+                    color: [2, 2, 2, 255],
+                },
+            ]),
+            rule: FillRule::NonZero,
+        });
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn degenerate_gradient_geometry_is_rejected() {
+        let cases = [
+            PreparedGradientKind::Linear {
+                start: [5.0, 5.0],
+                end: [5.0, 5.0],
+            },
+            PreparedGradientKind::Linear {
+                start: [0.0, f32::NAN],
+                end: [1.0, 0.0],
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, 0.0],
+                radius: 0.0,
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, 0.0],
+                radius: -1.0,
+            },
+            PreparedGradientKind::Radial {
+                center: [0.0, f32::INFINITY],
+                radius: 1.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [0.0, 0.0],
+                start_degrees: f32::NAN,
+                end_degrees: 360.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [0.0, 0.0],
+                start_degrees: 0.0,
+                end_degrees: f32::INFINITY,
+            },
+        ];
+        for kind in cases {
+            let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+                unreachable!()
+            };
+            let path = filled(PreparedFill::Gradient {
+                gradient: PreparedGradient {
+                    kind: kind.clone(),
+                    ..gradient
+                },
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_err(), "{kind:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn non_degenerate_gradient_geometry_validates() {
+        let cases = [
+            PreparedGradientKind::Linear {
+                start: [0.0, 0.0],
+                end: [100.0, 0.0],
+            },
+            PreparedGradientKind::Radial {
+                center: [50.0, 50.0],
+                radius: 25.0,
+            },
+            PreparedGradientKind::Sweep {
+                center: [50.0, 50.0],
+                start_degrees: 0.0,
+                end_degrees: 360.0,
+            },
+        ];
+        for kind in cases {
+            let PreparedFill::Gradient { gradient, .. } = gradient_fill() else {
+                unreachable!()
+            };
+            let path = filled(PreparedFill::Gradient {
+                gradient: PreparedGradient { kind, ..gradient },
+                rule: FillRule::NonZero,
+            });
+            assert!(path.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn stops_are_sorted_by_offset() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.8,
+                color: [255, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.2,
+                color: [0, 0, 255, 255],
+            },
+        ];
+        let sorted = stops_sorted(&stops);
+        assert_eq!(sorted[0].offset, 0.2);
+        assert_eq!(sorted[1].offset, 0.8);
+        assert_eq!(sorted[0].color, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn stops_sorted_leaves_sorted_input_in_order() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.0,
+                color: [0, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [128, 128, 128, 255],
+            },
+            PreparedGradientStop {
+                offset: 1.0,
+                color: [255, 255, 255, 255],
+            },
+        ];
+        assert_eq!(stops_sorted(&stops), stops);
+    }
+
+    /// Validation rejects duplicate offsets, but the sort itself must still be
+    /// stable so an unsorted duplicate pair never swaps when it passes through
+    /// the renderer's assembly path.
+    #[test]
+    fn stops_sorted_is_stable_for_equal_offsets() {
+        let stops = vec![
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [1, 0, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [0, 1, 0, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.5,
+                color: [0, 0, 1, 255],
+            },
+            PreparedGradientStop {
+                offset: 0.1,
+                color: [9, 9, 9, 255],
+            },
+        ];
+        let sorted = stops_sorted(&stops);
+        assert_eq!(
+            sorted.iter().map(|stop| stop.color).collect::<Vec<_>>(),
+            vec![
+                [9, 9, 9, 255],
+                [1, 0, 0, 255],
+                [0, 1, 0, 255],
+                [0, 0, 1, 255],
+            ]
+        );
+    }
+
+    #[test]
+    fn a_ramp_interpolates_between_its_ends() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [255, 255, 255, 255],
+        };
+        assert_eq!(ramp.color_at(0.0), [0, 0, 0, 255]);
+        assert_eq!(ramp.color_at(1.0), [255, 255, 255, 255]);
+        // Midpoint must be the rounded halfway value, not one end.
+        assert_eq!(ramp.color_at(0.5), [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn a_ramp_interpolates_alpha_too() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [10, 20, 30, 0],
+            to: [10, 20, 30, 255],
+        };
+        assert_eq!(ramp.color_at(0.0)[3], 0);
+        assert_eq!(ramp.color_at(1.0)[3], 255);
+        // Alpha must move; a ramp that only interpolates RGB would return 0 here.
+        assert!(ramp.color_at(0.5)[3] > 0, "alpha must interpolate");
+    }
+
+    #[test]
+    fn a_ramp_clamps_outside_the_unit_interval() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [100, 100, 100, 255],
+        };
+        assert_eq!(ramp.color_at(-1.0), [0, 0, 0, 255]);
+        assert_eq!(ramp.color_at(2.0), [100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn a_ramp_with_equal_ends_is_a_solid_colour() {
+        let ramp = BrushRamp::FixedAxis {
+            from: [7, 8, 9, 255],
+            to: [7, 8, 9, 255],
+            axis: RampAxis::Horizontal,
+        };
+        for position in [0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(ramp.color_at(position), [7, 8, 9, 255]);
+        }
+    }
+
+    #[test]
+    fn a_non_finite_position_does_not_panic() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [255, 255, 255, 255],
+        };
+        // NaN must not produce a panic or an out-of-range channel; clamping has
+        // to happen before the cast.
+        let color = ramp.color_at(f32::NAN);
+        assert_eq!(color.len(), 4);
+    }
+
+    #[test]
+    fn the_ramp_types_are_reachable_from_the_crate_root() {
+        // The 1b review found gradient types that could not be named outside the
+        // crate. Pin the re-export so the same gap cannot reappear.
+        assert_eq!(
+            koharu_rasterizer::BrushRamp::AlongStroke {
+                from: [0, 0, 0, 0],
+                to: [0, 0, 0, 0],
+            }
+            .color_at(0.0),
+            [0, 0, 0, 0]
+        );
     }
 }

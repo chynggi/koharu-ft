@@ -180,6 +180,22 @@
     "stopProcessing": "処理を停止"
   },
   "inspector": {
+    "adjust": {
+      "apply": "適用",
+      "brightness": "明るさ",
+      "contrast": "コントラスト",
+      "degrees": "角度",
+      "delta": "増減",
+      "grayscale": "グレースケール",
+      "high": "最大",
+      "hue": "色相",
+      "invalidLevels": "最小値は最大値より小さくしてください。",
+      "levels": "レベル",
+      "low": "最小",
+      "percent": "割合",
+      "singleLayer": "調整するラスターレイヤーを1つだけ選択してください。",
+      "title": "調整の種類"
+    },
     "alignBottom": "下揃え",
     "alignCenter": "中央揃え",
     "alignLeft": "左揃え",
@@ -212,6 +228,53 @@
     "placement": "配置",
     "resetAutoFit": "自動調整に戻す",
     "selectPage": "ページを選択してレイヤーを確認します。",
+    "shape": {
+      "addStop": "ストップを追加",
+      "dash": "破線",
+      "fill": "塗り",
+      "fillKind": {
+        "gradient": "グラデーション",
+        "pattern": "パターン",
+        "solid": "単色"
+      },
+      "fillKindLabel": "塗りの種類",
+      "gradientKind": {
+        "linear": "線形",
+        "radial": "放射状"
+      },
+      "gradientKindLabel": "グラデーションの種類",
+      "kind": {
+        "arrow": "矢印",
+        "ellipse": "楕円",
+        "line": "直線",
+        "rectangle": "長方形"
+      },
+      "kindLabel": "図形の種類: {{kind}}",
+      "kindTitle": "図形の種類",
+      "pattern": {
+        "ignoredForStretch": "伸縮では無視されます",
+        "originX": "原点 X",
+        "originY": "原点 Y",
+        "repeat": {
+          "stretch": "伸縮",
+          "tile": "タイル"
+        },
+        "repeatLabel": "繰り返し",
+        "replace": "画像を置き換え",
+        "rotation": "回転",
+        "scale": "サイズ",
+        "title": "パターン",
+        "upload": "画像を選択"
+      },
+      "rasterize": "ラスタライズ",
+      "removeStop": "ストップを削除",
+      "stopColor": "ストップ {{index}} の色",
+      "stopOffset": "ストップ {{index}} の位置",
+      "stops": "ストップ",
+      "stopsTooClose": "ストップの間に余白がありません",
+      "stroke": "縁取り",
+      "strokeWidth": "縁取りの幅"
+    },
     "size": "サイズ",
     "source": "原文",
     "style": "スタイル",
@@ -249,6 +312,7 @@
       "group": "グループ",
       "image": "画像",
       "paint": "ペイント",
+      "shape": "図形",
       "text": "テキスト",
       "textGroup": "テキストグループ"
     },
@@ -627,6 +691,12 @@
     "zoom": "ズーム"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "ストローク方向",
+      "fixedAxis": "固定軸",
+      "none": "なし"
+    },
+    "brushRampTitle": "ブラシグラデーション",
     "brushSize": "ブラシサイズ",
     "brushSizeInput": "ブラシサイズ",
     "brushSizePixels": "ブラシサイズ: {{size}}ピクセル",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "ブラシサイズを縮小",
     "draw": "描画",
     "eraser": "消しゴム",
+    "fill": "塗りつぶし",
+    "fillColor": "塗りつぶしの色",
     "increaseBrushSize": "ブラシサイズを拡大",
     "manual_ocr_box": "手動OCR（矩形）",
     "manual_ocr_lasso": "手動OCR（フリーハンド）",
     "pan": "移動",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "軸",
+    "rampFrom": "開始色",
+    "rampTo": "終了色",
     "remove": "削除",
     "select": "選択",
+    "shape": "図形",
     "text": "テキスト"
   },
   "updater": {

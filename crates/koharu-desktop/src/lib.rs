@@ -263,7 +263,7 @@ impl Desktop {
             let layer_presentation = layer.presentation();
             if !layer_presentation.visible
                 || layer_presentation.opacity <= 0.0
-                || !matches!(layer.kind(), LayerKind::Text(_))
+                || !is_transformable(layer.kind())
             {
                 bail!(
                     "canvas transform element {} is not selectable",
@@ -533,6 +533,16 @@ fn frame_transform(original: Frame, preview: Frame) -> [f64; 6] {
     ]
 }
 
+/// Whether a rendered layer can be selected, moved, and rotated.
+///
+/// Kept as a named predicate rather than an inline `matches!` because
+/// `matches!` is not exhaustiveness-checked: a layer kind added to
+/// `LayerKind` would silently become unselectable instead of failing to
+/// compile, which is exactly how `Shape` was invisible here.
+pub(crate) fn is_transformable(kind: &LayerKind) -> bool {
+    matches!(kind, LayerKind::Text(_) | LayerKind::Shape(_))
+}
+
 fn transform_point([a, b, c, d, e, f]: [f64; 6], point: &Point) -> Point {
     Point {
         x: a * point.x + c * point.y + e,
@@ -544,9 +554,58 @@ fn transform_point([a, b, c, d, e, f]: [f64; 6], point: &Point) -> Point {
 mod tests {
     use std::{future::pending, sync::Arc, time::Duration};
 
+    use koharu_renderer::{
+        ImageKind, ImageMetadata, LayerKind, RenderBounds, ShapeMetadata, TextAlign, TextMetadata,
+        WritingMode,
+    };
     use tokio::{sync::Notify, time::timeout};
 
-    use super::Desktop;
+    use super::{Desktop, is_transformable};
+
+    fn text_layer() -> LayerKind {
+        LayerKind::Text(TextMetadata {
+            text: "hello".into(),
+            language: None,
+            rendered_bounds: RenderBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 40.0,
+                height: 12.0,
+            },
+            layout_bounds: RenderBounds::default(),
+            post_script_fonts: Vec::new(),
+            font_size: 12.0,
+            color: [0, 0, 0, 255],
+            alignment: TextAlign::Left,
+            writing_mode: WritingMode::Horizontal,
+            angle_degrees: 0.0,
+        })
+    }
+
+    fn shape_layer() -> LayerKind {
+        LayerKind::Shape(ShapeMetadata {
+            geometry: koharu_scene::ShapeGeometry::Ellipse,
+            style: koharu_scene::ShapeStyle {
+                fill: None,
+                stroke: None,
+            },
+            angle_degrees: None,
+        })
+    }
+
+    fn image_layer() -> LayerKind {
+        LayerKind::Image(ImageMetadata {
+            name: None,
+            kind: ImageKind::Source,
+        })
+    }
+
+    #[test]
+    fn is_transformable_accepts_text_and_shape_and_rejects_image() {
+        assert!(is_transformable(&text_layer()));
+        assert!(is_transformable(&shape_layer()));
+        assert!(!is_transformable(&image_layer()));
+    }
 
     #[tokio::test]
     async fn newer_request_preempts_current_preparation_and_acquires_ownership() {

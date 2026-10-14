@@ -1,6 +1,6 @@
 'use client'
 
-import { commands, type CanvasPagePreparation, type Point, type TransformFrame } from './protocol'
+import { commands, type BrushRamp, type CanvasPagePreparation, type Point, type TransformFrame } from './protocol'
 
 export type CanvasColor = [number, number, number, number]
 export type CanvasStrokeKind = 'paint' | 'erase' | 'inpaint'
@@ -12,6 +12,106 @@ export interface CanvasStroke {
   point: Point
   diameter: number
   color?: CanvasColor
+  /**
+   * `undefined` and `null` both mean a flat `color` stroke; the WASM side
+   * deserializes either to `None`. A ramp is an enum, so it cannot ride along
+   * in the `color` byte array.
+   */
+  ramp?: BrushRamp | null
+}
+
+/**
+ * A drawable path compiled by the frontend, in the exact shape
+ * `koharu_rasterizer::PreparedPath` deserializes from.
+ *
+ * Enums are spelled with their Rust variant names because serde's external
+ * tagging is the wire format: a unit variant is the bare string `"Close"` and a
+ * newtype/struct variant is a one-key object such as `{ MoveTo: [x, y] }`.
+ */
+export type CanvasPathElement =
+  | { MoveTo: [number, number] }
+  | { LineTo: [number, number] }
+  | { QuadTo: [number, number, number, number] }
+  | { CurveTo: [number, number, number, number, number, number] }
+  | 'Close'
+
+/**
+ * A gradient as `koharu_rasterizer::PreparedGradient` deserializes it.
+ *
+ * The control points are **path-local** — the same coordinate system
+ * `CanvasPathElement` uses, with the normalized spread already applied — so the
+ * path transform carries the rotation and this gradient needs no extra one.
+ * That is the opposite of the persisted `GradientSpec`, whose points stay
+ * normalized and frame-local; `shapePreviewPath` owns the conversion.
+ */
+export interface CanvasGradient {
+  kind: CanvasGradientKind
+  stops: CanvasGradientStop[]
+  extend: 'Pad' | 'Repeat' | 'Reflect'
+}
+
+export type CanvasGradientKind =
+  | { Linear: { start: [number, number]; end: [number, number] } }
+  | { Radial: { center: [number, number]; radius: number } }
+  | { Sweep: { center: [number, number]; start_degrees: number; end_degrees: number } }
+
+export interface CanvasGradientStop {
+  offset: number
+  color: CanvasColor
+}
+
+export type CanvasPathFill =
+  | { Solid: { color: CanvasColor; rule: 'NonZero' | 'EvenOdd' } }
+  | { Gradient: { gradient: CanvasGradient; rule: 'NonZero' | 'EvenOdd' } }
+  | { Pattern: { pattern: CanvasPattern; rule: 'NonZero' | 'EvenOdd' } }
+
+/**
+ * A pattern as `koharu_rasterizer::PreparedPattern` deserializes it.
+ *
+ * Like `CanvasGradient`, the coordinates are **path-local with the normalized
+ * spread and any framing transform already applied**: this path is drawn with
+ * the identity transform, so the brush carries the frame's placement and angle
+ * as well as the author's own pattern angle. That is why `rotation_degrees` here
+ * is a number rather than the persisted integer — it is a sum.
+ *
+ * `image` is `null` until the pattern's asset is available; the renderer then
+ * draws `fallback` as a solid fill.
+ */
+export interface CanvasPattern {
+  repeat: 'Tile' | 'Stretch'
+  origin: [number, number]
+  scale: number
+  rotation_degrees: number
+  fallback: CanvasColor
+  extent: [number, number]
+  image: CanvasPatternImage | null
+}
+
+export interface CanvasPatternImage {
+  width: number
+  height: number
+  /** `width * height * 4` bytes of straight-alpha RGBA8. */
+  pixels: Uint8Array
+}
+
+export interface CanvasPathStroke {
+  color: CanvasColor
+  width: number
+  dash: number[] | null
+  cap: 'Butt' | 'Round' | 'Square'
+  join: 'Miter' | 'Round' | 'Bevel'
+}
+
+export interface CanvasPath {
+  transform: [number, number, number, number, number, number]
+  elements: CanvasPathElement[]
+  fill: CanvasPathFill | null
+  stroke: CanvasPathStroke | null
+}
+
+export interface CanvasShapeCommit {
+  page: string
+  revision: number
 }
 
 export interface Canvas {
@@ -33,6 +133,10 @@ export interface Canvas {
   extendStroke(points: Point[]): void
   finishStroke(): void
   cancelStroke(): void
+  beginShape(path: CanvasPath): void
+  updateShape(path: CanvasPath): void
+  finishShape(): CanvasShapeCommit
+  cancelShape(): void
   sampleColor(point: Point): Promise<CanvasColor>
   dispose(): void
 }
@@ -68,10 +172,15 @@ interface CanvasHandle {
     point: Point,
     diameter: number,
     color: Uint8Array,
+    ramp: BrushRamp | null,
   ): void
   extendStroke(points: Point[]): void
   finishStroke(): unknown
   cancelStroke(): void
+  beginShape(path: CanvasPath): void
+  updateShape(path: CanvasPath): void
+  finishShape(): CanvasShapeCommit
+  cancelShape(): void
   sampleColor(x: number, y: number): Promise<Uint8Array>
   setDeviceLostCallback(callback: ((reason: string) => void) | null): void
   dispose(): void
@@ -155,10 +264,18 @@ export async function createCanvas(
         stroke.point,
         stroke.diameter,
         new Uint8Array(stroke.color ?? [0, 0, 0, 0]),
+        // The argument is required: wasm-bindgen throws when a declared
+        // parameter is missing, so `undefined` from a flat stroke has to be
+        // normalized to `null` here rather than omitted.
+        stroke.ramp ?? null,
       ),
     extendStroke: (points) => canvas.extendStroke(points),
     finishStroke: () => void canvas.finishStroke(),
     cancelStroke: () => canvas.cancelStroke(),
+    beginShape: (path) => canvas.beginShape(path),
+    updateShape: (path) => canvas.updateShape(path),
+    finishShape: () => canvas.finishShape(),
+    cancelShape: () => canvas.cancelShape(),
     sampleColor: async (point) => {
       const color = await canvas.sampleColor(point.x, point.y)
       if (color.length !== 4) throw new Error('The WebGPU canvas returned an invalid color.')

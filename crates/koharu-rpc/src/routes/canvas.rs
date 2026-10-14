@@ -4,13 +4,14 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use koharu_desktop::{Frame, TransformFrame};
-use koharu_scene::{EntityId, Revision};
+use koharu_scene::{EntityId, PatternSpec, Revision};
 use serde::Deserialize;
 use tauri::Manager as _;
 
+use koharu_app::commands::adjust::ColorAdjust;
 use koharu_app::commands::canvas::{
     self, CanvasChannel, CanvasGeneration, CanvasPagePreparation, LayerCommit, ManualOcrCommit,
-    PaintBrush, Point,
+    PaintBrush, Point, ShapeStyleUpdate,
 };
 use koharu_app::commands::project::CurrentProject;
 
@@ -35,11 +36,18 @@ pub fn router() -> Router<AppState> {
         )
         .route("/canvas/text/point", post(add_point_text))
         .route("/canvas/text/box", post(add_text_box))
+        .route("/canvas/shape", post(add_shape))
+        .route("/canvas/shape/style", post(set_shape_style))
+        .route("/canvas/shape/pattern", post(set_shape_pattern))
+        .route("/canvas/shape/pattern/asset", post(set_shape_pattern_asset))
+        .route("/canvas/shape/rasterize", post(rasterize_shapes))
         .route("/canvas/ocr/manual", post(manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
         .route("/canvas/commit/erase", post(commit_erase))
         .route("/canvas/commit/transform", post(commit_transform))
         .route("/canvas/commit/inpaint", post(commit_inpaint))
+        .route("/canvas/raster/adjust", post(adjust_raster))
+        .route("/canvas/raster/fill", post(fill_raster))
 }
 
 async fn get_canvas_manifest(
@@ -141,6 +149,132 @@ async fn add_text_box(
 }
 
 #[derive(Deserialize)]
+struct AddShapeRequest {
+    expected_revision: Revision,
+    page: EntityId,
+    geometry: koharu_app::commands::project::Geometry,
+    shape: koharu_scene::ShapeGeometry,
+    style: koharu_scene::ShapeStyle,
+    angle_degrees: f32,
+}
+
+async fn add_shape(
+    State(app): State<AppState>,
+    Json(request): Json<AddShapeRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::add_shape(
+            request.expected_revision,
+            request.page,
+            request.geometry,
+            request.shape,
+            request.style,
+            request.angle_degrees,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapeStyleRequest {
+    expected_revision: Revision,
+    updates: Vec<ShapeStyleUpdate>,
+}
+
+async fn set_shape_style(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapeStyleRequest>,
+) -> ApiResult<Json<Revision>> {
+    Ok(Json(
+        canvas::set_shape_style(
+            request.expected_revision,
+            request.updates,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapePatternRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    pattern: Option<PatternSpec>,
+}
+
+async fn set_shape_pattern(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapePatternRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::set_shape_pattern(
+            request.expected_revision,
+            request.layer,
+            request.pattern,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapePatternAssetRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    bytes: Vec<u8>,
+    media_type: String,
+}
+
+async fn set_shape_pattern_asset(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapePatternAssetRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::set_shape_pattern_asset(
+            request.expected_revision,
+            request.layer,
+            request.bytes,
+            request.media_type,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct RasterizeShapesRequest {
+    expected_revision: Revision,
+    page: EntityId,
+    shapes: Vec<EntityId>,
+}
+
+async fn rasterize_shapes(
+    State(app): State<AppState>,
+    Json(request): Json<RasterizeShapesRequest>,
+) -> ApiResult<Json<Revision>> {
+    Ok(Json(
+        canvas::rasterize_shapes(
+            request.expected_revision,
+            request.page,
+            request.shapes,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
 struct ManualOcrRequest {
     points: Vec<Point>,
 }
@@ -179,6 +313,56 @@ async fn commit_paint(
             request.layer,
             request.points,
             request.brush,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct AdjustRasterRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    adjust: ColorAdjust,
+}
+
+async fn adjust_raster(
+    State(app): State<AppState>,
+    Json(request): Json<AdjustRasterRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::adjust_raster(
+            request.expected_revision,
+            request.layer,
+            request.adjust,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct FillRasterRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    point: Point,
+    color: [u8; 4],
+}
+
+async fn fill_raster(
+    State(app): State<AppState>,
+    Json(request): Json<FillRasterRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::fill_raster(
+            request.expected_revision,
+            request.layer,
+            request.point,
+            request.color,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

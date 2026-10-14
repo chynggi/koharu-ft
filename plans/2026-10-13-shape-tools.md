@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 사각형·타원·선·화살표·다각형·자유곡선을 벡터 레이어로 그려 저장하고, 채우기·테두리·점선 스타일을 편집하며, 필요할 때 래스터로 구울 수 있게 한다.
+**Goal:** 사각형·타원·선·화살표를 벡터 레이어로 그려 저장하고, 채우기·테두리·점선 스타일을 편집하며, 필요할 때 래스터로 구울 수 있게 한다. (`Polygon`·`Freeform`은 저장 모델과 렌더러에만 있고 1a 도구 목록에는 없다 — `specs/2026-10-13-shape-tools-design.md`의 "범위" 참조.)
 
 **Architecture:** 도형은 `ShapeLayer` 컴포넌트(폴리곤 + 재편집 파라미터 + 스타일)로 저장한다. `Geometry` 폴리곤이 히트테스트·프레임 복원의 권위이고, `ShapeGeometry` 파라미터가 렌더링의 권위다. 렌더러는 씬 컴파일 시점에 파라미터에서 vello 경로를 만들어 기존 `PreparedContent::Vector` 경로로 흘려보낸다. 래스터화는 기존 `Rasterizer::rasterize_scene`을 재사용한다.
 
@@ -62,11 +62,11 @@
 | `crates/koharu-renderer/src/text_renderer.rs` | 글리프 생성의 `PreparedPath` 신형식 대응 |
 | `crates/koharu-desktop/src/lib.rs` | `transform_geometries`의 종류 게이트 |
 | `crates/koharu-canvas/src/web.rs` | `begin_transform` 게이트, `ShapeEdit` 미리보기 |
-| `crates/koharu-app/src/commands/canvas.rs` | `add_shape`, `set_shape_style`, `set_shape_geometries`, `rasterize_shapes` |
-| `crates/koharu-app/src/commands/project.rs` | `Project::add_shape`, `::set_shape_style`, `::set_shape_geometries`, `::rasterize_shapes`, `Layer::Shape` 노출 |
-| `crates/koharu-rpc/src/routes/canvas.rs` | 4개 라우트 |
+| `crates/koharu-app/src/commands/canvas.rs` | `add_shape`, `set_shape_style`, `rasterize_shapes` |
+| `crates/koharu-app/src/commands/project.rs` | `Project::add_shape`, `::set_shape_style`, `::rasterize_shapes`, `Layer::Shape` 노출 |
+| `crates/koharu-rpc/src/routes/canvas.rs` | 3개 라우트 |
 | `crates/koharu-psd/src/document.rs` | 도형을 래스터 레이어로 |
-| `packages/bridge/src/protocol.ts` | `ShapeLayer` 타입, 4개 명령 |
+| `packages/bridge/src/protocol.ts` | `ShapeLayer` 타입, 3개 명령 |
 | `packages/koharu/lib/store.ts` | `'shape'` 도구, `shapeKind`, `shapeStyle` |
 | `packages/koharu/lib/geometry.ts` | `selectableLayer`에 `'shape'` |
 | `packages/koharu/components/editor/ToolBar.tsx` | 도형 도구 + 스타일 Popover |
@@ -528,6 +528,27 @@ let transform = [
 - `Rectangle { corner_radius }` — `corner_radius <= 0.0`이면 네 점 + `Close`. 0보다 크면 각 모서리를 반지름 `min(corner_radius, w/2, h/2)`로 둥글게 만든다. 각 모서리마다 `LineTo` + `QuadTo`를 쓴다.
 - `Ellipse` — 중심 `(w/2, h/2)`, 반지름 `(w/2, h/2)`인 타원을 4개의 `CurveTo`로 근사한다 (κ = 0.5522847498307936).
 - `Line { start, end, head }` — `start`·`end`는 페이지 좌표이므로 프레임 로컬로 옮긴다 (프레임 중심 기준 회전 후 평행이동). `MoveTo(start)` + `LineTo(end)` + `Close`. `head`가 있으면 끝점에 수직인 삼각형을 만든다.
+
+  **`Line`은 폴리곤과 중복 저장되므로 갱신 시 재계산이 필요하다.** 이것이 이 설계의 유일한 이중 저장 지점이고, 방치하면 실제 버그가 된다: 모든 변형 경로(`set_geometries`, `merge_pages`, `commit_transform`)는 **폴리곤만** 갱신하는데 `line_path`는 `start`/`end`로 그리므로, 선을 드래그하면 폴리곤은 움직이지만 그려지는 선은 제자리에 남고 `element_frame`(폴리곤을 읽는다)도 선에서 분리된다.
+
+  계약: **폴리곤이 권위이고 `start`/`end`는 파생값이다.** 폴리곤을 쓰는 쪽은 반드시 `Line`의 두 끝점을 폴리곤에서 다시 계산해야 한다. `Line`의 폴리곤은 선을 따라 균등 분할된 3점 이상이므로(아래 "폴리곤 점 개수"), **첫 점이 `start`, 마지막 점이 `end`** 다. 재계산 헬퍼를 `koharu-scene`에 둔다:
+
+  ```rust
+  impl ShapeGeometry {
+      /// 폴리곤이 권위인 `Line`의 두 끝점을 다시 맞춘다.
+      /// 다른 변형은 폴리곤에서 파생되는 값이 없으므로 그대로 둔다.
+      pub fn resync_with_polygon(&mut self, points: &[Point]) {
+          if let Self::Line { start, end, .. } = self
+              && let (Some(first), Some(last)) = (points.first(), points.last())
+          {
+              *start = [first.x, first.y];
+              *end = [last.x, last.y];
+          }
+      }
+  }
+  ```
+
+  `set_geometries`는 `edit.set(element, &geometry)` 직전에 이 헬퍼를 호출해야 한다. Task 6이 이 호출과 테스트를 소유한다. **`merge_pages`(project.rs:586-624)도 같은 재계산이 필요하다** — 페이지 병합이 모든 폴리곤을 오프셋만큼 평행이동하므로, 폴리곤만 옮기면 병합 후 선의 선택 상자와 그려진 선이 분리된다. 최종 수정에서 `add_shape`(생성 경로)를 포함한 세 경로를 `Project::write_geometry` 하나로 모았다 (아래 Task 6 참조).
 - `Polygon` / `Freeform` — `shape_path`는 이 두 변형에서 빈 경로(`MoveTo(0,0)`만)를 돌려준다. **`polygon_path`가 폴리곤 점을 받아 실제 경로를 만든다.** 두 함수를 고르는 일은 `shape_layer_path`가 한다.
 
 **추가 테스트**: `shape_layer_path`가 `Polygon`에서 `points`를 쓰고 `points`가 비면 빈 경로를 돌려주는지 확인한다.
@@ -597,15 +618,20 @@ git commit -m "feat(renderer): generate prepared paths for shapes"
 
 ```rust
     #[test]
-    fn a_rotated_shape_frame_preserves_its_diameter() {
-        // 45도 회전한 지름 100의 원을 32점 폴리곤으로 샘플링한다.
-        let radius = 50.0_f64;
+    fn a_rotated_shape_frame_preserves_its_dimensions() {
+        // 45도 회전한 비원형 타원(rx=50, ry=25)을 32점 폴리곤으로 샘플링한다.
+        //
+        // 원을 쓰면 안 된다: 원의 축 정렬 경계 상자는 회전에 불변이라
+        // 각도를 주든 안 주든 지름과 같다. 비원형 타원이라야 회전 시
+        // 축 정렬 상자가 100x50 -> 79.06x79.06 으로 바뀌므로 각도의
+        // 필요성이 실제로 고정된다.
+        let (rx, ry) = (50.0_f64, 25.0_f64);
         let (sin, cos) = (45.0_f64).to_radians().sin_cos();
         let points = (0..32)
             .map(|index| {
                 let theta = std::f64::consts::TAU * f64::from(index) / 32.0;
-                let x = radius * theta.cos();
-                let y = radius * theta.sin();
+                let x = rx * theta.cos();
+                let y = ry * theta.sin();
                 koharu_scene::Point {
                     x: 100.0 + x * cos - y * sin,
                     y: 100.0 + x * sin + y * cos,
@@ -617,15 +643,26 @@ git commit -m "feat(renderer): generate prepared paths for shapes"
             points,
         };
 
+        // 각도를 주면 작성 축에서 재므로 참 크기(2rx x 2ry)가 나온다.
         let frame = crate::shape_renderer::shape_frame(&geometry, Some(45.0)).unwrap();
         assert!((frame.width - 100.0).abs() < 1.0, "width was {}", frame.width);
-        assert!((frame.height - 100.0).abs() < 1.0, "height was {}", frame.height);
+        assert!((frame.height - 50.0).abs() < 1.0, "height was {}", frame.height);
 
-        // 각도를 주지 않으면 축 정렬 상자가 되어 sqrt(2)배로 커진다.
+        // 각도를 주지 않으면 축 정렬 상자가 되어 100x50 이 79.06x79.06 으로
+        // 바뀐다 — 정사각형이 되므로 폭은 줄고 높이는 늘어난다.
         let without = crate::shape_renderer::shape_frame(&geometry, None).unwrap();
-        assert!(without.width > 130.0, "width was {}", without.width);
+        assert!((without.width - 79.06).abs() < 0.5, "width was {}", without.width);
+        assert!((without.height - 79.06).abs() < 0.5, "height was {}", without.height);
+        assert!(without.height > 60.0, "height was {}", without.height);
     }
+```
 
+**이 테스트의 수학은 리뷰 중 검증됐다.** 회전한 타원의 축 정렬 경계 상자 폭은
+`2·√(rx²cos²θ + ry²sin²θ)`이고 높이는 `2·√(rx²sin²θ + ry²cos²θ)`이다.
+rx=50, ry=25, θ=45° 에서 둘 다 79.0569 이다. 원(rx=ry)이면 두 식 모두
+지름과 같아져 회전의 영향이 전혀 보이지 않는다.
+
+```rust
     #[test]
     fn a_shape_without_an_angle_falls_back_to_axis_aligned_bounds() {
         let geometry = koharu_scene::Geometry {
@@ -670,13 +707,15 @@ fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
             }
             geometry_frame(layer.geometry())
         }
+        // 도형은 각도를 넘겨야 회전한 비원형 타원이 참 크기를 유지한다.
+        // shape_frame이 그 변환을 캡슐화한다 (Task 3).
         LayerKind::Shape(shape) => {
-            crate::bubble::geometry_frame(layer.geometry(), shape.angle_degrees)
+            crate::shape_renderer::shape_frame(layer.geometry(), shape.angle_degrees)
                 .map(|frame| PreparedElementFrame {
-                    x: frame.bounds.x,
-                    y: frame.bounds.y,
-                    width: frame.bounds.width,
-                    height: frame.bounds.height,
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height,
                     angle_degrees: frame.angle_degrees,
                 })
         }
@@ -689,11 +728,11 @@ fn element_frame(layer: &Layer) -> Option<PreparedElementFrame> {
 
 - [ ] **Step 5: `prepare_frame`·`NodeDescriptor`·`DraftMetadata`·`assemble_frame`·`build_node`를 배선한다**
 
-`frame.rs:474`의 `prepare_frame` 분기에 도형 갈래를 추가한다. `ShapeLayer` 컴포넌트를 읽어 `PreparedLayerKind::Shape` + `PreparedContent::Vector(scene)`를 만든다. `scene`은 `shape_path`가 만든 `PreparedPath` 하나를 `PreparedSceneCommand::FillPath`로 담는다.
+`frame.rs:474`의 `prepare_frame` 분기에 도형 갈래를 추가한다. `ShapeLayer` 컴포넌트를 읽어 `PreparedLayerKind::Shape` + `PreparedContent::Vector(scene)`를 만든다. `scene`은 **`shape_layer_path`** 가 만든 `PreparedPath` 하나를 `PreparedSceneCommand::FillPath`로 담는다.
 
-`Polygon`/`Freeform`은 `shape_path`가 빈 경로를 돌려주므로, `prepare_frame`이 `Geometry` 컴포넌트에서 폴리곤을 직접 읽어 `PathElement::MoveTo`/`LineTo`/`Close`로 채운다. 이 변환은 Task 7도 필요로 하므로 **`shape_renderer`에 `pub fn polygon_path(points: &[koharu_scene::Point], style: &ShapeStyle, frame: ShapeFrame) -> PreparedPath`로 두고 양쪽이 그것을 쓴다.** 폴리곤이 3점 미만이면 빈 `PreparedScene`을 만들고 `tracing::warn!`을 남긴다.
+`Polygon`/`Freeform`은 도형 파라미터에 점이 없으므로 `Geometry` 컴포넌트에서 폴리곤을 읽어야 한다. 이 변환은 Task 7도 필요로 하므로 **`shape_renderer`가 `polygon_path`를 두고 양쪽이 그것을 쓴다.** 폴리곤이 3점 미만이면 빈 `PreparedScene`을 만들고 `tracing::warn!`을 남긴다.
 
-`shape_path`와 `polygon_path`를 나누는 계약: `shape_path`는 `Rectangle`·`Ellipse`·`Line` 전용이고, `Polygon`·`Freeform`에서는 `polygon_path`를 쓴다. 호출자가 어느 것을 쓸지 고르는 대신 **`shape_renderer`에 두 함수를 합친 진입점을 둔다**:
+`shape_path`와 `polygon_path`를 나누는 계약: `shape_path`는 `Rectangle`·`Ellipse`·`Line` 전용이고, `Polygon`·`Freeform`에서는 `polygon_path`를 쓴다. 호출자가 어느 것을 쓸지 고르지 않도록 **`shape_renderer`에 두 함수를 합친 진입점을 둔다**:
 
 ```rust
 pub fn shape_layer_path(
@@ -704,11 +743,11 @@ pub fn shape_layer_path(
 ) -> PreparedPath
 ```
 
-이 함수가 `Polygon`/`Freeform`이면 `points`로, 나머지는 파라미터로 경로를 만든다. Task 4와 Task 7은 이 하나만 호출한다. Task 3의 테스트는 `shape_path`를 직접 부르고, `shape_layer_path`는 `Polygon` 위임을 검증하는 테스트를 하나 더 갖는다.
+이 함수가 `Polygon`/`Freeform`이면 `points`로, 나머지는 파라미터로 경로를 만든다. **Task 4와 Task 7은 이 하나만 호출한다.** `shape_path`를 직접 부르면 `Polygon`/`Freeform`이 빈 경로가 된다. Task 3의 테스트는 `shape_path`를 직접 부르고, `shape_layer_path`는 `Polygon` 위임을 검증하는 테스트를 갖는다.
 
 `rasterized == true`인 도형은 벡터 대신 래스터 자산을 그려야 한다. `ShapeLayer.rasterized`가 true면 `PreparedLayerKind::Raster` + 래스터 내용으로 내보낸다 (래스터 자산은 Task 7이 만든다). 래스터 내용을 만드는 방법은 `prepare_frame`의 기존 래스터 갈래(`frame.rs:486-490`)가 `RasterImage`를 받아 `prepare_raster_tiles`를 부르는 것을 따른다. 이 분기를 `prepare_frame`에 넣고 주석으로 이유를 남긴다.
 
-`NodeDescriptor`(frame.rs:442)에 `Shape(Box<ShapeNodeDescriptor>)`를 추가한다. `renderer.rs:1100` 부근의 `build_node`에 `NodeDescriptor::Shape` 갈래를 추가해 `shape_path`를 호출하고 `RetainedNode { descriptor, scene, resources: Arc::from([]), local_bounds, image: None, text: None, diagnostics }`를 만든다.
+`NodeDescriptor`(frame.rs:442)에 `Shape(Box<ShapeNodeDescriptor>)`를 추가한다. `ShapeNodeDescriptor`는 폴리곤 점도 담아야 `build_node`가 `shape_layer_path`에 넘길 수 있다. `renderer.rs:1100` 부근의 `build_node`에 `NodeDescriptor::Shape` 갈래를 추가해 **`shape_layer_path`** 를 호출하고 `RetainedNode { descriptor, scene, resources: Arc::from([]), local_bounds, image: None, text: None, diagnostics }`를 만든다.
 
 `renderer.rs:468`의 `DraftMetadata`에 `Shape(ShapeMetadata)`를 추가하고, `assemble_frame`(renderer.rs:1193)의 match에 `LayerKind::Shape(metadata)` 갈래를 추가한다.
 
@@ -800,8 +839,8 @@ git commit -m "feat(canvas): allow transforming and previewing shapes"
 도형 생성·스타일 편집·기하 편집을 서버에 연결하고 RPC 라우트를 함께 만든다.
 
 **Files:**
-- Modify: `crates/koharu-app/src/commands/canvas.rs` (`add_shape`, `set_shape_style`, `set_shape_geometries`)
-- Modify: `crates/koharu-app/src/commands/project.rs` (`Project::add_shape`, `::set_shape_style`, `::set_shape_geometries`, `Layer::Shape` 노출)
+- Modify: `crates/koharu-app/src/commands/canvas.rs` (`add_shape`, `set_shape_style`)
+- Modify: `crates/koharu-app/src/commands/project.rs` (`Project::add_shape`, `::set_shape_style`, `Layer::Shape` 노출)
 - Modify: `crates/koharu-rpc/src/routes/canvas.rs`
 - Modify: `packages/bridge/src/protocol.ts`
 - Test: `crates/koharu-app/src/commands/project.rs` (인라인 `mod tests`)
@@ -811,18 +850,17 @@ git commit -m "feat(canvas): allow transforming and previewing shapes"
 - Produces (Rust):
   - `Project::add_shape(&mut self, page: EntityId, geometry: SceneGeometry, shape: ShapeGeometry, style: ShapeStyle, angle_degrees: f32) -> Result<(Commit, EntityId)>`
   - `Project::set_shape_style(&mut self, updates: Vec<(EntityId, ShapeStyle)>) -> Result<Commit>`
-  - `Project::set_shape_geometries(&mut self, updates: Vec<(EntityId, SceneGeometry, f32)>) -> Result<Commit>`
-  - `Layer::Shape { id, parent, geometry, angle_degrees, visibility, shape, style, rasterized }`
+  - `Layer::Shape { id, parent, geometry, angle_degrees, visibility, name, shape, style, rasterized }`
   - 커맨드: `add_shape(expected_revision, page, geometry, shape, style, angle_degrees) -> LayerCommit`
   - 커맨드: `set_shape_style(expected_revision, updates: Vec<ShapeStyleUpdate>) -> Revision`
-  - 커맨드: `set_shape_geometries(expected_revision, updates: Vec<ShapeFrameUpdate>) -> Revision`
 - Produces (TS, `protocol.ts`):
   - `ShapeGeometry`, `ShapeStyle`, `ShapeFill`, `StrokeStyle`, `LineCap`, `LineJoin`, `ArrowHead` 타입
   - `Layer`에 `{ type: 'shape'; ... }` 변형
   - `commands.addShape(expectedRevision, page, geometry, shape, style, angleDegrees)`
   - `commands.setShapeStyle(expectedRevision, updates)`
-  - `commands.setShapeGeometries(expectedRevision, updates)`
-  - 라우트: `POST /canvas/shape`, `POST /canvas/shape/style`, `POST /canvas/shape/geometry`
+  - 라우트: `POST /canvas/shape`, `POST /canvas/shape/style`
+
+**최종 수정에서 도형 전용 기하 커맨드는 제거됐다.** 초안의 `Project::set_shape_geometries`, 커맨드 `set_shape_geometries`, `ShapeFrameUpdate`, `commands.setShapeGeometries`, `POST /canvas/shape/geometry`는 인레포 호출자가 하나도 없었다 — 모든 도형 이동은 `commitTransform` → `set_geometries`로 간다. AGENTS.md의 "죽은 추상화는 제거한다"에 따라 전부 지웠다.
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -891,7 +929,11 @@ Expected: 컴파일 실패
 
 이름은 기존 래스터 이름 규칙(project.rs:1193)을 따른다: `format!("{} {}", 종류 이름, 기존 도형 수 + 1)`. 종류 이름은 `Rectangle`/`Ellipse`/`Line`/`Polygon`/`Freeform`.
 
-`set_shape_style`은 `set_typography`(project.rs:907)를 따른다. `set_shape_geometries`는 `set_geometries`(project.rs:1104)를 따르되 `SceneTextLayout` 대신 `SceneShapeLayer.angle_degrees`를 갱신한다.
+`set_shape_style`은 `set_typography`(project.rs:907)를 따른다. 도형의 이동·회전은 별도 메서드 없이 `set_geometries`(project.rs:1104)가 `SceneShapeLayer` 분기에서 `SceneShapeLayer.angle_degrees`를 갱신한다.
+
+**`set_geometries`는 `Line`의 `start`/`end`를 폴리곤에서 다시 계산해야 한다.** 모든 변형 경로는 폴리곤만 갱신하는데 `line_path`는 `start`/`end`로 그리므로, 재계산하지 않으면 선을 드래그해도 그려지는 선이 제자리에 남고 `element_frame`(폴리곤을 읽는다)이 선에서 분리된다. Task 3이 넣은 `ShapeGeometry::resync_with_polygon(&mut self, points: &[Point])`를 `edit.set(element, &geometry)` 직전에 호출한다 — 첫 점이 `start`, 마지막 점이 `end`다. 이 호출을 검증하는 테스트를 Step 1에 추가한다: 선 폴리곤을 평행이동한 뒤 컴포넌트의 `start`/`end`가 따라 움직였는지 확인한다.
+
+**최종 수정에서 이 재계산은 `Project::write_geometry` 헬퍼 하나로 합쳐졌다.** 폴리곤을 쓰는 경로가 셋이기 때문이다: `add_shape`의 생성 경로, 이 변형 경로, `merge_pages`의 스프레드 시프트 루프다. 헬퍼가 폴리곤 쓰기와 `ShapeLayer` 재동기화를 한 트랜잭션에 묶으므로, 이후 쓰기 경로는 그 헬퍼만 부르면 된다. 회귀 테스트도 셋이다 — 생성 경로는 `adding_a_line_resyncs_its_endpoints_from_the_polygon`, 변형 경로는 `moving_a_line_resyncs_its_endpoints_from_the_polygon`, 병합 경로는 `merging_pages_shifts_a_line_shape_with_its_polygon`.
 
 세 메서드 모두 `Origin::User`로 승격하고 `promote_entity_to_user`를 호출한다.
 
@@ -899,13 +941,13 @@ Expected: 컴파일 실패
 
 `project.rs:77`의 `Layer` enum에 `Shape` 변형을 추가하고, `collect_layer_views`(project.rs:1541 부근)에 `SceneShapeLayer` 분기를 추가한다. 순서는 `Raster` 검사 뒤, `Image` 폴백 앞이다.
 
-`angle_degrees`는 `ShapeLayer.angle_degrees`를 그대로 내보내고, `rasterized`도 그대로 내보낸다.
+`name`·`angle_degrees`·`rasterized`는 `ShapeLayer`에서 그대로 내보낸다. `name`은 D4의 레이어 목록 식별자이며, Inspector가 "Image N" 대신 이것을 쓴다.
 
-- [ ] **Step 5: 커맨드 3개를 추가한다**
+- [ ] **Step 5: 커맨드 2개를 추가한다**
 
 `crates/koharu-app/src/commands/canvas.rs`에 `commit_paint`(canvas.rs:288)를 본떠 커맨드를 만든다. 각 커맨드는 `#[tracing::instrument(target = "koharu_metrics", ...)]`, `#[tauri::command]`, `#[specta::specta]`를 붙이고 `ensure_revision`으로 기대 리비전을 확인한 뒤 커밋하고 `desktop.synchronize` + `canvas_channel.publish`를 호출한다.
 
-`ShapeStyleUpdate { element: EntityId, style: ShapeStyle }`, `ShapeFrameUpdate { element: EntityId, geometry: Geometry, angle_degrees: f32 }`를 `#[derive(Deserialize, Type)]`로 정의한다.
+`ShapeStyleUpdate { element: EntityId, style: ShapeStyle }`를 `#[derive(Deserialize, Type)]`로 정의한다. 초안의 `ShapeFrameUpdate`는 도형 전용 기하 커맨드와 함께 제거됐다 (아래 "최종 수정" 참조).
 
 - [ ] **Step 6: 테스트가 통과하는지 확인한다**
 
@@ -914,11 +956,11 @@ Expected: 전부 통과
 
 - [ ] **Step 7: RPC 라우트를 추가한다**
 
-`crates/koharu-rpc/src/routes/canvas.rs:20`의 `router()`에 세 라우트를 추가하고 핸들러를 만든다. 기존 `add_text_box` 핸들러가 상태를 꺼내는 방식을 그대로 따른다.
+`crates/koharu-rpc/src/routes/canvas.rs:20`의 `router()`에 두 라우트를 추가하고 핸들러를 만든다. 기존 `add_text_box` 핸들러가 상태를 꺼내는 방식을 그대로 따른다.
 
 - [ ] **Step 8: `protocol.ts`를 갱신한다**
 
-`packages/bridge/src/protocol.ts`에 도형 타입과 세 명령을 추가한다. `Layer` 유니온(protocol.ts:686)에 `shape` 변형을 넣는다. 기존 `RasterLayerKind`(protocol.ts:956) 옆에 도형 관련 타입을 둔다.
+`packages/bridge/src/protocol.ts`에 도형 타입과 두 명령을 추가한다. `Layer` 유니온(protocol.ts:686)에 `shape` 변형을 넣는다. 기존 `RasterLayerKind`(protocol.ts:956) 옆에 도형 관련 타입을 둔다.
 
 `commands` 객체(protocol.ts:272 부근)에:
 
@@ -934,8 +976,6 @@ Expected: 전부 통과
 		}),
 	setShapeStyle: (expectedRevision: Revision, updates: ShapeStyleUpdate[]) =>
 		post<Revision>("/canvas/shape/style", { expected_revision: expectedRevision, updates }),
-	setShapeGeometries: (expectedRevision: Revision, updates: ShapeFrameUpdate[]) =>
-		post<Revision>("/canvas/shape/geometry", { expected_revision: expectedRevision, updates }),
 ```
 
 **파일 상단 주석에 "This file is derived; change the Rust source and regenerate"가 있으면 반드시 확인한다.** 포크 HANDOFF §8에 따르면 이 파일은 지금 손으로 쓰는 fetch/SSE 클라이언트이며, 자동 생성기가 아니다. 자동 생성기가 살아 있으면 생성하고, 아니면 손으로 고친다.
@@ -1127,17 +1167,19 @@ git commit -m "feat(psd): export shape layers as raster layers"
 - Modify: `packages/koharu/components/editor/ToolBar.tsx:44-54, 101-111`
 - Modify: `packages/koharu/components/editor/CanvasWorkspace.tsx:395-415, 722-735, 733-756`
 - Modify: `packages/koharu/components/editor/Inspector.tsx`
+- Modify: `packages/bridge/src/canvas.ts` — Task 5가 노출한 `beginShape`/`updateShape`/`finishShape`/`cancelShape`를 배선한다. 이게 없으면 그 API는 죽은 코드다 (Step 7 참조)
 - Modify: `packages/koharu/public/locales/*/translation.json` (9개)
 
 **Interfaces:**
-- Consumes: Task 6의 `protocol.ts` 타입과 명령
+- Consumes: Task 6의 `protocol.ts` 타입과 명령, Task 5의 `WebCanvas` 도형 프리뷰 API
 - Produces:
-  - `SHAPE_KINDS: readonly ShapeKind[]`, `type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'polygon' | 'freeform'`
+  - `SHAPE_KINDS: readonly ShapeKind[]`, `type ShapeKind = 'rectangle' | 'ellipse' | 'line' | 'arrow'`
   - `defaultShapeStyle(kind: ShapeKind): ShapeStyle`
   - `shapePolygon(kind: ShapeKind, frame: Frame): Geometry`
   - `isShapeTool(tool: CanvasTool): boolean` — 이 태스크에서는 `tool === 'shape'`
   - store: `shapeKind: ShapeKind`, `shapeStyle: ShapeStyle`, `setShapeKind`, `setShapeStyle`
   - `CanvasTool`에 `'shape'` 추가, `defaultShortcuts`에 `shape: 'r'`
+  - `Canvas` 인터페이스와 `createCanvas` 반환 객체에 `beginShape`/`updateShape`/`finishShape`/`cancelShape`
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -1200,11 +1242,16 @@ Expected: FAIL — `Cannot find module '@/lib/shapes'`
 - `rectangle` — 네 모서리, 프레임 각도로 회전
 - `ellipse` — 32점 타원, 같은 방식으로 회전
 - `line` / `arrow` — 시작·끝·중간 3점. 시작은 프레임 좌상단, 끝은 우하단
-- `polygon` / `freeform` — 프레임 네 모서리에서 시작 (사용자가 이후 편집)
 
 프레임 크기가 0이어도 점이 유한해야 한다. `width`/`height`가 0이면 최소 `1e-6`으로 클램프한다.
 
-`defaultShapeStyle`은 `{ fill: { kind: 'solid', color: [255, 255, 255, 255] }, stroke: null }` 형태로, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다. TS 타입이 유니온이면 그에 맞춘다.
+**최종 수정에서 `polygon`·`freeform`은 1a 도구 목록에서 빠졌다.** `shapePolygon`은 두 종류 모두 프레임 네 모서리를 돌려주므로, 사용자가 고르면 태그만 다른 사각형을 얻게 된다. `ShapeGeometry`와 렌더러의 `polygon_path`는 그대로 남아 있고, 꼭짓점 편집 UI가 생기면 `SHAPE_KINDS`와 로케일 키만 다시 넣으면 된다.
+
+`defaultShapeStyle`은 **면적이 있는 도형**(`rectangle`·`ellipse`)에 대해 `{ fill: { solid: [255, 255, 255, 255] }, stroke: null }`을 반환하고, **Task 6의 `protocol.ts`에 정의한 실제 직렬화 형태와 정확히 일치**해야 한다.
+
+**`line`·`arrow`는 예외다.** 직선분은 면적을 둘러싸지 않으므로 채우기만 있는 스타일은 아무것도 그리지 않는다 — 기본값으로 두면 사용자가 선을 그어도 화면에 아무것도 나타나지 않는다. 이 두 종류는 `{ fill: null, stroke: { color: [255,255,255,255], width: 2, dash: null, cap: 'round', join: 'round' } }`을 반환한다.
+
+처음에 이 계획은 여섯 종류 모두에 채우기 기본값을 요구했으나, 그 제약은 serde가 고정한 **wire 형태**(면적 도형의 채우기 리터럴)를 모든 종류로 과잉 일반화한 것이었다. wire 형태는 어느 쪽이든 동일하므로 두 종류의 예외는 직렬화 계약을 깨지 않는다.
 
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
@@ -1229,9 +1276,19 @@ Expected: PASS
 
 `CanvasWorkspace.tsx:395`의 Escape·단축키 배열에 `'shape'`를 추가한다.
 
-`CanvasWorkspace.tsx:733`의 `'draw'` 분기 앞에 `'shape'` 분기를 넣는다. `'manual_box'`(CanvasWorkspace.tsx:726)와 같은 `draftFrame` 드래그를 쓴다. 포인터 업에서 `commands.addShape`를 호출하고 `refresh(projectKey, pagesKey, pageKey)`로 갱신한다.
+`CanvasWorkspace.tsx:733`의 `'draw'` 분기 앞에 `'shape'` 분기를 넣는다. `'manual_box'`(CanvasWorkspace.tsx:726)와 같은 `draftFrame` 드래그를 쓴다.
+
+**드래그 중 라이브 미리보기는 `packages/bridge/src/canvas.ts`를 거쳐야 한다.** Task 5가 `WebCanvas`에 `beginShape`/`updateShape`/`finishShape`/`cancelShape`를 노출했지만, `canvas.ts`가 WASM 핸들의 유일한 래퍼이고 여기에 네 메서드가 없으면 그 API는 도달 불가능한 죽은 코드가 된다 (Task 5 리뷰가 이 계획 누락을 지적했다). 따라서:
+
+1. `canvas.ts`의 `Canvas` 인터페이스(~:17-38)와 `CanvasHandle` 인터페이스(~:51-79)에 네 메서드를 추가한다. `CanvasHandle`의 `beginShape`는 `PathElement[]`(또는 그것을 담은 직렬화된 `PreparedPath`)와 페이지·리비전을 받는다.
+2. `createCanvas`의 반환 객체(~:103-180)에 네 메서드를 배선한다. `stroke` 계열(~:151-161)이 참고 패턴이다.
+3. `CanvasWorkspace.tsx`의 도형 분기가 드래그 시작 시 `canvas.beginShape({...})`, 이동 시 `updateShape`, 포인터 업 시 `finishShape`를 호출한다. `strokeUpdates`(~:162-165)의 `useFrameCommand` 스로틀 패턴을 그대로 쓴다 — 매 프레임 전부 보내면 안 된다.
+4. 취소(Escape·blur) 경로는 `cancelGesture`(~:231-248)에 도형 갈래를 추가해 `cancelShape`를 부른다. 기존 `strokeUpdates.clear(); canvas?.cancelStroke()` 옆이다.
+5. 포인터 업에서는 `finishShape()`가 돌려준 `{page, revision}` 검증에만 쓰고, **커밋은 `commands.addShape`로 한다** — 프론트가 스타일과 종류를 이미 알고 있으므로 경로를 되돌려받아 서버에 보낼 필요가 없다.
 
 `gesture.current`의 유니온(CanvasWorkspace.tsx:82 부근)에 `kind: 'shape'`를 추가한다.
+
+**미리보기 없이 `commands.addShape`만 부르면 안 된다.** 도형은 드래그하는 동안 모양이 보여야 하고, 두 방식이 공존하면 "왜 안 보이나"를 나중에 디버깅하게 된다. Step 5의 `draftFrame` 윤곽(`DraftOverlay`)만으로도 최소 피드백은 있지만, 실제 채우기·테두리를 보여주는 것이 Task 5가 프리뷰를 만든 이유다.
 
 - [ ] **Step 8: Inspector와 i18n을 넣는다**
 
@@ -1241,9 +1298,9 @@ Expected: PASS
 
 - `tools.shape`
 - `inspector.shape.fill`, `inspector.shape.stroke`, `inspector.shape.strokeWidth`, `inspector.shape.dash`, `inspector.shape.rasterize`
-- `inspector.shape.kind.rectangle`, `.ellipse`, `.line`, `.arrow`, `.polygon`, `.freeform`
+- `inspector.shape.kind.rectangle`, `.ellipse`, `.line`, `.arrow`
 
-한국어(`ko-KR`)는 사각형/타원/선/화살표/다각형/자유곡선. 다른 로케일은 영어를 기본으로 두고 기존 파일의 번역 관행을 따른다.
+한국어(`ko-KR`)는 사각형/타원/선/화살표. 다른 로케일은 영어를 기본으로 두고 기존 파일의 번역 관행을 따른다.
 
 - [ ] **Step 9: 프론트 검사를 돌린다**
 
@@ -1354,9 +1411,9 @@ git commit -m "test(scene): pin project round-trip compatibility for shapes"
 | "무엇이 그리는가" (파라미터가 그린다) | Task 3 |
 | "프레임을 어떻게 얻는가" (회전) | Task 4 |
 | 캔버스 미리보기 (WASM) | Task 5 |
-| 새 커맨드 4개 | Task 6 (`add_shape`, `set_shape_style`, `set_shape_geometries`), Task 7 (`rasterize_shapes`) |
+| 새 커맨드 3개 | Task 6 (`add_shape`, `set_shape_style`), Task 7 (`rasterize_shapes`) |
 | HTTP 라우트 | Task 6, Task 7 |
-| 변형 게이트 3곳 | Task 5 (desktop, canvas), Task 6 (`set_shape_geometries` 분리) |
+| 변형 게이트 3곳 | Task 5 (desktop, canvas), Task 6 (`set_geometries`의 `Target::{Text, Shape}` 분기) |
 | 래스터화 흐름 + 알파 배경 | Task 7 |
 | 렌더링 우선순위 (`rasterized`) | Task 4 (`prepare_frame` 분기) |
 | 기존 프로젝트 호환 | Task 10 |

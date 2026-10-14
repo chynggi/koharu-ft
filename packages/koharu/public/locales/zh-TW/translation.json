@@ -180,6 +180,22 @@
     "stopProcessing": "停止處理"
   },
   "inspector": {
+    "adjust": {
+      "apply": "套用",
+      "brightness": "亮度",
+      "contrast": "對比度",
+      "degrees": "角度",
+      "delta": "增減",
+      "grayscale": "灰階",
+      "high": "最高",
+      "hue": "色相",
+      "invalidLevels": "最低值必須小於最高值。",
+      "levels": "色階",
+      "low": "最低",
+      "percent": "百分比",
+      "singleLayer": "請只選擇一個點陣圖層進行調整。",
+      "title": "調整類型"
+    },
     "alignBottom": "底端對齊",
     "alignCenter": "置中對齊",
     "alignLeft": "靠左對齊",
@@ -212,6 +228,53 @@
     "placement": "位置",
     "resetAutoFit": "重設為自動符合",
     "selectPage": "選擇頁面以檢查其圖層。",
+    "shape": {
+      "addStop": "新增色標",
+      "dash": "虛線",
+      "fill": "填色",
+      "fillKind": {
+        "gradient": "漸層",
+        "pattern": "圖案",
+        "solid": "純色"
+      },
+      "fillKindLabel": "填色類型",
+      "gradientKind": {
+        "linear": "線性",
+        "radial": "放射狀"
+      },
+      "gradientKindLabel": "漸層類型",
+      "kind": {
+        "arrow": "箭頭",
+        "ellipse": "橢圓",
+        "line": "直線",
+        "rectangle": "矩形"
+      },
+      "kindLabel": "形狀類型：{{kind}}",
+      "kindTitle": "形狀類型",
+      "pattern": {
+        "ignoredForStretch": "延展時會忽略原點與縮放。",
+        "originX": "原點 X",
+        "originY": "原點 Y",
+        "repeat": {
+          "stretch": "延展",
+          "tile": "並排"
+        },
+        "repeatLabel": "重複",
+        "replace": "取代圖片",
+        "rotation": "旋轉",
+        "scale": "縮放",
+        "title": "圖案",
+        "upload": "選擇圖片"
+      },
+      "rasterize": "點陣化",
+      "removeStop": "刪除色標",
+      "stopColor": "色標 {{index}} 顏色",
+      "stopOffset": "色標 {{index}} 位置",
+      "stops": "色標",
+      "stopsTooClose": "色標之間已無空間",
+      "stroke": "描邊",
+      "strokeWidth": "描邊寬度"
+    },
     "size": "字級",
     "source": "原文",
     "style": "樣式",
@@ -249,6 +312,7 @@
       "group": "群組",
       "image": "影像",
       "paint": "繪製",
+      "shape": "形狀",
       "text": "文字",
       "textGroup": "文字群組"
     },
@@ -627,6 +691,12 @@
     "zoom": "縮放"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "沿筆畫",
+      "fixedAxis": "固定軸",
+      "none": "無"
+    },
+    "brushRampTitle": "筆刷漸層",
     "brushSize": "筆刷大小",
     "brushSizeInput": "筆刷大小",
     "brushSizePixels": "筆刷大小：{{size}} 像素",
@@ -635,12 +705,22 @@
     "decreaseBrushSize": "減少筆刷大小",
     "draw": "繪圖",
     "eraser": "橡皮擦",
+    "fill": "填色",
+    "fillColor": "填色顏色",
     "increaseBrushSize": "增加筆刷大小",
     "manual_ocr_box": "手動 OCR（矩形）",
     "manual_ocr_lasso": "手動 OCR（自由繪製）",
     "pan": "平移",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "軸",
+    "rampFrom": "起始顏色",
+    "rampTo": "結束顏色",
     "remove": "移除",
     "select": "選取",
+    "shape": "形狀",
     "text": "文字"
   },
   "updater": {

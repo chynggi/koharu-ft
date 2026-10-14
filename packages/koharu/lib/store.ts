@@ -14,13 +14,19 @@ import type {
   StartupState,
   ModelResources,
   PageSize,
+  ShapeStyle,
+  BrushRamp,
 } from '@koharu/bridge/protocol'
 import { toast } from '@koharu/ui/components/toast'
+
+import { defaultShapeStyle, type ShapeKind } from './shapes'
 
 export type CanvasTool =
   | 'select'
   | 'text'
+  | 'shape'
   | 'draw'
+  | 'fill'
   | 'eraser'
   | 'color_picker'
   | 'remove'
@@ -41,6 +47,11 @@ export function isBrushTool(tool: CanvasTool): boolean {
 export interface CanvasBrush {
   diameter: number
   color: string
+  /**
+   * The ramp that replaces `color` while it is set. It is a command argument,
+   * not persisted state, so it survives only as long as this session's brush.
+   */
+  ramp: BrushRamp | null
 }
 export type InspectorSection = 'copy' | 'type' | 'layers'
 export type ShortcutAction = CanvasTool | 'fit'
@@ -67,6 +78,12 @@ interface KoharuStore {
   selectedPages: EntityId[]
   tool: CanvasTool
   brush: CanvasBrush
+  // The bucket fill keeps its own colour: it is a different operation from
+  // painting, so sharing `brush.color` would make each tool silently retarget
+  // the other's colour.
+  fillColor: string
+  shapeKind: ShapeKind
+  shapeStyle: ShapeStyle
   inspector: InspectorSection
   processingScope: PipelineScope
   processingStages: Stage[]
@@ -81,6 +98,9 @@ interface KoharuStore {
   setCopiedTextLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool, cleanupLayer?: EntityId) => void
   setBrush: (brush: CanvasBrush) => void
+  setFillColor: (color: string) => void
+  setShapeKind: (kind: ShapeKind) => void
+  setShapeStyle: (style: ShapeStyle) => void
   setShortcut: (action: ShortcutAction, key: string) => void
   requestCanvasFit: () => void
   dismissJob: (id: string) => void
@@ -90,7 +110,9 @@ interface KoharuStore {
 export const defaultShortcuts: Shortcuts = {
   select: 'v',
   text: 't',
+  shape: 'r',
   draw: 'b',
+  fill: 'g',
   eraser: 'e',
   color_picker: 'i',
   remove: 'j',
@@ -118,7 +140,10 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   copiedTextLayers: [],
   selectedPages: [],
   tool: 'select',
-  brush: { diameter: 48, color: '#FFFFFF' },
+  brush: { diameter: 48, color: '#FFFFFF', ramp: null },
+  fillColor: '#000000',
+  shapeKind: 'rectangle',
+  shapeStyle: defaultShapeStyle('rectangle'),
   inspector: 'copy',
   processingScope: 'selected-pages',
   processingStages: [...pipelineStages],
@@ -140,7 +165,15 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
         ? { selectedLayers: [cleanupLayer] }
         : {}),
     }),
+  // The whole brush object is replaced, so a caller that changes one field must
+  // spread the current brush. That is what keeps `ramp` alive when the colour
+  // picker samples a pixel, rather than silently dropping back to a flat stroke.
   setBrush: (brush) => set({ brush }),
+  setFillColor: (fillColor) => set({ fillColor }),
+  // Each kind ships the style that can actually draw it, so switching to a line
+  // never leaves the fill-only style of a rectangle behind.
+  setShapeKind: (shapeKind) => set({ shapeKind, shapeStyle: defaultShapeStyle(shapeKind) }),
+  setShapeStyle: (shapeStyle) => set({ shapeStyle }),
   setShortcut: (action, key) =>
     set((state) => ({
       shortcuts: { ...state.shortcuts, [action]: key.toLowerCase().slice(0, 1) },

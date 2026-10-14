@@ -32,14 +32,17 @@ import {
   queryClient,
   useCommand,
 } from '@/lib/queries'
+import { fillKind } from '@/lib/shapes'
 import { useKoharuStore } from '@/lib/store'
 import * as canvasRuntime from '@koharu/bridge/canvas'
 import {
   commands,
   type Layer,
   type PageSummary,
+  type PatternSpec,
   type Preferences,
   type ProjectInfo,
+  type ShapeFill,
 } from '@koharu/bridge/protocol'
 import { TooltipProvider } from '@koharu/ui/components/tooltip'
 
@@ -119,6 +122,73 @@ const thirdLayer: Layer = {
   },
 }
 
+const shapeLayer: Layer = {
+  type: 'shape',
+  id: 'shape',
+  parent: 'page',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: 0,
+  visibility: { visible: true, opacity: 1 },
+  name: 'Rectangle 1',
+  shape: { rectangle: { corner_radius: 0 } },
+  style: { fill: { solid: [255, 255, 255, 255] }, stroke: null },
+  rasterized: false,
+}
+
+const gradientShapeLayer: Layer = {
+  type: 'shape',
+  id: 'shape-gradient',
+  parent: 'page',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: 0,
+  visibility: { visible: true, opacity: 1 },
+  name: 'Rectangle 2',
+  shape: { rectangle: { corner_radius: 0 } },
+  style: {
+    fill: {
+      gradient: {
+        kind: { linear: { start: [0, 0], end: [1, 0] } },
+        stops: [
+          { offset: 0, color: [255, 255, 255, 255] },
+          { offset: 1, color: [0, 0, 0, 255] },
+        ],
+        extend: 'pad',
+      },
+    },
+    stroke: null,
+  },
+  rasterized: false,
+}
+
+const patternSpec: PatternSpec = {
+  repeat: 'tile',
+  origin: [0, 0],
+  scale: 0.25,
+  rotation_degrees: 0,
+  fallback: [255, 255, 255, 255],
+}
+
+const patternShapeLayer: Layer = {
+  ...gradientShapeLayer,
+  id: 'shape-pattern',
+  name: 'Rectangle 3',
+  style: { fill: { pattern: patternSpec }, stroke: null },
+}
+
 const artworkLayer: Layer = {
   type: 'artwork',
   id: 'artwork',
@@ -133,6 +203,16 @@ const artworkLayer: Layer = {
   },
   visibility: { visible: true, opacity: 1 },
   image: 'source',
+}
+
+const rasterLayer: Layer = {
+  type: 'raster',
+  id: 'raster',
+  parent: 'page',
+  visibility: { visible: true, opacity: 1 },
+  image: 'paint',
+  name: 'Paint 1',
+  kind: 'paint',
 }
 
 const preferences: Preferences = {
@@ -682,6 +762,768 @@ describe('greenfield editor', () => {
         }),
       ]),
     )
+  })
+
+  it('switches the shape kind and seeds a style that can draw it', async () => {
+    const user = userEvent.setup()
+    installProject()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shape' }))
+    expect(useKoharuStore.getState().tool).toBe('shape')
+
+    await user.click(screen.getByRole('button', { name: 'Shape kind: Rectangle' }))
+    // The popover heading must be a real string, not i18next's "returned an
+    // object instead of string" diagnostic for a branch key.
+    expect(await screen.findByText('Shape kind')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Line' }))
+
+    expect(useKoharuStore.getState().shapeKind).toBe('line')
+    expect(useKoharuStore.getState().shapeStyle).toEqual({
+      fill: null,
+      stroke: { color: [255, 255, 255, 255], width: 2, dash: null, cap: 'round', join: 'round' },
+    })
+  })
+
+  it('offers a fill colour apart from the brush colour', async () => {
+    const user = userEvent.setup()
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({
+      selectedLayers: ['raster'],
+      canvasRevision: 1,
+      brush: { diameter: 48, color: '#FFFFFF', ramp: null },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Fill' }))
+    expect(useKoharuStore.getState().tool).toBe('fill')
+    // The brush-size slider is meaningless for filling, so the rail shows only
+    // the colour well.
+    expect(screen.queryByRole('button', { name: /Brush size/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Fill color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#123456' },
+    })
+
+    expect(useKoharuStore.getState().fillColor).toBe('#123456')
+    expect(useKoharuStore.getState().brush.color).toBe('#FFFFFF')
+  })
+
+  it('builds a brush ramp and hides the flat colour it replaces', async () => {
+    const user = userEvent.setup()
+    installProject()
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: { diameter: 48, color: '#204060', ramp: null },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    // No ramp: the single flat colour well is the only colour authority.
+    expect(screen.getByRole('button', { name: 'Brush color' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Brush gradient' }))
+    await user.click(await screen.findByRole('radio', { name: 'Along stroke' }))
+
+    // Once a ramp is on, the flat well must be gone: two controls writing
+    // "what colour is this stroke" would disagree about which one Rust reads.
+    expect(screen.queryByRole('button', { name: 'Brush color' })).not.toBeInTheDocument()
+    expect(useKoharuStore.getState().brush.ramp).toEqual({
+      kind: 'along_stroke',
+      from: [32, 64, 96, 255],
+      to: [0, 0, 0, 255],
+    })
+
+    expect(screen.getByRole('button', { name: 'Start color' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'End color' })).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Axis' })).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('radio', { name: 'Fixed axis' }))
+
+    expect(useKoharuStore.getState().brush.ramp).toEqual({
+      kind: 'fixed_axis',
+      from: [32, 64, 96, 255],
+      to: [0, 0, 0, 255],
+      axis: 'horizontal',
+    })
+    expect(screen.getByRole('radiogroup', { name: 'Axis' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'Vertical' }))
+    expect(useKoharuStore.getState().brush.ramp).toMatchObject({ axis: 'vertical' })
+  })
+
+  it('turns the ramp back off without disturbing the flat brush colour', async () => {
+    const user = userEvent.setup()
+    installProject()
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: {
+        diameter: 48,
+        color: '#204060',
+        ramp: { kind: 'along_stroke', from: [255, 0, 0, 255], to: [0, 0, 255, 255] },
+      },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Brush gradient' }))
+    await user.click(await screen.findByRole('radio', { name: 'None' }))
+
+    expect(useKoharuStore.getState().brush.ramp).toBeNull()
+    expect(useKoharuStore.getState().brush.color).toBe('#204060')
+    expect(screen.getByRole('button', { name: 'Brush color' })).toBeInTheDocument()
+  })
+
+  it('disables the fill tool without a selected raster layer', () => {
+    installProject()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Fill' })).toBeDisabled()
+  })
+
+  it('offers a pattern as a new-shape preset and reports it as active', async () => {
+    // Without this the preset could only ever be solid or gradient, so
+    // `previewPattern` and the pattern branch of a fresh shape were
+    // unreachable: a user could choose a pattern only after drawing.
+    installProject()
+    const user = userEvent.setup()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    // The shape presets only mount while the shape tool is active, and the
+    // fill-kind radios live inside the kind popover.
+    await user.click(screen.getByRole('button', { name: 'Shape' }))
+    await user.click(screen.getByRole('button', { name: 'Shape kind: Rectangle' }))
+    const pattern = await screen.findByRole('radio', { name: 'Pattern' })
+    expect(pattern).toHaveAttribute('aria-checked', 'false')
+    await user.click(pattern)
+
+    // The store preset is the pattern kind, and the radio reflects it. The
+    // elimination-style test this replaced reported a pattern as a *solid*,
+    // which is why the assertion is on all three radios.
+    expect(fillKind(useKoharuStore.getState().shapeStyle.fill)).toBe('pattern')
+    expect(screen.getByRole('radio', { name: 'Pattern' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Solid' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: 'Gradient' })).toHaveAttribute('aria-checked', 'false')
+    // A preset carries no image, so it must still have a drawable colour.
+    const spec = useKoharuStore.getState().shapeStyle.fill
+    if (!spec || !('pattern' in spec)) throw new Error('expected a pattern preset')
+    expect(spec.pattern.fallback).toEqual([255, 255, 255, 255])
+  })
+
+  it('edits a selected shape style and rasterizes it from the inspector', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    const rasterize = vi.spyOn(commands, 'rasterizeShapes').mockResolvedValue(3)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Fill' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#FF0000' },
+    })
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        { element: 'shape', style: expect.objectContaining({ fill: { solid: [255, 0, 0, 255] } }) },
+      ]),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rasterize' }))
+    await waitFor(() => expect(rasterize).toHaveBeenCalledWith(1, 'page', ['shape']))
+  })
+
+  it('switches a shape fill from solid to a gradient', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('radio', { name: 'Gradient' }))
+
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        {
+          element: 'shape',
+          style: expect.objectContaining({
+            fill: expect.objectContaining({ gradient: expect.anything() }),
+          }),
+        },
+      ]),
+    )
+  })
+
+  it('keeps a gradient fill a gradient when a stop colour changes', async () => {
+    // The fill colour well used to write `{ solid }` unconditionally, which
+    // silently downgraded a gradient. Editing a stop must stay in the gradient
+    // branch and must not disturb the other stop.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, gradientShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Stop 1 color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#00FF00' },
+    })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).toEqual({
+      gradient: expect.objectContaining({
+        stops: [
+          { offset: 0, color: [0, 255, 0, 255] },
+          { offset: 1, color: [0, 0, 0, 255] },
+        ],
+      }),
+    })
+  })
+
+  // This test clicks "Add stop" 32 times to reach the ceiling, and each click
+  // commits through the mocked command and re-renders the whole stop list from
+  // the query cache, so it does ~1000 row renders. That is real work and it
+  // measures just over vitest's 5s default; the budget is raised rather than
+  // shrinking the click count, which is the point of the test.
+  it('keeps the stop count within the validated range', { timeout: 30_000 }, async () => {
+    installProject()
+    const user = userEvent.setup()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, gradientShapeLayer],
+    }))
+    // The inspector renders from the page query, not from a local draft, so the
+    // stub has to publish the committed style back or the button would never
+    // reach the 32-stop ceiling. The real command round-trips the same way.
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockImplementation(async (_r, updates) => {
+      queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+        ...page,
+        layers: page.layers.map((layer) => {
+          const update = updates.find((entry) => entry.element === layer.id)
+          return update ? { ...layer, style: update.style } : layer
+        }),
+      }))
+      return 2
+    })
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const add = screen.getByRole('button', { name: 'Add stop' })
+    // Two stops is the floor, so removal starts disabled.
+    expect(screen.getAllByRole('button', { name: 'Remove stop' })[0]).toBeDisabled()
+
+    const stopCounts = () =>
+      setShapeStyle.mock.calls.map(([, updates]) => {
+        const fill = updates[0]?.style.fill
+        if (!fill || !('gradient' in fill)) throw new Error('expected a gradient fill')
+        return fill.gradient.stops
+      })
+
+    for (let index = 0; index < 32; index += 1) await user.click(add)
+
+    expect(add).toBeDisabled()
+    const committed = stopCounts().at(-1)
+    expect(committed).toHaveLength(32)
+    // The server rejects more than 32 stops and rejects duplicate offsets, so
+    // neither may ever appear in a commit.
+    expect(stopCounts().every((stops) => stops.length <= 32)).toBe(true)
+    expect(new Set(committed?.map((stop) => stop.offset)).size).toBe(32)
+    expect(committed?.every((stop) => stop.offset >= 0 && stop.offset <= 1)).toBe(true)
+  })
+
+  it('never commits a duplicate offset when a gradient has tight neighbours', async () => {
+    // A spec read from disk may hold offsets closer than the editor's grid; the
+    // server accepts that. Rounding a midpoint between such neighbours lands on
+    // one of them, which the server then rejects. Every commit from the editor
+    // must stay server-valid: distinct offsets in 0..=1.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    const tightGradient: ShapeFill = {
+      gradient: {
+        kind: { linear: { start: [0, 0], end: [1, 0] } },
+        stops: [
+          { offset: 0.7865, color: [255, 255, 255, 255] },
+          { offset: 0.3, color: [255, 0, 0, 255] },
+          { offset: 0.7865004, color: [0, 255, 0, 255] },
+          { offset: 0.9, color: [0, 0, 255, 255] },
+        ],
+        extend: 'pad',
+      },
+    }
+    const tight: Layer = { ...gradientShapeLayer, style: { fill: tightGradient, stroke: null } }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, tight],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const committed = () =>
+      setShapeStyle.mock.calls.flatMap(([, updates]) => {
+        const fill = updates[0]?.style.fill
+        if (!fill || !('gradient' in fill)) return []
+        return [fill.gradient.stops.map((stop) => stop.offset)]
+      })
+
+    const add = screen.getByRole('button', { name: 'Add stop' })
+    for (let index = 0; index < 8 && !add.hasAttribute('disabled'); index += 1) {
+      await user.click(add)
+    }
+    for (const offsets of committed()) {
+      expect(new Set(offsets).size, `duplicate in ${offsets.join(', ')}`).toBe(offsets.length)
+      expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    }
+    // The tight pair was pulled apart rather than rounded together.
+    expect(setShapeStyle).toHaveBeenCalled()
+  })
+
+  it('does not show the shape controls for a text selection', () => {
+    installProject()
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('shape-inspector')).not.toBeInTheDocument()
+  })
+
+  it('switches a shape fill from solid to a pattern', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // A pattern is the third kind the fill picker offers, beside solid and
+    // gradient, and a solid fill leaves it unselected.
+    const pattern = screen.getByRole('radio', { name: 'Pattern' })
+    expect(pattern).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: 'Solid' })).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(pattern)
+
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        {
+          element: 'shape',
+          style: expect.objectContaining({
+            fill: expect.objectContaining({ pattern: expect.anything() }),
+          }),
+        },
+      ]),
+    )
+  })
+
+  it('keeps a pattern fill a pattern when one of its parameters changes', async () => {
+    // The fill colour well used to write `{ solid }` unconditionally, which
+    // silently downgraded a gradient. A pattern parameter edit walks the same
+    // path: it must stay in the pattern branch and must not become a solid or a
+    // gradient. This is the data-loss path B3 Task 6 hit.
+    installProject()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, patternShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // The pattern panel is the only fill editor on screen for a pattern.
+    expect(screen.getByTestId('pattern-fill')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Scale' }), { target: { value: '0.5' } })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).not.toHaveProperty('gradient')
+    expect(fill).toEqual({
+      pattern: expect.objectContaining({ scale: 0.5, repeat: 'tile' }),
+    })
+  })
+
+  it('repurposes the flat colour well onto the pattern fallback', async () => {
+    // The fill colour well is the only authority for a pattern's colour. While a
+    // pattern is active it stops naming the flat fill and edits `fallback`
+    // instead, so no second control can disagree about the colour and no edit
+    // demotes the fill to `{ solid }`.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, patternShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByRole('button', { name: 'Fill' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('gradient-stops')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pattern' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#00FF00' },
+    })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).not.toHaveProperty('gradient')
+    expect(fill).toEqual({
+      pattern: expect.objectContaining({ fallback: [0, 255, 0, 255] }),
+    })
+  })
+
+  it('disables a pattern origin and scale while it is stretched', () => {
+    // The server ignores both under `stretch`, so leaving them editable would
+    // invite an edit that changes nothing.
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [
+        ...page.layers,
+        {
+          ...patternShapeLayer,
+          style: {
+            fill: { pattern: { ...patternSpec, repeat: 'stretch' } },
+            stroke: null,
+          },
+        } as Layer,
+      ],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.getByRole('radio', { name: 'Stretch' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Origin X' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Origin Y' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Scale' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Rotation' })).toBeEnabled()
+    expect(screen.getByText('Origin and scale are ignored while stretching.')).toBeInTheDocument()
+  })
+
+  it('applies a brightness adjustment to a selected raster layer', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.getByTestId('adjust-inspector')).toBeInTheDocument()
+    // Nothing is committed until the user applies: the adjustment is a single
+    // explicit commit, not a live preview.
+    expect(adjustRaster).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
+      target: { value: '40' },
+    })
+    expect(adjustRaster).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'brightness', delta: 40 }),
+    )
+  })
+
+  it('shows the adjustment section only for a raster layer', () => {
+    installProject()
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('does not show the adjustment section for a shape or group selection', () => {
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('does not show the adjustment section for a group holding a raster child', () => {
+    // The shape inspector expands a group selection; the adjustment section must
+    // not, or selecting the group would offer a control aimed at one child.
+    installProject()
+    const group: Layer = {
+      type: 'group',
+      id: 'group',
+      parent: 'page',
+      visibility: { visible: true, opacity: 1 },
+      name: 'Group 1',
+      role: null,
+    }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, group, { ...rasterLayer, parent: 'group' }],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['group'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByTestId('adjust-inspector')).not.toBeInTheDocument()
+  })
+
+  it('applies the adjustment kind selected from the dropdown', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Levels' }))
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Low' }), { target: { value: '10' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'High' }), { target: { value: '240' } })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'levels', low: 10, high: 240 }),
+    )
+  })
+
+  it('refuses to apply inverted levels', async () => {
+    // The server rejects `low >= high`; the UI must not be able to send it.
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Levels' }))
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Low' }), { target: { value: '200' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'High' }), { target: { value: '50' } })
+
+    const apply = screen.getByRole('button', { name: 'Apply' })
+    expect(apply).toBeDisabled()
+    expect(screen.getByText('Low must be below high.')).toBeInTheDocument()
+    await user.click(apply)
+    expect(adjustRaster).not.toHaveBeenCalled()
+  })
+
+  it('clamps adjustment inputs to the server ranges', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // Brightness is -255..=255; a typed 9990 must not reach the command.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
+      target: { value: '9990' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => expect(adjustRaster).toHaveBeenCalled())
+    expect(adjustRaster.mock.calls.at(-1)?.[2]).toEqual({ type: 'brightness', delta: 255 })
+
+    adjustRaster.mockClear()
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Hue' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Degrees' }), {
+      target: { value: '-900' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'hue', degrees: -180 }),
+    )
+  })
+
+  it('applies a grayscale adjustment with no parameters', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('combobox', { name: 'Adjustment kind' }))
+    await user.click(await screen.findByRole('option', { name: 'Grayscale' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'grayscale' }),
+    )
+  })
+
+  it('disables apply when more than one raster layer is selected', async () => {
+    // The command takes a single layer, and applying once per layer would need
+    // one undo per layer for one click. Disabling says that plainly instead of
+    // silently adjusting whichever layer happens to be first.
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster', 'raster-2'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const apply = screen.getByRole('button', { name: 'Apply' })
+    expect(apply).toBeDisabled()
+    expect(screen.getByText('Select a single raster layer to adjust it.')).toBeInTheDocument()
+    await user.click(apply)
+    expect(adjustRaster).not.toHaveBeenCalled()
+  })
+
+  it('re-enables apply when the selection returns to a single raster layer', async () => {
+    installProject()
+    const user = userEvent.setup()
+    vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster', 'raster-2'], canvasRevision: 1 })
+    render(<Inspector />)
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+
+    act(() => useKoharuStore.setState({ selectedLayers: ['raster'] }))
+
+    expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+  })
+
+  it('ignores a second apply while the first is still in flight', async () => {
+    // Both clicks would carry the same expected revision, so the second would
+    // fail `ensure_revision` and surface an error the user cannot act on.
+    installProject()
+    const user = userEvent.setup()
+    let settle: ((value: { revision: number; layer: string }) => void) | undefined
+    const adjustRaster = vi
+      .spyOn(commands, 'adjustRaster')
+      .mockReturnValue(new Promise((resolve) => {
+        settle = resolve
+      }))
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(adjustRaster).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      settle?.({ revision: 2, layer: 'raster' })
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled())
+  })
+
+  it('resets the adjustment fields when the selected raster layer changes', async () => {
+    installProject()
+    vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '77' } })
+    expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('77')
+    // Selecting another layer in the list blurs the field first, which is what
+    // settles typed text back to its canonical form; the reset has to hold for
+    // the text the field then displays.
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Amount' }))
+
+    act(() => useKoharuStore.setState({ selectedLayers: ['raster-2'] }))
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('0'))
+  })
+
+  it('names a shape layer from its stored name and kind in the layer list', async () => {
+    // Decision D4: `ShapeLayer.name` exists so a shape is identifiable in the
+    // layer list. Without a `shape` branch the row falls through to the image
+    // arm and every shape reads "Image N" with an image icon.
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, { ...shapeLayer, name: 'Rectangle 3' }],
+    }))
+    render(<Inspector />)
+
+    expect(await screen.findByText('Rectangle 3')).toBeInTheDocument()
+    expect(screen.queryByText('Image 2')).not.toBeInTheDocument()
+    // The kind line distinguishes a shape from an image without relying on the
+    // name alone.
+    expect(screen.getByText('Shape')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Rectangle 3' })).toBeInTheDocument()
   })
 
   it('adjusts brush size from the toolbar popover', async () => {

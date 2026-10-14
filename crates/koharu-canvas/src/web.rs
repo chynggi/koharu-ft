@@ -11,9 +11,9 @@ use std::{
 use futures_channel::oneshot;
 use js_sys::{Array, Function, Uint8Array};
 use koharu_rasterizer::{
-    CompositionCommand, Frame as PreparedFrame, GpuCompositor, LayerId, LayerKind, PreparedContent,
-    PreparedFrameManifest, PreparedRasterTile, PreparedResource, PreparedResourcePacket,
-    PreparedResourceStore, Presentation, RasterDraw, ResourceId, Revision,
+    BrushRamp, CompositionCommand, Frame as PreparedFrame, GpuCompositor, LayerId, LayerKind,
+    PreparedContent, PreparedFrameManifest, PreparedPath, PreparedRasterTile, PreparedResource,
+    PreparedResourcePacket, PreparedResourceStore, Presentation, RasterDraw, ResourceId, Revision,
 };
 use serde::{Deserialize, Serialize};
 use vello::{
@@ -29,7 +29,7 @@ use web_sys::{
     ImageBitmapOptions, ImageOrientation, PremultiplyAlpha, Window,
 };
 
-use crate::{cache::ResourceUsage, surface::SurfaceBlitter};
+use crate::{cache::ResourceUsage, ramp, surface::SurfaceBlitter};
 
 const RESOURCE_CACHE_BUDGET: u64 = 512 * 1024 * 1024;
 const MAX_CACHED_RESOURCES: usize = 1_024;
@@ -131,6 +131,17 @@ enum StrokeCommitDto {
     },
 }
 
+/// The page and revision a previewed shape was drawn against.
+///
+/// The frontend already owns the shape's kind, frame, and style, so the commit
+/// guard is all the preview needs to hand back.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeCommitDto {
+    page: String,
+    revision: u64,
+}
+
 #[derive(Clone, Copy)]
 struct Camera {
     zoom: f64,
@@ -206,7 +217,25 @@ struct StrokeEdit {
     layer: Option<LayerId>,
     diameter: f32,
     color: [u8; 4],
+    /// The brush ramp being previewed, or `None` for the flat-colour path.
+    ramp: Option<BrushRamp>,
+    /// Distance travelled along `points` so far, in page units. Tracked here
+    /// because `AlongStroke` needs a cumulative length, and the next segment's
+    /// colour depends on it.
+    cumulative: f64,
     points: Vec<Point>,
+    preview: Scene,
+    pending: bool,
+}
+
+/// A shape being drawn or edited, previewed straight from the frontend's path.
+///
+/// The frontend owns per-kind shape geometry and style, so this holds the
+/// compiled preview of the path it hands over and nothing else: no shape kind
+/// or style is recomputed in WASM.
+struct ShapeEdit {
+    page: LayerId,
+    revision: Revision,
     preview: Scene,
     pending: bool,
 }
@@ -470,6 +499,7 @@ struct CanvasState {
     opacity: HashMap<LayerId, f32>,
     transform: Option<TransformEdit>,
     stroke: Option<StrokeEdit>,
+    shape: Option<ShapeEdit>,
     dirty: bool,
     generation: u64,
 }
@@ -491,6 +521,7 @@ impl CanvasState {
             opacity: HashMap::new(),
             transform: None,
             stroke: None,
+            shape: None,
             dirty: true,
             generation: 0,
         }
@@ -690,6 +721,7 @@ impl CanvasState {
         if page_changed {
             self.transform = None;
             self.stroke = None;
+            self.shape = None;
         } else {
             if self.transform.as_ref().is_some_and(|edit| {
                 !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
@@ -700,6 +732,11 @@ impl CanvasState {
                 !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
             }) {
                 self.stroke = None;
+            }
+            if self.shape.as_ref().is_some_and(|edit| {
+                !edit.pending || (edit.page == frame.page() && edit.revision < frame.revision())
+            }) {
+                self.shape = None;
             }
         }
         self.opacity.clear();
@@ -763,6 +800,7 @@ impl CanvasState {
         self.opacity.clear();
         self.transform = None;
         self.stroke = None;
+        self.shape = None;
         self.dirty = true;
     }
 
@@ -857,6 +895,13 @@ impl CanvasState {
             .filter(|stroke| stroke.kind != StrokeKind::Erase)
         {
             let opacity = match stroke.kind {
+                // A ramp owns the stroke's alpha: each previewed segment already
+                // carries the ramp's interpolated alpha, so applying the flat
+                // colour's alpha here as well would composite it twice. The
+                // commit path applies the ramp alpha exactly once
+                // (`rasterize_stroke`), so this must stay 1.0 while a ramp is
+                // active or the preview would look lighter than the result.
+                StrokeKind::Paint if stroke.ramp.is_some() => 1.0,
                 StrokeKind::Paint => f32::from(stroke.color[3]) / 255.0,
                 StrokeKind::Inpaint => 116.0 / 255.0,
                 StrokeKind::Erase => 1.0,
@@ -874,6 +919,10 @@ impl CanvasState {
             if opacity < 1.0 {
                 vectors.pop_layer();
             }
+            vectors_pending = true;
+        }
+        if let Some(shape) = self.shape.as_ref() {
+            vectors.append(&shape.preview, None);
             vectors_pending = true;
         }
         flush_vectors(
@@ -1370,7 +1419,10 @@ impl WebCanvas {
             .frame
             .as_ref()
             .ok_or_else(|| js_message("no prepared frame is installed"))?;
-        if browser.canvas.transform.is_some() || browser.canvas.stroke.is_some() {
+        if browser.canvas.transform.is_some()
+            || browser.canvas.stroke.is_some()
+            || browser.canvas.shape.is_some()
+        {
             return Err(js_message("another canvas edit is already active"));
         }
         if requested.is_empty() {
@@ -1392,7 +1444,7 @@ impl WebCanvas {
                 .layer(id)
                 .ok_or_else(|| js_message("transform element is not in the prepared frame"))?;
             let presentation = layer.presentation();
-            if layer.kind() != LayerKind::Text
+            if !matches!(layer.kind(), LayerKind::Text | LayerKind::Shape)
                 || !presentation.visible
                 || presentation.opacity <= 0.0
             {
@@ -1516,12 +1568,21 @@ impl WebCanvas {
         point: JsValue,
         diameter: f32,
         color: &Uint8Array,
+        ramp: JsValue,
     ) -> Result<(), JsValue> {
         let point: Point = serde_wasm_bindgen::from_value(point).map_err(js_error)?;
+        // A ramp is an enum, so it cannot travel as a `Uint8Array` like `color`.
+        // `Option<BrushRamp>` is what lets the frontend pass nothing at all:
+        // serde_wasm_bindgen deserializes both `null` and `undefined` to `None`,
+        // so a frontend that omits `ramp` keeps the flat-colour path.
+        let ramp: Option<BrushRamp> = serde_wasm_bindgen::from_value(ramp).map_err(js_error)?;
         validate_brush(diameter)?;
         let color = rgba(color)?;
         let mut browser = self.browser_mut()?;
-        if browser.canvas.stroke.is_some() || browser.canvas.transform.is_some() {
+        if browser.canvas.stroke.is_some()
+            || browser.canvas.transform.is_some()
+            || browser.canvas.shape.is_some()
+        {
             return Err(js_message("another canvas edit is already active"));
         }
         let frame = browser
@@ -1557,12 +1618,21 @@ impl WebCanvas {
         } else if layer.is_some() {
             return Err(js_message("inpaint preview does not accept a layer target"));
         }
+        let mut preview = Scene::new();
+        let size = frame.size();
+        // The eraser and the inpaint previews ignore the ramp: neither carries a
+        // colour of its own into the commit, so a ramp would preview a gradient
+        // that never lands.
         let preview_color = match kind {
             StrokeKind::Erase => [0, 0, 0, 255],
             StrokeKind::Inpaint => [168, 85, 247, 255],
-            StrokeKind::Paint => [color[0], color[1], color[2], 255],
+            StrokeKind::Paint => ramp.map_or([color[0], color[1], color[2], 255], |ramp| {
+                // The opening dot sits at the stroke's start, so it takes the
+                // same position the commit path gives that pixel.
+                let position = ramp::segment_ramp_position(&ramp, point.x, point.y, 0.0, 0.0, size);
+                ramp.color_at(position)
+            }),
         };
-        let mut preview = Scene::new();
         draw_dot(&mut preview, point, diameter, preview_color);
         browser.canvas.stroke = Some(StrokeEdit {
             page: frame.page(),
@@ -1571,6 +1641,8 @@ impl WebCanvas {
             layer,
             diameter,
             color,
+            ramp,
+            cumulative: 0.0,
             points: vec![point],
             preview,
             pending: false,
@@ -1600,6 +1672,20 @@ impl WebCanvas {
             return Err(js_message("stroke is waiting for its replacement frame"));
         }
         let mut changed = false;
+        // `AlongStroke`'s commit path divides by the stroke's *real* total
+        // length, which does not exist until `finishStroke`. The preview cannot
+        // know the future, so the two will disagree at the end of a stroke that
+        // is not as long as its denominator. The preview deliberately does NOT
+        // rescale as the stroke grows: normalizing by the length so far makes
+        // every already-drawn segment change colour under the user's cursor,
+        // which is far more distracting than an early stroke reading as too
+        // light and settling at commit. A fixed denominator — the page diagonal
+        // — gives a stable ramp that shows the direction and rough progression.
+        //
+        // Consequence: the committed stroke is authoritative and the preview is
+        // an approximation. Do not "fix" this by renormalizing incrementally.
+        // The denominator itself lives in `ramp::preview_ramp_position`, not
+        // here, so that a host test can reach it.
         for point in points {
             if !point.x.is_finite() || !point.y.is_finite() {
                 return Err(js_message("stroke points must be finite"));
@@ -1609,13 +1695,35 @@ impl WebCanvas {
                 y: point.y.clamp(0.0, f64::from(size.1)),
             };
             let previous = *stroke.points.last().expect("stroke has an initial point");
-            if (previous.x - point.x).hypot(previous.y - point.y) < 0.25 / zoom {
+            let segment = (previous.x - point.x).hypot(previous.y - point.y);
+            if segment < 0.25 / zoom {
                 continue;
             }
+            // The committed path draws a continuous per-pixel ramp; the preview
+            // paints one flat colour per segment, so a sparse pointer stream can
+            // band. Pointer events arrive every few pixels, which keeps the
+            // steps below what the eye resolves; banding here is a preview
+            // artifact, not something the commit reproduces.
+            let cumulative = stroke.cumulative + segment;
             let preview_color = match stroke.kind {
                 StrokeKind::Erase => [0, 0, 0, 255],
                 StrokeKind::Inpaint => [168, 85, 247, 255],
-                StrokeKind::Paint => [stroke.color[0], stroke.color[1], stroke.color[2], 255],
+                StrokeKind::Paint => stroke.ramp.map_or(
+                    [stroke.color[0], stroke.color[1], stroke.color[2], 255],
+                    |ramp| {
+                        // `preview_ramp_position` owns the denominator choice, so
+                        // the divergence above is pinned by a host test that can
+                        // actually reach it (`web.rs` is `wasm32`-only, so
+                        // anything decided in here is invisible to `cargo test`).
+                        let position = ramp::preview_ramp_position(
+                            &ramp,
+                            (point.x, point.y),
+                            cumulative,
+                            size,
+                        );
+                        ramp.color_at(position)
+                    },
+                ),
             };
             draw_segment(
                 &mut stroke.preview,
@@ -1624,6 +1732,7 @@ impl WebCanvas {
                 stroke.diameter,
                 preview_color,
             );
+            stroke.cumulative = cumulative;
             stroke.points.push(point);
             changed = true;
         }
@@ -1676,6 +1785,86 @@ impl WebCanvas {
     pub fn cancel_stroke(&self) -> Result<(), JsValue> {
         let mut browser = self.browser_mut()?;
         if browser.canvas.stroke.take().is_some() {
+            browser.canvas.dirty = true;
+        }
+        drop(browser);
+        self.request_render()
+    }
+
+    /// Starts previewing a shape the frontend has already turned into a path.
+    ///
+    /// The frontend owns per-kind shape geometry and style, so this only draws
+    /// what it sends; nothing about the shape is recomputed here.
+    #[wasm_bindgen(js_name = beginShape)]
+    pub fn begin_shape(&self, path: JsValue) -> Result<(), JsValue> {
+        let path: PreparedPath = serde_wasm_bindgen::from_value(path).map_err(js_error)?;
+        path.validate().map_err(js_error)?;
+        let mut browser = self.browser_mut()?;
+        if browser.canvas.shape.is_some()
+            || browser.canvas.stroke.is_some()
+            || browser.canvas.transform.is_some()
+        {
+            return Err(js_message("another canvas edit is already active"));
+        }
+        let frame = browser
+            .canvas
+            .frame
+            .as_ref()
+            .ok_or_else(|| js_message("no prepared frame is installed"))?;
+        browser.canvas.shape = Some(ShapeEdit {
+            page: frame.page(),
+            revision: frame.revision(),
+            preview: scene_of(&path),
+            pending: false,
+        });
+        browser.canvas.dirty = true;
+        drop(browser);
+        self.request_render()
+    }
+
+    /// Replaces the previewed shape while the gesture is still live.
+    #[wasm_bindgen(js_name = updateShape)]
+    pub fn update_shape(&self, path: JsValue) -> Result<(), JsValue> {
+        let path: PreparedPath = serde_wasm_bindgen::from_value(path).map_err(js_error)?;
+        path.validate().map_err(js_error)?;
+        let mut browser = self.browser_mut()?;
+        let shape = browser
+            .canvas
+            .shape
+            .as_mut()
+            .ok_or_else(|| js_message("no shape preview is active"))?;
+        if shape.pending {
+            return Err(js_message("shape is waiting for its replacement frame"));
+        }
+        shape.preview = scene_of(&path);
+        browser.canvas.dirty = true;
+        drop(browser);
+        self.request_render()
+    }
+
+    #[wasm_bindgen(js_name = finishShape)]
+    pub fn finish_shape(&self) -> Result<JsValue, JsValue> {
+        let mut browser = self.browser_mut()?;
+        let shape = browser
+            .canvas
+            .shape
+            .as_mut()
+            .ok_or_else(|| js_message("no shape preview is active"))?;
+        if shape.pending {
+            return Err(js_message("shape is already waiting for replacement"));
+        }
+        shape.pending = true;
+        let output = ShapeCommitDto {
+            page: format_layer_id(shape.page),
+            revision: shape.revision.get(),
+        };
+        serde_wasm_bindgen::to_value(&output).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = cancelShape)]
+    pub fn cancel_shape(&self) -> Result<(), JsValue> {
+        let mut browser = self.browser_mut()?;
+        if browser.canvas.shape.take().is_some() {
             browser.canvas.dirty = true;
         }
         drop(browser);
@@ -1802,6 +1991,12 @@ fn page_clip(camera: Camera, page: (u32, u32), viewport: PhysicalSize) -> [u32; 
         right.saturating_sub(left),
         bottom.saturating_sub(top),
     ]
+}
+
+fn scene_of(path: &PreparedPath) -> Scene {
+    let mut scene = Scene::new();
+    path.append_to(&mut scene);
+    scene
 }
 
 fn draw_dot(scene: &mut Scene, point: Point, diameter: f32, color: [u8; 4]) {

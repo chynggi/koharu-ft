@@ -30,9 +30,18 @@ Koharu의 캔버스는 9개 도구만 제공한다 — `select`, `text`, `draw`,
 이 문서는 **1a**만 다룬다. 1a는 도형을 벡터 레이어로 저장하고,
 기본 도형·채우기·선 스타일·점선·화살표·래스터화를 포함한다.
 
+**1a의 도구 종류는 사각형·타원·선·화살표 네 가지다.** `ShapeGeometry`와
+렌더러에는 `Polygon`·`Freeform`도 있지만(위 저장 모델 참조), 1a의
+도구 선택 목록(`SHAPE_KINDS`)에는 넣지 않는다. 꼭짓점 편집 UI가 없어
+사용자가 "다각형"을 고르면 태그만 다른 사각형을 얻게 되기 때문이다.
+두 종류의 폴리곤 경로·검증·직렬화는 그대로 유지하므로, 꼭짓점 편집을
+다루는 후속 스펙이 UI에만 추가하면 된다.
+
 **1b로 미루는 것**: 그라디언트·패턴 채우기. 별도 스펙에서 다룬다.
 1a는 `ShapeFill`을 처음부터 열거형으로 설계해 1b가 변형을 추가하기만
 하면 되도록 한다.
+
+**후속으로 미루는 것**: `Polygon`·`Freeform`의 도구 노출과 꼭짓점 편집.
 
 **로드맵에서 아직 스펙이 없는 서브프로젝트** (이 문서는 이들의 기반이
 아니다. 다만 1a의 표현 방식에 의존한다):
@@ -49,7 +58,7 @@ Koharu의 캔버스는 9개 도구만 제공한다 — `select`, `text`, `draw`,
 | D1 | 도형을 벡터 레이어로 저장하고, 래스터화를 별도 액션으로 처음부터 제공 | 재편집 가능성이 래스터 굽기보다 중요하고, 되돌릴 수 없는 손실을 피한다 |
 | D2 | `Geometry` 폴리곤이 히트테스트·프레임 복원의 권위. 렌더링은 `ShapeGeometry` 파라미터를 쓴다 | 기존 검증된 코드를 재사용한다. 아래 "왜 이 소유권인가"와 "무엇이 그리는가" 참조 |
 | D3 | 회전 각도는 `ShapeLayer.angle_degrees`에 저장 | 폴리곤에서 복원 가능한 도형(사각형)과 불가능한 도형(타원·곡선)이 섞여 있다 |
-| D4 | `ShapeLayer`에 `name` 필드를 둔다 | 래스터 레이어와 같은 이유로 레이어 목록에서 식별 가능해야 한다 |
+| D4 | `ShapeLayer`에 `name` 필드를 둔다 | 래스터 레이어와 같은 이유로 레이어 목록에서 식별 가능해야 한다. `Layer::Shape`가 이 값을 클라이언트로 노출하므로 Inspector가 "Image N" 대신 실제 이름을 쓴다 |
 | D5 | 래스터화 여부는 `rasterized: bool` 하나로 관리한다 | 별도 상태 머신이 필요 없다 |
 | D6 | `ShapeFill`은 처음부터 열거형. 1a는 `Solid`만 갖는다 | 1b가 스키마를 갈아엎지 않게 한다 |
 | D7 | 도구는 "도형" 하나 + 종류 선택 | 도구막대가 짧고 단축키 관리가 쉽다 |
@@ -109,8 +118,9 @@ pub enum ShapeGeometry {
         head: Option<ArrowHead>,
     },
     /// 폴리곤이 곧 도형이다. 파라미터 없음.
+    /// 1a의 도구 목록에는 없다 (위 "범위" 참조). 꼭짓점 편집과 함께 후속 스펙이 노출한다.
     Polygon,
-    /// 폴리곤이 곧 도형이다. 파라미터 없음.
+    /// 폴리곤이 곧 도형이다. 파라미터 없음. `Polygon`과 같은 이유로 1a UI에는 없다.
     Freeform,
 }
 
@@ -241,6 +251,42 @@ D2의 "폴리곤이 권위"는 **기하의 출처**를 뜻하지, **그리는 �
 `Line`의 폴리곤을 만들 때는 시작·끝 사이를 **균등 분할**한다. 점
 개수는 선 길이에 비례시키지 않고 고정한다 — 폴리곤은 히트테스트
 정밀도만 좌우하므로, 히트테스트에 충분한 3점이면 충분하다.
+
+### `Line`의 이중 저장 — 권위는 폴리곤이다
+
+`Line`은 `start`/`end`와 폴리곤을 함께 저장하는 **유일한 이중 저장
+지점**이다. 이 사실을 방치하면 실제 버그가 된다:
+
+- 모든 변형 경로는 폴리곤만 갱신한다.
+- `line_path`는 `start`/`end`로만 그린다 (폴리곤을 읽지 않는다).
+- `element_frame`은 폴리곤을 읽는다.
+
+결과: 선을 끌면 선택 상자(폴리곤)는 움직이는데 그려진 선은 제자리에
+남고, 둘이 눈에 띄게 분리된다.
+
+**계약: 폴리곤이 권위이고 `start`/`end`는 파생값이다.** 폴리곤을 쓰는
+모든 경로는 `ShapeGeometry::resync_with_polygon(&mut self, points)`를
+호출해 첫 점을 `start`, 마지막 점을 `end`로 다시 맞춘다. `Line`을
+그리는 두 경로가 있으므로 **재계산 지점도 둘이다**:
+
+1. `set_geometries`의 도형 분기 — 변형(이동·크기조절·회전) 경로다.
+   `commit_transform`이 모든 변형 가능 레이어를 여기로 보낸다.
+2. `merge_pages`의 스프레드 시프트 루프 — 페이지 병합이 모든 폴리곤을
+   페이지 오프셋만큼 평행이동한다.
+
+두 경로 모두 `Project::write_geometry` 하나를 통과한다. 그 헬퍼가
+폴리곤을 쓰고 같은 트랜잭션에서 `ShapeLayer`를 재동기화하므로,
+**세 번째 쓰기 경로는 이 헬퍼를 부르는 것으로 계약을 지킨다.**
+초기 설계는 `set_geometries`를 유일한 지점으로 선언했으나, 병합
+경로가 이미 존재해 그 주장이 거짓이었다 — 병합 후에는 선택 상자만
+움직이고 그려진 선은 제자리에 남는다.
+
+이 이중 저장을 없애는 선택지도 있었다 — `Line`에서 `start`/`end`를
+지우고 폴리곤 첫·마지막 점을 쓰는 것이다. 채택하지 않은 이유는
+`Line`의 두 끝점이 화살촉 방향 계산에 필요하고, 폴리곤이 3점 이상
+균등 분할이므로 매번 첫·마지막을 꺼내는 것이 같은 정보를 다른
+표현으로 다시 얻는 일이기 때문이다. 대신 파생값임을 명시하고
+재계산 지점을 하나로 모은다.
 
 ## 렌더러
 
@@ -385,21 +431,26 @@ pub async fn set_shape_style(
     shapes: Vec<ShapeStyleUpdate>,
 ) -> Result<Revision, Error>
 
-pub async fn set_shape_geometries(
-    expected_revision: Revision,
-    shapes: Vec<ShapeFrameUpdate>,
-) -> Result<Revision, Error>
-
 pub async fn rasterize_shapes(
     expected_revision: Revision,
     shapes: Vec<EntityId>,
 ) -> Result<Revision, Error>
 ```
 
-`set_geometries`를 도형까지 확장하지 않고 별도 커맨드를 두는 이유는,
-텍스트는 `TextLayout`을 갱신하고 도형은 `ShapeLayer.angle_degrees`를
-갱신하므로 두 컴포넌트를 한 함수에서 분기하는 것보다 경계가 선명하기
-때문이다.
+**도형 전용 기하 커맨드는 없다.** 초안의 `set_shape_geometries`는
+`POST /canvas/shape/geometry`와 `commands.setShapeGeometries`를 함께
+가졌지만 호출자가 하나도 없었다 — 도형 이동은 전부
+`commitTransform` → `set_geometries`로 간다. AGENTS.md의 "죽은 추상화는
+제거한다"에 따라 커맨드·라우트·TS 항목·`ShapeFrameUpdate` 타입을
+1a에서 제거했다. 도형 전용 사전 거부가 필요해지면 그때 다시 만든다.
+
+변형 경로는 `set_geometries` 하나다. `Line`의 끝점 재계산이 그
+통일의 이유다. `Line`은 `start`/`end`와
+폴리곤을 함께 저장하는 유일한 이중 저장 지점이다. 폴리곤이 권위이고
+끝점은 파생값이므로, 폴리곤을 쓰는 모든 경로가
+`ShapeGeometry::resync_with_polygon`을 호출해야 한다. 두 경로
+(`set_geometries`와 `merge_pages`)가 `Project::write_geometry` 하나를
+공유하므로, 재계산은 그 헬퍼 안에 한 번만 있다.
 
 ### HTTP 라우트
 
@@ -412,9 +463,14 @@ pub async fn rasterize_shapes(
 
 | 위치 | 현재 | 변경 |
 |---|---|---|
-| `crates/koharu-desktop/src/lib.rs:266` | `!matches!(kind, Text(_))` → 에러 | `Shape(_)` 허용 |
-| `crates/koharu-app/src/commands/project.rs:1114` | `SceneTextLayout` 필수 | 도형은 별도 커맨드로 분리 |
+| `crates/koharu-desktop/src/lib.rs:266` | `!matches!(kind, Text(_))` → 에러 | `Shape(_)` 허용 (`is_transformable` 술어로 추출) |
+| `crates/koharu-app/src/commands/project.rs:1114` | `SceneTextLayout` 필수 | `set_geometries`가 `Target::{Text, Shape}`로 분기해 도형도 받는다 |
 | `crates/koharu-canvas/src/web.rs:1395` | `kind != Text` | `Shape` 허용 |
+
+`transform_geometries`는 `matches!`를 쓰므로 도형 변형을 추가해도
+**컴파일 오류가 나지 않는다.** 즉 이 게이트는 조용한 동작 게이트이고,
+열지 않으면 도형을 끌 수 없다는 사실이 아무 데도 드러나지 않는다.
+그래서 술어를 떼어내 테스트로 고정한다.
 
 ## 래스터화
 
@@ -448,7 +504,26 @@ pub async fn rasterize_shapes(
 - `rasterized == false` → 벡터로 그린다
 - `rasterized == true` → 래스터 자산을 그린다. 벡터는 무시한다
 
+래스터 자산은 **페이지 전체 크기**이고, 렌더러는 그 자산을 레이어의
+프레임(=`rasterized` 도형에서는 페이지 사각형)에 맞춰 늘린다. 따라서
+페이지 병합이 래스터 레이어를 다시 패딩할 때 **래스터화된 도형도
+포함해야 한다** — 빠뜨리면 예전 페이지 폭의 이미지가 스프레드 전체로
+늘어난다. `merge_pages`가 `SceneRasterLayer`와 `rasterized == true`인
+`ShapeLayer`를 같은 `source` 자산 경로로 함께 처리한다.
+
 되돌리기가 데이터상 가능하다. 되돌리기 UI는 1a 범위 밖이다.
+
+**래스터화된 도형의 편집 정책은 1a에서 정하지 않는다.** 렌더러는
+`rasterized == true`인 도형을 래스터 레이어로 내보내므로, 그 도형은
+`LayerKind::Image`가 되어 선택·이동 대상에서 빠진다(`selectableLayer`가
+`image`를 포함하지만 텍스트·도형과 다른 경로다). 만약 선택되어
+`set_geometries`가 도달하면 폴리곤만 바뀌고 그려지는 것은 래스터라
+**조용한 시각적 무변화**가 된다.
+
+1a는 이 상태를 "래스터화 = 편집 종료"로 둔다. 래스터화된 도형을 다시
+벡터로 되돌리거나, 래스터 상태에서도 이동을 허용하는 정책은 별도
+스펙에서 다룬다. 이 결정을 1a에서 명시하는 이유는 침묵이 "이동이
+되어야 한다"는 기대로 읽히기 때문이다.
 
 ## 내보내기
 
@@ -494,8 +569,8 @@ PNG/CBZ는 페이지를 통째로 래스터화하므로 변경이 없다.
 | `ToolBar` (`ToolBar.tsx:44`) | 도구 아이콘 + 스타일 Popover (종류·채우기·선·두께·점선) |
 | `selectableLayer` (`geometry.ts:61`) | `'shape'` 추가 — 안 하면 선택·이동이 안 된다 |
 | `isLockedLayer` (`document.ts:11`) | `artwork`만 잠그므로 수정 불필요 |
-| `Inspector` | 선택된 도형의 스타일 편집 섹션 |
-| i18n | 9개 로케일에 `tools.shape`, `inspector.shape.*` 키 추가 |
+| `Inspector` | 선택된 도형의 스타일 편집 섹션. 레이어 목록은 도형의 `name`과 `layers.kinds.shape`를 보여준다 (D4) — 분기가 없으면 이미지 아이콘과 "Image N"으로 표시된다 |
+| i18n | 9개 로케일에 `tools.shape`, `inspector.shape.*`, `layers.kinds.shape` 키 추가 |
 | store | `shapeKind`·`shapeStyle` 상태를 `brush`와 같은 패턴으로 추가 |
 
 그리기 제스처는 기존 `draftFrame`을 재사용한다
@@ -513,9 +588,12 @@ AGENTS.md의 검증 정책에 따라 가장 작은 관련 검사만 돌린다.
 | `koharu-renderer` | 도형 → `PreparedScene` 경로 생성, `element_frame`이 도형에서 프레임 반환 |
 | `koharu-renderer` | **45° 회전한 원**의 프레임이 지름을 유지하는지 (축 정렬 상자 함정) |
 | `koharu-renderer` | 화살표 `Line`이 폴리곤 샘플이 아니라 `start`/`end`로 그려지는지 |
+| `koharu-renderer` | 넓은 테두리·화살촉이 `Layer::bounds` 안에 들어오는지 (내보내기 크롭 회귀) |
 | `koharu-app` | **투명 배경 래스터화** — 알파 0 유지 |
-| `koharu-psd` | 도형이 래스터 레이어로 나오는지 |
-| 프론트 | `selectableLayer('shape')`, 드래그 → 프레임 계산, 스타일 store |
+| `koharu-app` | **페이지 병합**이 선 도형의 `start`/`end`를 폴리곤에 맞추고, 래스터화된 도형 자산을 다시 패딩하는지 |
+| `koharu-psd` | 도형이 래스터 레이어로 나오는지, 가로 화살표의 크롭 높이가 화살촉 폭 이상인지 |
+| 프론트 | `selectableLayer('shape')`, 드래그 → 프레임 계산, 스타일 store, `shapePreviewPath`의 직렬화 리터럴 |
+| 프론트 | 레이어 목록이 도형을 `name`과 `layers.kinds.shape`로 표시하는지 (D4) |
 | 회귀 | 도형 없는 페이지를 열고 저장한 뒤 다시 여는 왕복 |
 
 ## 실패 시나리오
@@ -523,11 +601,11 @@ AGENTS.md의 검증 정책에 따라 가장 작은 관련 검사만 돌린다.
 | 상황 | 처리 |
 |---|---|
 | 폴리곤이 자기교차 | vello가 `FillRule`에 따라 처리. 거부하지 않는다 |
-| `stroke.width`가 도형보다 큼 | 정상 렌더링. 경계 밖으로 나간다 |
+| `stroke.width`가 도형보다 큼 | 정상 렌더링. 경계 밖으로 나간다. 내보내기 크롭은 `rotated_bounds`가 경로와 선 두께 절반을 포함해 넓어진다 |
 | `dash` 패턴 합이 0 | 검증에서 거부 |
 | 곡선 점이 2개뿐 | `Geometry::validate`가 3점 미만 거부 |
 | 폴리곤과 파라미터 불일치 | `ShapeGeometry` 파라미터를 신뢰한다. 폴리곤은 경계와 히트테스트에만 쓴다 |
-| 회전된 도형의 `bounds` | `geometry_frame`에 `angle_degrees`를 넘겨 로컬 축에서 계산한다. 안 넘기면 폴리곤의 축 정렬 상자가 되어 회전 타원이 커진다 |
+| 회전된 도형의 `bounds` | `geometry_frame`에 `angle_degrees`를 넘겨 로컬 축에서 계산한다. 안 넘기면 폴리곤의 축 정렬 상자가 되어 회전 타원이 커진다. 내보내기용 `Layer::bounds`는 그 프레임 상자에 그려지는 경로의 범위(화살촉 끝 포함)와 선 두께 절반을 더해 회전·스윕한다 |
 | `angle_degrees`가 `None`인 회전 도형 | `geometry_frame`이 축 정렬 경계로 폴백한다. 근사치이며, 1a가 만든 데이터는 각도를 항상 채우므로 정상 경로에서는 발생하지 않는다 |
 | 래스터화 시 배경 | `[0,0,0,0]` 고정 |
 | 같은 도형을 두 번 래스터화 | `rasterized == true`면 기존 래스터를 교체한다 |

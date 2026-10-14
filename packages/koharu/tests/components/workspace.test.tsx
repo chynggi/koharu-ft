@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CanvasWorkspace } from '@/components/editor/CanvasWorkspace'
 import { pageKey, pagesKey, projectKey, queryClient } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { commands, type Layer } from '@koharu/bridge/protocol'
+import { commands, type BrushRamp, type Layer } from '@koharu/bridge/protocol'
 import { TooltipProvider } from '@koharu/ui/components/tooltip'
 
 const canvas = vi.hoisted(() => ({
@@ -25,6 +25,10 @@ const canvas = vi.hoisted(() => ({
   extendStroke: vi.fn(),
   finishStroke: vi.fn(),
   cancelStroke: vi.fn(),
+  beginShape: vi.fn(),
+  updateShape: vi.fn(),
+  finishShape: vi.fn(),
+  cancelShape: vi.fn(),
   sampleColor: vi.fn(),
   dispose: vi.fn(),
 }))
@@ -93,6 +97,12 @@ beforeEach(() => {
 })
 
 afterEach(() => vi.unstubAllGlobals())
+
+function flushAnimationFrames() {
+  const pending = [...animationFrames.values()]
+  animationFrames.clear()
+  for (const callback of pending) callback(performance.now())
+}
 
 function installProject() {
   const page = {
@@ -285,7 +295,7 @@ describe('canvas interaction adapter', () => {
 
   it('previews brush input locally and sends only the durable paint commit to Rust', async () => {
     installProject()
-    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const commit = vi
       .spyOn(commands, 'commitPaint')
       .mockResolvedValue({ revision: 2, layer: 'paint' })
@@ -303,12 +313,52 @@ describe('canvas interaction adapter', () => {
       point: { x: 20, y: 20 },
       diameter: 48,
       color: [255, 255, 255, 255],
+      ramp: null,
     })
     expect(canvas.extendStroke).toHaveBeenCalledWith(expect.arrayContaining([{ x: 45, y: 45 }]))
     expect(canvas.finishStroke).toHaveBeenCalledOnce()
     expect(commit).toHaveBeenCalledWith(1, null, expect.arrayContaining([{ x: 45, y: 45 }]), {
       diameter: 48,
       color: [255, 255, 255, 255],
+      ramp: null,
+    })
+  })
+
+  it('sends the active brush ramp to both the preview and the paint commit', async () => {
+    installProject()
+    const ramp: BrushRamp = {
+      kind: 'along_stroke',
+      from: [255, 0, 0, 255],
+      to: [0, 0, 255, 255],
+    }
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: { diameter: 48, color: '#FFFFFF', ramp },
+    })
+    const commit = vi
+      .spyOn(commands, 'commitPaint')
+      .mockResolvedValue({ revision: 2, layer: 'paint' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 9, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 55, clientY: 65 })
+    fireEvent.pointerUp(surface, { pointerId: 9, clientX: 58, clientY: 70 })
+
+    await waitFor(() => expect(commit).toHaveBeenCalledOnce())
+    expect(canvas.beginStroke).toHaveBeenCalledWith({
+      kind: 'paint',
+      layer: null,
+      point: { x: 20, y: 20 },
+      diameter: 48,
+      color: [255, 255, 255, 255],
+      ramp,
+    })
+    // The preview and the committed raster must agree: a ramp sent only to
+    // `beginStroke` would ramp on screen and land flat in the document.
+    expect(commit).toHaveBeenCalledWith(1, null, expect.arrayContaining([{ x: 45, y: 45 }]), {
+      diameter: 48,
+      color: [255, 255, 255, 255],
+      ramp,
     })
   })
 
@@ -317,7 +367,7 @@ describe('canvas interaction adapter', () => {
     ['generation', { canvasGeneration: 2 }],
   ])('cancels an active gesture when the canvas %s changes', async (_name, update) => {
     installProject()
-    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const commit = vi
       .spyOn(commands, 'commitPaint')
       .mockResolvedValue({ revision: 2, layer: 'paint' })
@@ -519,6 +569,49 @@ describe('canvas interaction adapter', () => {
     expect(commit).toHaveBeenCalledWith(1, 'paint', expect.arrayContaining([{ x: 20, y: 20 }]), 48)
   })
 
+  it('fills the selected raster layer at the clicked page point with the fill colour', async () => {
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, paintLayer],
+    }))
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: ['paint'], fillColor: '#102030' })
+    const fill = vi
+      .spyOn(commands, 'fillRaster')
+      .mockResolvedValue({ revision: 2, layer: 'paint' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 30, clientX: 30, clientY: 40 })
+
+    await waitFor(() => expect(fill).toHaveBeenCalledOnce())
+    // (30, 40) is a client point; the fill command takes page pixels, which the
+    // identity camera maps to (20, 20) — screen space would be wrong here.
+    expect(fill).toHaveBeenCalledWith(1, 'paint', { x: 20, y: 20 }, [16, 32, 48, 255])
+  })
+
+  it('does not fill without a selected raster layer', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: [] })
+    const fill = vi.spyOn(commands, 'fillRaster')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 31, clientX: 30, clientY: 40 })
+
+    expect(fill).not.toHaveBeenCalled()
+  })
+
+  it('does not fill when the selection is not a raster layer', () => {
+    installProject()
+    // `installProject` selects the image layer 'element'.
+    useKoharuStore.setState({ tool: 'fill', selectedLayers: ['element'] })
+    const fill = vi.spyOn(commands, 'fillRaster')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 32, clientX: 30, clientY: 40 })
+
+    expect(fill).not.toHaveBeenCalled()
+  })
+
   it('maps the Remove tool to an inpainting mask gesture', async () => {
     installProject()
     useKoharuStore.setState({ tool: 'remove' })
@@ -608,5 +701,171 @@ describe('canvas interaction adapter', () => {
       { x: 90, y: 80 },
       { x: 20, y: 80 },
     ])
+  })
+
+  it('previews a dragged shape on the canvas and commits it once', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'ellipse' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 20, clientX: 30, clientY: 40 })
+    expect(canvas.beginShape).toHaveBeenCalledOnce()
+    fireEvent.pointerMove(surface, { pointerId: 20, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 20, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.updateShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).toHaveBeenCalledOnce()
+    expect(addShape).toHaveBeenCalledWith(
+      1,
+      'page',
+      { points: expect.any(Array) },
+      'ellipse',
+      { fill: { solid: [255, 255, 255, 255] }, stroke: null },
+      0,
+    )
+    await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['shape']))
+  })
+
+  it('keeps a line shape drawn from the polygon the drag produced', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'line' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 21, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 21, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 21, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    const points = addShape.mock.calls[0][2].points
+    expect(addShape.mock.calls[0][3]).toEqual({
+      line: {
+        start: [points[0].x, points[0].y],
+        end: [points[2].x, points[2].y],
+        head: null,
+      },
+    })
+  })
+
+  it('coalesces a burst of shape drags into one throttled preview frame', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 28, clientX: 30, clientY: 40 })
+    // While the shape gesture is live the preview must be throttled, not sent
+    // once per pointer event.
+    for (let x = 40; x <= 140; x += 10) {
+      fireEvent.pointerMove(surface, { pointerId: 28, clientX: x, clientY: x })
+    }
+    expect(canvas.updateShape).not.toHaveBeenCalled()
+
+    flushAnimationFrames()
+    expect(canvas.updateShape).toHaveBeenCalledOnce()
+  })
+
+  it('cancels a shape preview without committing it', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 22, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 22, clientX: 140, clientY: 110 })
+    fireEvent.pointerCancel(surface)
+
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).not.toHaveBeenCalled()
+    expect(addShape).not.toHaveBeenCalled()
+  })
+
+  it('does not create a shape from a click with no drag', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 23, clientX: 30, clientY: 40 })
+    fireEvent.pointerUp(surface, { pointerId: 23, clientX: 30, clientY: 40 })
+
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
+    expect(canvas.finishShape).not.toHaveBeenCalled()
+    expect(addShape).not.toHaveBeenCalled()
+  })
+
+  it('creates a horizontal arrow instead of discarding the drag', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'arrow' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    // A purely horizontal drag leaves the frame one unit tall, which a
+    // both-axes minimum would reject.
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 24, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 24, clientX: 160, clientY: 40 })
+    fireEvent.pointerUp(surface, { pointerId: 24, clientX: 160, clientY: 40 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+    expect(canvas.finishShape).toHaveBeenCalledOnce()
+  })
+
+  it('creates a vertical line instead of discarding the drag', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'line' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 25, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 25, clientX: 30, clientY: 170 })
+    fireEvent.pointerUp(surface, { pointerId: 25, clientX: 30, clientY: 170 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+  })
+
+  it('creates a thin but long rectangle', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape', shapeKind: 'rectangle' })
+    const addShape = vi
+      .spyOn(commands, 'addShape')
+      .mockResolvedValue({ revision: 2, layer: 'shape' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 26, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 26, clientX: 200, clientY: 41 })
+    fireEvent.pointerUp(surface, { pointerId: 26, clientX: 200, clientY: 41 })
+
+    await waitFor(() => expect(addShape).toHaveBeenCalledOnce())
+    expect(canvas.cancelShape).not.toHaveBeenCalled()
+  })
+
+  it('releases the native shape edit when finishing it fails', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'shape' })
+    const addShape = vi.spyOn(commands, 'addShape')
+    canvas.finishShape.mockImplementationOnce(() => {
+      throw new Error('no shape preview is active')
+    })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 27, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 27, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 27, clientX: 140, clientY: 110 })
+
+    // Leaving the WASM edit pending would block every later edit with
+    // "another canvas edit is already active".
+    expect(canvas.cancelShape).toHaveBeenCalledOnce()
+    expect(addShape).not.toHaveBeenCalled()
   })
 })
