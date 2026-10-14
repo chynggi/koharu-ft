@@ -7,7 +7,10 @@ import {
   STOP_OFFSET_STEP,
   addGradientStop,
   defaultGradientSpec,
+  defaultPatternSpec,
   defaultShapeStyle,
+  fillColor,
+  fillKind,
   gradientKindName,
   gradientStopBounds,
   isShapeTool,
@@ -194,6 +197,60 @@ describe('withFillKind', () => {
       fill: { gradient: defaultGradientSpec('linear') },
       stroke: null,
     })
+  })
+
+  it('converts to and from a pattern without losing the colour', () => {
+    const pattern = withFillKind(solid, 'pattern')
+    expect(fillKind(pattern.fill)).toBe('pattern')
+    if (!pattern.fill || !('pattern' in pattern.fill)) throw new Error('expected a pattern')
+    // The solid's colour survives as the pattern's fallback, which is the
+    // colour it draws until an image is uploaded.
+    expect(pattern.fill.pattern.fallback).toEqual([10, 20, 30, 255])
+    expect(withFillKind(pattern, 'solid')).toEqual(solid)
+  })
+
+  it('is idempotent for a pattern too', () => {
+    const pattern = withFillKind(solid, 'pattern')
+    // Returning the same object is what keeps an Inspector parameter edit from
+    // rewriting the fill, and therefore from demoting it.
+    expect(withFillKind(pattern, 'pattern')).toBe(pattern)
+  })
+
+  it('keeps a gradient visible when converting a pattern back', () => {
+    const pattern = withFillKind(solid, 'pattern')
+    const gradient = withFillKind(pattern, 'gradient')
+    if (!gradient.fill || !('gradient' in gradient.fill)) throw new Error('expected a gradient')
+    // The pattern's fallback becomes the gradient's first stop, the same rule
+    // that applies to a solid.
+    expect(gradient.fill.gradient.stops[0].color).toEqual([10, 20, 30, 255])
+  })
+})
+
+describe('fillKind', () => {
+  it('names the active fill by its own tag, not by the absence of gradient', () => {
+    // A pattern fill has neither the `solid` nor the `gradient` key, so a caller
+    // testing `'gradient' in fill` to mean "not solid" would report a pattern as
+    // a solid. That is a real bug: the toolbar's preset radios uses exactly that
+    // test and lit up the wrong one.
+    expect(fillKind({ solid: [1, 2, 3, 255] })).toBe('solid')
+    expect(fillKind({ gradient: defaultGradientSpec('linear') })).toBe('gradient')
+    expect(fillKind({ pattern: defaultPatternSpec() })).toBe('pattern')
+    // No fill behaves like solid, matching `defaultShapeStyle`.
+    expect(fillKind(null)).toBe('solid')
+  })
+})
+
+describe('fillColor', () => {
+  it('reads a pattern colour from its fallback', () => {
+    const spec = defaultPatternSpec([4, 5, 6, 255])
+    expect(fillColor({ pattern: spec })).toEqual([4, 5, 6, 255])
+  })
+
+  it('reads a gradient colour from its first stop and a solid directly', () => {
+    expect(fillColor({ solid: [7, 8, 9, 255] })).toEqual([7, 8, 9, 255])
+    const gradient = defaultGradientSpec('linear')
+    expect(fillColor({ gradient })).toEqual(gradient.stops[0].color)
+    expect(fillColor(null)).toBeNull()
   })
 })
 

@@ -228,17 +228,22 @@ export function withFillKind(
     return { ...style, fill: { pattern: defaultPatternSpec(color) } }
   }
   if (style.fill && 'gradient' in style.fill) return style
-  const solid = style.fill && 'solid' in style.fill ? style.fill.solid : null
+  // The source colour comes from whichever kind is active, not from `solid`
+  // alone: a pattern carries its colour in `fallback`, so reading only `solid`
+  // silently dropped it and a pattern-to-gradient switch came out white. The
+  // `withFillKind` test "keeps a gradient visible when converting a pattern
+  // back" pins this.
+  const source = fillColor(style.fill)
   const spec = defaultGradientSpec(gradientKind)
   const stops = [...spec.stops] as GradientStop[]
-  if (solid) {
-    stops[0] = { ...stops[0], color: solid }
-    // The second stop takes whichever default differs from the solid colour, so
+  if (source) {
+    stops[0] = { ...stops[0], color: source }
+    // The second stop takes whichever default differs from the source colour, so
     // a switch never yields two identical stops and a flat fill.
     const last = stops.length - 1
     stops[last] = {
       ...stops[last],
-      color: spec.stops[0].color.every((channel, index) => channel === solid[index])
+      color: spec.stops[0].color.every((channel, index) => channel === source[index])
         ? spec.stops[1].color
         : spec.stops[0].color,
     }
@@ -258,6 +263,24 @@ export function fillColor(fill: ShapeFill | null): [number, number, number, numb
   if ('solid' in fill) return fill.solid
   if ('gradient' in fill) return fill.gradient.stops[0]?.color ?? null
   return fill.pattern.fallback
+}
+
+/**
+ * Which fill kind a style is currently showing.
+ *
+ * A null fill reads as `solid`, matching {@link defaultShapeStyle}: a shape with
+ * no fill at all behaves like one whose colour is simply not drawn.
+ *
+ * This exists because a pattern fill has **neither** the `solid` nor the
+ * `gradient` key. A caller that tested `'gradient' in fill` to mean "not solid"
+ * would classify a pattern as a solid and highlight the wrong control, so every
+ * kind test goes through this one function.
+ */
+export function fillKind(fill: ShapeFill | null): 'solid' | 'gradient' | 'pattern' {
+  if (!fill) return 'solid'
+  if ('solid' in fill) return 'solid'
+  if ('gradient' in fill) return 'gradient'
+  return 'pattern'
 }
 
 /** Replaces a gradient's control geometry, keeping its stops and extend rule. */

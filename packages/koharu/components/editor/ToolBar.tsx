@@ -25,6 +25,7 @@ import { usePage } from '@/lib/queries'
 import {
   SHAPE_KINDS,
   colorToHex,
+  fillKind,
   hexToColor,
   isShapeTool,
   withFillKind,
@@ -244,15 +245,22 @@ function ShapeStyles() {
             <div className='flex items-center gap-1' role='radiogroup' aria-label={t('inspector.shape.fillKindLabel')}>
               {/* Only the kind is chosen here, so a new shape can default to a
                   gradient. Editing the stops belongs to the Inspector, which
-                  owns the detailed style UI; this popover stays a preset. */}
+                  owns the detailed style UI; this popover stays a preset.
+
+                  The comparison is on the fill's own tag rather than on
+                  `'gradient' in fill`, because a pattern fill has neither the
+                  `solid` nor the `gradient` key: testing for `gradient` alone
+                  would report a pattern as a solid and light up the wrong
+                  preset. Absent fill also counts as solid, matching
+                  `defaultShapeStyle`. */}
               {(['solid', 'gradient'] as const).map((kind) => (
                 <button
                   key={kind}
                   type='button'
                   role='radio'
                   aria-label={t(`inspector.shape.fillKind.${kind}`)}
-                  aria-checked={kind === 'solid' ? (style.fill && 'gradient' in style.fill) !== true : (style.fill && 'gradient' in style.fill) === true}
-                  data-active={kind === 'solid' ? (style.fill && 'gradient' in style.fill) !== true : (style.fill && 'gradient' in style.fill) === true}
+                  aria-checked={fillKind(style.fill) === kind}
+                  data-active={fillKind(style.fill) === kind}
                   className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
                   onClick={() => setShapeStyle(withFillKind(style, kind))}
                 >
