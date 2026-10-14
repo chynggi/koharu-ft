@@ -347,6 +347,10 @@ describe('greenfield editor', () => {
 
   afterEach(() => {
     delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+    // Reading `loadFontFavorites` re-initializes its module; leave no seeded
+    // storage or reset registry behind for the rest of the file.
+    window.localStorage.clear()
+    vi.resetModules()
   })
 
   it('registers one native resize listener in React strict mode', async () => {
@@ -1724,6 +1728,9 @@ describe('greenfield editor', () => {
         },
       ],
     }))
+    // Divergence from fork 5408bdfe, which resolves `[1]`: this tree's
+    // `commands.getFontPreview` returns `Promise<ArrayBuffer>` (`bytes()` in
+    // `@koharu/bridge/protocol`), so the fork's array fails `tsc` with TS2740.
     vi.spyOn(commands, 'getFontPreview').mockResolvedValue(new Uint8Array([1]).buffer)
     const onChange = vi.fn()
     render(<FontPicker value='' families={families} onChange={onChange} />)
@@ -1754,11 +1761,10 @@ describe('greenfield editor', () => {
     expect(screen.queryByText('Favorites')).not.toBeInTheDocument()
   })
 
-  it('writes a valid favorites store over one that held no JSON', async () => {
-    // `loadFontFavorites` runs once when the module is first imported, so a test
-    // cannot feed it a corrupt value through a fresh import without module-reset
-    // tricks. What the picker depends on is the store's post-toggle contract:
-    // whatever was on disk, a toggle leaves a sane, persisted array behind.
+  it('persists a valid favorites array when toggling over a corrupt store', () => {
+    // This pins the store's write contract, not its read path: whatever was on
+    // disk, a toggle leaves a sane, persisted array behind. The read path itself
+    // is covered by the module-reload test below.
     window.localStorage.setItem(FONT_FAVORITES_STORAGE_KEY, 'not json')
     useFontFavorites.setState({ favorites: [] })
 
@@ -1768,6 +1774,31 @@ describe('greenfield editor', () => {
     expect(JSON.parse(window.localStorage.getItem(FONT_FAVORITES_STORAGE_KEY) ?? '')).toEqual([
       'Font 02',
     ])
+  })
+
+  it('recovers font favorites from a corrupt or unusable store', async () => {
+    // `loadFontFavorites` is private and runs once at import, so the only way to
+    // reach its branches is to re-initialize the module against a seeded store —
+    // the pattern `tests/lib/i18n.test.ts` already uses.
+    const cases: [string, string[]][] = [
+      ['not json', []],
+      ['"a string"', []],
+      ['{"a":1}', []],
+      ['[1,2]', []],
+      // The happy path: a valid array of names round-trips.
+      ['["Font 02"]', ['Font 02']],
+      // A non-string element is dropped rather than trusted.
+      ['["Font 02",7]', ['Font 02']],
+      // Duplicates collapse to one favorite.
+      ['["Font 02","Font 02"]', ['Font 02']],
+    ]
+
+    for (const [stored, expected] of cases) {
+      window.localStorage.setItem(FONT_FAVORITES_STORAGE_KEY, stored)
+      vi.resetModules()
+      const { useFontFavorites: reinitialized } = await import('@/lib/fontFavorites')
+      expect(reinitialized.getState().favorites, stored).toEqual(expected)
+    }
   })
 
   it('debounces layer text editing and flushes it when focus leaves the field', async () => {
