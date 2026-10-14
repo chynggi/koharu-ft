@@ -1742,7 +1742,18 @@ impl Project {
         // `flood_fill_mut` is 4-directional and compares with `PartialEq`, so
         // the region is exactly the set of pixels equal to the start pixel —
         // there is no tolerance to give it, and none is wanted here.
-        imageproc::drawing::flood_fill_mut(&mut image, x, y, image::Rgba(color));
+        //
+        // It must be skipped when the colour already matches, because its loop
+        // terminates only once `inside` turns false and `inside` is "the pixel
+        // still equals the start pixel". Writing the same colour back never
+        // changes that, so every span re-covers its row and pushes fresh spans
+        // to the rows above and below without bound — a hang, not a no-op. A
+        // single-row image cannot expose this (the neighbouring rows are out of
+        // bounds), so the guard cannot be validated with one. Skipping is
+        // semantically identical: nothing would have changed.
+        if image.get_pixel(x, y).0 != color {
+            imageproc::drawing::flood_fill_mut(&mut image, x, y, image::Rgba(color));
+        }
         let mut bytes = Cursor::new(Vec::new());
         DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
         let patch = snapshot.patch(|edit| {
@@ -3404,23 +3415,34 @@ mod tests {
         );
     }
 
+    /// Filling with the colour already present must commit with no pixel change.
+    ///
+    /// The image is deliberately taller than one row. `flood_fill_mut`'s loop
+    /// only ends when `inside` turns false, and `inside` asks whether a pixel
+    /// still equals the start pixel — so passing the same colour back makes it
+    /// push spans forever. A single-row image cannot reproduce that, because the
+    /// rows above and below are out of bounds and nothing gets pushed; that is
+    /// why this regression needs `H >= 2` to be worth anything.
     #[tokio::test]
     async fn filling_with_the_existing_colour_is_a_harmless_commit() {
-        let (mut project, layer) = project_with_raster(RgbaImage::from_pixel(
-            4,
-            1,
-            image::Rgba([10, 10, 10, 255]),
-        ))
-        .await;
+        let (mut project, layer) =
+            project_with_raster(RgbaImage::from_pixel(4, 4, image::Rgba([10, 10, 10, 255]))).await;
 
         let (commit, _) = project
-            .fill_raster(layer, Point { x: 0.0, y: 0.0 }, [10, 10, 10, 255])
+            .fill_raster(layer, Point { x: 1.0, y: 1.0 }, [10, 10, 10, 255])
             .await
             .expect("filling with the same colour is not an error");
 
         assert!(commit.revision.get() > 0);
         let image = source_image(&project.snapshot(), layer).await;
-        assert_eq!(image.get_pixel(0, 0), &image::Rgba([10, 10, 10, 255]));
+        assert_eq!(image.dimensions(), (4, 4));
+        for (x, y) in [(0, 0), (3, 0), (1, 1), (3, 3)] {
+            assert_eq!(
+                image.get_pixel(x, y),
+                &image::Rgba([10, 10, 10, 255]),
+                "no pixel changes when the fill colour is already present"
+            );
+        }
     }
 
     /// The click point is `f64` page space and `flood_fill_mut` takes `u32`.
@@ -3436,10 +3458,16 @@ mod tests {
             Point { x: 0.0, y: -1.0 },
             Point { x: 4.0, y: 0.0 },
             Point { x: 0.0, y: 4.0 },
-            Point { x: f64::NAN, y: 0.0 },
+            Point {
+                x: f64::NAN,
+                y: 0.0,
+            },
         ] {
             assert!(
-                project.fill_raster(layer, point, [1, 2, 3, 255]).await.is_err(),
+                project
+                    .fill_raster(layer, point, [1, 2, 3, 255])
+                    .await
+                    .is_err(),
                 "a point outside the page must be rejected: {point:?}"
             );
         }
@@ -3452,9 +3480,14 @@ mod tests {
             .fill_raster(text, Point { x: 0.0, y: 0.0 }, [1, 2, 3, 255])
             .await
             .expect_err("a text layer cannot be filled");
+        // Pin the *fill* wording, not just the raster guard: "can be adjusted"
+        // would satisfy a looser substring check while telling the user the
+        // wrong tool failed.
         assert!(
-            error.to_string().contains("only raster layers"),
-            "expected the raster guard, got: {error}"
+            error
+                .to_string()
+                .contains("only raster layers can be filled"),
+            "expected the fill-specific raster guard, got: {error}"
         );
     }
 
