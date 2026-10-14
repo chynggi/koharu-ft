@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CanvasWorkspace } from '@/components/editor/CanvasWorkspace'
 import { pageKey, pagesKey, projectKey, queryClient } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { commands, type Layer } from '@koharu/bridge/protocol'
+import { commands, type BrushRamp, type Layer } from '@koharu/bridge/protocol'
 import { TooltipProvider } from '@koharu/ui/components/tooltip'
 
 const canvas = vi.hoisted(() => ({
@@ -295,7 +295,7 @@ describe('canvas interaction adapter', () => {
 
   it('previews brush input locally and sends only the durable paint commit to Rust', async () => {
     installProject()
-    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const commit = vi
       .spyOn(commands, 'commitPaint')
       .mockResolvedValue({ revision: 2, layer: 'paint' })
@@ -313,12 +313,52 @@ describe('canvas interaction adapter', () => {
       point: { x: 20, y: 20 },
       diameter: 48,
       color: [255, 255, 255, 255],
+      ramp: null,
     })
     expect(canvas.extendStroke).toHaveBeenCalledWith(expect.arrayContaining([{ x: 45, y: 45 }]))
     expect(canvas.finishStroke).toHaveBeenCalledOnce()
     expect(commit).toHaveBeenCalledWith(1, null, expect.arrayContaining([{ x: 45, y: 45 }]), {
       diameter: 48,
       color: [255, 255, 255, 255],
+      ramp: null,
+    })
+  })
+
+  it('sends the active brush ramp to both the preview and the paint commit', async () => {
+    installProject()
+    const ramp: BrushRamp = {
+      kind: 'along_stroke',
+      from: [255, 0, 0, 255],
+      to: [0, 0, 255, 255],
+    }
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: { diameter: 48, color: '#FFFFFF', ramp },
+    })
+    const commit = vi
+      .spyOn(commands, 'commitPaint')
+      .mockResolvedValue({ revision: 2, layer: 'paint' })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 9, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 55, clientY: 65 })
+    fireEvent.pointerUp(surface, { pointerId: 9, clientX: 58, clientY: 70 })
+
+    await waitFor(() => expect(commit).toHaveBeenCalledOnce())
+    expect(canvas.beginStroke).toHaveBeenCalledWith({
+      kind: 'paint',
+      layer: null,
+      point: { x: 20, y: 20 },
+      diameter: 48,
+      color: [255, 255, 255, 255],
+      ramp,
+    })
+    // The preview and the committed raster must agree: a ramp sent only to
+    // `beginStroke` would ramp on screen and land flat in the document.
+    expect(commit).toHaveBeenCalledWith(1, null, expect.arrayContaining([{ x: 45, y: 45 }]), {
+      diameter: 48,
+      color: [255, 255, 255, 255],
+      ramp,
     })
   })
 
@@ -327,7 +367,7 @@ describe('canvas interaction adapter', () => {
     ['generation', { canvasGeneration: 2 }],
   ])('cancels an active gesture when the canvas %s changes', async (_name, update) => {
     installProject()
-    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const commit = vi
       .spyOn(commands, 'commitPaint')
       .mockResolvedValue({ revision: 2, layer: 'paint' })

@@ -675,6 +675,12 @@
     "zoom": "ズーム"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "ストローク方向",
+      "fixedAxis": "固定軸",
+      "none": "なし"
+    },
+    "brushRampTitle": "ブラシグラデーション",
     "brushSize": "ブラシサイズ",
     "brushSizeInput": "ブラシサイズ",
     "brushSizePixels": "ブラシサイズ: {{size}}ピクセル",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "手動OCR（矩形）",
     "manual_ocr_lasso": "手動OCR（フリーハンド）",
     "pan": "移動",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "軸",
+    "rampFrom": "開始色",
+    "rampTo": "終了色",
     "remove": "削除",
     "select": "選択",
     "shape": "図形",

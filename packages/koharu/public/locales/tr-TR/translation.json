@@ -675,6 +675,12 @@
     "zoom": "Yakınlaştırma"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Fırça boyunca",
+      "fixedAxis": "Sabit eksen",
+      "none": "Yok"
+    },
+    "brushRampTitle": "Fırça degradesi",
     "brushSize": "Fırça boyutu",
     "brushSizeInput": "Fırça boyutu",
     "brushSizePixels": "Fırça boyutu: {{size}} piksel",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "Elle OCR (dikdörtgen)",
     "manual_ocr_lasso": "Elle OCR (serbest çizim)",
     "pan": "Kaydır",
+    "rampAxis": {
+      "horizontal": "Yatay",
+      "vertical": "Dikey"
+    },
+    "rampAxisTitle": "Eksen",
+    "rampFrom": "Başlangıç rengi",
+    "rampTo": "Bitiş rengi",
     "remove": "Kaldır",
     "select": "Seç",
     "shape": "Şekil",

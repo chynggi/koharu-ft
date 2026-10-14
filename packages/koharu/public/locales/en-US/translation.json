@@ -675,6 +675,12 @@
     "zoom": "Zoom"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Along stroke",
+      "fixedAxis": "Fixed axis",
+      "none": "None"
+    },
+    "brushRampTitle": "Brush gradient",
     "brushSize": "Brush size",
     "brushSizeInput": "Brush size",
     "brushSizePixels": "Brush size: {{size}} pixels",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "Manual OCR (box)",
     "manual_ocr_lasso": "Manual OCR (lasso)",
     "pan": "Pan",
+    "rampAxis": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "rampAxisTitle": "Axis",
+    "rampFrom": "Start color",
+    "rampTo": "End color",
     "remove": "Remove",
     "select": "Select",
     "shape": "Shape",

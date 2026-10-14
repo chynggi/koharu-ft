@@ -782,7 +782,7 @@ describe('greenfield editor', () => {
     useKoharuStore.setState({
       selectedLayers: ['raster'],
       canvasRevision: 1,
-      brush: { diameter: 48, color: '#FFFFFF' },
+      brush: { diameter: 48, color: '#FFFFFF', ramp: null },
     })
     render(
       <TooltipProvider>
@@ -803,6 +803,77 @@ describe('greenfield editor', () => {
 
     expect(useKoharuStore.getState().fillColor).toBe('#123456')
     expect(useKoharuStore.getState().brush.color).toBe('#FFFFFF')
+  })
+
+  it('builds a brush ramp and hides the flat colour it replaces', async () => {
+    const user = userEvent.setup()
+    installProject()
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: { diameter: 48, color: '#204060', ramp: null },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    // No ramp: the single flat colour well is the only colour authority.
+    expect(screen.getByRole('button', { name: 'Brush color' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Brush gradient' }))
+    await user.click(await screen.findByRole('radio', { name: 'Along stroke' }))
+
+    // Once a ramp is on, the flat well must be gone: two controls writing
+    // "what colour is this stroke" would disagree about which one Rust reads.
+    expect(screen.queryByRole('button', { name: 'Brush color' })).not.toBeInTheDocument()
+    expect(useKoharuStore.getState().brush.ramp).toEqual({
+      kind: 'along_stroke',
+      from: [32, 64, 96, 255],
+      to: [0, 0, 0, 255],
+    })
+
+    expect(screen.getByRole('button', { name: 'Start color' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'End color' })).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Axis' })).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('radio', { name: 'Fixed axis' }))
+
+    expect(useKoharuStore.getState().brush.ramp).toEqual({
+      kind: 'fixed_axis',
+      from: [32, 64, 96, 255],
+      to: [0, 0, 0, 255],
+      axis: 'horizontal',
+    })
+    expect(screen.getByRole('radiogroup', { name: 'Axis' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'Vertical' }))
+    expect(useKoharuStore.getState().brush.ramp).toMatchObject({ axis: 'vertical' })
+  })
+
+  it('turns the ramp back off without disturbing the flat brush colour', async () => {
+    const user = userEvent.setup()
+    installProject()
+    useKoharuStore.setState({
+      tool: 'draw',
+      brush: {
+        diameter: 48,
+        color: '#204060',
+        ramp: { kind: 'along_stroke', from: [255, 0, 0, 255], to: [0, 0, 255, 255] },
+      },
+    })
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Brush gradient' }))
+    await user.click(await screen.findByRole('radio', { name: 'None' }))
+
+    expect(useKoharuStore.getState().brush.ramp).toBeNull()
+    expect(useKoharuStore.getState().brush.color).toBe('#204060')
+    expect(screen.getByRole('button', { name: 'Brush color' })).toBeInTheDocument()
   })
 
   it('disables the fill tool without a selected raster layer', () => {

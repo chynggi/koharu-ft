@@ -675,6 +675,12 @@
     "zoom": "Масштаб"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Вдоль штриха",
+      "fixedAxis": "Фиксированная ось",
+      "none": "Нет"
+    },
+    "brushRampTitle": "Градиент кисти",
     "brushSize": "Размер кисти",
     "brushSizeInput": "Размер кисти",
     "brushSizePixels": "Размер кисти: {{size}} пикс.",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "Ручной OCR (прямоугольник)",
     "manual_ocr_lasso": "Ручной OCR (произвольная форма)",
     "pan": "Перемещение",
+    "rampAxis": {
+      "horizontal": "Горизонтальная",
+      "vertical": "Вертикальная"
+    },
+    "rampAxisTitle": "Ось",
+    "rampFrom": "Начальный цвет",
+    "rampTo": "Конечный цвет",
     "remove": "Удаление",
     "select": "Выбор",
     "shape": "Фигура",

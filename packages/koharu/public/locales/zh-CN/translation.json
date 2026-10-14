@@ -675,6 +675,12 @@
     "zoom": "缩放"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "沿笔画",
+      "fixedAxis": "固定轴",
+      "none": "无"
+    },
+    "brushRampTitle": "画笔渐变",
     "brushSize": "画笔大小",
     "brushSizeInput": "画笔大小",
     "brushSizePixels": "画笔大小：{{size}} 像素",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "手动 OCR（矩形）",
     "manual_ocr_lasso": "手动 OCR（自由绘制）",
     "pan": "平移",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "轴",
+    "rampFrom": "起始颜色",
+    "rampTo": "结束颜色",
     "remove": "移除",
     "select": "选择",
     "shape": "形状",

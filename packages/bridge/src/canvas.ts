@@ -1,6 +1,6 @@
 'use client'
 
-import { commands, type CanvasPagePreparation, type Point, type TransformFrame } from './protocol'
+import { commands, type BrushRamp, type CanvasPagePreparation, type Point, type TransformFrame } from './protocol'
 
 export type CanvasColor = [number, number, number, number]
 export type CanvasStrokeKind = 'paint' | 'erase' | 'inpaint'
@@ -12,6 +12,12 @@ export interface CanvasStroke {
   point: Point
   diameter: number
   color?: CanvasColor
+  /**
+   * `undefined` and `null` both mean a flat `color` stroke; the WASM side
+   * deserializes either to `None`. A ramp is an enum, so it cannot ride along
+   * in the `color` byte array.
+   */
+  ramp?: BrushRamp | null
 }
 
 /**
@@ -136,6 +142,7 @@ interface CanvasHandle {
     point: Point,
     diameter: number,
     color: Uint8Array,
+    ramp: BrushRamp | null,
   ): void
   extendStroke(points: Point[]): void
   finishStroke(): unknown
@@ -227,6 +234,10 @@ export async function createCanvas(
         stroke.point,
         stroke.diameter,
         new Uint8Array(stroke.color ?? [0, 0, 0, 0]),
+        // The argument is required: wasm-bindgen throws when a declared
+        // parameter is missing, so `undefined` from a flat stroke has to be
+        // normalized to `null` here rather than omitted.
+        stroke.ramp ?? null,
       ),
     extendStroke: (points) => canvas.extendStroke(points),
     finishStroke: () => void canvas.finishStroke(),

@@ -675,6 +675,12 @@
     "zoom": "Zoom"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "Ao longo do traço",
+      "fixedAxis": "Eixo fixo",
+      "none": "Nenhum"
+    },
+    "brushRampTitle": "Gradiente do pincel",
     "brushSize": "Tamanho do pincel",
     "brushSizeInput": "Tamanho do pincel",
     "brushSizePixels": "Tamanho do pincel: {{size}} pixels",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "OCR manual (retângulo)",
     "manual_ocr_lasso": "OCR manual (traço livre)",
     "pan": "Mover",
+    "rampAxis": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "rampAxisTitle": "Eixo",
+    "rampFrom": "Cor inicial",
+    "rampTo": "Cor final",
     "remove": "Remover",
     "select": "Selecionar",
     "shape": "Forma",

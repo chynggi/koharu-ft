@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  Blend,
   Brush,
   Circle,
   Eraser,
@@ -36,7 +37,7 @@ import {
   useKoharuStore,
   type CanvasTool,
 } from '@/lib/store'
-import type { ShapeStyle } from '@koharu/bridge/protocol'
+import type { BrushRamp, RampAxis, ShapeStyle } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
 import {
   NumberField,
@@ -76,6 +77,20 @@ const shapeIcons = {
 } as const satisfies Record<ShapeKind, typeof MousePointer2>
 
 const DEFAULT_STROKE_WIDTH = 2
+
+type BrushRampKind = BrushRamp['kind'] | 'none'
+
+const RAMP_KINDS: readonly BrushRampKind[] = ['none', 'along_stroke', 'fixed_axis']
+
+// The wire tags are snake_case; the locale keys are camelCase to match the
+// existing `tools.` vocabulary. This is the one place the two meet.
+const RAMP_KIND_KEYS: Record<BrushRampKind, string> = {
+  none: 'none',
+  along_stroke: 'alongStroke',
+  fixed_axis: 'fixedAxis',
+}
+
+const RAMP_AXES: readonly RampAxis[] = ['horizontal', 'vertical']
 
 export function ToolBar() {
   const { t } = useTranslation()
@@ -135,9 +150,13 @@ export function ToolBar() {
 
       {hasBrush && (
         <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
-          {active === 'draw' && (
+          {/* A ramp and a flat colour cannot both be live: Rust reads `ramp`
+              whenever it is set and ignores `color`, so leaving the flat well
+              on screen would let the user change a value nothing consumes. */}
+          {active === 'draw' && brush.ramp === null && (
             <ColorWell value={brush.color} onChange={(color) => setBrush({ ...brush, color })} />
           )}
+          {active === 'draw' && <BrushRampControl />}
           <BrushSize
             value={brush.diameter}
             onChange={(diameter) => setBrush({ ...brush, diameter })}
@@ -303,6 +322,142 @@ function ShapeStyles() {
         </PopoverContent>
       </Popover>
     </div>
+  )
+}
+
+function BrushRampControl() {
+  const { t } = useTranslation()
+  const brush = useKoharuStore((state) => state.brush)
+  const setBrush = useKoharuStore((state) => state.setBrush)
+  const ramp = brush.ramp
+
+  // Switching kind keeps the two colours: only the rule that turns a position
+  // into a parameter changes, so re-picking the ends would be busywork.
+  const setKind = (kind: BrushRampKind) => {
+    if (kind === 'none') {
+      setBrush({ ...brush, ramp: null })
+      return
+    }
+    const from = ramp?.from ?? hexToColor(brush.color)
+    const to = ramp?.to ?? [0, 0, 0, 255]
+    setBrush({
+      ...brush,
+      ramp:
+        kind === 'along_stroke'
+          ? { kind, from, to }
+          : {
+              kind,
+              from,
+              to,
+              // The server defaults nothing here; a fixed-axis ramp must always
+              // name the axis it varies along.
+              axis: ramp?.kind === 'fixed_axis' ? ramp.axis : 'horizontal',
+            },
+    })
+  }
+
+  return (
+    <Popover>
+      <Tooltip>
+        <PopoverTrigger
+          render={
+            <TooltipTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  aria-label={t('tools.brushRampTitle')}
+                  data-active={ramp !== null}
+                  className='size-8 rounded-xl text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
+                />
+              }
+            >
+              <Blend className='size-4' />
+            </TooltipTrigger>
+          }
+        />
+        <TooltipContent side='right'>{t('tools.brushRampTitle')}</TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side='right'
+        align='center'
+        sideOffset={8}
+        className='w-56 gap-2.5 rounded-xl p-2.5'
+      >
+        <PopoverTitle className='text-[11px]'>{t('tools.brushRampTitle')}</PopoverTitle>
+        <div
+          className='grid grid-cols-3 gap-1'
+          role='radiogroup'
+          aria-label={t('tools.brushRampTitle')}
+        >
+          {RAMP_KINDS.map((kind) => {
+            const active = kind === 'none' ? ramp === null : ramp?.kind === kind
+            return (
+              <button
+                key={kind}
+                type='button'
+                role='radio'
+                aria-label={t(`tools.brushRamp.${RAMP_KIND_KEYS[kind]}`)}
+                aria-checked={active}
+                className='h-7 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
+                data-active={active}
+                onClick={() => setKind(kind)}
+              >
+                {t(`tools.brushRamp.${RAMP_KIND_KEYS[kind]}`)}
+              </button>
+            )
+          })}
+        </div>
+        {ramp !== null && (
+          <>
+            <div className='flex items-center justify-between gap-3'>
+              <PopoverTitle className='text-[11px]'>{t('tools.rampFrom')}</PopoverTitle>
+              <ColorWell
+                label={t('tools.rampFrom')}
+                size='sm'
+                value={colorToHex(ramp.from)}
+                onChange={(color) => setBrush({ ...brush, ramp: { ...ramp, from: hexToColor(color) } })}
+              />
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <PopoverTitle className='text-[11px]'>{t('tools.rampTo')}</PopoverTitle>
+              <ColorWell
+                label={t('tools.rampTo')}
+                size='sm'
+                value={colorToHex(ramp.to)}
+                onChange={(color) => setBrush({ ...brush, ramp: { ...ramp, to: hexToColor(color) } })}
+              />
+            </div>
+            {ramp.kind === 'fixed_axis' && (
+              <div
+                className='flex items-center justify-between gap-3'
+                role='radiogroup'
+                aria-label={t('tools.rampAxisTitle')}
+              >
+                <PopoverTitle className='text-[11px]'>{t('tools.rampAxisTitle')}</PopoverTitle>
+                <div className='flex items-center gap-1'>
+                  {RAMP_AXES.map((axis) => (
+                    <button
+                      key={axis}
+                      type='button'
+                      role='radio'
+                      aria-label={t(`tools.rampAxis.${axis}`)}
+                      aria-checked={ramp.axis === axis}
+                      className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
+                      data-active={ramp.axis === axis}
+                      onClick={() => setBrush({ ...brush, ramp: { ...ramp, axis } })}
+                    >
+                      {t(`tools.rampAxis.${axis}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 

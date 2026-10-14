@@ -675,6 +675,12 @@
     "zoom": "확대/축소"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "획 방향",
+      "fixedAxis": "고정 축",
+      "none": "없음"
+    },
+    "brushRampTitle": "붓 그라디언트",
     "brushSize": "브러시 크기",
     "brushSizeInput": "브러시 크기",
     "brushSizePixels": "브러시 크기: {{size}}픽셀",
@@ -689,6 +695,13 @@
     "manual_ocr_box": "수동 OCR (사각형)",
     "manual_ocr_lasso": "수동 OCR (자유형)",
     "pan": "이동",
+    "rampAxis": {
+      "horizontal": "가로",
+      "vertical": "세로"
+    },
+    "rampAxisTitle": "축",
+    "rampFrom": "시작 색",
+    "rampTo": "끝 색",
     "remove": "제거",
     "select": "선택",
     "shape": "도형",

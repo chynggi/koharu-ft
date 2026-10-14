@@ -55,6 +55,7 @@ import {
 } from '@koharu/bridge/canvas'
 import {
   commands,
+  type BrushRamp,
   type Frame,
   type Point,
   type ShapeStyle,
@@ -118,6 +119,8 @@ interface StrokeGesture {
   points: Point[]
   diameter: number
   color?: CanvasColor
+  /** Captured when the stroke begins so the commit matches the preview. */
+  ramp?: BrushRamp | null
 }
 
 interface CanvasView {
@@ -706,6 +709,9 @@ export function CanvasWorkspace() {
             call(commands.commitPaint, current.revision, current.layer, current.points, {
               diameter: current.diameter,
               color: current.color!,
+              // The commit must carry the same ramp the preview drew with.
+              // Omitting it would ramp the screen and land flat in the document.
+              ramp: current.ramp ?? null,
             }),
           ).then((result) => {
             selectLayers([result.layer])
@@ -841,6 +847,9 @@ export function CanvasWorkspace() {
             } else if (tool === 'draw') {
               strokeUpdates.clear()
               const color = hexToRgba(brush.color)
+              // The ramp is snapshotted with the rest of the gesture: editing it
+              // mid-stroke must not make the preview and the commit disagree.
+              const ramp = brush.ramp
               gesture.current = {
                 kind: 'paint',
                 pointer: event.pointerId,
@@ -849,6 +858,7 @@ export function CanvasWorkspace() {
                 points: [point],
                 diameter: brush.diameter,
                 color,
+                ramp,
               }
               try {
                 canvas.beginStroke({
@@ -857,6 +867,7 @@ export function CanvasWorkspace() {
                   point,
                   diameter: brush.diameter,
                   color,
+                  ramp,
                 })
               } catch (error) {
                 gesture.current = null

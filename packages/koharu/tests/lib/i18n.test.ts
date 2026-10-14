@@ -72,8 +72,16 @@ describe('interface language persistence', () => {
     const kinds = ['rectangle', 'ellipse', 'line', 'arrow']
     const fillKinds = ['solid', 'gradient']
     const gradientKinds = ['linear', 'radial']
+    const rampKinds = ['none', 'alongStroke', 'fixedAxis']
+    const rampAxes = ['horizontal', 'vertical']
     const keys = [
       'tools.shape',
+      'tools.brushRampTitle',
+      'tools.rampAxisTitle',
+      'tools.rampFrom',
+      'tools.rampTo',
+      'tools.rampAxis.horizontal',
+      'tools.rampAxis.vertical',
       'layers.kinds.shape',
       'inspector.shape.fill',
       'inspector.shape.stroke',
@@ -90,6 +98,12 @@ describe('interface language persistence', () => {
       ...kinds.map((kind) => `inspector.shape.kind.${kind}`),
       ...fillKinds.map((kind) => `inspector.shape.fillKind.${kind}`),
       ...gradientKinds.map((kind) => `inspector.shape.gradientKind.${kind}`),
+      // `tools.brushRamp` is a branch key: the selector renders each leaf, and
+      // the rail renders `tools.brushRampTitle`. Reaching for the branch itself
+      // returns i18next's "object instead of string" diagnostic, so nothing may
+      // render `tools.brushRamp` as a label.
+      ...rampKinds.map((kind) => `tools.brushRamp.${kind}`),
+      ...rampAxes.map((axis) => `tools.rampAxis.${axis}`),
     ]
 
     // The shipped translations are the source of truth; a missing key here is
@@ -136,6 +150,13 @@ describe('interface language persistence', () => {
         i18n.t('inspector.shape.kindLabel', { lng: language, kind: 'x' }),
         language,
       ).toContain('x')
+      // A branch key has no string form; these two are the labels the rail
+      // renders, and they must stay distinct from the branches beside them.
+      for (const key of ['tools.brushRamp', 'tools.rampAxis']) {
+        expect(i18n.t(key, { lng: language }), `${language}: ${key}`).toMatch(
+          /returned an object instead of string/,
+        )
+      }
     }
   })
 })

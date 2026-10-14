@@ -15,6 +15,7 @@ import type {
   ModelResources,
   PageSize,
   ShapeStyle,
+  BrushRamp,
 } from '@koharu/bridge/protocol'
 import { toast } from '@koharu/ui/components/toast'
 
@@ -46,6 +47,11 @@ export function isBrushTool(tool: CanvasTool): boolean {
 export interface CanvasBrush {
   diameter: number
   color: string
+  /**
+   * The ramp that replaces `color` while it is set. It is a command argument,
+   * not persisted state, so it survives only as long as this session's brush.
+   */
+  ramp: BrushRamp | null
 }
 export type InspectorSection = 'copy' | 'type' | 'layers'
 export type ShortcutAction = CanvasTool | 'fit'
@@ -134,7 +140,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   copiedTextLayers: [],
   selectedPages: [],
   tool: 'select',
-  brush: { diameter: 48, color: '#FFFFFF' },
+  brush: { diameter: 48, color: '#FFFFFF', ramp: null },
   fillColor: '#000000',
   shapeKind: 'rectangle',
   shapeStyle: defaultShapeStyle('rectangle'),
@@ -159,6 +165,9 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
         ? { selectedLayers: [cleanupLayer] }
         : {}),
     }),
+  // The whole brush object is replaced, so a caller that changes one field must
+  // spread the current brush. That is what keeps `ramp` alive when the colour
+  // picker samples a pixel, rather than silently dropping back to a flat stroke.
   setBrush: (brush) => set({ brush }),
   setFillColor: (fillColor) => set({ fillColor }),
   // Each kind ships the style that can actually draw it, so switching to a line
