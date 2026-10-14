@@ -5097,6 +5097,7 @@ dependencies = [
  "koharu-storage",
  "revision",
  "serde",
+ "serde_json",
  "slotmap",
  "smallvec",
  "specta",

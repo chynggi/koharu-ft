@@ -200,15 +200,75 @@ pub enum GradientExtend {
     Reflect,
 }
 
+/// How a pattern image is laid out across a shape's frame.
+#[revisioned(revision = 1)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternRepeat {
+    /// Repeats the image from `origin` in `scale`-sized steps.
+    Tile,
+    /// Stretches a single image over the shape's bounding box. `PatternSpec`
+    /// ignores `origin` and `scale` in this mode.
+    Stretch,
+}
+
+/// A persisted image-pattern fill.
+///
+/// Coordinates are frame-local normalized values, like [`GradientSpec`]: the
+/// frame's top-left is `(0,0)` and its bottom-right is `(1,1)`. Moving or
+/// resizing the shape's polygon therefore does not invalidate them.
+#[revisioned(revision = 1)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Type)]
+pub struct PatternSpec {
+    pub repeat: PatternRepeat,
+    /// Tile origin in frame-local normalized coordinates. **Ignored when
+    /// `repeat` is [`PatternRepeat::Stretch`].** Values outside `0.0..=1.0` are
+    /// valid: shifting the origin is how a caller moves a tile, and a tiled
+    /// origin legitimately starts outside the shape.
+    pub origin: [f32; 2],
+    /// Tile pitch: the frame-local normalized width one tile occupies. Must be
+    /// finite and positive. **Ignored when `repeat` is
+    /// [`PatternRepeat::Stretch`].**
+    pub scale: f32,
+    /// Clockwise degrees; only meaningful for [`PatternRepeat::Tile`].
+    pub rotation_degrees: i32,
+    /// Color drawn when the pattern's asset is missing or fails to decode.
+    pub fallback: [u8; 4],
+}
+
+impl PatternSpec {
+    /// Rejects only patterns the renderer cannot resolve.
+    ///
+    /// `origin` is deliberately not range-checked. Moving a pattern shifts its
+    /// origin, and a tiled origin may legitimately start outside the shape, so
+    /// only non-finite components are invalid.
+    pub fn validate(&self) -> Result<()> {
+        if !self.scale.is_finite() || self.scale <= 0.0 {
+            return Err(Error::invalid("pattern scale must be finite and positive"));
+        }
+        if self.origin.iter().any(|value| !value.is_finite()) {
+            return Err(Error::invalid("pattern origin must be finite"));
+        }
+        if !(-360..=360).contains(&self.rotation_degrees) {
+            return Err(Error::invalid("pattern rotation must be within -360..=360"));
+        }
+        Ok(())
+    }
+}
+
 #[revisioned(revision = 1)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapeFill {
     Solid([u8; 4]),
-    /// 1b. `Gradient` stays last: the revision enum tag carries the variant id
-    /// in bits 0..=4, so appending keeps the existing `Solid` at id 0 and old
-    /// data decodes unchanged.
+    /// 1b. The revision enum tag carries the variant id in bits 0..=4, so
+    /// variants are appended and never reordered or removed: `Solid` keeps id 0
+    /// and old data decodes unchanged.
     Gradient(GradientSpec),
+    /// 1c. Appended after `Gradient` for the same reason: `Solid` stays id 0
+    /// and `Gradient` stays id 1, so data written before patterns existed still
+    /// decodes as the variant that wrote it.
+    Pattern(PatternSpec),
 }
 
 #[revisioned(revision = 1)]
@@ -272,10 +332,12 @@ impl Component for ShapeLayer {
                 "shape arrow head must be finite and non-negative",
             ));
         }
-        if let Some(fill) = &self.style.fill
-            && let ShapeFill::Gradient(gradient) = fill
-        {
-            gradient.validate(context)?;
+        if let Some(fill) = &self.style.fill {
+            match fill {
+                ShapeFill::Gradient(gradient) => gradient.validate(context)?,
+                ShapeFill::Pattern(pattern) => pattern.validate()?,
+                ShapeFill::Solid(_) => {}
+            }
         }
         if let Some(stroke) = &self.style.stroke {
             if !stroke.width.is_finite() || stroke.width < 0.0 {
@@ -312,6 +374,11 @@ impl Component for ShapeLayer {
 mod tests {
     use super::*;
     use crate::{Origin, Result, component::ValidationContext};
+
+    /// The crate's own name, which `#[revisioned]` reaches through absolute
+    /// paths in the code it generates. Paths here match the ones an external
+    /// crate such as `koharu-renderer` must use.
+    use crate as koharu_scene;
 
     fn validate(layer: &ShapeLayer) -> Result<()> {
         let record_exists = |_id| true;
@@ -597,6 +664,96 @@ mod tests {
             end_degrees: 360.0,
         });
         assert!(validate_spec(&gradient).is_err());
+    }
+
+    fn pattern_spec() -> PatternSpec {
+        PatternSpec {
+            repeat: PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.25,
+            rotation_degrees: 0,
+            fallback: [255, 255, 255, 255],
+        }
+    }
+
+    #[test]
+    fn a_default_pattern_spec_validates() {
+        assert!(pattern_spec().validate().is_ok());
+    }
+
+    #[test]
+    fn a_pattern_scale_must_be_positive_and_finite() {
+        for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let mut spec = pattern_spec();
+            spec.scale = scale;
+            assert!(spec.validate().is_err(), "scale {scale} must be rejected");
+        }
+    }
+
+    #[test]
+    fn a_pattern_origin_must_be_finite() {
+        for origin in [[f32::NAN, 0.0], [0.0, f32::INFINITY]] {
+            let mut spec = pattern_spec();
+            spec.origin = origin;
+            assert!(
+                spec.validate().is_err(),
+                "origin {origin:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pattern_rotation_is_bounded() {
+        let mut spec = pattern_spec();
+        spec.rotation_degrees = 361;
+        assert!(spec.validate().is_err());
+        spec.rotation_degrees = -361;
+        assert!(spec.validate().is_err());
+        spec.rotation_degrees = 360;
+        assert!(spec.validate().is_ok());
+    }
+
+    /// An origin outside the unit square is how "move the pattern" works, so it
+    /// must not be rejected. Only non-finite values are invalid.
+    #[test]
+    fn a_pattern_origin_outside_the_unit_square_is_allowed() {
+        let mut spec = pattern_spec();
+        spec.origin = [-2.5, 3.75];
+        assert!(spec.validate().is_ok());
+    }
+
+    #[test]
+    fn a_pattern_fill_round_trips_through_serde() {
+        let fill = ShapeFill::Pattern(pattern_spec());
+        let json = serde_json::to_string(&fill).unwrap();
+        let decoded: ShapeFill = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, fill);
+    }
+
+    /// The revision enum tag carries the variant id in bits 0..=4, so `Pattern`
+    /// must be appended after `Gradient` or existing data would decode as the
+    /// wrong variant. Pin the ids.
+    #[test]
+    fn appending_pattern_preserves_the_existing_variant_ids() {
+        // `Solid` and `Gradient` keep their wire order; if this changes, saved
+        // projects would decode a solid as a gradient.
+        assert_eq!(
+            serde_json::to_string(&ShapeFill::Solid([1, 2, 3, 255])).unwrap(),
+            r#"{"solid":[1,2,3,255]}"#
+        );
+        assert!(
+            serde_json::to_string(&ShapeFill::Pattern(pattern_spec()))
+                .unwrap()
+                .starts_with(r#"{"pattern":{"#)
+        );
+    }
+
+    #[test]
+    fn the_pattern_types_are_reachable_from_the_crate_root() {
+        // 1b shipped gradient types that could not be named outside the crate;
+        // pin the re-export so that gap cannot reappear.
+        let _: koharu_scene::PatternRepeat = koharu_scene::PatternRepeat::Tile;
+        let _: koharu_scene::PatternSpec = pattern_spec();
     }
 
     /// `ShapeFill` gains a variant; a `Solid` written before it existed must

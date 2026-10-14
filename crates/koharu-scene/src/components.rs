@@ -27,7 +27,7 @@ pub use layers::{
 pub use provenance::{Authored, Generation, Origin};
 pub use shapes::{
     ArrowHead, GradientExtend, GradientKind, GradientSpec, GradientStop, LineCap, LineJoin,
-    ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle, StrokeStyle,
+    PatternRepeat, PatternSpec, ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle, StrokeStyle,
 };
 pub use spatial::{Geometry, Point, Visibility};
 pub use structure::{EntityOrigin, Page, PageDraft, Project, Relation, RelationKind};
