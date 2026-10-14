@@ -300,6 +300,22 @@ pub struct Project {
     pub redo: Vec<Vec<Revision>>,
 }
 
+/// The page an entity ultimately belongs to.
+///
+/// [`Snapshot::parent`] returns the *immediate* parent and [`Snapshot::page`]
+/// only accepts a page id, so a single `parent` call rejects any nested layer
+/// with a misleading `EntityNotFound`. Only a page has no parent, so walking up
+/// until `parent` returns `None` terminates at the owning page; the caller's
+/// `page(entity)` then fails loudly if the chain did not in fact reach one,
+/// which is why this helper performs no page check of its own.
+fn owning_page(snapshot: &Snapshot, entity: EntityId) -> Result<EntityId> {
+    let mut page = entity;
+    while let Some(parent) = snapshot.parent(page)? {
+        page = parent;
+    }
+    Ok(page)
+}
+
 impl Project {
     pub async fn create(name: String, path: PathBuf) -> Result<Self> {
         let session = Session::create(&path)
@@ -1596,20 +1612,7 @@ impl Project {
         // is the other half of that contract.
         adjust.validate()?;
         let snapshot = self.snapshot();
-        // Walk up to the owning page rather than assuming the layer's parent is
-        // one. Layers are frequently nested under a group (`add_text_layer`
-        // creates text layers under a `TextGroup`), and `Snapshot::parent`
-        // returns the *immediate* parent while `Snapshot::page` only accepts a
-        // page id — so a single `parent` call would reject a grouped layer with
-        // `EntityNotFound` before the raster guard below ever ran.
-        //
-        // Only a page has no parent (`Snapshot::parent` returns `None` for it),
-        // so the walk terminates at the page; `page(entity)` then fails loudly
-        // if the chain did not in fact reach one.
-        let mut page = layer;
-        while let Some(parent) = snapshot.parent(page)? {
-            page = parent;
-        }
+        let page = owning_page(&snapshot, layer)?;
         let page_value = snapshot.page(page)?.page()?;
         let width = page_value.width.round() as u32;
         let height = page_value.height.round() as u32;
