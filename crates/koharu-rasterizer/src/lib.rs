@@ -1,5 +1,10 @@
 //! Portable prepared frames and shared Vello/WGPU composition.
 
+// Lets this crate's own tests name items through the public crate path rather
+// than a private `crate::` path, so a missing re-export fails a test instead of
+// passing under a path no downstream crate can use.
+extern crate self as koharu_rasterizer;
+
 mod compositor;
 mod error;
 mod frame;
@@ -15,7 +20,7 @@ pub use frame::{Frame, Layer, RasterImage, RasterTile};
 #[cfg(feature = "native")]
 pub use native::{DownsampleFilter, Raster, RasterOptions, Rasterizer};
 pub use prepared::{
-    Bounds, FillRule, LayerId, LayerKind, PREPARED_FRAME_MANIFEST_VERSION,
+    Bounds, BrushRamp, FillRule, LayerId, LayerKind, PREPARED_FRAME_MANIFEST_VERSION,
     PREPARED_RASTER_TILE_DIMENSION, PREPARED_RESOURCE_FORMAT_VERSION, PathElement, Point,
     PreparedContent, PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle,
     PreparedFrameManifest, PreparedGlyph, PreparedGlyphRun, PreparedGradient,
@@ -23,5 +28,5 @@ pub use prepared::{
     PreparedLineCap, PreparedLineJoin, PreparedPath, PreparedRaster, PreparedRasterTile,
     PreparedResource, PreparedResourceKind, PreparedResourcePacket, PreparedResourceRef,
     PreparedResourceStore, PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation,
-    ResourceId, Revision, stops_sorted,
+    RampAxis, ResourceId, Revision, stops_sorted,
 };

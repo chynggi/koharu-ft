@@ -897,6 +897,74 @@ pub fn stops_sorted(stops: &[PreparedGradientStop]) -> Vec<PreparedGradientStop>
     sorted
 }
 
+/// Which page-normalized axis a [`BrushRamp::FixedAxis`] ramp runs along.
+///
+/// Page-normalized coordinates (not frame-local ones) let several strokes share
+/// one ramp, so the axis is what the caller picks instead of a pair of points.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RampAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// A two-colour brush ramp: the brush paints `from` at the low end of the ramp
+/// and `to` at the high end.
+///
+/// This is deliberately not [`PreparedGradient`]: a gradient's control points
+/// are frame-local and its stops are open-ended, while a ramp is exactly two
+/// colours plus a rule for turning a position into a parameter. Reusing the
+/// gradient type would store `kind`/`stops`/`extend` fields that mean nothing
+/// for a brush.
+///
+/// It lives in this crate because both the native commit path and the WASM live
+/// preview interpolate through [`BrushRamp::color_at`], so the two cannot drift
+/// apart. It is a command argument rather than a persisted component, so it is
+/// internally tagged (`kind`) like this workspace's command arguments.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrushRamp {
+    /// Runs along the stroke: the stroke start is `from`, the stroke end is `to`.
+    AlongStroke { from: [u8; 4], to: [u8; 4] },
+    /// Runs along a fixed page axis: the `0.0` side of `axis` is `from`, the
+    /// `1.0` side is `to`. Page-normalized coordinates let several strokes
+    /// continue one ramp.
+    FixedAxis {
+        from: [u8; 4],
+        to: [u8; 4],
+        axis: RampAxis,
+    },
+}
+
+impl BrushRamp {
+    /// The colour at `position`, with `position` clamped to `0.0..=1.0`.
+    ///
+    /// All four channels interpolate, alpha included: the ramp's alpha
+    /// participates in stroke compositing, so a ramp that lerped only RGB would
+    /// silently drop transparency.
+    pub fn color_at(&self, position: f32) -> [u8; 4] {
+        let (from, to) = match self {
+            Self::AlongStroke { from, to } | Self::FixedAxis { from, to, .. } => (from, to),
+        };
+        // Clamp before the cast: a NaN position survives a comparison-based
+        // clamp (every comparison with NaN is false) and would then produce a
+        // garbage channel via `as u8`. Rounding can likewise overshoot past
+        // 255.0, so the value is clamped once more after interpolation.
+        let t = if position.is_nan() {
+            0.0
+        } else {
+            position.clamp(0.0, 1.0)
+        };
+        let mut out = [0u8; 4];
+        for (index, channel) in out.iter_mut().enumerate() {
+            let start = f32::from(from[index]);
+            let end = f32::from(to[index]);
+            *channel = (start + (end - start) * t).round().clamp(0.0, 255.0) as u8;
+        }
+        out
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PreparedStroke {
     pub color: [u8; 4],
@@ -1829,6 +1897,78 @@ mod tests {
                 [0, 1, 0, 255],
                 [0, 0, 1, 255],
             ]
+        );
+    }
+
+    #[test]
+    fn a_ramp_interpolates_between_its_ends() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [255, 255, 255, 255],
+        };
+        assert_eq!(ramp.color_at(0.0), [0, 0, 0, 255]);
+        assert_eq!(ramp.color_at(1.0), [255, 255, 255, 255]);
+        // Midpoint must be the rounded halfway value, not one end.
+        assert_eq!(ramp.color_at(0.5), [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn a_ramp_interpolates_alpha_too() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [10, 20, 30, 0],
+            to: [10, 20, 30, 255],
+        };
+        assert_eq!(ramp.color_at(0.0)[3], 0);
+        assert_eq!(ramp.color_at(1.0)[3], 255);
+        // Alpha must move; a ramp that only interpolates RGB would return 0 here.
+        assert!(ramp.color_at(0.5)[3] > 0, "alpha must interpolate");
+    }
+
+    #[test]
+    fn a_ramp_clamps_outside_the_unit_interval() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [100, 100, 100, 255],
+        };
+        assert_eq!(ramp.color_at(-1.0), [0, 0, 0, 255]);
+        assert_eq!(ramp.color_at(2.0), [100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn a_ramp_with_equal_ends_is_a_solid_colour() {
+        let ramp = BrushRamp::FixedAxis {
+            from: [7, 8, 9, 255],
+            to: [7, 8, 9, 255],
+            axis: RampAxis::Horizontal,
+        };
+        for position in [0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(ramp.color_at(position), [7, 8, 9, 255]);
+        }
+    }
+
+    #[test]
+    fn a_non_finite_position_does_not_panic() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 255],
+            to: [255, 255, 255, 255],
+        };
+        // NaN must not produce a panic or an out-of-range channel; clamping has
+        // to happen before the cast.
+        let color = ramp.color_at(f32::NAN);
+        assert_eq!(color.len(), 4);
+    }
+
+    #[test]
+    fn the_ramp_types_are_reachable_from_the_crate_root() {
+        // The 1b review found gradient types that could not be named outside the
+        // crate. Pin the re-export so the same gap cannot reappear.
+        assert_eq!(
+            koharu_rasterizer::BrushRamp::AlongStroke {
+                from: [0, 0, 0, 0],
+                to: [0, 0, 0, 0],
+            }
+            .color_at(0.0),
+            [0, 0, 0, 0]
         );
     }
 }
