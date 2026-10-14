@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use vello::kurbo::Affine;
 
 use crate::{Error, Result};
 
@@ -723,10 +724,12 @@ impl PreparedPath {
                 return Err(Error::invalid("prepared path contains a non-finite point"));
             }
         }
-        if let Some(fill) = &self.fill
-            && let PreparedFill::Gradient { gradient, .. } = fill
-        {
-            gradient.validate()?;
+        if let Some(fill) = &self.fill {
+            match fill {
+                PreparedFill::Gradient { gradient, .. } => gradient.validate()?,
+                PreparedFill::Pattern { pattern, .. } => pattern.validate()?,
+                PreparedFill::Solid { .. } => {}
+            }
         }
         if let Some(stroke) = &self.stroke {
             if !stroke.width.is_finite() || stroke.width < 0.0 {
@@ -759,6 +762,186 @@ pub enum PreparedFill {
         gradient: PreparedGradient,
         rule: FillRule,
     },
+    Pattern {
+        pattern: PreparedPattern,
+        rule: FillRule,
+    },
+}
+
+/// How a [`PreparedPattern`] lays its image out across the shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreparedPatternRepeat {
+    Tile,
+    Stretch,
+}
+
+/// A pattern ready for a renderer, with its coordinates in the **path's local
+/// coordinate system** — the same one [`PreparedPath::elements`] uses.
+///
+/// Like [`PreparedGradient`], the coordinates are never page coordinates and
+/// never normalized frame coordinates, so [`PreparedPath::transform`] applies to
+/// the pattern and the outline alike and a rotated shape's pattern rotates with
+/// it. The normalized-to-local spread happens before a path is built.
+///
+/// Unlike a gradient, a pattern is an *image*: no renderer can paint it from
+/// numbers alone. [`PreparedPattern::image`] carries the decoded pixels when a
+/// caller has resolved the owning layer's `pattern` asset.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedPattern {
+    pub repeat: PreparedPatternRepeat,
+    /// Tile origin in path-local coordinates.
+    ///
+    /// **Ignored when `repeat` is [`PreparedPatternRepeat::Stretch`]**, which
+    /// fits exactly one image to [`PreparedPattern::extent`].
+    pub origin: [f32; 2],
+    /// Tile pitch in path-local units: the width one tile occupies. Finite and
+    /// positive.
+    ///
+    /// **Ignored when `repeat` is [`PreparedPatternRepeat::Stretch`].**
+    pub scale: f32,
+    /// Clockwise degrees applied about the tile origin (`Tile`) or the box
+    /// centre (`Stretch`).
+    ///
+    /// This is the *pattern's* own rotation, which the author sets independently
+    /// of the shape's angle. The shape's angle reaches the brush through
+    /// [`PreparedPath::transform`] and must not be folded in here, or a rotated
+    /// shape would rotate its pattern twice.
+    pub rotation_degrees: i32,
+    /// Drawn as a solid fill when [`PreparedPattern::image`] is `None`.
+    pub fallback: [u8; 4],
+    /// The shape's box in path-local coordinates: `(0, 0)` to this extent.
+    ///
+    /// `Stretch` needs it to fit one image to the shape; `Tile` ignores it.
+    pub extent: [f32; 2],
+    /// The decoded pattern pixels, or `None` when no `pattern` asset has been
+    /// resolved for the layer that owns this fill.
+    ///
+    /// `koharu-scene`'s `PatternSpec` deliberately references no asset (the
+    /// shape layer owns it, so a deleted layer cannot leave a dangling
+    /// reference), which means the asset must be resolved per layer and handed
+    /// down here. The pixels are carried rather than only their [`ResourceId`]
+    /// because [`PreparedPath::append_to`] — the one place that assembles the
+    /// brush — is given no resource registry to look an id up in.
+    pub image: Option<PreparedPatternImage>,
+}
+
+/// Decoded, straight-alpha RGBA8 pixels for a [`PreparedPattern`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PreparedPatternImage {
+    /// Identity of the source asset, so a caller can tell two look-alike
+    /// patterns apart and cache an upload by content.
+    pub source: ResourceId,
+    pub width: u32,
+    pub height: u32,
+    /// `width * height * 4` bytes of RGBA8 with straight (unpremultiplied)
+    /// alpha.
+    pub pixels: Arc<[u8]>,
+}
+
+impl PreparedPattern {
+    /// The mapping from the pattern image's own pixel space to this path's
+    /// local space, as Vello's `brush_transform` argument.
+    ///
+    /// This is **not** optional and deliberately not `None`. Vello composes the
+    /// path transform with this one (`transform * brush_transform`,
+    /// `vello-0.10.0/src/scene.rs:328-331`) and the fine rasterizer inverts the
+    /// result to index the image (`vello-0.10.0`'s `draw_leaf.wgsl:250`), then
+    /// wraps that coordinate with `extend_mode(..., image.extents)`
+    /// (`fine.wgsl:1326`) — so the composed transform maps **image pixels** to
+    /// page space. With an identity brush transform one image pixel would equal
+    /// one path-local unit and [`PreparedPattern::scale`] could not affect the
+    /// tile pitch at all.
+    ///
+    /// Passing the *path* affine here instead would double-apply it, because the
+    /// path transform is already the composition's other factor. That was 1b's
+    /// Critical bug; it is a different mistake from passing a brush transform.
+    #[must_use]
+    pub fn brush_transform(&self) -> Affine {
+        let Some(image) = self.image.as_ref() else {
+            // No pixels, so no brush will be built. The identity keeps the
+            // caller's single `fill` call uniform rather than branching here.
+            return Affine::IDENTITY;
+        };
+        let degrees = f64::from(self.rotation_degrees);
+        match self.repeat {
+            PreparedPatternRepeat::Tile => {
+                // Image pixel (0,0) lands on the tile origin, and one pixel
+                // spans `scale` path-local units, so `scale` is the pitch the
+                // author set. Applied scale -> rotate -> translate.
+                Affine::translate((
+                    f64::from(self.origin[0]),
+                    f64::from(self.origin[1]),
+                )) * Affine::rotate(degrees.to_radians())
+                    * Affine::scale(f64::from(self.scale))
+            }
+            PreparedPatternRepeat::Stretch => {
+                // One image fills the whole box, so the scale factors are the
+                // box/image ratios per axis. Non-uniform on purpose: stretching
+                // to the box is what this mode promises, and preserving the
+                // image's aspect ratio would leave part of the box unfilled.
+                //
+                // The rotation is taken about the box centre rather than the
+                // origin so a stretched pattern turns in place.
+                let width = f64::from(self.extent[0]);
+                let height = f64::from(self.extent[1]);
+                let center = (width * 0.5, height * 0.5);
+                Affine::translate(center)
+                    * Affine::rotate(degrees.to_radians())
+                    * Affine::translate((-center.0, -center.1))
+                    * Affine::scale_non_uniform(
+                        width / f64::from(image.width.max(1)),
+                        height / f64::from(image.height.max(1)),
+                    )
+            }
+        }
+    }
+
+    /// Boundary validation for prepared patterns.
+    ///
+    /// `koharu-scene` validates the persisted `PatternSpec` with the same rules,
+    /// and this crate deliberately does **not** depend on that crate: the
+    /// rasterizer must stay usable from a backend that has never seen a scene.
+    /// Re-checking here is boundary validation, not duplication.
+    fn validate(&self) -> Result<()> {
+        if !self.scale.is_finite() || self.scale <= 0.0 {
+            return Err(Error::invalid(
+                "prepared pattern scale must be finite and positive",
+            ));
+        }
+        if self.origin.iter().any(|value| !value.is_finite()) {
+            return Err(Error::invalid("prepared pattern origin must be finite"));
+        }
+        if !(-360..=360).contains(&self.rotation_degrees) {
+            return Err(Error::invalid(
+                "prepared pattern rotation must be within -360..=360",
+            ));
+        }
+        if self
+            .extent
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+        {
+            return Err(Error::invalid(
+                "prepared pattern extent must be finite and non-negative",
+            ));
+        }
+        if let Some(image) = &self.image {
+            validate_surface(image.width, image.height)?;
+            let expected = usize::try_from(
+                u64::from(image.width)
+                    .checked_mul(u64::from(image.height))
+                    .and_then(|pixels| pixels.checked_mul(4))
+                    .ok_or_else(|| Error::invalid("pattern image size overflows"))?,
+            )
+            .map_err(|_| Error::invalid("pattern image size exceeds usize"))?;
+            if image.pixels.len() != expected {
+                return Err(Error::invalid(
+                    "pattern image byte length does not match its dimensions",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A gradient ready for a renderer, with its control points in the **path's

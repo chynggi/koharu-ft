@@ -5,15 +5,19 @@ use std::{collections::HashMap, sync::Arc};
 use vello::{
     FontEmbolden, Glyph, Scene,
     kurbo::{Affine, BezPath, Cap, Diagonal2, Join, Rect, Stroke},
-    peniko::{Blob, Color, ColorStop, Extend, Fill, FontData, Gradient, Mix},
+    peniko::{
+        Blob, Color, ColorStop, Extend, Fill, FontData, Gradient, ImageAlphaType, ImageBrush,
+        ImageData, ImageFormat, Mix,
+    },
 };
 
 use crate::{
     Bounds, CompositionCommand, Error, FillRule, LayerId, LayerKind, PathElement, PreparedContent,
     PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle, PreparedFrameManifest,
     PreparedGradient, PreparedGradientExtend, PreparedGradientKind, PreparedLineCap,
-    PreparedLineJoin, PreparedPath, PreparedResource, PreparedResourceStore, PreparedScene,
-    PreparedSceneCommand, PreparedStroke, Presentation, RasterDraw, ResourceId, Result, Revision,
+    PreparedLineJoin, PreparedPath, PreparedPatternRepeat, PreparedResource,
+    PreparedResourceStore, PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation,
+    RasterDraw, ResourceId, Result, Revision,
 };
 
 #[derive(Clone)]
@@ -522,6 +526,57 @@ impl PreparedPath {
                 // rotates the brush and the outline together with no extra work.
                 scene.fill(fill(rule), affine, &compile_gradient(gradient), None, &path);
             }
+            Some(PreparedFill::Pattern { pattern, rule }) => {
+                // P-D6: a missing, undecodable, or empty pattern asset draws the
+                // stored fallback colour instead of failing. The decision lives
+                // here rather than in `fill()` because this is the one place that
+                // assembles the brush, so the committed render and the browser
+                // preview cannot disagree about what "no image" means — they both
+                // reach this arm.
+                //
+                // The fallback must not `return`: a shape with both a fill and a
+                // stroke still has to draw its stroke.
+                match pattern.image.as_ref().filter(|image| {
+                    image.width > 0 && image.height > 0
+                }) {
+                    None => {
+                        scene.fill(fill(rule), affine, rgba(pattern.fallback), None, &path);
+                    }
+                    Some(image) => {
+                        let brush = ImageBrush::new(ImageData {
+                            // `Blob` takes an `Arc<dyn AsRef<[u8]>>`, so the
+                            // pixel `Arc<[u8]>` is wrapped rather than cloned
+                            // (same idiom as the font blob above).
+                            data: Blob::new(Arc::new(Arc::clone(&image.pixels))),
+                            format: ImageFormat::Rgba8,
+                            // The decoded pixels carry straight alpha;
+                            // premultiplied ones would darken every
+                            // semi-transparent pattern pixel.
+                            alpha_type: ImageAlphaType::Alpha,
+                            width: image.width,
+                            height: image.height,
+                        })
+                        .with_extend(match pattern.repeat {
+                            PreparedPatternRepeat::Tile => Extend::Repeat,
+                            PreparedPatternRepeat::Stretch => Extend::Pad,
+                        });
+                        // Unlike the gradient arm, `brush_transform` here is
+                        // **not** `None` and must not become `None`. The image
+                        // brush indexes pixels, not path units, so the author's
+                        // scale/origin/rotation can only reach it through this
+                        // transform (see `PreparedPattern::brush_transform`).
+                        // `None` would silently make `scale` a no-op. Passing the
+                        // path affine instead would be 1b's double-apply bug.
+                        scene.fill(
+                            fill(rule),
+                            affine,
+                            &brush,
+                            Some(pattern.brush_transform()),
+                            &path,
+                        );
+                    }
+                }
+            }
             None => {}
         }
         if let Some(stroke) = &self.stroke {
@@ -626,6 +681,9 @@ mod tests {
         PreparedSceneCommand,
     };
     use vello::peniko::{ColorStop, GradientKind};
+    // `kurbo` is not a direct dependency of this crate; `Point` alone is already
+    // taken by this crate's own geometry type, so the alias keeps both usable.
+    use vello::kurbo::Point as KurboPoint;
 
     /// A gradient path whose kind, stops, extend, and transform are all
     /// non-trivial.
@@ -852,6 +910,195 @@ mod tests {
 
         assert_encoding_matches(&preview, &expected);
         assert_encoding_matches(&committed, &preview);
+    }
+
+    /// A pattern with no resolved asset must draw its fallback as a **solid**
+    /// fill, and must still draw its stroke. The fallback is not an error: one
+    /// broken pattern asset must not make a page unopenable (P-D6).
+    #[test]
+    fn a_pattern_without_an_asset_draws_its_fallback() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 10.0);
+        path.stroke = Some(PreparedStroke {
+            color: [1, 2, 3, 255],
+            width: 1.0,
+            dash: None,
+            cap: PreparedLineCap::Butt,
+            join: PreparedLineJoin::Miter,
+        });
+        let Some(PreparedFill::Pattern { pattern, .. }) = &path.fill else {
+            panic!("expected a pattern fill");
+        };
+        assert!(pattern.image.is_none());
+        let fallback = pattern.fallback;
+
+        let mut preview = Scene::new();
+        path.append_to(&mut preview);
+
+        // The whole scene must be byte-identical to one built from a solid fill
+        // of the fallback colour plus the same stroke. Comparing the encoding
+        // rather than sampling pixels makes "no image brush was encoded" exact.
+        let mut expected = Scene::new();
+        let mut solid = path.clone();
+        solid.fill = Some(PreparedFill::Solid {
+            color: fallback,
+            rule: FillRule::NonZero,
+        });
+        solid.append_to(&mut expected);
+
+        assert_encoding_matches(&preview, &expected);
+    }
+
+    /// The single most important consequence of the shader's pixel-space
+    /// indexing: `scale` must be able to change the render at all.
+    ///
+    /// With `brush_transform: None` — the plan's original, wrong rule — one image
+    /// pixel equals one path-local unit, so `scale` cannot affect the tile pitch
+    /// and both renders below would be identical.
+    #[test]
+    fn a_patterns_scale_changes_the_render() {
+        let sample = |scale: f32| {
+            let mut path = pattern_path(PreparedPatternRepeat::Tile, scale);
+            let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+                panic!("expected a pattern fill");
+            };
+            pattern.image = Some(pattern_image());
+
+            let mut scene = Scene::new();
+            path.append_to(&mut scene);
+            let rasterizer = crate::Rasterizer::new().expect("a rasterizer");
+            let image = rasterizer
+                .rasterize_scene(
+                    &scene,
+                    100,
+                    100,
+                    [0, 0, 0, 0],
+                    crate::RasterOptions::default(),
+                )
+                .expect("the scene rasterizes");
+            let pixel = image.get_pixel(37, 50);
+            [pixel[0], pixel[1], pixel[2], pixel[3]]
+        };
+        let wide = sample(40.0);
+        let narrow = sample(4.0);
+        assert!(wide[3] > 0 && narrow[3] > 0, "a sample missed the shape");
+        assert_ne!(
+            (wide[0], wide[1], wide[2]),
+            (narrow[0], narrow[1], narrow[2]),
+            "scale did not change the render — brush_transform is probably None"
+        );
+    }
+
+    /// `Stretch` ignores `origin` and `scale` and fits one image to the box.
+    #[test]
+    fn a_stretched_pattern_scales_one_image_to_the_box() {
+        let mut path = pattern_path(PreparedPatternRepeat::Stretch, 7.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        pattern.origin = [0.9, 0.9];
+        let stretched = pattern.brush_transform();
+
+        let mut other = pattern.clone();
+        other.origin = [0.0, 0.0];
+        other.scale = 999.0;
+        assert_eq!(
+            stretched,
+            other.brush_transform(),
+            "Stretch must ignore origin and scale"
+        );
+
+        // The image's right edge must land on the box's right edge: the
+        // transform maps image pixels onto the box, so pixel `width` maps to
+        // `extent[0]`.
+        let Some(image) = pattern.image.as_ref() else {
+            panic!("expected an image");
+        };
+        let right = stretched * KurboPoint::new(f64::from(image.width), 0.0);
+        assert!(
+            (right.x - f64::from(pattern.extent[0])).abs() < 1e-9,
+            "the image's right edge must reach the box's right edge, got {right:?}"
+        );
+        let bottom = stretched * KurboPoint::new(0.0, f64::from(image.height));
+        assert!(
+            (bottom.y - f64::from(pattern.extent[1])).abs() < 1e-9,
+            "the image's bottom edge must reach the box's bottom edge, got {bottom:?}"
+        );
+    }
+
+    /// `Tile` places image pixel `(0, 0)` at the origin, with one pixel spanning
+    /// `scale` path-local units.
+    #[test]
+    fn a_tiled_pattern_transform_places_the_origin_and_pitch() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 12.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        pattern.origin = [30.0, 40.0];
+        let transform = pattern.brush_transform();
+        let origin = transform * KurboPoint::new(0.0, 0.0);
+        assert!((origin.x - 30.0).abs() < 1e-9 && (origin.y - 40.0).abs() < 1e-9);
+        let next = transform * KurboPoint::new(1.0, 0.0);
+        assert!((next.x - (30.0 + 12.0)).abs() < 1e-9);
+    }
+
+    /// The path affine must never be the brush transform: vello composes
+    /// `transform * brush_transform`, so applying the path affine twice is a
+    /// half-turn over-rotation (1b's Critical).
+    #[test]
+    fn a_pattern_never_reuses_the_path_affine_as_its_brush() {
+        let mut path = pattern_path(PreparedPatternRepeat::Tile, 10.0);
+        let Some(PreparedFill::Pattern { pattern, .. }) = &mut path.fill else {
+            panic!("expected a pattern fill");
+        };
+        pattern.image = Some(pattern_image());
+        // A decidedly non-identity path affine.
+        path.transform = [0.0, 1.0, -1.0, 0.0, 30.0, 40.0];
+        assert_ne!(
+            pattern.brush_transform(),
+            Affine::new(path.transform),
+            "the path affine must not be handed to the brush"
+        );
+    }
+
+    fn pattern_image() -> PreparedPatternImage {
+        // A 2x1 image: a red pixel then a blue one, so a change in tile pitch
+        // moves the sampled colour.
+        PreparedPatternImage {
+            source: ResourceId::for_encoded_raster(2, 1, "image/png", &[1, 2, 3]),
+            width: 2,
+            height: 1,
+            pixels: Arc::from(&[255u8, 0, 0, 255, 0, 0, 255, 255][..]),
+        }
+    }
+
+    fn pattern_path(repeat: PreparedPatternRepeat, scale: f32) -> PreparedPath {
+        PreparedPath {
+            // A square with area, so a pixel sample can land inside it: the
+            // gradient helper's shape is a zero-area segment.
+            transform: Affine::IDENTITY.as_coeffs(),
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([100.0, 0.0]),
+                PathElement::LineTo([100.0, 100.0]),
+                PathElement::LineTo([0.0, 100.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Pattern {
+                pattern: PreparedPattern {
+                    repeat,
+                    origin: [0.0, 0.0],
+                    scale,
+                    rotation_degrees: 0,
+                    fallback: [7, 8, 9, 255],
+                    extent: [100.0, 100.0],
+                    image: None,
+                },
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
     }
 
     /// A solid fill must keep passing `brush_transform: None`; a regression that

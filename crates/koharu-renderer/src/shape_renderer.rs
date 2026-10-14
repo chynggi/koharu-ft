@@ -12,11 +12,11 @@
 use koharu_rasterizer::{
     FillRule, PathElement, PreparedFill, PreparedGradient, PreparedGradientExtend,
     PreparedGradientKind, PreparedGradientStop, PreparedLineCap, PreparedLineJoin, PreparedPath,
-    PreparedStroke,
+    PreparedPattern, PreparedPatternImage, PreparedPatternRepeat, PreparedStroke,
 };
 use koharu_scene::{
-    ArrowHead, Geometry, GradientExtend, GradientKind, LineCap, LineJoin, ShapeFill, ShapeGeometry,
-    ShapeStyle, StrokeStyle,
+    ArrowHead, Geometry, GradientExtend, GradientKind, LineCap, LineJoin, PatternRepeat, ShapeFill,
+    ShapeGeometry, ShapeStyle, StrokeStyle,
 };
 
 /// Cubic approximation constant for a quarter circle.
@@ -353,11 +353,66 @@ fn fill(style: &ShapeStyle, frame: ShapeFrame, has_head: bool) -> Option<Prepare
                 rule: FillRule::NonZero,
             })
         }
+        Some(ShapeFill::Pattern(spec)) => Some(PreparedFill::Pattern {
+            pattern: PreparedPattern {
+                repeat: match spec.repeat {
+                    PatternRepeat::Tile => PreparedPatternRepeat::Tile,
+                    PatternRepeat::Stretch => PreparedPatternRepeat::Stretch,
+                },
+                // Normalized frame-local (0..=1) -> path-local, the same spread
+                // rule and the same single site as the gradient above. The frame
+                // box's top-left *is* the path-local origin, so `frame.x` /
+                // `frame.y` must not be added here — the gradient adds neither,
+                // and adding them would offset the pattern twice.
+                origin: [spec.origin[0] * frame.width, spec.origin[1] * frame.height],
+                // The tile pitch is a fraction of the frame's **width**, the
+                // same convention as the gradient's radial radius.
+                scale: spec.scale * frame.width,
+                // The pattern's own rotation, carried for
+                // `PreparedPattern::brush_transform`. It is deliberately not the
+                // shape's `angle_degrees`: that one lives in the path transform,
+                // and folding it in here would rotate the pattern twice.
+                rotation_degrees: spec.rotation_degrees,
+                // P-D6's stand-in colour. `append_to` applies it when the asset
+                // is missing, undecodable, or empty.
+                fallback: spec.fallback,
+                // `Stretch` fits one image to this box.
+                extent: [frame.width, frame.height],
+                // `PatternSpec` references no asset, so the caller that resolves
+                // the owning layer's `pattern` asset fills this in through
+                // `attach_pattern_image`.
+                image: None,
+            },
+            rule: FillRule::NonZero,
+        }),
         None if has_head => style.stroke.as_ref().map(|stroke| PreparedFill::Solid {
             color: stroke.color,
             rule: FillRule::NonZero,
         }),
         None => None,
+    }
+}
+
+/// Attaches decoded pattern pixels to a prepared path whose fill is a pattern.
+///
+/// Returns whether an image was attached. A caller that gets `false` must leave
+/// the fill alone rather than substituting a different one: the fallback colour
+/// is drawn by `PreparedPath::append_to`, which is the single place that decides
+/// what "no image" looks like, so the committed render and the browser preview
+/// cannot diverge.
+///
+/// `PatternSpec` deliberately references no asset, so the layer that owns the
+/// shape owns the `pattern` asset and the caller resolving it is the only party
+/// that can supply the pixels. Every renderer — the native frame builder, shape
+/// rasterization, and the WASM preview — funnels through this one function
+/// rather than growing its own attachment path.
+pub fn attach_pattern_image(path: &mut PreparedPath, image: PreparedPatternImage) -> bool {
+    match &mut path.fill {
+        Some(PreparedFill::Pattern { pattern, .. }) => {
+            pattern.image = Some(image);
+            true
+        }
+        _ => false,
     }
 }
 
@@ -393,7 +448,7 @@ fn stroke(style: &StrokeStyle) -> PreparedStroke {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use koharu_scene::{GradientSpec, GradientStop};
+    use koharu_scene::{GradientSpec, GradientStop, PatternSpec};
 
     fn frame(width: f32, height: f32, angle_degrees: f32) -> ShapeFrame {
         ShapeFrame {
@@ -402,6 +457,19 @@ mod tests {
             width,
             height,
             angle_degrees,
+        }
+    }
+
+    fn pattern_style(repeat: PatternRepeat) -> ShapeStyle {
+        ShapeStyle {
+            fill: Some(ShapeFill::Pattern(PatternSpec {
+                repeat,
+                origin: [0.5, 0.25],
+                scale: 0.5,
+                rotation_degrees: 30,
+                fallback: [1, 2, 3, 255],
+            })),
+            stroke: None,
         }
     }
 
@@ -673,6 +741,113 @@ mod tests {
         }
     }
 
+    /// The pattern's coordinates are **path-local**, exactly like the gradient's:
+    /// the frame box's top-left is the path-local origin, so `frame.x` and
+    /// `frame.y` must not be added. A frame at `(10, 20)` therefore still yields
+    /// an origin of `(100, 25)`, not `(110, 45)`. Adding the offset here would
+    /// apply it a second time through the path transform.
+    #[test]
+    fn a_pattern_origin_is_spread_onto_the_frame() {
+        let style = pattern_style(PatternRepeat::Tile);
+        let Some(PreparedFill::Pattern { pattern, .. }) =
+            fill(&style, frame_box(10.0, 20.0, 200.0, 100.0, 0.0), false)
+        else {
+            panic!("expected a pattern fill");
+        };
+        assert_eq!(pattern.origin, [0.5 * 200.0, 0.25 * 100.0]);
+        assert_eq!(pattern.scale, 0.5 * 200.0);
+        assert_eq!(pattern.extent, [200.0, 100.0]);
+        assert_eq!(pattern.fallback, [1, 2, 3, 255]);
+    }
+
+    /// The shape's angle lives in the path transform, so the pattern's own
+    /// coordinates must be identical at any angle. Folding the angle in here
+    /// would rotate the pattern twice.
+    #[test]
+    fn a_pattern_keeps_its_coordinates_local_when_rotated() {
+        let style = pattern_style(PatternRepeat::Tile);
+        let upright = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 0.0),
+        );
+        let rotated = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(200.0, 100.0, 90.0),
+        );
+        assert_eq!(upright.fill, rotated.fill);
+        assert_ne!(upright.transform, rotated.transform);
+    }
+
+    #[test]
+    fn a_stretch_pattern_reports_the_stretch_repeat() {
+        let style = pattern_style(PatternRepeat::Stretch);
+        let Some(PreparedFill::Pattern { pattern, .. }) = fill(&style, frame(40.0, 20.0, 0.0), false)
+        else {
+            panic!("expected a pattern fill");
+        };
+        assert_eq!(pattern.repeat, PreparedPatternRepeat::Stretch);
+    }
+
+    /// `PatternSpec` references no asset (the owning layer does), so `fill()` has
+    /// nothing to put in `image` and must not invent one. The pixels arrive
+    /// through `attach_pattern_image`, and until then `append_to` draws the
+    /// fallback.
+    #[test]
+    fn a_pattern_carries_no_image_until_its_asset_is_attached() {
+        let style = pattern_style(PatternRepeat::Tile);
+        let path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(40.0, 20.0, 0.0),
+        );
+        let Some(PreparedFill::Pattern { pattern, .. }) = path.fill else {
+            panic!("expected a pattern fill");
+        };
+        assert!(pattern.image.is_none());
+    }
+
+    #[test]
+    fn attaching_a_pattern_image_fills_the_pattern_fill() {
+        let style = pattern_style(PatternRepeat::Tile);
+        let mut path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &style,
+            frame(40.0, 20.0, 0.0),
+        );
+        let image = PreparedPatternImage {
+            source: koharu_rasterizer::ResourceId::for_encoded_raster(1, 1, "image/png", &[7]),
+            width: 1,
+            height: 1,
+            pixels: std::sync::Arc::from(&[9u8, 8, 7, 255][..]),
+        };
+        assert!(attach_pattern_image(&mut path, image.clone()));
+        let Some(PreparedFill::Pattern { pattern, .. }) = path.fill else {
+            panic!("expected a pattern fill");
+        };
+        assert_eq!(pattern.image, Some(image));
+    }
+
+    /// The attachment point is the pattern fill and nothing else, so a caller
+    /// cannot accidentally turn a solid or gradient fill into a pattern.
+    #[test]
+    fn attaching_a_pattern_image_rejects_a_non_pattern_fill() {
+        let mut path = shape_path(
+            &ShapeGeometry::Rectangle { corner_radius: 0.0 },
+            &filled(),
+            frame(40.0, 20.0, 0.0),
+        );
+        let before = path.fill.clone();
+        let image = PreparedPatternImage {
+            source: koharu_rasterizer::ResourceId::for_encoded_raster(1, 1, "image/png", &[7]),
+            width: 1,
+            height: 1,
+            pixels: std::sync::Arc::from(&[9u8, 8, 7, 255][..]),
+        };
+        assert!(!attach_pattern_image(&mut path, image));
+        assert_eq!(path.fill, before);
+    }
     /// `assert_eq!` on rotated coordinates is too strict: `90°`'s cosine is
     /// `6.1e-17`, not exactly zero, so output carries ~1e-15 of rounding.
     fn assert_close(actual: &[f64; 2], expected: [f64; 2]) {

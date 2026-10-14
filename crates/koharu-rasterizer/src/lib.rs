@@ -25,8 +25,9 @@ pub use prepared::{
     PreparedContent, PreparedElementFrame, PreparedFill, PreparedFrame, PreparedFrameBundle,
     PreparedFrameManifest, PreparedGlyph, PreparedGlyphRun, PreparedGradient,
     PreparedGradientExtend, PreparedGradientKind, PreparedGradientStop, PreparedLayer,
-    PreparedLineCap, PreparedLineJoin, PreparedPath, PreparedRaster, PreparedRasterTile,
-    PreparedResource, PreparedResourceKind, PreparedResourcePacket, PreparedResourceRef,
-    PreparedResourceStore, PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation,
-    RampAxis, ResourceId, Revision, stops_sorted,
+    PreparedLineCap, PreparedLineJoin, PreparedPath, PreparedPattern, PreparedPatternImage,
+    PreparedPatternRepeat, PreparedRaster, PreparedRasterTile, PreparedResource,
+    PreparedResourceKind, PreparedResourcePacket, PreparedResourceRef, PreparedResourceStore,
+    PreparedScene, PreparedSceneCommand, PreparedStroke, Presentation, RampAxis, ResourceId,
+    Revision, stops_sorted,
 };
