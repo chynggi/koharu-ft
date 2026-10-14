@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  MAX_GRADIENT_STOPS,
+  MIN_GRADIENT_STOPS,
   SHAPE_KINDS,
+  addGradientStop,
   defaultGradientSpec,
   defaultShapeStyle,
+  gradientKindName,
+  gradientStopBounds,
   isShapeTool,
+  moveGradientStop,
+  removeGradientStop,
   shapeGeometry,
   shapePolygon,
   shapePreviewPath,
+  withFillKind,
+  withGradientKind,
 } from '@/lib/shapes'
 
 const frame = { x: 10, y: 20, width: 100, height: 50, angle_degrees: 0 }
@@ -143,6 +152,90 @@ describe('defaultGradientSpec', () => {
       expect(numbers.every((value) => Number.isFinite(value))).toBe(true)
       expect(numbers.filter((value) => value < 0 || value > 1)).toHaveLength(0)
     }
+  })
+})
+
+describe('withFillKind', () => {
+  const solid = { fill: { solid: [10, 20, 30, 255] as [number, number, number, number] }, stroke: null }
+
+  it('turns a solid into a gradient that starts from its colour', () => {
+    const style = withFillKind(solid, 'gradient')
+    expect(style.fill && 'gradient' in style.fill).toBe(true)
+    if (!style.fill || !('gradient' in style.fill)) throw new Error('expected a gradient')
+    expect(style.fill.gradient.stops[0].color).toEqual([10, 20, 30, 255])
+    // A white-to-black default would collapse to one colour here; the second
+    // stop must keep the gradient visible.
+    expect(style.fill.gradient.stops[1].color).not.toEqual([10, 20, 30, 255])
+    expect(gradientKindName(style.fill.gradient)).toBe('linear')
+  })
+
+  it('honours the requested gradient kind', () => {
+    const style = withFillKind(solid, 'gradient', 'radial')
+    if (!style.fill || !('gradient' in style.fill)) throw new Error('expected a gradient')
+    expect(gradientKindName(style.fill.gradient)).toBe('radial')
+  })
+
+  it('turns a gradient back into the colour of its first stop', () => {
+    const gradient = withFillKind(solid, 'gradient')
+    expect(withFillKind(gradient, 'solid')).toEqual(solid)
+  })
+
+  it('is idempotent for the kind already in use', () => {
+    expect(withFillKind(solid, 'solid')).toBe(solid)
+    const gradient = withFillKind(solid, 'gradient')
+    expect(withFillKind(gradient, 'gradient')).toBe(gradient)
+  })
+
+  it('produces a fill even when the shape had none', () => {
+    expect(withFillKind({ fill: null, stroke: null }, 'gradient')).toEqual({
+      fill: { gradient: defaultGradientSpec('linear') },
+      stroke: null,
+    })
+  })
+})
+
+describe('gradient stop editing', () => {
+  const spec = defaultGradientSpec('linear')
+
+  it('adds a stop without duplicating an offset', () => {
+    let current = spec
+    for (let index = 0; index < MAX_GRADIENT_STOPS - MIN_GRADIENT_STOPS; index += 1) {
+      current = { ...current, stops: addGradientStop(current.stops) }
+    }
+    const offsets = current.stops.map((stop) => stop.offset)
+    expect(offsets).toHaveLength(MAX_GRADIENT_STOPS)
+    expect(new Set(offsets).size).toBe(MAX_GRADIENT_STOPS)
+    expect(offsets.every((offset) => offset >= 0 && offset <= 1)).toBe(true)
+    expect(current.stops.map((stop) => stop.offset)).toEqual([...offsets].sort((a, b) => a - b))
+  })
+
+  it('keeps a moved stop strictly between its neighbours', () => {
+    const three = { ...spec, stops: addGradientStop(spec.stops) }
+    const moved = moveGradientStop(three, 1, 5)
+    if (!moved) throw new Error('expected a move')
+    // A drag past the last stop clamps one step short of it rather than
+    // colliding with it, which the server rejects as a duplicate offset.
+    expect(moved.stops.map((stop) => stop.offset)).toEqual([0, 0.999, 1])
+  })
+
+  it('refuses a move when the neighbours leave no room', () => {
+    const tight = {
+      ...spec,
+      stops: [
+        { offset: 0, color: [0, 0, 0, 255] as [number, number, number, number] },
+        { offset: 0.0005, color: [255, 255, 255, 255] as [number, number, number, number] },
+        { offset: 0.001, color: [0, 0, 0, 255] as [number, number, number, number] },
+      ],
+    }
+    const [lower, upper] = gradientStopBounds(tight.stops, 1)
+    expect(lower).toBeGreaterThan(upper)
+    expect(moveGradientStop(tight, 1, 0.0005)).toBeNull()
+  })
+
+  it('removes a stop and replaces one gradient kind in place', () => {
+    expect(removeGradientStop(spec, 0).stops).toEqual([spec.stops[1]])
+    expect(gradientKindName(withGradientKind(spec, 'radial'))).toBe('radial')
+    expect(withGradientKind(spec, 'radial').stops).toEqual(spec.stops)
   })
 })
 

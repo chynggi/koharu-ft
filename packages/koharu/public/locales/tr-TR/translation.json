@@ -213,8 +213,19 @@
     "resetAutoFit": "Otomatik sığdırmaya sıfırla",
     "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
     "shape": {
+      "addStop": "Durak ekle",
       "dash": "Kesikli",
       "fill": "Dolgu",
+      "fillKind": {
+        "gradient": "Gradyan",
+        "solid": "Düz"
+      },
+      "fillKindLabel": "Dolgu türü",
+      "gradientKind": {
+        "linear": "Doğrusal",
+        "radial": "Radyal"
+      },
+      "gradientKindLabel": "Gradyan türü",
       "kind": {
         "arrow": "Ok",
         "ellipse": "Elips",
@@ -224,6 +235,10 @@
       "kindLabel": "Şekil türü: {{kind}}",
       "kindTitle": "Şekil türü",
       "rasterize": "Rasterleştir",
+      "removeStop": "Durağı kaldır",
+      "stopColor": "{{index}}. durak rengi",
+      "stopOffset": "{{index}}. durak konumu",
+      "stops": "Duraklar",
       "stroke": "Kenarlık",
       "strokeWidth": "Kenarlık genişliği"
     },

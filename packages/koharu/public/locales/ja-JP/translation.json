@@ -213,8 +213,19 @@
     "resetAutoFit": "自動調整に戻す",
     "selectPage": "ページを選択してレイヤーを確認します。",
     "shape": {
+      "addStop": "ストップを追加",
       "dash": "破線",
       "fill": "塗り",
+      "fillKind": {
+        "gradient": "グラデーション",
+        "solid": "単色"
+      },
+      "fillKindLabel": "塗りの種類",
+      "gradientKind": {
+        "linear": "線形",
+        "radial": "放射状"
+      },
+      "gradientKindLabel": "グラデーションの種類",
       "kind": {
         "arrow": "矢印",
         "ellipse": "楕円",
@@ -224,6 +235,10 @@
       "kindLabel": "図形の種類: {{kind}}",
       "kindTitle": "図形の種類",
       "rasterize": "ラスタライズ",
+      "removeStop": "ストップを削除",
+      "stopColor": "ストップ {{index}} の色",
+      "stopOffset": "ストップ {{index}} の位置",
+      "stops": "ストップ",
       "stroke": "縁取り",
       "strokeWidth": "縁取りの幅"
     },

@@ -213,8 +213,19 @@
     "resetAutoFit": "Reset to auto fit",
     "selectPage": "Select a page to inspect its layers.",
     "shape": {
+      "addStop": "Add stop",
       "dash": "Dashed",
       "fill": "Fill",
+      "fillKind": {
+        "gradient": "Gradient",
+        "solid": "Solid"
+      },
+      "fillKindLabel": "Fill type",
+      "gradientKind": {
+        "linear": "Linear",
+        "radial": "Radial"
+      },
+      "gradientKindLabel": "Gradient type",
       "kind": {
         "arrow": "Arrow",
         "ellipse": "Ellipse",
@@ -224,6 +235,10 @@
       "kindLabel": "Shape kind: {{kind}}",
       "kindTitle": "Shape kind",
       "rasterize": "Rasterize",
+      "removeStop": "Remove stop",
+      "stopColor": "Stop {{index}} color",
+      "stopOffset": "Stop {{index}} position",
+      "stops": "Stops",
       "stroke": "Stroke",
       "strokeWidth": "Stroke width"
     },

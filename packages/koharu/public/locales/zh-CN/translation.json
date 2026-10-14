@@ -213,8 +213,19 @@
     "resetAutoFit": "重置为自动适配",
     "selectPage": "选择一个页面以检查其图层。",
     "shape": {
+      "addStop": "添加色标",
       "dash": "虚线",
       "fill": "填充",
+      "fillKind": {
+        "gradient": "渐变",
+        "solid": "纯色"
+      },
+      "fillKindLabel": "填充类型",
+      "gradientKind": {
+        "linear": "线性",
+        "radial": "径向"
+      },
+      "gradientKindLabel": "渐变类型",
       "kind": {
         "arrow": "箭头",
         "ellipse": "椭圆",
@@ -224,6 +235,10 @@
       "kindLabel": "形状类型：{{kind}}",
       "kindTitle": "形状类型",
       "rasterize": "栅格化",
+      "removeStop": "删除色标",
+      "stopColor": "色标 {{index}} 颜色",
+      "stopOffset": "色标 {{index}} 位置",
+      "stops": "色标",
       "stroke": "描边",
       "strokeWidth": "描边宽度"
     },

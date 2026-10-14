@@ -213,8 +213,19 @@
     "resetAutoFit": "Вернуть автоподгонку",
     "selectPage": "Выберите страницу для просмотра её слоёв.",
     "shape": {
+      "addStop": "Добавить точку",
       "dash": "Пунктир",
       "fill": "Заливка",
+      "fillKind": {
+        "gradient": "Градиент",
+        "solid": "Сплошная"
+      },
+      "fillKindLabel": "Тип заливки",
+      "gradientKind": {
+        "linear": "Линейный",
+        "radial": "Радиальный"
+      },
+      "gradientKindLabel": "Тип градиента",
       "kind": {
         "arrow": "Стрелка",
         "ellipse": "Эллипс",
@@ -224,6 +235,10 @@
       "kindLabel": "Тип фигуры: {{kind}}",
       "kindTitle": "Тип фигуры",
       "rasterize": "Растеризовать",
+      "removeStop": "Удалить точку",
+      "stopColor": "Цвет точки {{index}}",
+      "stopOffset": "Позиция точки {{index}}",
+      "stops": "Точки",
       "stroke": "Обводка",
       "strokeWidth": "Ширина обводки"
     },

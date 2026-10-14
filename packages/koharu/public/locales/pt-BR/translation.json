@@ -213,8 +213,19 @@
     "resetAutoFit": "Redefinir para ajuste automático",
     "selectPage": "Selecione uma página para inspecionar suas camadas.",
     "shape": {
+      "addStop": "Adicionar parada",
       "dash": "Tracejada",
       "fill": "Preenchimento",
+      "fillKind": {
+        "gradient": "Gradiente",
+        "solid": "Sólido"
+      },
+      "fillKindLabel": "Tipo de preenchimento",
+      "gradientKind": {
+        "linear": "Linear",
+        "radial": "Radial"
+      },
+      "gradientKindLabel": "Tipo de gradiente",
       "kind": {
         "arrow": "Seta",
         "ellipse": "Elipse",
@@ -224,6 +235,10 @@
       "kindLabel": "Tipo de forma: {{kind}}",
       "kindTitle": "Tipo de forma",
       "rasterize": "Rasterizar",
+      "removeStop": "Remover parada",
+      "stopColor": "Cor da parada {{index}}",
+      "stopOffset": "Posição da parada {{index}}",
+      "stops": "Paradas",
       "stroke": "Contorno",
       "strokeWidth": "Largura do contorno"
     },

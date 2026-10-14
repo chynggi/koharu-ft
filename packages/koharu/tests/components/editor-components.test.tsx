@@ -139,6 +139,38 @@ const shapeLayer: Layer = {
   rasterized: false,
 }
 
+const gradientShapeLayer: Layer = {
+  type: 'shape',
+  id: 'shape-gradient',
+  parent: 'page',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: 0,
+  visibility: { visible: true, opacity: 1 },
+  name: 'Rectangle 2',
+  shape: { rectangle: { corner_radius: 0 } },
+  style: {
+    fill: {
+      gradient: {
+        kind: { linear: { start: [0, 0], end: [1, 0] } },
+        stops: [
+          { offset: 0, color: [255, 255, 255, 255] },
+          { offset: 1, color: [0, 0, 0, 255] },
+        ],
+        extend: 'pad',
+      },
+    },
+    stroke: null,
+  },
+  rasterized: false,
+}
+
 const artworkLayer: Layer = {
   type: 'artwork',
   id: 'artwork',
@@ -753,6 +785,109 @@ describe('greenfield editor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Rasterize' }))
     await waitFor(() => expect(rasterize).toHaveBeenCalledWith(1, 'page', ['shape']))
+  })
+
+  it('switches a shape fill from solid to a gradient', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('radio', { name: 'Gradient' }))
+
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        {
+          element: 'shape',
+          style: expect.objectContaining({
+            fill: expect.objectContaining({ gradient: expect.anything() }),
+          }),
+        },
+      ]),
+    )
+  })
+
+  it('keeps a gradient fill a gradient when a stop colour changes', async () => {
+    // The fill colour well used to write `{ solid }` unconditionally, which
+    // silently downgraded a gradient. Editing a stop must stay in the gradient
+    // branch and must not disturb the other stop.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, gradientShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Stop 1 color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#00FF00' },
+    })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).toEqual({
+      gradient: expect.objectContaining({
+        stops: [
+          { offset: 0, color: [0, 255, 0, 255] },
+          { offset: 1, color: [0, 0, 0, 255] },
+        ],
+      }),
+    })
+  })
+
+  it('keeps the stop count within the validated range', async () => {
+    installProject()
+    const user = userEvent.setup()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, gradientShapeLayer],
+    }))
+    // The inspector renders from the page query, not from a local draft, so the
+    // stub has to publish the committed style back or the button would never
+    // reach the 32-stop ceiling. The real command round-trips the same way.
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockImplementation(async (_r, updates) => {
+      queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+        ...page,
+        layers: page.layers.map((layer) => {
+          const update = updates.find((entry) => entry.element === layer.id)
+          return update ? { ...layer, style: update.style } : layer
+        }),
+      }))
+      return 2
+    })
+    useKoharuStore.setState({ selectedLayers: ['shape-gradient'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const add = screen.getByRole('button', { name: 'Add stop' })
+    // Two stops is the floor, so removal starts disabled.
+    expect(screen.getAllByRole('button', { name: 'Remove stop' })[0]).toBeDisabled()
+
+    const stopCounts = () =>
+      setShapeStyle.mock.calls.map(([, updates]) => {
+        const fill = updates[0]?.style.fill
+        if (!fill || !('gradient' in fill)) throw new Error('expected a gradient fill')
+        return fill.gradient.stops
+      })
+
+    for (let index = 0; index < 32; index += 1) await user.click(add)
+
+    expect(add).toBeDisabled()
+    const committed = stopCounts().at(-1)
+    expect(committed).toHaveLength(32)
+    // The server rejects more than 32 stops and rejects duplicate offsets, so
+    // neither may ever appear in a commit.
+    expect(stopCounts().every((stops) => stops.length <= 32)).toBe(true)
+    expect(new Set(committed?.map((stop) => stop.offset)).size).toBe(32)
+    expect(committed?.every((stop) => stop.offset >= 0 && stop.offset <= 1)).toBe(true)
   })
 
   it('does not show the shape controls for a text selection', () => {

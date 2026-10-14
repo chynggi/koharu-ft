@@ -70,6 +70,8 @@ describe('interface language persistence', () => {
     vi.resetModules()
     const { default: i18n } = await import('@/lib/i18n')
     const kinds = ['rectangle', 'ellipse', 'line', 'arrow']
+    const fillKinds = ['solid', 'gradient']
+    const gradientKinds = ['linear', 'radial']
     const keys = [
       'tools.shape',
       'layers.kinds.shape',
@@ -79,7 +81,14 @@ describe('interface language persistence', () => {
       'inspector.shape.dash',
       'inspector.shape.rasterize',
       'inspector.shape.kindTitle',
+      'inspector.shape.fillKindLabel',
+      'inspector.shape.gradientKindLabel',
+      'inspector.shape.stops',
+      'inspector.shape.addStop',
+      'inspector.shape.removeStop',
       ...kinds.map((kind) => `inspector.shape.kind.${kind}`),
+      ...fillKinds.map((kind) => `inspector.shape.fillKind.${kind}`),
+      ...gradientKinds.map((kind) => `inspector.shape.gradientKind.${kind}`),
     ]
 
     // The shipped translations are the source of truth; a missing key here is
@@ -98,6 +107,13 @@ describe('interface language persistence', () => {
       expect(typeof label, language).toBe('string')
       expect(label, language).toContain('{{kind}}')
       expect(lookup(source, 'inspector.shape.kindTitle'), language).not.toMatch(/\{\{/)
+      // The stop editor names each row with its index; a translation that
+      // dropped the placeholder would label every row identically.
+      for (const key of ['inspector.shape.stopColor', 'inspector.shape.stopOffset']) {
+        const value = lookup(source, key)
+        expect(typeof value, `${language}: ${key}`).toBe('string')
+        expect(value, `${language}: ${key}`).toContain('{{index}}')
+      }
     }
 
     // The runtime instance must also resolve each loaded language without

@@ -213,8 +213,19 @@
     "resetAutoFit": "重設為自動符合",
     "selectPage": "選擇頁面以檢查其圖層。",
     "shape": {
+      "addStop": "新增色標",
       "dash": "虛線",
       "fill": "填色",
+      "fillKind": {
+        "gradient": "漸層",
+        "solid": "純色"
+      },
+      "fillKindLabel": "填色類型",
+      "gradientKind": {
+        "linear": "線性",
+        "radial": "放射狀"
+      },
+      "gradientKindLabel": "漸層類型",
       "kind": {
         "arrow": "箭頭",
         "ellipse": "橢圓",
@@ -224,6 +235,10 @@
       "kindLabel": "形狀類型：{{kind}}",
       "kindTitle": "形狀類型",
       "rasterize": "點陣化",
+      "removeStop": "刪除色標",
+      "stopColor": "色標 {{index}} 顏色",
+      "stopOffset": "色標 {{index}} 位置",
+      "stops": "色標",
       "stroke": "描邊",
       "strokeWidth": "描邊寬度"
     },

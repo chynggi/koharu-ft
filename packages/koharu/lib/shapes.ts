@@ -126,6 +126,12 @@ export function defaultShapeStyle(kind: ShapeKind): ShapeStyle {
 
 export type GradientKindName = 'linear' | 'radial'
 
+// The renderer's `PreparedGradient` validation rejects a stop count outside
+// this range, so the editor must never build one: the inspector disables the
+// add button at the ceiling and the remove button at the floor.
+export const MIN_GRADIENT_STOPS = 2
+export const MAX_GRADIENT_STOPS = 32
+
 /**
  * The gradient a freshly created shape starts with: white to black across the
  * frame, in the normalized frame-local coordinates `GradientSpec` stores.
@@ -145,6 +151,138 @@ export function defaultGradientSpec(kind: GradientKindName): GradientSpec {
       ? { kind: { linear: { start: [0, 0], end: [1, 0] } }, stops, extend: 'pad' }
       : { kind: { radial: { center: [0.5, 0.5], radius: 0.5 } }, stops, extend: 'pad' }
   return spec
+}
+
+/**
+ * The gradient kind a spec is authored with, or `null` for a spec the editor
+ * cannot name. `sweep` is not exposed by the UI (spec G5), so a spec that
+ * carries one leaves both picker options unchecked rather than claiming to be
+ * linear; its stops stay editable and picking a kind replaces the geometry.
+ */
+export function gradientKindName(spec: GradientSpec): GradientKindName | null {
+  if ('linear' in spec.kind) return 'linear'
+  if ('radial' in spec.kind) return 'radial'
+  return null
+}
+
+/**
+ * The style a fill-kind choice produces.
+ *
+ * Converting keeps the user's colour: a gradient's first stop becomes the solid
+ * colour, and a solid becomes the gradient's first stop. When that would leave
+ * both stops identical the second stop takes the kind's default leading colour,
+ * so a switch always produces a visible gradient instead of a flat fill.
+ * A fill that is already the requested kind is returned untouched.
+ */
+export function withFillKind(
+  style: ShapeStyle,
+  kind: 'solid' | 'gradient',
+  gradientKind: GradientKindName = 'linear',
+): ShapeStyle {
+  if (kind === 'solid') {
+    if (style.fill && 'solid' in style.fill) return style
+    const color = style.fill?.gradient.stops[0].color ?? [255, 255, 255, 255]
+    return { ...style, fill: { solid: color } }
+  }
+  if (style.fill && 'gradient' in style.fill) return style
+  const solid = style.fill?.solid ?? null
+  const spec = defaultGradientSpec(gradientKind)
+  const stops = [...spec.stops] as GradientStop[]
+  if (solid) {
+    stops[0] = { ...stops[0], color: solid }
+    // The second stop takes whichever default differs from the solid colour, so
+    // a switch never yields two identical stops and a flat fill.
+    const last = stops.length - 1
+    stops[last] = {
+      ...stops[last],
+      color: spec.stops[0].color.every((channel, index) => channel === solid[index])
+        ? spec.stops[1].color
+        : spec.stops[0].color,
+    }
+  }
+  return { ...style, fill: { gradient: { ...spec, stops } } }
+}
+
+/** Replaces a gradient's control geometry, keeping its stops and extend rule. */
+export function withGradientKind(spec: GradientSpec, kind: GradientKindName): GradientSpec {
+  return { ...spec, kind: defaultGradientSpec(kind).kind }
+}
+
+/**
+ * Adds a stop in the widest gap between two existing offsets.
+ *
+ * Splitting the widest gap keeps offsets unique, which the server requires,
+ * and the new stop copies its left neighbour's colour so adding one does not
+ * change the gradient until the user edits it. The result is ordered by offset.
+ */
+export function addGradientStop(stops: GradientStop[]): GradientStop[] {
+  const sorted = sortStops(stops)
+  let widest = 0
+  for (let index = 1; index < sorted.length - 1; index += 1) {
+    if (sorted[index + 1].offset - sorted[index].offset > sorted[widest + 1].offset - sorted[widest].offset) {
+      widest = index
+    }
+  }
+  const left = sorted[widest]
+  const right = sorted[widest + 1]
+  // Six decimals always lands strictly inside the gap: editing a position keeps
+  // neighbours at least `STOP_OFFSET_STEP` apart, so no rounding collision is
+  // possible and the new offset never duplicates an existing one.
+  const offset = Math.round(((left.offset + right.offset) / 2) * 1e6) / 1e6
+  return sortStops([...stops, { offset, color: left.color }])
+}
+
+/** The finest offset a stop may be moved to, matching the offset slider. */
+export const STOP_OFFSET_STEP = 0.001
+
+/** The offsets a stop at sorted `index` may occupy without colliding. */
+export function gradientStopBounds(stops: GradientStop[], index: number): [number, number] {
+  const sorted = sortStops(stops)
+  const round = (value: number) => Math.round(value / STOP_OFFSET_STEP) * STOP_OFFSET_STEP
+  return [
+    index === 0 ? 0 : round(sorted[index - 1].offset) + STOP_OFFSET_STEP,
+    index === sorted.length - 1 ? 1 : round(sorted[index + 1].offset) - STOP_OFFSET_STEP,
+  ]
+}
+
+/**
+ * Moves one stop to `offset`, or returns `null` when the move is impossible.
+ *
+ * The offset is snapped and clamped inside the neighbours' bounds so a drag can
+ * never produce the duplicate offsets the server rejects. Neighbours closer than
+ * two steps leave no legal offset, and the caller simply keeps the old value.
+ */
+export function moveGradientStop(
+  spec: GradientSpec,
+  index: number,
+  offset: number,
+): GradientSpec | null {
+  const sorted = sortStops(spec.stops)
+  const [lower, upper] = gradientStopBounds(sorted, index)
+  if (lower > upper) return null
+  const snapped = Math.round(Math.min(Math.max(offset, lower), upper) / STOP_OFFSET_STEP) * STOP_OFFSET_STEP
+  const rounded = Math.round(snapped * 1e6) / 1e6
+  return sortGradientStops(replaceGradientStop(spec, spec.stops.indexOf(sorted[index]), { offset: rounded }))
+}
+
+export function replaceGradientStop(
+  spec: GradientSpec,
+  index: number,
+  patch: Partial<GradientStop>,
+): GradientSpec {
+  return { ...spec, stops: spec.stops.map((stop, at) => (at === index ? { ...stop, ...patch } : stop)) }
+}
+
+export function removeGradientStop(spec: GradientSpec, index: number): GradientSpec {
+  return { ...spec, stops: spec.stops.filter((_stop, at) => at !== index) }
+}
+
+export function sortGradientStops(spec: GradientSpec): GradientSpec {
+  return { ...spec, stops: sortStops(spec.stops) }
+}
+
+function sortStops(stops: GradientStop[]): GradientStop[] {
+  return [...stops].sort((left, right) => left.offset - right.offset)
 }
 
 /**

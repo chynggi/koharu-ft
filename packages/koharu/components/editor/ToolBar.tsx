@@ -25,6 +25,7 @@ import {
   colorToHex,
   hexToColor,
   isShapeTool,
+  withFillKind,
   type ShapeKind,
 } from '@/lib/shapes'
 import {
@@ -197,23 +198,47 @@ function ShapeStyles() {
             })}
           </div>
           <div className='flex items-center justify-between gap-3'>
-            <PopoverTitle className='text-[11px]'>{t('inspector.shape.fill')}</PopoverTitle>
-            <ColorWell
-              label={t('inspector.shape.fill')}
-              size='sm'
-              allowTransparent
-              // Only a solid fill has one colour to show here; the gradient
-              // fill-kind picker and its stop editor belong to the Inspector,
-              // which owns the detailed style UI.
-              value={style.fill && 'solid' in style.fill ? colorToHex(style.fill.solid) : null}
-              onChange={(color) =>
-                setShapeStyle({
-                  ...style,
-                  fill: color === null ? null : { solid: hexToColor(color) },
-                })
-              }
-            />
+            <PopoverTitle className='text-[11px]'>{t('inspector.shape.fillKindLabel')}</PopoverTitle>
+            <div className='flex items-center gap-1' role='radiogroup' aria-label={t('inspector.shape.fillKindLabel')}>
+              {/* Only the kind is chosen here, so a new shape can default to a
+                  gradient. Editing the stops belongs to the Inspector, which
+                  owns the detailed style UI; this popover stays a preset. */}
+              {(['solid', 'gradient'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type='button'
+                  role='radio'
+                  aria-label={t(`inspector.shape.fillKind.${kind}`)}
+                  aria-checked={kind === 'solid' ? (style.fill && 'gradient' in style.fill) !== true : (style.fill && 'gradient' in style.fill) === true}
+                  data-active={kind === 'solid' ? (style.fill && 'gradient' in style.fill) !== true : (style.fill && 'gradient' in style.fill) === true}
+                  className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground'
+                  onClick={() => setShapeStyle(withFillKind(style, kind))}
+                >
+                  {t(`inspector.shape.fillKind.${kind}`)}
+                </button>
+              ))}
+            </div>
           </div>
+          {style.fill !== null && 'solid' in style.fill && (
+            <div className='flex items-center justify-between gap-3'>
+              <PopoverTitle className='text-[11px]'>{t('inspector.shape.fill')}</PopoverTitle>
+              <ColorWell
+                label={t('inspector.shape.fill')}
+                size='sm'
+                allowTransparent
+                // With the kind fixed to solid, this well can never downgrade a
+                // gradient; the gradient's colours live in the Inspector's stop
+                // editor, which this popover deliberately does not duplicate.
+                value={colorToHex(style.fill.solid)}
+                onChange={(color) =>
+                  setShapeStyle({
+                    ...style,
+                    fill: color === null ? null : { solid: hexToColor(color) },
+                  })
+                }
+              />
+            </div>
+          )}
           <div className='flex items-center justify-between gap-3'>
             <PopoverTitle className='text-[11px]'>{t('inspector.shape.stroke')}</PopoverTitle>
             <ColorWell

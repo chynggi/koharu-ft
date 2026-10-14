@@ -41,12 +41,27 @@ import {
 import { copySelectedTextLayers, pasteCopiedTextLayers } from '@/lib/layerClipboard'
 import { pageKey, projectKey, queryClient, refresh, useFonts, usePage } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
+import {
+  MAX_GRADIENT_STOPS,
+  MIN_GRADIENT_STOPS,
+  STOP_OFFSET_STEP,
+  gradientStopBounds,
+  addGradientStop,
+  gradientKindName,
+  moveGradientStop,
+  removeGradientStop,
+  replaceGradientStop,
+  withFillKind,
+  withGradientKind,
+} from '@/lib/shapes'
 import { previewCanvasOpacity } from '@koharu/bridge/canvas'
 import {
   commands,
   type EntityId,
   type FontFamily,
   type FontStyle,
+  type GradientSpec,
+  type GradientStop,
   type Layer,
   type ShapeStyle,
   type TextAlignment,
@@ -167,28 +182,33 @@ function ShapeInspector() {
       .then(() => refresh(projectKey, pageKey))
       .catch(() => undefined)
   }
+  // `null` means the fill is not a solid, so the colour well is hidden and the
+  // gradient editor owns the fill instead. A gradient stops being converted to
+  // a solid by an edit here: `withFillKind` is the only path that changes kind.
+  const solidFill = style.fill && 'solid' in style.fill ? style.fill.solid : null
+  const gradient = style.fill && 'gradient' in style.fill ? style.fill.gradient : null
+  const setFill = (kind: 'solid' | 'gradient') => apply((value) => withFillKind(value, kind))
 
   return (
     <section className='shrink-0 border-b p-2' data-testid='shape-inspector'>
       <div className='grid min-w-0 gap-1.5'>
         <div className='grid min-w-0 grid-cols-[2.75rem_minmax(5.5rem,1fr)] items-end gap-1.5'>
           <InspectorField label={t('inspector.shape.fill')}>
-            <ColorWell
-              label={t('inspector.shape.fill')}
-              size='sm'
-              disabled={disabled}
-              allowTransparent
-              // A gradient fill has no single colour to show; the fill-kind
-              // picker and stop editor arrive with the gradient UI, which owns
-              // this control's final shape.
-              value={style.fill && 'solid' in style.fill ? rgbaToHex(style.fill.solid) : null}
-              onChange={(color) =>
-                apply((value) => ({
-                  ...value,
-                  fill: color === null ? null : { solid: hexToRgba(color) },
-                }))
-              }
-            />
+            {/* A transparent fill still uses the solid arm: the well must stay
+                reachable so a colour can be picked again. Only a gradient takes
+                the control away, and then the stop editor owns the fill. */}
+            {gradient === null && (
+              <ColorWell
+                label={t('inspector.shape.fill')}
+                size='sm'
+                disabled={disabled}
+                allowTransparent
+                value={solidFill ? rgbaToHex(solidFill) : null}
+                onChange={(color) =>
+                  apply((value) => ({ ...value, fill: color === null ? null : { solid: hexToRgba(color) } }))
+                }
+              />
+            )}
           </InspectorField>
           <InspectorField label={t('inspector.shape.stroke')}>
             <ColorWell
@@ -206,6 +226,37 @@ function ShapeInspector() {
             />
           </InspectorField>
         </div>
+        <fieldset
+          className='flex min-w-0 items-center gap-1.5 border-0 p-0'
+          aria-label={t('inspector.shape.fill')}
+          disabled={disabled}
+        >
+          <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+            {t('inspector.shape.fill')}
+          </span>
+          {(['solid', 'gradient'] as const).map((kind) => (
+            <button
+              key={kind}
+              type='button'
+              role='radio'
+              aria-label={t(`inspector.shape.fillKind.${kind}`)}
+              aria-checked={kind === 'solid' ? gradient === null : gradient !== null}
+              disabled={disabled}
+              data-active={kind === 'solid' ? gradient === null : gradient !== null}
+              className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+              onClick={() => setFill(kind)}
+            >
+              {t(`inspector.shape.fillKind.${kind}`)}
+            </button>
+          ))}
+        </fieldset>
+        {gradient && (
+          <GradientStops
+            disabled={disabled}
+            gradient={gradient}
+            onChange={(next) => apply((value) => ({ ...value, fill: { gradient: next } }))}
+          />
+        )}
         <div className='grid min-w-0 grid-cols-[minmax(5.5rem,1fr)_auto] items-end gap-1.5'>
           <InspectorField label={t('inspector.shape.strokeWidth')}>
             <NumberField
@@ -269,6 +320,132 @@ function ShapeInspector() {
         </Button>
       </div>
     </section>
+  )
+}
+
+/**
+ * The stop editor for a gradient fill.
+ *
+ * Stops are displayed in offset order even though storage order is free,
+ * because a position edit would otherwise move a row out from under the
+ * pointer. The offset slider is bounded to the neighbouring stops so dragging
+ * can never create the duplicate offsets the server rejects.
+ */
+function GradientStops({
+  gradient,
+  disabled,
+  onChange,
+}: {
+  gradient: GradientSpec
+  disabled: boolean
+  onChange: (gradient: GradientSpec) => void
+}) {
+  const { t } = useTranslation()
+  const stops = [...gradient.stops].sort((left, right) => left.offset - right.offset)
+  const kind = gradientKindName(gradient)
+  const at = (index: number) => gradient.stops.indexOf(stops[index])
+  const commitStop = (index: number, patch: Partial<GradientStop>) =>
+    onChange(replaceGradientStop(gradient, at(index), patch))
+
+  return (
+    <div className='grid min-w-0 gap-1' data-testid='gradient-stops'>
+      <div className='flex min-w-0 items-center gap-1.5'>
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.gradientKindLabel')}
+        </span>
+        {(['linear', 'radial'] as const).map((candidate) => (
+          <button
+            key={candidate}
+            type='button'
+            role='radio'
+            aria-label={t(`inspector.shape.gradientKind.${candidate}`)}
+            aria-checked={kind === candidate}
+            disabled={disabled}
+            data-active={kind === candidate}
+            // `sweep` is deliberately absent: the renderer supports it but the
+            // editor does not expose it (spec G5).
+            className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+            onClick={() => onChange(withGradientKind(gradient, candidate))}
+          >
+            {t(`inspector.shape.gradientKind.${candidate}`)}
+          </button>
+        ))}
+      </div>
+      <div className='flex min-w-0 items-center justify-between gap-1.5'>
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.stops')}
+        </span>
+        <div className='flex items-center gap-1'>
+          <Button
+            type='button'
+            variant='outline'
+            size='icon-xs'
+            aria-label={t('inspector.shape.removeStop')}
+            disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
+            onClick={() => onChange(removeGradientStop(gradient, at(stops.length - 1)))}
+          >
+            <Minus className='size-3' />
+          </Button>
+          <Button
+            type='button'
+            variant='outline'
+            size='icon-xs'
+            aria-label={t('inspector.shape.addStop')}
+            disabled={disabled || stops.length >= MAX_GRADIENT_STOPS}
+            onClick={() => onChange({ ...gradient, stops: addGradientStop(gradient.stops) })}
+          >
+            <Plus className='size-3' />
+          </Button>
+        </div>
+      </div>
+      {stops.map((stop, index) => {
+        const bounds = gradientStopBounds(stops, index)
+        return (
+        <div
+          key={`${index}-${stop.offset}`}
+          className='grid min-w-0 grid-cols-[2.75rem_minmax(4rem,1fr)_2.5rem_auto] items-center gap-1.5'
+        >
+          <ColorWell
+            label={t('inspector.shape.stopColor', { index: index + 1 })}
+            size='sm'
+            disabled={disabled}
+            value={rgbaToHex(stop.color)}
+            onChange={(color) => commitStop(index, { color: hexToRgba(color) })}
+          />
+          <Slider
+            aria-label={t('inspector.shape.stopOffset', { index: index + 1 })}
+            min={bounds[0]}
+            max={bounds[1]}
+            step={STOP_OFFSET_STEP}
+            value={stop.offset}
+            disabled={disabled || bounds[0] > bounds[1]}
+            className='[&_[data-slot=slider-thumb]]:size-2'
+            // Only the committed value is written: the server cannot tell a
+            // live drag's partial offset from a settled one, and each write is
+            // a revision bump.
+            onValueCommitted={(next) => {
+              const moved = moveGradientStop(gradient, index, next as number)
+              if (moved) onChange(moved)
+            }}
+          />
+          <span className='text-right text-[8px] text-muted-foreground tabular-nums'>
+            {stop.offset.toFixed(3)}
+          </span>
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon-xs'
+            aria-label={t('inspector.shape.removeStop')}
+            className='text-muted-foreground'
+            disabled={disabled || stops.length <= MIN_GRADIENT_STOPS}
+            onClick={() => onChange(removeGradientStop(gradient, at(index)))}
+          >
+            <Trash2 className='size-3' />
+          </Button>
+        </div>
+        )
+      })}
+    </div>
   )
 }
 
