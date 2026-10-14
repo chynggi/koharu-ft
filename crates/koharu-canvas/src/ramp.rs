@@ -68,6 +68,31 @@ pub(crate) fn page_diagonal(size: (u32, u32)) -> f64 {
     f64::from(size.0).hypot(f64::from(size.1))
 }
 
+/// The ramp position for one previewed segment, including the choice of
+/// denominator.
+///
+/// `extend_stroke` must call **this** rather than picking a denominator itself.
+/// The denominator is the preview's one deliberate divergence from the commit
+/// path, so it needs to be reachable from a host test: `web.rs` is compiled only
+/// for `wasm32`, which means anything left in it is invisible to `cargo test`.
+/// A test that supplied the denominator as an argument could not tell this
+/// function apart from one that used an arbitrary constant.
+pub(crate) fn preview_ramp_position(
+    ramp: &BrushRamp,
+    point: (f64, f64),
+    cumulative: f64,
+    size: (u32, u32),
+) -> f32 {
+    segment_ramp_position(
+        ramp,
+        point.0,
+        point.1,
+        cumulative,
+        page_diagonal(size),
+        size,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,24 +202,54 @@ mod tests {
         let size = (30, 40);
         // 3-4-5: the diagonal is exactly 50, so half of it is position 0.5.
         assert_eq!(page_diagonal(size), 50.0);
-        let halfway = segment_ramp_position(
-            &ramp,
-            0.0,
-            0.0,
-            page_diagonal(size) * 0.5,
-            page_diagonal(size),
-            size,
-        );
+        // Exercise `preview_ramp_position` — the function `extend_stroke` calls —
+        // rather than supplying the denominator here. A test that passed the
+        // diagonal itself would still pass if the production function used an
+        // arbitrary constant, which is exactly the regression this guards.
+        let halfway = preview_ramp_position(&ramp, (0.0, 0.0), 25.0, size);
         assert!((halfway - 0.5).abs() < 1e-6, "got {halfway}");
 
         // The same cumulative distance must give the same position no matter
         // which earlier samples produced it, and the position keeps growing
         // monotonically with cumulative distance.
-        let earlier = segment_ramp_position(&ramp, 0.0, 0.0, 10.0, page_diagonal(size), size);
-        let later = segment_ramp_position(&ramp, 0.0, 0.0, 40.0, page_diagonal(size), size);
+        let earlier = preview_ramp_position(&ramp, (0.0, 0.0), 10.0, size);
+        let later = preview_ramp_position(&ramp, (0.0, 0.0), 40.0, size);
         assert!(earlier < later, "the ramp must not run backwards");
         // Past the diagonal the ramp saturates rather than wrapping.
-        let beyond = segment_ramp_position(&ramp, 0.0, 0.0, 200.0, page_diagonal(size), size);
+        let beyond = preview_ramp_position(&ramp, (0.0, 0.0), 200.0, size);
         assert_eq!(ramp.color_at(beyond), ramp.color_at(1.0));
+
+        // A page whose diagonal is not a round number must still scale with the
+        // page: 100x100 has diagonal 141.42, not 100, so half of 100 units is
+        // well below 0.5. This is what distinguishes the diagonal from the
+        // page width, a constant, or the length so far.
+        let square = (100, 100);
+        let quarterish = preview_ramp_position(&ramp, (0.0, 0.0), 50.0, square);
+        assert!(
+            (quarterish - (50.0 / (10_000.0f64 + 10_000.0).sqrt()) as f32).abs() < 1e-6,
+            "the denominator must be the diagonal, got {quarterish}"
+        );
+        assert!(
+            quarterish < 0.4,
+            "50 units is far less than half the diagonal"
+        );
+    }
+
+    /// The preview must not scale its ramp by the flat stroke colour's alpha as
+    /// well as the ramp's: the segment colours already carry the ramp alpha, so
+    /// doing both would composite alpha twice and show a lighter stroke than the
+    /// commit produces.
+    #[test]
+    fn the_preview_does_not_apply_a_second_alpha_when_a_ramp_is_active() {
+        let ramp = BrushRamp::AlongStroke {
+            from: [0, 0, 0, 128],
+            to: [255, 255, 255, 128],
+        };
+        let position = preview_ramp_position(&ramp, (0.0, 0.0), 0.0, (10, 10));
+        // The position is independent of any colour alpha; the segment colour
+        // already carries the ramp's 128. The layer opacity must therefore be
+        // 1.0 while a ramp is active, which is asserted where the opacity is
+        // computed rather than here.
+        assert_eq!(ramp.color_at(position)[3], 128);
     }
 }

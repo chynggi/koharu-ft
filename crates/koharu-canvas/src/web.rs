@@ -895,6 +895,13 @@ impl CanvasState {
             .filter(|stroke| stroke.kind != StrokeKind::Erase)
         {
             let opacity = match stroke.kind {
+                // A ramp owns the stroke's alpha: each previewed segment already
+                // carries the ramp's interpolated alpha, so applying the flat
+                // colour's alpha here as well would composite it twice. The
+                // commit path applies the ramp alpha exactly once
+                // (`rasterize_stroke`), so this must stay 1.0 while a ramp is
+                // active or the preview would look lighter than the result.
+                StrokeKind::Paint if stroke.ramp.is_some() => 1.0,
                 StrokeKind::Paint => f32::from(stroke.color[3]) / 255.0,
                 StrokeKind::Inpaint => 116.0 / 255.0,
                 StrokeKind::Erase => 1.0,
@@ -1677,7 +1684,8 @@ impl WebCanvas {
         //
         // Consequence: the committed stroke is authoritative and the preview is
         // an approximation. Do not "fix" this by renormalizing incrementally.
-        let total = ramp::page_diagonal(size);
+        // The denominator itself lives in `ramp::preview_ramp_position`, not
+        // here, so that a host test can reach it.
         for point in points {
             if !point.x.is_finite() || !point.y.is_finite() {
                 return Err(js_message("stroke points must be finite"));
@@ -1703,8 +1711,15 @@ impl WebCanvas {
                 StrokeKind::Paint => stroke.ramp.map_or(
                     [stroke.color[0], stroke.color[1], stroke.color[2], 255],
                     |ramp| {
-                        let position = ramp::segment_ramp_position(
-                            &ramp, point.x, point.y, cumulative, total, size,
+                        // `preview_ramp_position` owns the denominator choice, so
+                        // the divergence above is pinned by a host test that can
+                        // actually reach it (`web.rs` is `wasm32`-only, so
+                        // anything decided in here is invisible to `cargo test`).
+                        let position = ramp::preview_ramp_position(
+                            &ramp,
+                            (point.x, point.y),
+                            cumulative,
+                            size,
                         );
                         ramp.color_at(position)
                     },
