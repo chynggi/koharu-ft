@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/commit/transform", post(commit_transform))
         .route("/canvas/commit/inpaint", post(commit_inpaint))
         .route("/canvas/raster/adjust", post(adjust_raster))
+        .route("/canvas/raster/fill", post(fill_raster))
 }
 
 async fn get_canvas_manifest(
@@ -284,6 +285,32 @@ async fn adjust_raster(
             request.expected_revision,
             request.layer,
             request.adjust,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct FillRasterRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    point: Point,
+    color: [u8; 4],
+}
+
+async fn fill_raster(
+    State(app): State<AppState>,
+    Json(request): Json<FillRasterRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::fill_raster(
+            request.expected_revision,
+            request.layer,
+            request.point,
+            request.color,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

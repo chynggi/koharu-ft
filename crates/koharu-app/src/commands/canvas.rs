@@ -373,6 +373,39 @@ pub async fn adjust_raster(
     })
 }
 
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "raster_filled",
+    skip_all,
+    fields(origin = "user", layer = ?layer)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn fill_raster(
+    expected_revision: Revision,
+    layer: EntityId,
+    point: Point,
+    color: [u8; 4],
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<LayerCommit, Error> {
+    let (commit, page, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let (commit, layer) = project.fill_raster(layer, point, color).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), layer)
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(LayerCommit {
+        revision: commit.revision,
+        layer,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn commit_raster_stroke(
     expected_revision: Revision,
