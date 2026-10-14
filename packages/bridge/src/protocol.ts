@@ -289,6 +289,32 @@ export const commands = {
 		}),
 	setShapeStyle: (expectedRevision: Revision, updates: ShapeStyleUpdate[]) =>
 		post<Revision>("/canvas/shape/style", { expected_revision: expectedRevision, updates }),
+	/**
+	 * Sets or clears a shape's pattern fill. `null` restores a solid fill.
+	 *
+	 * Separate from `setShapePatternAsset` because uploading an image is large
+	 * and can fail, while changing a parameter is immediate; one command would
+	 * let a slow upload block a parameter change.
+	 */
+	setShapePattern: (expectedRevision: Revision, layer: EntityId, pattern: PatternSpec | null) =>
+		post<LayerCommit>("/canvas/shape/pattern", {
+			expected_revision: expectedRevision,
+			layer,
+			pattern,
+		}),
+	/** Uploads the `pattern` asset of a shape layer. Shape layers only. */
+	setShapePatternAsset: (
+		expectedRevision: Revision,
+		layer: EntityId,
+		bytes: number[],
+		mediaType: string,
+	) =>
+		post<LayerCommit>("/canvas/shape/pattern/asset", {
+			expected_revision: expectedRevision,
+			layer,
+			bytes,
+			media_type: mediaType,
+		}),
 	rasterizeShapes: (expectedRevision: Revision, page: EntityId, shapes: EntityId[]) =>
 		post<Revision>("/canvas/shape/rasterize", {
 			expected_revision: expectedRevision,
@@ -1109,7 +1135,28 @@ export type GradientStop = {
 
 export type GradientExtend = "pad" | "repeat" | "reflect";
 
-export type ShapeFill = { solid: [number, number, number, number] } | { gradient: GradientSpec };
+export type PatternRepeat = "tile" | "stretch";
+
+/**
+ * An image-pattern fill for a shape.
+ *
+ * The pattern image is owned by the shape's own layer under the `pattern` asset
+ * role and is uploaded separately by `setShapePatternAsset`, so this type
+ * references nothing. `origin` and `scale` are ignored when `repeat` is
+ * `"stretch"`, which fits one image to the shape's box instead.
+ */
+export type PatternSpec = {
+	repeat: PatternRepeat,
+	origin: [number, number],
+	scale: number,
+	rotation_degrees: number,
+	fallback: [number, number, number, number],
+};
+
+export type ShapeFill =
+	| { solid: [number, number, number, number] }
+	| { gradient: GradientSpec }
+	| { pattern: PatternSpec };
 
 export type StrokeStyle = {
 	color: [number, number, number, number],

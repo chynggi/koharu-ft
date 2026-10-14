@@ -234,6 +234,7 @@
       "fill": "填充",
       "fillKind": {
         "gradient": "渐变",
+        "pattern": "图案",
         "solid": "纯色"
       },
       "fillKindLabel": "填充类型",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "形状类型：{{kind}}",
       "kindTitle": "形状类型",
+      "pattern": {
+        "ignoredForStretch": "拉伸时忽略原点和缩放。",
+        "originX": "原点 X",
+        "originY": "原点 Y",
+        "repeat": {
+          "stretch": "拉伸",
+          "tile": "平铺"
+        },
+        "repeatLabel": "重复",
+        "replace": "替换图片",
+        "rotation": "旋转",
+        "scale": "缩放",
+        "title": "图案",
+        "upload": "选择图片"
+      },
       "rasterize": "栅格化",
       "removeStop": "删除色标",
       "stopColor": "色标 {{index}} 颜色",

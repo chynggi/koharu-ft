@@ -234,6 +234,7 @@
       "fill": "채우기",
       "fillKind": {
         "gradient": "그라디언트",
+        "pattern": "패턴",
         "solid": "단색"
       },
       "fillKindLabel": "채우기 종류",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "도형 종류: {{kind}}",
       "kindTitle": "도형 종류",
+      "pattern": {
+        "ignoredForStretch": "늘리기에서는 무시됨",
+        "originX": "원점 X",
+        "originY": "원점 Y",
+        "repeat": {
+          "stretch": "늘리기",
+          "tile": "타일"
+        },
+        "repeatLabel": "반복",
+        "replace": "이미지 교체",
+        "rotation": "회전",
+        "scale": "크기",
+        "title": "패턴",
+        "upload": "이미지 선택"
+      },
       "rasterize": "래스터화",
       "removeStop": "스톱 삭제",
       "stopColor": "스톱 {{index}} 색",

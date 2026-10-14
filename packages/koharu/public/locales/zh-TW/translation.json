@@ -234,6 +234,7 @@
       "fill": "填色",
       "fillKind": {
         "gradient": "漸層",
+        "pattern": "圖案",
         "solid": "純色"
       },
       "fillKindLabel": "填色類型",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "形狀類型：{{kind}}",
       "kindTitle": "形狀類型",
+      "pattern": {
+        "ignoredForStretch": "延展時會忽略原點與縮放。",
+        "originX": "原點 X",
+        "originY": "原點 Y",
+        "repeat": {
+          "stretch": "延展",
+          "tile": "並排"
+        },
+        "repeatLabel": "重複",
+        "replace": "取代圖片",
+        "rotation": "旋轉",
+        "scale": "縮放",
+        "title": "圖案",
+        "upload": "選擇圖片"
+      },
       "rasterize": "點陣化",
       "removeStop": "刪除色標",
       "stopColor": "色標 {{index}} 顏色",

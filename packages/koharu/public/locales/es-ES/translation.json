@@ -234,6 +234,7 @@
       "fill": "Relleno",
       "fillKind": {
         "gradient": "Degradado",
+        "pattern": "Patrón",
         "solid": "Sólido"
       },
       "fillKindLabel": "Tipo de relleno",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "Tipo de forma: {{kind}}",
       "kindTitle": "Tipo de forma",
+      "pattern": {
+        "ignoredForStretch": "El origen y la escala se ignoran al estirar.",
+        "originX": "Origen X",
+        "originY": "Origen Y",
+        "repeat": {
+          "stretch": "Estirar",
+          "tile": "Mosaico"
+        },
+        "repeatLabel": "Repetición",
+        "replace": "Reemplazar imagen",
+        "rotation": "Rotación",
+        "scale": "Escala",
+        "title": "Patrón",
+        "upload": "Elegir imagen"
+      },
       "rasterize": "Rasterizar",
       "removeStop": "Eliminar parada",
       "stopColor": "Color de la parada {{index}}",

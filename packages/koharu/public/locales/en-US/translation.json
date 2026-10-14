@@ -234,6 +234,7 @@
       "fill": "Fill",
       "fillKind": {
         "gradient": "Gradient",
+        "pattern": "Pattern",
         "solid": "Solid"
       },
       "fillKindLabel": "Fill type",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "Shape kind: {{kind}}",
       "kindTitle": "Shape kind",
+      "pattern": {
+        "ignoredForStretch": "Origin and scale are ignored while stretching.",
+        "originX": "Origin X",
+        "originY": "Origin Y",
+        "repeat": {
+          "stretch": "Stretch",
+          "tile": "Tile"
+        },
+        "repeatLabel": "Repeat",
+        "replace": "Replace image",
+        "rotation": "Rotation",
+        "scale": "Scale",
+        "title": "Pattern",
+        "upload": "Choose image"
+      },
       "rasterize": "Rasterize",
       "removeStop": "Remove stop",
       "stopColor": "Stop {{index}} color",

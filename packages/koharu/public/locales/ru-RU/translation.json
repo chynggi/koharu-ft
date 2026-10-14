@@ -234,6 +234,7 @@
       "fill": "Заливка",
       "fillKind": {
         "gradient": "Градиент",
+        "pattern": "Узор",
         "solid": "Сплошная"
       },
       "fillKindLabel": "Тип заливки",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "Тип фигуры: {{kind}}",
       "kindTitle": "Тип фигуры",
+      "pattern": {
+        "ignoredForStretch": "При растягивании начало и масштаб игнорируются.",
+        "originX": "Начало X",
+        "originY": "Начало Y",
+        "repeat": {
+          "stretch": "Растянуть",
+          "tile": "Мозаика"
+        },
+        "repeatLabel": "Повтор",
+        "replace": "Заменить изображение",
+        "rotation": "Поворот",
+        "scale": "Масштаб",
+        "title": "Узор",
+        "upload": "Выбрать изображение"
+      },
       "rasterize": "Растеризовать",
       "removeStop": "Удалить точку",
       "stopColor": "Цвет точки {{index}}",

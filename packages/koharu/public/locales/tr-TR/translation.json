@@ -234,6 +234,7 @@
       "fill": "Dolgu",
       "fillKind": {
         "gradient": "Gradyan",
+        "pattern": "Desen",
         "solid": "Düz"
       },
       "fillKindLabel": "Dolgu türü",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "Şekil türü: {{kind}}",
       "kindTitle": "Şekil türü",
+      "pattern": {
+        "ignoredForStretch": "Uzatmada başlangıç ve ölçek yok sayılır.",
+        "originX": "Başlangıç X",
+        "originY": "Başlangıç Y",
+        "repeat": {
+          "stretch": "Uzat",
+          "tile": "Döşeme"
+        },
+        "repeatLabel": "Tekrar",
+        "replace": "Görseli değiştir",
+        "rotation": "Döndürme",
+        "scale": "Ölçek",
+        "title": "Desen",
+        "upload": "Görsel seç"
+      },
       "rasterize": "Rasterleştir",
       "removeStop": "Durağı kaldır",
       "stopColor": "{{index}}. durak rengi",

@@ -38,6 +38,7 @@ import {
   commands,
   type Layer,
   type PageSummary,
+  type PatternSpec,
   type Preferences,
   type ProjectInfo,
   type ShapeFill,
@@ -170,6 +171,21 @@ const gradientShapeLayer: Layer = {
     stroke: null,
   },
   rasterized: false,
+}
+
+const patternSpec: PatternSpec = {
+  repeat: 'tile',
+  origin: [0, 0],
+  scale: 0.25,
+  rotation_degrees: 0,
+  fallback: [255, 255, 255, 255],
+}
+
+const patternShapeLayer: Layer = {
+  ...gradientShapeLayer,
+  id: 'shape-pattern',
+  name: 'Rectangle 3',
+  style: { fill: { pattern: patternSpec }, stroke: null },
 }
 
 const artworkLayer: Layer = {
@@ -1073,6 +1089,125 @@ describe('greenfield editor', () => {
     render(<Inspector />)
 
     expect(screen.queryByTestId('shape-inspector')).not.toBeInTheDocument()
+  })
+
+  it('switches a shape fill from solid to a pattern', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, shapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // A pattern is the third kind the fill picker offers, beside solid and
+    // gradient, and a solid fill leaves it unselected.
+    const pattern = screen.getByRole('radio', { name: 'Pattern' })
+    expect(pattern).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: 'Solid' })).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(pattern)
+
+    await waitFor(() =>
+      expect(setShapeStyle).toHaveBeenCalledWith(1, [
+        {
+          element: 'shape',
+          style: expect.objectContaining({
+            fill: expect.objectContaining({ pattern: expect.anything() }),
+          }),
+        },
+      ]),
+    )
+  })
+
+  it('keeps a pattern fill a pattern when one of its parameters changes', async () => {
+    // The fill colour well used to write `{ solid }` unconditionally, which
+    // silently downgraded a gradient. A pattern parameter edit walks the same
+    // path: it must stay in the pattern branch and must not become a solid or a
+    // gradient. This is the data-loss path B3 Task 6 hit.
+    installProject()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, patternShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    // The pattern panel is the only fill editor on screen for a pattern.
+    expect(screen.getByTestId('pattern-fill')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Scale' }), { target: { value: '0.5' } })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).not.toHaveProperty('gradient')
+    expect(fill).toEqual({
+      pattern: expect.objectContaining({ scale: 0.5, repeat: 'tile' }),
+    })
+  })
+
+  it('repurposes the flat colour well onto the pattern fallback', async () => {
+    // The fill colour well is the only authority for a pattern's colour. While a
+    // pattern is active it stops naming the flat fill and edits `fallback`
+    // instead, so no second control can disagree about the colour and no edit
+    // demotes the fill to `{ solid }`.
+    installProject()
+    const user = userEvent.setup()
+    const setShapeStyle = vi.spyOn(commands, 'setShapeStyle').mockResolvedValue(2)
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, patternShapeLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.queryByRole('button', { name: 'Fill' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('gradient-stops')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pattern' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#00FF00' },
+    })
+
+    await waitFor(() => expect(setShapeStyle).toHaveBeenCalled())
+    const fill = setShapeStyle.mock.calls.at(-1)?.[1][0]?.style.fill
+    expect(fill).not.toHaveProperty('solid')
+    expect(fill).not.toHaveProperty('gradient')
+    expect(fill).toEqual({
+      pattern: expect.objectContaining({ fallback: [0, 255, 0, 255] }),
+    })
+  })
+
+  it('disables a pattern origin and scale while it is stretched', () => {
+    // The server ignores both under `stretch`, so leaving them editable would
+    // invite an edit that changes nothing.
+    installProject()
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [
+        ...page.layers,
+        {
+          ...patternShapeLayer,
+          style: {
+            fill: { pattern: { ...patternSpec, repeat: 'stretch' } },
+            stroke: null,
+          },
+        } as Layer,
+      ],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['shape-pattern'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    expect(screen.getByRole('radio', { name: 'Stretch' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Origin X' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Origin Y' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Scale' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Rotation' })).toBeEnabled()
+    expect(screen.getByText('Origin and scale are ignored while stretching.')).toBeInTheDocument()
   })
 
   it('applies a brightness adjustment to a selected raster layer', async () => {

@@ -15,6 +15,7 @@ import {
   EyeOff,
   Folder,
   Image as ImageIcon,
+  ImagePlus,
   Layers3,
   Lock,
   Minus,
@@ -25,7 +26,7 @@ import {
   Trash2,
   Type,
 } from 'lucide-react'
-import { type MouseEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, type MouseEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ColorWell } from '@/components/controls/ColorWell'
@@ -66,6 +67,7 @@ import {
   type GradientSpec,
   type GradientStop,
   type Layer,
+  type PatternSpec,
   type ShapeStyle,
   type TextAlignment,
   type Typography,
@@ -173,6 +175,8 @@ function ShapeInspector() {
   )
   const current = selected[0]
   const [rasterizing, setRasterizing] = useState(false)
+  const [uploadingPattern, setUploadingPattern] = useState(false)
+  const patternFile = useRef<HTMLInputElement>(null)
   if (!current || !page) return null
   const style = current.style
   const stroke = style.stroke
@@ -187,30 +191,79 @@ function ShapeInspector() {
       .then(() => refresh(projectKey, pageKey))
       .catch(() => undefined)
   }
-  // `null` means the fill is not a solid, so the colour well is hidden and the
-  // gradient editor owns the fill instead. A gradient stops being converted to
-  // a solid by an edit here: `withFillKind` is the only path that changes kind.
+  // One fill kind is active at a time, so the controls that own the fill are
+  // chosen here and nowhere else — that is what keeps `withFillKind` the only
+  // path that changes kind (see below).
   const solidFill = style.fill && 'solid' in style.fill ? style.fill.solid : null
   const gradient = style.fill && 'gradient' in style.fill ? style.fill.gradient : null
-  const setFill = (kind: 'solid' | 'gradient') => apply((value) => withFillKind(value, kind))
+  const pattern = style.fill && 'pattern' in style.fill ? style.fill.pattern : null
+  const fillKind = pattern !== null ? 'pattern' : gradient !== null ? 'gradient' : 'solid'
+  const setFill = (kind: 'solid' | 'gradient' | 'pattern') =>
+    apply((value) => withFillKind(value, kind))
+  const updatePattern = (update: (spec: PatternSpec) => PatternSpec) =>
+    // A pattern parameter edit writes the fill through `withFillKind`, whose
+    // pattern arm returns the style untouched. An edit therefore cannot demote
+    // the committed fill to `{ solid }` — the data loss this branch is here to
+    // prevent (B3 Task 6).
+    apply((value) => {
+      const spec = value.fill && 'pattern' in value.fill ? value.fill.pattern : null
+      return spec === null ? value : withFillKind({ ...value, fill: { pattern: update(spec) } }, 'pattern')
+    })
+  const uploadPattern = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    // Reset so re-picking the same file fires `change` again.
+    event.target.value = ''
+    if (!file || disabled || uploadingPattern) return
+    setUploadingPattern(true)
+    try {
+      // The server decodes and validates the bytes, so an unreadable file is
+      // simply not committed; the pattern keeps drawing its fallback (P-D6).
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
+      await call(
+        commands.setShapePatternAsset,
+        revision,
+        current.id,
+        bytes,
+        file.type || 'application/octet-stream',
+      )
+      await refresh(projectKey, pageKey)
+    } catch {
+      // `call` has already reported the failure.
+    } finally {
+      setUploadingPattern(false)
+    }
+  }
 
   return (
     <section className='shrink-0 border-b p-2' data-testid='shape-inspector'>
       <div className='grid min-w-0 gap-1.5'>
         <div className='grid min-w-0 grid-cols-[2.75rem_minmax(5.5rem,1fr)] items-end gap-1.5'>
           <InspectorField label={t('inspector.shape.fill')}>
-            {/* A transparent fill still uses the solid arm: the well must stay
-                reachable so a colour can be picked again. Only a gradient takes
-                the control away, and then the stop editor owns the fill. */}
+            {/* A pattern reuses this well to edit its `fallback`, which is the
+                colour the renderer draws until an image is uploaded (P-D6). It
+                is the one authority for that colour: the pattern panel below
+                deliberately has no colour control of its own. */}
             {gradient === null && (
               <ColorWell
-                label={t('inspector.shape.fill')}
+                label={t(
+                  pattern === null ? 'inspector.shape.fill' : 'inspector.shape.pattern.title',
+                )}
                 size='sm'
                 disabled={disabled}
                 allowTransparent
-                value={solidFill ? rgbaToHex(solidFill) : null}
+                value={pattern !== null ? rgbaToHex(pattern.fallback) : solidFill ? rgbaToHex(solidFill) : null}
                 onChange={(color) =>
-                  apply((value) => ({ ...value, fill: color === null ? null : { solid: hexToRgba(color) } }))
+                  pattern !== null
+                    ? updatePattern((spec) => ({
+                        ...spec,
+                        // The well has no transparent state for a pattern: the
+                        // renderer still needs a colour to draw.
+                        fallback: color === null ? spec.fallback : hexToRgba(color),
+                      }))
+                    : apply((value) => ({
+                        ...value,
+                        fill: color === null ? null : { solid: hexToRgba(color) },
+                      }))
                 }
               />
             )}
@@ -239,15 +292,15 @@ function ShapeInspector() {
           <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
             {t('inspector.shape.fill')}
           </span>
-          {(['solid', 'gradient'] as const).map((kind) => (
+          {(['solid', 'gradient', 'pattern'] as const).map((kind) => (
             <button
               key={kind}
               type='button'
               role='radio'
               aria-label={t(`inspector.shape.fillKind.${kind}`)}
-              aria-checked={kind === 'solid' ? gradient === null : gradient !== null}
+              aria-checked={kind === fillKind}
               disabled={disabled}
-              data-active={kind === 'solid' ? gradient === null : gradient !== null}
+              data-active={kind === fillKind}
               className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
               onClick={() => setFill(kind)}
             >
@@ -260,6 +313,16 @@ function ShapeInspector() {
             disabled={disabled}
             gradient={gradient}
             onChange={(next) => apply((value) => ({ ...value, fill: { gradient: next } }))}
+          />
+        )}
+        {pattern && (
+          <PatternFill
+            disabled={disabled}
+            spec={pattern}
+            uploading={uploadingPattern}
+            fileInput={patternFile}
+            onChange={(update) => updatePattern(update)}
+            onUpload={uploadPattern}
           />
         )}
         <div className='grid min-w-0 grid-cols-[minmax(5.5rem,1fr)_auto] items-end gap-1.5'>
@@ -685,6 +748,180 @@ function GradientStops({
         </div>
         )
       })}
+    </div>
+  )
+}
+
+// The bounds the server validates for a persisted `PatternSpec`: a positive
+// finite scale and a rotation inside one turn. Every control clamps to these, so
+// the editor cannot build a spec the scene rejects.
+const MIN_PATTERN_SCALE = 0.001
+const MAX_PATTERN_SCALE = 16
+const MAX_PATTERN_ROTATION = 360
+
+const clampPatternValue = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value))
+
+/**
+ * The parameter editor for a pattern fill, plus its image upload.
+ *
+ * `origin` and `scale` are disabled under `stretch` because the server ignores
+ * them there (P-D4): leaving them editable would show values that change
+ * nothing, which is a trap rather than an affordance. They are disabled rather
+ * than hidden so the stored spec stays visible and the note below explains why
+ * they are inert.
+ *
+ * The colour of a pattern is its `fallback`, and the fill colour well above owns
+ * it — this panel has no colour control, so the two cannot disagree (P-D6).
+ */
+function PatternFill({
+  spec,
+  disabled,
+  uploading,
+  fileInput,
+  onChange,
+  onUpload,
+}: {
+  spec: PatternSpec
+  disabled: boolean
+  uploading: boolean
+  fileInput: React.RefObject<HTMLInputElement | null>
+  onChange: (update: (spec: PatternSpec) => PatternSpec) => void
+  onUpload: (event: ChangeEvent<HTMLInputElement>) => void
+}) {
+  const { t } = useTranslation()
+  const stretched = spec.repeat === 'stretch'
+  // The origin is normalized frame-local, so any finite value is storable; the
+  // field still clamps to a range wide enough to move a tile on and off the
+  // shape without letting a stray keystroke store a meaningless magnitude.
+  const originFloor = -8
+  const originCeiling = 8
+  const origin = (axis: 0 | 1) => (
+    <NumberField
+      className='min-w-0'
+      disabled={disabled || stretched}
+      value={spec.origin[axis]}
+      min={originFloor}
+      max={originCeiling}
+      step={0.05}
+      onValueChange={(next) => {
+        if (next === null) return
+        onChange((current) => ({
+          ...current,
+          origin: axis === 0
+            ? [clampPatternValue(next, originFloor, originCeiling), current.origin[1]]
+            : [current.origin[0], clampPatternValue(next, originFloor, originCeiling)],
+        }))
+      }}
+    >
+      <NumberFieldGroup>
+        <NumberFieldInput
+          aria-label={t(axis === 0 ? 'inspector.shape.pattern.originX' : 'inspector.shape.pattern.originY')}
+        />
+      </NumberFieldGroup>
+    </NumberField>
+  )
+
+  return (
+    <div className='grid min-w-0 gap-1' data-testid='pattern-fill'>
+      <div
+        className='flex min-w-0 items-center gap-1.5'
+        role='radiogroup'
+        aria-label={t('inspector.shape.pattern.repeatLabel')}
+      >
+        <span className='shrink-0 text-[8px] font-medium tracking-[0.06em] text-muted-foreground uppercase'>
+          {t('inspector.shape.pattern.repeatLabel')}
+        </span>
+        {(['tile', 'stretch'] as const).map((candidate) => (
+          <button
+            key={candidate}
+            type='button'
+            role='radio'
+            aria-label={t(`inspector.shape.pattern.repeat.${candidate}`)}
+            aria-checked={spec.repeat === candidate}
+            disabled={disabled}
+            data-active={spec.repeat === candidate}
+            className='h-6 rounded-md border border-input px-2 text-[10px] text-muted-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground disabled:opacity-40'
+            onClick={() => onChange((current) => ({ ...current, repeat: candidate }))}
+          >
+            {t(`inspector.shape.pattern.repeat.${candidate}`)}
+          </button>
+        ))}
+      </div>
+      <div className='grid min-w-0 grid-cols-[2.75rem_minmax(3.5rem,1fr)_2.75rem_minmax(3.5rem,1fr)] items-end gap-1.5'>
+        <InspectorField label={t('inspector.shape.pattern.originX')}>{origin(0)}</InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.originY')}>{origin(1)}</InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.scale')}>
+          <NumberField
+            className='min-w-0'
+            disabled={disabled || stretched}
+            value={spec.scale}
+            min={MIN_PATTERN_SCALE}
+            max={MAX_PATTERN_SCALE}
+            step={0.01}
+            onValueChange={(next) => {
+              // A scale of zero or below is rejected by `PatternSpec::validate`,
+              // so it is clamped rather than committed.
+              if (next === null) return
+              onChange((current) => ({
+                ...current,
+                scale: clampPatternValue(next, MIN_PATTERN_SCALE, MAX_PATTERN_SCALE),
+              }))
+            }}
+          >
+            <NumberFieldGroup>
+              <NumberFieldInput aria-label={t('inspector.shape.pattern.scale')} />
+            </NumberFieldGroup>
+          </NumberField>
+        </InspectorField>
+        <InspectorField label={t('inspector.shape.pattern.rotation')}>
+          <NumberField
+            className='min-w-0'
+            disabled={disabled}
+            value={spec.rotation_degrees}
+            min={-MAX_PATTERN_ROTATION}
+            max={MAX_PATTERN_ROTATION}
+            step={1}
+            onValueChange={(next) => {
+              // The stored rotation is an integer degree count inside one turn.
+              if (next === null) return
+              onChange((current) => ({
+                ...current,
+                rotation_degrees: Math.round(
+                  clampPatternValue(next, -MAX_PATTERN_ROTATION, MAX_PATTERN_ROTATION),
+                ),
+              }))
+            }}
+          >
+            <NumberFieldGroup>
+              <NumberFieldInput aria-label={t('inspector.shape.pattern.rotation')} />
+            </NumberFieldGroup>
+          </NumberField>
+        </InspectorField>
+      </div>
+      {stretched && (
+        <p className='text-[8px] text-muted-foreground'>
+          {t('inspector.shape.pattern.ignoredForStretch')}
+        </p>
+      )}
+      <input
+        ref={fileInput}
+        type='file'
+        accept='image/*'
+        className='hidden'
+        onChange={onUpload}
+      />
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        disabled={disabled || uploading}
+        className='justify-start gap-1.5 text-[10px]'
+        onClick={() => fileInput.current?.click()}
+      >
+        <ImagePlus className='size-3' />
+        {t('inspector.shape.pattern.upload')}
+      </Button>
     </div>
   )
 }

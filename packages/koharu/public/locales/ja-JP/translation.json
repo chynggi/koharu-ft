@@ -234,6 +234,7 @@
       "fill": "塗り",
       "fillKind": {
         "gradient": "グラデーション",
+        "pattern": "パターン",
         "solid": "単色"
       },
       "fillKindLabel": "塗りの種類",
@@ -250,6 +251,21 @@
       },
       "kindLabel": "図形の種類: {{kind}}",
       "kindTitle": "図形の種類",
+      "pattern": {
+        "ignoredForStretch": "伸縮では無視されます",
+        "originX": "原点 X",
+        "originY": "原点 Y",
+        "repeat": {
+          "stretch": "伸縮",
+          "tile": "タイル"
+        },
+        "repeatLabel": "繰り返し",
+        "replace": "画像を置き換え",
+        "rotation": "回転",
+        "scale": "サイズ",
+        "title": "パターン",
+        "upload": "画像を選択"
+      },
       "rasterize": "ラスタライズ",
       "removeStop": "ストップを削除",
       "stopColor": "ストップ {{index}} の色",
