@@ -77,6 +77,32 @@ const paintLayer: Layer = {
   kind: 'paint',
 }
 
+const textLayer: Layer = {
+  type: 'text',
+  id: 'sound-effect',
+  parent: 'text-group',
+  geometry: {
+    points: [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ],
+  },
+  angle_degrees: null,
+  visibility: { visible: true, opacity: 1 },
+  content: {
+    id: 'sound-effect-content',
+    source: { text: 'ドン', language: 'ja' },
+    translation: { text: 'BOOM', language: 'en' },
+    role: null,
+    source_region: null,
+  },
+  typography: null,
+  layout: 'paragraph',
+  automatic_region: null,
+}
+
 let nextAnimationFrame = 1
 let animationFrames = new Map<number, FrameRequestCallback>()
 
@@ -222,31 +248,6 @@ describe('canvas interaction adapter', () => {
 
   it('copies and pastes selected text layers with keyboard shortcuts', async () => {
     installProject()
-    const textLayer: Layer = {
-      type: 'text',
-      id: 'sound-effect',
-      parent: 'text-group',
-      geometry: {
-        points: [
-          { x: 10, y: 20 },
-          { x: 110, y: 20 },
-          { x: 110, y: 70 },
-          { x: 10, y: 70 },
-        ],
-      },
-      angle_degrees: null,
-      visibility: { visible: true, opacity: 1 },
-      content: {
-        id: 'sound-effect-content',
-        source: { text: 'ドン', language: 'ja' },
-        translation: { text: 'BOOM', language: 'en' },
-        role: null,
-        source_region: null,
-      },
-      typography: null,
-      layout: 'paragraph',
-      automatic_region: null,
-    }
     queryClient.setQueryData(pageKey, {
       id: 'page',
       label: 'Page',
@@ -280,6 +281,44 @@ describe('canvas interaction adapter', () => {
 
     await waitFor(() => expect(paste).toHaveBeenCalledWith([textLayer.id], 'page'))
     await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['pasted-layer']))
+  })
+
+  it('duplicates selected text layers with Ctrl+D without using the clipboard', async () => {
+    installProject()
+    queryClient.setQueryData(pageKey, {
+      id: 'page',
+      label: 'Page',
+      size: { width: 1000, height: 1000 },
+      layers: [textLayer],
+      regions: [],
+    })
+    useKoharuStore.setState({ selectedLayers: [textLayer.id], copiedTextLayers: [] })
+    const paste = vi.spyOn(commands, 'pasteTextLayers').mockResolvedValue(['duplicated-layer'])
+    vi.spyOn(commands, 'getProject').mockResolvedValue({
+      name: 'Book',
+      revision: 2,
+      active_page: 'page',
+      can_undo: true,
+      can_redo: false,
+    })
+    vi.spyOn(commands, 'getPages').mockResolvedValue([])
+    vi.spyOn(commands, 'getPage').mockResolvedValue({
+      id: 'page',
+      label: 'Page',
+      size: { width: 1000, height: 1000 },
+      layers: [],
+      regions: [],
+    })
+    renderWorkspace()
+
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true })
+
+    await waitFor(() => expect(paste).toHaveBeenCalledWith([textLayer.id], 'page'))
+    await waitFor(() =>
+      expect(useKoharuStore.getState().selectedLayers).toEqual(['duplicated-layer']),
+    )
+    // Duplicating must not clobber the clipboard.
+    expect(useKoharuStore.getState().copiedTextLayers).toEqual([])
   })
 
   it('announces WebGPU startup failures and offers recovery', () => {

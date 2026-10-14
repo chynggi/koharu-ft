@@ -22,7 +22,11 @@ import {
   selectableLayer,
   translateFrames,
 } from '@/lib/geometry'
-import { copySelectedTextLayers, pasteCopiedTextLayers } from '@/lib/layerClipboard'
+import {
+  copySelectedTextLayers,
+  duplicateSelectedTextLayers,
+  pasteCopiedTextLayers,
+} from '@/lib/layerClipboard'
 import {
   pageKey,
   pagesKey,
@@ -404,6 +408,13 @@ export function CanvasWorkspace() {
         if (useKoharuStore.getState().copiedTextLayers.length > 0 && page) {
           event.preventDefault()
           void pasteCopiedTextLayers(page).catch(() => undefined)
+        }
+        return
+      }
+      if (command && event.key.toLowerCase() === 'd') {
+        if (useKoharuStore.getState().selectedLayers.length > 0 && page) {
+          event.preventDefault()
+          void duplicateSelectedTextLayers(page).catch(() => undefined)
         }
         return
       }

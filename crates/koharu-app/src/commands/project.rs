@@ -843,6 +843,12 @@ impl Project {
                 }
                 let mut typography = source.typography()?;
                 if let Some(typography) = &mut typography {
+                    if !matches!(typography.origin, Origin::User) {
+                        // A pipeline-inferred direction describes the original's
+                        // source text; the user-owned copy must render by its own
+                        // text instead of inheriting it as an authored override.
+                        typography.writing_mode = None;
+                    }
                     typography.origin = Origin::User;
                 }
                 let mut visibility = source.visibility()?.unwrap_or(SceneVisibility {
@@ -3133,6 +3139,145 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn pasted_copies_only_keep_user_authored_writing_direction() {
+        use koharu_scene::{BubbleRegion, FlowsIn};
+
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 200.0, 300.0), At::End)
+            .unwrap();
+        let bubble = setup
+            .add_analysis_region::<BubbleRegion>(
+                page,
+                At::End,
+                &SceneGeometry::rectangle(20.0, 20.0, 160.0, 180.0),
+                None,
+            )
+            .unwrap();
+        let pipeline_content = setup.add_text_content(page, At::End).unwrap();
+        let pipeline_layer = setup
+            .add_text_layer(
+                page,
+                At::End,
+                pipeline_content,
+                &SceneTextLayout {
+                    origin: Origin::User,
+                    kind: TextLayoutKind::Paragraph,
+                    angle_degrees: None,
+                },
+            )
+            .unwrap();
+        setup.relate::<FlowsIn>(pipeline_layer, bubble).unwrap();
+
+        let user_content = setup.add_text_content(page, At::End).unwrap();
+        let user_layer = setup
+            .add_text_layer(
+                page,
+                At::End,
+                user_content,
+                &SceneTextLayout {
+                    origin: Origin::User,
+                    kind: TextLayoutKind::Paragraph,
+                    angle_degrees: None,
+                },
+            )
+            .unwrap();
+        setup
+            .set(
+                user_layer,
+                &SceneTypography {
+                    origin: Origin::User,
+                    preferred_font: None,
+                    font_weight: None,
+                    font_style: None,
+                    size: Some(30.0),
+                    auto_fit: false,
+                    color: None,
+                    stroke_color: None,
+                    stroke_width: None,
+                    alignment: None,
+                    writing_mode: Some(WritingMode::Vertical),
+                    extensions: Default::default(),
+                },
+            )
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+
+        // Detection writes its inferred direction as pipeline output; user
+        // edits stamp components as theirs, so this must be a pipeline edit.
+        let generation = Generation::new(
+            ProducerId::new("dev.koharu.pipeline.detection").expect("valid producer"),
+        );
+        let mut detection = session.snapshot().edit_as(generation.clone());
+        detection
+            .set(
+                pipeline_layer,
+                &SceneTypography {
+                    origin: Origin::Generated(generation),
+                    preferred_font: None,
+                    font_weight: None,
+                    font_style: None,
+                    size: None,
+                    auto_fit: true,
+                    color: Some([12, 34, 56, u8::MAX]),
+                    stroke_color: None,
+                    stroke_width: None,
+                    alignment: None,
+                    writing_mode: Some(WritingMode::Vertical),
+                    extensions: Default::default(),
+                },
+            )
+            .unwrap();
+        session.commit(detection.finish().unwrap()).await.unwrap();
+
+        let mut project = Project::new(session, "test".to_owned());
+        project
+            .set_source_text(pipeline_layer, "ハズカシイ".to_owned())
+            .await
+            .unwrap();
+        project
+            .set_translation(
+                pipeline_layer,
+                Some("I THINK HUMILIATION SCENARIOS ARE TRENDING".to_owned()),
+            )
+            .await
+            .unwrap();
+        project
+            .set_source_text(user_layer, "カタカナ".to_owned())
+            .await
+            .unwrap();
+        project
+            .set_translation(user_layer, Some("Vertical on purpose".to_owned()))
+            .await
+            .unwrap();
+
+        let (_, pasted) = project
+            .paste_text_layers(page, vec![pipeline_layer, user_layer])
+            .await
+            .unwrap();
+
+        let snapshot = project.snapshot();
+        let pipeline_copy = snapshot
+            .component::<SceneTypography>(pasted[0])
+            .unwrap()
+            .unwrap();
+        // The inference described the original's source text; the copy must
+        // render horizontal English by its own content, like the original does.
+        assert_eq!(pipeline_copy.origin, Origin::User);
+        assert_eq!(pipeline_copy.writing_mode, None);
+        assert_eq!(pipeline_copy.color, Some([12, 34, 56, u8::MAX]));
+
+        let user_copy = snapshot
+            .component::<SceneTypography>(pasted[1])
+            .unwrap()
+            .unwrap();
+        // An explicit user direction is authored intent and survives the copy.
+        assert_eq!(user_copy.origin, Origin::User);
+        assert_eq!(user_copy.writing_mode, Some(WritingMode::Vertical));
     }
 
     #[tokio::test]
