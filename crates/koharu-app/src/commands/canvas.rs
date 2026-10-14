@@ -15,7 +15,9 @@ use tauri::{
 use tauri_runtime_cef::CefRuntime;
 
 use super::{
-    ChannelExt as _, Error, processing,
+    ChannelExt as _, Error,
+    adjust::ColorAdjust,
+    processing,
     processing::{JobChannel, JobId, Processing},
     project::{CurrentProject, Geometry, Page, Project, RasterStrokeMode},
 };
@@ -337,6 +339,38 @@ pub async fn commit_erase(
         &canvas_channel,
     )
     .await
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "raster_adjusted",
+    skip_all,
+    fields(origin = "user", adjustment = ?adjust)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn adjust_raster(
+    expected_revision: Revision,
+    layer: EntityId,
+    adjust: ColorAdjust,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<LayerCommit, Error> {
+    let (commit, page, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let (commit, layer) = project.adjust_raster(layer, adjust).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), layer)
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(LayerCommit {
+        revision: commit.revision,
+        layer,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -8,6 +8,7 @@ use koharu_scene::{EntityId, Revision};
 use serde::Deserialize;
 use tauri::Manager as _;
 
+use koharu_app::commands::adjust::ColorAdjust;
 use koharu_app::commands::canvas::{
     self, CanvasChannel, CanvasGeneration, CanvasPagePreparation, LayerCommit, ManualOcrCommit,
     PaintBrush, Point, ShapeStyleUpdate,
@@ -43,6 +44,7 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/commit/erase", post(commit_erase))
         .route("/canvas/commit/transform", post(commit_transform))
         .route("/canvas/commit/inpaint", post(commit_inpaint))
+        .route("/canvas/raster/adjust", post(adjust_raster))
 }
 
 async fn get_canvas_manifest(
@@ -258,6 +260,30 @@ async fn commit_paint(
             request.layer,
             request.points,
             request.brush,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct AdjustRasterRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    adjust: ColorAdjust,
+}
+
+async fn adjust_raster(
+    State(app): State<AppState>,
+    Json(request): Json<AdjustRasterRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::adjust_raster(
+            request.expected_revision,
+            request.layer,
+            request.adjust,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),
