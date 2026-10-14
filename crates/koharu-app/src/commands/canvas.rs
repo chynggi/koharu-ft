@@ -4,7 +4,7 @@ use anyhow::{Context as _, anyhow, bail};
 use image::{GrayImage, ImageEncoder as _, codecs::png::PngEncoder};
 use koharu_desktop::{CanvasState, Desktop, Frame, TransformFrame};
 use koharu_rasterizer::{BrushRamp, ResourceId};
-use koharu_scene::{EntityId, Revision, ShapeGeometry, ShapeStyle};
+use koharu_scene::{EntityId, PatternSpec, Revision, ShapeGeometry, ShapeStyle};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -576,6 +576,73 @@ pub async fn set_shape_style(
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
     canvas_channel.publish(desktop.canvas_state());
     Ok(commit.revision)
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_pattern_edited",
+    skip_all,
+    fields(origin = "user", layer = ?layer)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn set_shape_pattern(
+    expected_revision: Revision,
+    layer: EntityId,
+    pattern: Option<PatternSpec>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<LayerCommit, Error> {
+    let (commit, page, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let (commit, layer) = project.set_shape_pattern(layer, pattern).await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), layer)
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(LayerCommit {
+        revision: commit.revision,
+        layer,
+    })
+}
+
+#[tracing::instrument(
+    target = "koharu_metrics",
+    name = "shape_pattern_asset_written",
+    skip_all,
+    fields(origin = "user", layer = ?layer, bytes = bytes.len(), media_type = %media_type)
+)]
+#[tauri::command]
+#[specta::specta]
+pub async fn set_shape_pattern_asset(
+    expected_revision: Revision,
+    layer: EntityId,
+    bytes: Vec<u8>,
+    media_type: String,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<LayerCommit, Error> {
+    let (commit, page, layer) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        ensure_revision(project.snapshot().revision(), expected_revision)?;
+        let (commit, layer) = project
+            .set_shape_pattern_asset(layer, bytes, media_type)
+            .await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), layer)
+    };
+    desktop.synchronize(&commit.snapshot, page, &commit).await?;
+    canvas_channel.publish(desktop.canvas_state());
+    Ok(LayerCommit {
+        revision: commit.revision,
+        layer,
+    })
 }
 
 #[tracing::instrument(

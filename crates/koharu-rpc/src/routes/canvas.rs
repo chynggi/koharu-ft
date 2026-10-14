@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use koharu_desktop::{Frame, TransformFrame};
-use koharu_scene::{EntityId, Revision};
+use koharu_scene::{EntityId, PatternSpec, Revision};
 use serde::Deserialize;
 use tauri::Manager as _;
 
@@ -38,6 +38,8 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/text/box", post(add_text_box))
         .route("/canvas/shape", post(add_shape))
         .route("/canvas/shape/style", post(set_shape_style))
+        .route("/canvas/shape/pattern", post(set_shape_pattern))
+        .route("/canvas/shape/pattern/asset", post(set_shape_pattern_asset))
         .route("/canvas/shape/rasterize", post(rasterize_shapes))
         .route("/canvas/ocr/manual", post(manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
@@ -190,6 +192,56 @@ async fn set_shape_style(
         canvas::set_shape_style(
             request.expected_revision,
             request.updates,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapePatternRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    pattern: Option<PatternSpec>,
+}
+
+async fn set_shape_pattern(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapePatternRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::set_shape_pattern(
+            request.expected_revision,
+            request.layer,
+            request.pattern,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SetShapePatternAssetRequest {
+    expected_revision: Revision,
+    layer: EntityId,
+    bytes: Vec<u8>,
+    media_type: String,
+}
+
+async fn set_shape_pattern_asset(
+    State(app): State<AppState>,
+    Json(request): Json<SetShapePatternAssetRequest>,
+) -> ApiResult<Json<LayerCommit>> {
+    Ok(Json(
+        canvas::set_shape_pattern_asset(
+            request.expected_revision,
+            request.layer,
+            request.bytes,
+            request.media_type,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

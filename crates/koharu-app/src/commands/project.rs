@@ -11,13 +11,13 @@ use koharu_desktop::Frame;
 use koharu_rasterizer::{BrushRamp, RampAxis};
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, Authored, Commit, Edit, EntityId, EntityOrigin,
-    FitsTo, Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, Point as ScenePoint,
-    Presents, RasterLayer as SceneRasterLayer, RasterLayerKind, RecognizedFrom,
-    Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, ShapeGeometry,
-    ShapeLayer as SceneShapeLayer, ShapeStyle, Snapshot, SourceText as SceneSourceText,
-    TextGroup as SceneTextGroup, TextLayout as SceneTextLayout, TextLayoutKind, TextRegion,
-    TextRole, Translation as SceneTranslation, Typography as SceneTypography,
-    Visibility as SceneVisibility,
+    FitsTo, Geometry as SceneGeometry, Group as SceneGroup, Origin, PageDraft, PatternSpec,
+    Point as ScenePoint, Presents, RasterLayer as SceneRasterLayer, RasterLayerKind,
+    RecognizedFrom, Region as SceneRegion, RegionSpec, RemovePolicy, Revision, Session, ShapeFill,
+    ShapeGeometry, ShapeLayer as SceneShapeLayer, ShapeStyle, Snapshot,
+    SourceText as SceneSourceText, TextGroup as SceneTextGroup, TextLayout as SceneTextLayout,
+    TextLayoutKind, TextRegion, TextRole, Translation as SceneTranslation,
+    Typography as SceneTypography, Visibility as SceneVisibility,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -1403,6 +1403,100 @@ impl Project {
         self.commit(patch).await
     }
 
+    /// Sets or clears the image pattern of a shape layer's fill.
+    ///
+    /// `None` restores [`ShapeFill::Solid`], keeping the colour the user already
+    /// sees: a solid fill keeps its own colour and every other fill falls back to
+    /// [`PatternSpec::fallback`], which is the colour a pattern draws when its
+    /// asset is missing (P-D6). So switching a pattern off never changes what is
+    /// on screen.
+    ///
+    /// The pattern's image is *not* written here — [`Project::set_shape_pattern_asset`]
+    /// owns that. `PatternSpec` references no asset (P-D2), so this method only
+    /// records how the owning layer's `pattern` asset should repeat.
+    pub async fn set_shape_pattern(
+        &mut self,
+        layer: EntityId,
+        pattern: Option<PatternSpec>,
+    ) -> Result<(Commit, EntityId)> {
+        if let Some(spec) = &pattern {
+            spec.validate()?;
+        }
+        let snapshot = self.snapshot();
+        let mut shape = snapshot
+            .component::<SceneShapeLayer>(layer)?
+            .context("only shape layers can carry a pattern")?;
+        let fill = match pattern {
+            Some(spec) => ShapeFill::Pattern(spec),
+            None => ShapeFill::Solid(match shape.style.fill {
+                Some(ShapeFill::Solid(color)) => color,
+                Some(ShapeFill::Pattern(spec)) => spec.fallback,
+                // A gradient has no colour of its own to keep and an absent fill
+                // has none at all, so both take the white a fresh pattern starts
+                // with — the same default `defaultPatternSpec` uses in the editor.
+                Some(ShapeFill::Gradient(_)) | None => [255, 255, 255, 255],
+            }),
+        };
+        let patch = snapshot.patch(|edit| {
+            edit.promote_entity_to_user(layer)?;
+            shape.origin = Origin::User;
+            shape.style.fill = Some(fill);
+            edit.set(layer, &shape)?;
+            Ok(())
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
+    /// Writes the `pattern` asset a shape layer's pattern fill samples.
+    ///
+    /// Only a shape layer may own this role. A raster layer does not carry a
+    /// pattern (P-D2): the shape layer owns the asset so the two live and die
+    /// together, and accepting the write on a raster layer would create a
+    /// second owner that no fill ever reads.
+    ///
+    /// The bytes are decoded here rather than at read time because the stored
+    /// [`AssetMetadata`] dimensions are what the renderer uploads; a caller that
+    /// supplied dimensions the pixels do not have would produce a brush that
+    /// disagrees with its own texture.
+    pub async fn set_shape_pattern_asset(
+        &mut self,
+        layer: EntityId,
+        bytes: Vec<u8>,
+        media_type: String,
+    ) -> Result<(Commit, EntityId)> {
+        let snapshot = self.snapshot();
+        snapshot
+            .component::<SceneShapeLayer>(layer)?
+            .context("only shape layers can carry a pattern")?;
+        let dimensions = image::load_from_memory(&bytes)
+            .context("the pattern asset is not a decodable image")?
+            .into_rgba8()
+            .dimensions();
+        // A zero-sized image is a valid PNG but not a usable pattern: the brush
+        // would divide by its extents. The renderer draws `fallback` for it, so
+        // refusing the write here keeps the stored asset always drawable.
+        if dimensions.0 == 0 || dimensions.1 == 0 {
+            bail!("the pattern asset must have positive dimensions");
+        }
+        let role = AssetRole::new("pattern")?;
+        let patch = snapshot.patch(|edit| {
+            edit.set_asset(
+                layer,
+                &role,
+                AssetInput::new(
+                    bytes,
+                    media_type,
+                    AssetMetadata {
+                        width: Some(dimensions.0),
+                        height: Some(dimensions.1),
+                        attributes: Default::default(),
+                    },
+                ),
+            )
+        })?;
+        Ok((self.commit(patch).await?, layer))
+    }
+
     /// Writes a polygon and keeps a `ShapeLayer`'s derived values in step with it.
     ///
     /// The polygon is authoritative and `Line`'s `start`/`end` are derived from
@@ -2419,7 +2513,8 @@ fn rasterize_stroke(
 mod tests {
     use koharu_scene::{
         ArrowHead, Generation, GradientExtend, GradientKind, GradientSpec, GradientStop, LineCap,
-        LineJoin, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle, StrokeStyle, WritingMode,
+        LineJoin, PatternRepeat, ProducerId, ShapeFill, ShapeGeometry, ShapeStyle, StrokeStyle,
+        WritingMode,
     };
 
     use super::*;
@@ -4235,6 +4330,256 @@ mod tests {
         };
         assert_eq!(*style, next);
         assert!(matches!(shape, ShapeGeometry::Ellipse));
+    }
+
+    /// A committed project holding one 100x100 page and one rectangle shape.
+    async fn project_with_shape(fill: Option<ShapeFill>) -> (Project, EntityId) {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle { fill, stroke: None },
+                0.0,
+            )
+            .await
+            .unwrap();
+        (project, element)
+    }
+
+    /// Reads back the fill `set_shape_pattern` stored on `element`.
+    fn stored_fill(project: &Project, element: EntityId) -> Option<ShapeFill> {
+        project
+            .snapshot()
+            .component::<SceneShapeLayer>(element)
+            .unwrap()
+            .expect("the element is a shape layer")
+            .style
+            .fill
+    }
+
+    fn pattern_spec() -> PatternSpec {
+        PatternSpec {
+            repeat: PatternRepeat::Tile,
+            origin: [0.25, 0.5],
+            scale: 0.75,
+            rotation_degrees: 45,
+            fallback: [7, 8, 9, 255],
+        }
+    }
+
+    /// A PNG of `width` by `height`, which is what the asset command has to
+    /// decode to learn the true dimensions the renderer will upload.
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba([1, 2, 3, 255]),
+        ))
+        .write_to(&mut encoded, ImageFormat::Png)
+        .unwrap();
+        encoded.into_inner()
+    }
+
+    #[tokio::test]
+    async fn clearing_a_pattern_restores_the_previous_solid_colour() {
+        let (mut project, element) =
+            project_with_shape(Some(ShapeFill::Solid([4, 5, 6, 255]))).await;
+        project
+            .set_shape_pattern(element, Some(pattern_spec()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Pattern(_))
+        ));
+
+        let (_, returned) = project.set_shape_pattern(element, None).await.unwrap();
+        assert_eq!(returned, element);
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Solid([7, 8, 9, 255])),
+            "clearing a pattern keeps the fallback colour the pattern was drawing"
+        );
+    }
+
+    /// A gradient and an absent fill carry no colour to keep, so clearing a
+    /// pattern over them must still produce a usable solid rather than failing.
+    #[tokio::test]
+    async fn clearing_a_pattern_over_a_gradient_uses_the_default_colour() {
+        let gradient = ShapeFill::Gradient(GradientSpec {
+            kind: GradientKind::Linear {
+                start: [0.0, 0.0],
+                end: [1.0, 0.0],
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: [255, 255, 255, 255],
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: [0, 0, 0, 255],
+                },
+            ],
+            extend: GradientExtend::Pad,
+        });
+        let (mut project, element) = project_with_shape(Some(gradient)).await;
+
+        project.set_shape_pattern(element, None).await.unwrap();
+
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Solid([255, 255, 255, 255]))
+        );
+    }
+
+    #[tokio::test]
+    async fn setting_a_pattern_on_a_raster_layer_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let error = project
+            .set_shape_pattern(layer, Some(pattern_spec()))
+            .await
+            .expect_err("a raster layer cannot carry a pattern");
+        assert!(
+            error.to_string().contains("only shape layers"),
+            "expected the shape guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_pattern_spec_round_trips_through_the_layer() {
+        let (mut project, element) = project_with_shape(None).await;
+        let spec = pattern_spec();
+
+        project
+            .set_shape_pattern(element, Some(spec))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            stored_fill(&project, element),
+            Some(ShapeFill::Pattern(spec)),
+            "every field must survive the store, not just the variant"
+        );
+    }
+
+    /// Validating before the patch is what keeps a rejected spec from leaving a
+    /// half-written layer behind: `ShapeLayer::validate` would reject it anyway,
+    /// but after the promotion had already been committed.
+    #[tokio::test]
+    async fn setting_an_invalid_pattern_is_rejected() {
+        let (mut project, element) = project_with_shape(None).await;
+        let mut spec = pattern_spec();
+        spec.scale = 0.0;
+
+        let error = project
+            .set_shape_pattern(element, Some(spec))
+            .await
+            .expect_err("a non-positive scale is not a usable pattern");
+        assert!(error.to_string().contains("scale"), "{error}");
+        assert_eq!(stored_fill(&project, element), None);
+    }
+
+    #[tokio::test]
+    async fn writing_a_pattern_asset_to_a_raster_layer_is_rejected() {
+        let (mut project, layer) = project_with_raster(RgbaImage::new(100, 100)).await;
+        let error = project
+            .set_shape_pattern_asset(layer, png_bytes(2, 2), "image/png".to_owned())
+            .await
+            .expect_err("a raster layer does not own a pattern");
+        assert!(
+            error.to_string().contains("only shape layers"),
+            "expected the shape guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn writing_undecodable_pattern_bytes_is_rejected() {
+        let (mut project, element) = project_with_shape(None).await;
+        let error = project
+            .set_shape_pattern_asset(element, b"not an image".to_vec(), "image/png".to_owned())
+            .await
+            .expect_err("undecodable bytes must not be stored");
+        assert!(
+            error.to_string().contains("decodable"),
+            "expected the decode guard, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pattern_asset_records_the_decoded_dimensions() {
+        let (mut project, element) = project_with_shape(None).await;
+
+        let (_, returned) = project
+            .set_shape_pattern_asset(element, png_bytes(3, 7), "image/webp".to_owned())
+            .await
+            .unwrap();
+        assert_eq!(returned, element);
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("pattern").unwrap())
+            .unwrap()
+            .expect("the shape layer owns a pattern asset");
+        // The dimensions come from the decoded pixels, not from the caller, so a
+        // renderer upload can never disagree with the texture it uploaded.
+        assert_eq!(asset.metadata.width, Some(3));
+        assert_eq!(asset.metadata.height, Some(7));
+        assert_eq!(asset.media_type, "image/webp");
+        assert_eq!(
+            image::load_from_memory(&snapshot.read_blob(asset.blob).await.unwrap())
+                .unwrap()
+                .into_rgba8()
+                .dimensions(),
+            (3, 7)
+        );
+    }
+
+    /// The pattern half of the wire contract, alongside the shape and gradient
+    /// assertions above. `ShapeFill::Pattern` is a newtype variant, so it stays
+    /// externally tagged, and `PatternRepeat` is a unit-variant enum, so it is a
+    /// bare lowercase string. The field order and the integer formatting of
+    /// `rotation_degrees` follow the struct declaration.
+    #[test]
+    fn the_pattern_wire_shape_matches_the_typescript_client() {
+        let tile = PatternSpec {
+            repeat: PatternRepeat::Tile,
+            origin: [0.0, 0.0],
+            scale: 0.25,
+            rotation_degrees: 0,
+            fallback: [255, 255, 255, 255],
+        };
+        assert_eq!(
+            serde_json::to_string(&ShapeFill::Pattern(tile)).unwrap(),
+            r#"{"pattern":{"repeat":"tile","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}}"#
+        );
+        // The fill is one member of `ShapeStyle`, so pin the enclosing key too:
+        // the TypeScript client reads `fill.pattern`, not a bare pattern.
+        assert_eq!(
+            serde_json::to_string(&ShapeStyle {
+                fill: Some(ShapeFill::Pattern(tile)),
+                stroke: None,
+            })
+            .unwrap(),
+            r#"{"fill":{"pattern":{"repeat":"tile","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}},"stroke":null}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ShapeFill::Pattern(PatternSpec {
+                repeat: PatternRepeat::Stretch,
+                ..tile
+            }))
+            .unwrap(),
+            r#"{"pattern":{"repeat":"stretch","origin":[0.0,0.0],"scale":0.25,"rotation_degrees":0,"fallback":[255,255,255,255]}}"#
+        );
     }
 
     #[tokio::test]
