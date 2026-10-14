@@ -332,6 +332,18 @@ export const commands = {
 			layer,
 			adjust,
 		}),
+	fillRaster: (
+		expectedRevision: Revision,
+		layer: EntityId,
+		point: Point,
+		color: [number, number, number, number],
+	) =>
+		post<LayerCommit>("/canvas/raster/fill", {
+			expected_revision: expectedRevision,
+			layer,
+			point,
+			color,
+		}),
 	getMeta: () => get<{ name: string; version: string }>("/meta"),
 };
 
@@ -723,6 +735,16 @@ export type Layer = { type: "group"; id: EntityId; parent: EntityId | null; visi
 export type LayerCommit = {
 	revision: Revision,
 	layer: EntityId,
+};
+
+/**
+ * A bucket fill. `point` is the click location in page pixels; `color` is the
+ * colour to flood the connected region with. No tolerance is configurable: the
+ * server fills exactly-matching connected pixels.
+ */
+export type FillRequest = {
+	point: Point,
+	color: [number, number, number, number],
 };
 
 /**
