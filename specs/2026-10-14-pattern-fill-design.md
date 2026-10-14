@@ -32,6 +32,7 @@ wire 계약 테스트라는 재사용 가능한 골격을 만들었다. 1c는 **
 | P-D3 | `PatternSpec`은 **정규화 프레임 로컬 좌표**로 원점을 갖는다 (1b의 G3와 동일) | 1b가 그렇게 정했고, 다른 좌표계를 쓰면 `fill()`이 두 규칙을 알아야 한다 |
 | P-D4 | 반복 방식은 **`Tile`과 `Stretch` 둘** | `Tile`은 텍스처, `Stretch`는 "이미지 하나를 도형에 맞춰 늘리기"다. 둘은 서로 대체하지 못하고, 둘 다 `image` 크레이트의 기존 함수로 구현된다 |
 | P-D5 | 타일링은 **그래픽 라이브러리에 맡긴다** — peniko `ImageSampler`의 `Extend::Repeat` | 초판은 "`image::imageops::tile`은 정수배만 반복하므로 직접 구현한다"고 했다. **전제가 틀렸다.** 우리가 쓰는 것은 `image`의 타일 함수가 아니라 **vello의 이미지 브러시**이고, 그것의 `Extend::Repeat`은 임의 오프셋·스케일·회전에서 연속적으로 반복한다(`peniko-0.6.1/src/image.rs:95-104`, `brush.rs:159-168`). 직접 격자를 계산하면 `scale`·`origin`·회전을 우리가 소유하게 되고, 그 계산이 미리보기와 어긋날 자리가 생긴다 |
+| P-D8 | 패턴의 **스케일·원점·회전은 `brush_transform`이 나른다** (`Stretch` 포함, `None`이 아니다) | `ImageBrush`의 행렬은 `transform_inverse(composed)`이고(`vello_shaders-0.10.0/shader/draw_leaf.wgsl:250`), 셰이더는 그 역행렬로 얻은 좌표를 **이미지 픽셀 단위**로 취급한다(`fine.wgsl:1326`, `extend_mode(..., max = image.extents)`). 따라서 `composed`는 **이미지 픽셀 → 페이지**를 보내는 사상이고, `brush_transform: None`이면 1 이미지 픽셀 = 1 경로 로컬 단위가 되어 **`scale`이 아무 효과를 갖지 못한다.** 브러시 변환을 주는 것은 안전하다 — 1b의 함정은 *경로* 아핀을 준 것이었고, 브러시 변환은 vello가 정확히 한 번 합성한다(`scene.rs:328-331`) |
 | P-D6 | 자산이 없거나 디코드에 실패하면 **`Solid`로 폴백하고 채우기는 성공한다** | 실패를 오류로 만들면 패턴 자산 하나가 깨졌을 때 페이지 전체가 열리지 않는다. 1b에서 그라디언트 스톱이 비정상일 때의 처리와 같은 원칙이다. 폴백 색은 `PatternSpec::fallback`에 저장한다 |
 | P-D7 | 패턴 회전은 **도(degree) 정수**로 저장한다 | 1b의 `ShapeLayer.angle_degrees`와 단위를 맞춘다. 부동소수를 저장하면 직렬화 왕복에서 값이 흔들린다 |
 
@@ -103,11 +104,45 @@ pub enum PatternRepeat {
 
 1. `prepared()`가 `PatternSpec`을 `PreparedFill::Pattern(PreparedPattern)`으로 펴고,
    **정규화 → 프레임 로컬 변환을 여기서 한다** (1b의 G3와 같은 단일 변환 지점).
-2. `append_to`가 `ImageBrush`를 만들어 `Scene::fill`에 넘긴다. 좌표는
-   **경로 로컬**이고, `brush_transform`은 1b와 같은 이유로 **`None`**이다 —
-   vello가 경로 변환과 브러시 변환을 합성하므로 경로 아핀을 또 주면 이중 적용된다
-   (`scene.rs:328-331`, 1b Task 2의 Critical).
-3. `Exend::Repeat`(타일) 또는 `Extend::Pad`(늘리기)를 `ImageSampler`에 설정한다.
+   단, 결과는 **경로 로컬**이다 — 그라디언트처럼 `frame.x`/`frame.y`를 **더하지 않는다.**
+   경로 로컬 원점이 곧 프레임 박스의 좌상단이므로 `frame.x`를 더하면 두 번 offset된다
+   (`shape_renderer.rs:311`의 그라디언트가 `frame.x`를 쓰지 않는 것과 같은 이유).
+2. `append_to`가 `ImageBrush`를 만들어 `Scene::fill`에 넘긴다.
+3. `Extend::Repeat`(타일) 또는 `Extend::Pad`(늘리기)를 `ImageSampler`에 설정한다.
+
+### P-D8: 브러시 변환이 스케일·원점·회전을 나른다
+
+**계획 초판은 "`brush_transform`은 `None`"이라고 썼고, 그것이 틀렸다.** 셰이더와
+인코딩 경로를 읽어 확인한 사실은 다음과 같다:
+
+- `draw_leaf.wgsl:250`은 `DRAWTAG_FILL_IMAGE`에 대해 `inv = transform_inverse(transform)`을
+  저장한다. 여기서 `transform`은 `Scene::fill`이 합성한 값, 즉 `composed`다.
+- `fine.wgsl:1344-1346`은 그 행렬로 `atlas_uv = image.matrx * my_xy + image.xlat`을 구하고,
+  곧바로 `extend_mode(atlas_uv.x, image.x_extend_mode, image.extents.x)`로 **이미지 픽셀
+  단위**로 반복시킨다(`fine.wgsl:881-893`).
+- 즉 `image.matrx = inverse(composed)`이고, 따라서 **`composed`는 이미지 픽셀 → 페이지**를
+  보낸다. `Scene::fill`은 `composed = transform * brush_transform`으로 합성한다
+  (`scene.rs:328-331`).
+
+`brush_transform: None`이면 `composed = P`(경로 아핀)이므로 **1 이미지 픽셀 = 1 경로 로컬
+단위**가 되고, `scale`이 타일 간격에 **아무 영향을 주지 못한다.** 따라서 패턴의
+스케일·원점·회전은 **브러시 변환**으로 넣어야 한다.
+
+**1b의 함정과 혼동하지 말 것.** 1b의 Critical은 *경로* 아핀을 `brush_transform`으로 준
+것이었다. 브러시 변환을 주는 것 자체는 안전하고 오히려 필수다 — vello는 브러시 변환을
+정확히 한 번만 합성한다.
+
+**경로 로컬 기준 변환**(프레임 박스가 `(0,0)`–`(w,h)`, `pitch = scale * w`):
+
+| 반복 | `brush_transform` |
+|---|---|
+| `Tile` | `translate(origin) * rotate(θ) * scale(pitch)` |
+| `Stretch` | `translate(c) * rotate(θ) * translate(-c) * scale_non_uniform(w/iw, h/ih)`, `c` = 박스 중심 |
+
+`Tile`에서 이미지 픽셀 `(0,0)`이 로컬 `origin`에 놓이고, 픽셀 하나가 `pitch` 로컬 단위를
+차지한다 — 스펙의 "이미지 한 픽셀이 차지하는 프레임 로컬 크기" 정의와 일치한다.
+`Stretch`는 비균일 스케일로 이미지 한 장을 박스에 꽉 채운다(종횡비를 보존하지 않는다 —
+스펙의 "박스에 맞춰 늘린다" 그대로).
 
 **초판은 이 부분을 틀리게 썼다.** 초판은 "vello 브러시로는 이미지 타일을 표현할 수
 없으므로 클립 + 반복 draw로 그린다"고 했고, 그래서 `fill()`이 `Pattern`에 `None`을

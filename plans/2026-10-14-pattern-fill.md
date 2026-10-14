@@ -20,7 +20,7 @@
 ## Global Constraints
 
 - **타일링을 직접 구현하지 않는다.** 초판 스펙은 "vello 브러시로는 이미지 타일을 표현할 수 없다"고 썼지만 **거짓이다.** `Extend::Repeat`이 임의 오프셋·스케일·회전에서 반복한다. 격자를 손으로 나누면 `scale`·`origin`·회전 계산을 우리가 소유하게 되고, 그 계산이 커밋과 미리보기 사이에서 어긋날 자리가 생긴다(1b에서 실제로 난 버그 유형).
-- **`brush_transform`은 `None`이다.** vello가 경로 변환과 브러시 변환을 합성하므로(`scene.rs:328-331`) 경로 아핀을 또 넘기면 이중 적용된다 — **1b Task 2의 Critical과 같은 함정이다.**
+- **`brush_transform`이 스케일·원점·회전을 나른다 — `None`이 아니다.** 초판은 1b의 규칙을 그대로 적용해 `None`이라고 썼으나 **틀렸다.** `draw_leaf.wgsl:250`이 이미지 브러시에 `transform_inverse(composed)`를 저장하고(`composed = transform * brush_transform`, `scene.rs:328-331`), 셰이더가 그 역행렬로 얻은 좌표를 **이미지 픽셀**로 취급한다(`fine.wgsl:1326`, `extend_mode(..., max = image.extents)`). 즉 `composed`는 **이미지 픽셀 → 페이지**를 보내므로, `None`이면 1 이미지 픽셀 = 1 경로 로컬 단위가 되어 `scale`이 무효다. **1b의 함정은 *경로* 아핀을 준 것이지 브러시 변환을 준 것이 아니다** — 브러시 변환은 정확히 한 번 합성된다.
 - **패턴은 도형 레이어가 소유한다**(P-D2). `PatternSpec`은 레이어를 참조하지 않는다. 참조하면 "레이어가 지워졌는데 참조가 남는" 상태가 생기고, 1a·1b에서 가장 비쌌던 두 권위 문제가 재현된다.
 - **자산이 없거나 디코드에 실패하면 `fallback` 색으로 그린다 — 오류가 아니다**(P-D6). 패턴 자산 하나가 깨졌다고 페이지 전체가 열리지 않으면 안 된다.
 - **`ShapeFill`에 변형을 추가하되 `Pattern`을 맨 뒤에 둔다.** revision enum 태그가 변형 id를 하위 비트에 담으므로(`shapes.rs:208-211`의 `Gradient` 주석이 그 규약을 기록한다) 뒤에 붙이면 기존 `Solid`(0)·`Gradient`(1)가 보존된다.
@@ -35,7 +35,7 @@
 
 1. **`Extend` 매핑이 `repeat`와 일치하는지.** `Tile` → `Extend::Repeat`, `Stretch` → `Extend::Pad`(또는 이미지를 도형 박스로 스케일). 매핑이 뒤바뀌면 타일이 늘어나거나 늘리기가 반복된다(Task 2).
 2. **`Stretch`의 스케일 계산.** 이미지 한 장을 도형의 바운딩 박스에 맞추려면 `ImageBrush`에 변환을 줘야 한다. `Tile`의 `scale`과 혼동하면 안 된다(Task 2).
-3. **1b의 brush_transform 함정 재발.** `append_to`가 경로 아핀을 `brush_transform`으로 넘기면 이중 적용된다. 1b에서 이 버그가 실제로 났고 회전한 도형에서만 드러났다(Task 2).
+3. **1b의 brush_transform 함정 재발.** `append_to`가 **경로 아핀**을 `brush_transform`으로 넘기면 이중 적용된다. 1b에서 이 버그가 실제로 났고 회전한 도형에서만 드러났다. **단, 패턴은 스케일·원점·회전을 나르는 브러시 변환을 *반드시* 줘야 한다**(P-D8) — 금지되는 것은 경로 아핀을 주는 것이지 브러시 변환 자체가 아니다. 둘을 혼동해 "무조건 `None`"으로 만들면 `scale`이 조용히 무효가 된다(Task 2).
 4. **자산 픽셀 밀도와 PSD 내보내기.** 1c는 벡터 채우기이므로 PSD는 래스터화한다. **래스터화 경로가 패턴을 그리는지** 확인해야 한다 — 빠뜨리면 PSD에서 도형이 사라진다(Task 5).
 5. **`merge_pages`가 `pattern` 역할 자산을 옮기는지.** 1a의 Critical이 `merge_pages`에서 났다(기하를 옮기면서 불변식을 깨뜨렸다). 패턴 자산이 페이지 병합에서 누락되면 병합 후 패턴이 사라진다(Task 5).
 6. **`fill()`의 반환 타입.** 1b는 `Option<PreparedFill>`이다. 패턴도 같은 자리이므로 타입을 넓힐 필요가 없다 — 넓히려 한다면 설계가 틀어진 것이다(Task 2).
@@ -235,8 +235,17 @@ git commit -m "feat(scene): add the pattern fill model"
 - Consumes: Task 1의 `PatternSpec`, `PatternRepeat`
 - Produces:
   - `PreparedFill::Pattern { pattern: PreparedPattern, rule: FillRule }`
-  - `PreparedPattern { repeat: PreparedPatternRepeat, origin: [f32; 2], scale: f32, rotation_degrees: i32, fallback: [u8; 4], source: ResourceId }`
+  - `PreparedPattern { repeat, origin, scale, rotation_degrees, fallback, extent, image: Option<PreparedPatternImage> }`
+  - `PreparedPatternImage { source: ResourceId, width: u32, height: u32, pixels: Arc<[u8]> }`
+  - `PreparedPattern::brush_transform(&self) -> Option<Affine>` — 렌더러가 만드는 이미지 픽셀 → 경로 로컬 사상
+  - `shape_renderer::attach_pattern_image(path: &mut PreparedPath, image: PreparedPatternImage) -> bool` — 픽셀을 채우는 유일한 지점
   - `shape_renderer::fill()`이 `Pattern`을 편다
+
+**`attach_pattern_image`가 왜 필요한가.** `PatternSpec`은 자산을 참조하지 않으므로(P-D2)
+`fill()`은 픽셀을 알 수 없다. 그렇다고 `shape_layer_path`에 픽셀 인자를 더하면 폴리곤
+호출자를 전부 고쳐야 한다. 대신 **경로를 만든 뒤 채우는 한 함수**를 둔다 — 호출자는
+자산을 아는 쪽(네이티브 렌더러·래스터화·WASM)이고, 셋 다 같은 함수를 쓴다.
+`FillPath`가 아니거나 패턴이 아니면 `false`를 돌려준다(호출자가 폴백을 판단하지 않도록).
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -260,13 +269,24 @@ git commit -m "feat(scene): add the pattern fill model"
             panic!("expected a pattern fill");
         };
         // The spread happens in exactly one place: `fill()`.
-        assert_eq!(pattern.origin, [10.0 + 0.5 * 200.0, 20.0 + 0.25 * 100.0]);
+        //
+        // The result is **path-local**, exactly like the gradient: the frame box
+        // starts at `(0, 0)` in that space, so `frame.x`/`frame.y` must NOT be
+        // added. The gradient at `shape_renderer.rs:311` is the precedent.
+        assert_eq!(pattern.origin, [0.5 * 200.0, 0.25 * 100.0]);
         assert_eq!(pattern.scale, 0.5 * 200.0);
+        assert_eq!(pattern.extent, [200.0, 100.0]);
     }
+```
 
+**`origin`은 두 번 offset되면 안 된다.** 프레임을 `x: 10.0, y: 20.0`에 두고도 기대값이
+`100.0`/`25.0`인 이유가 이것이다. `fill()`이 `frame.x`를 더하면 경로 변환이 다시 더해
+`110.0`/`45.0`이 되고, 회전한 도형에서 패턴이 도형과 함께 돌지 않는다.
+
+```rust
     /// Rotation is carried by the path transform, never by the pattern's own
-    /// coordinates — the same rule the gradient follows. Passing an affine as
-    /// `brush_transform` would double-apply it (1b's Critical bug).
+    /// coordinates — the same rule the gradient follows. Passing the *path*
+    /// affine as `brush_transform` would double-apply it (1b's Critical bug).
     #[test]
     fn a_pattern_keeps_its_coordinates_local_when_rotated() {
         let upright = /* frame with angle 0 */;
@@ -296,7 +316,29 @@ git commit -m "feat(scene): add the pattern fill model"
     }
 ```
 
-`frame.rs`의 테스트에는 **`Extend` 매핑**과 **`brush_transform`이 `None`**임을 고정한다. 1b가 `appending_a_gradient_path_passes_no_brush_transform`으로 그렇게 했다 — 같은 형태로 `appending_a_pattern_path_passes_no_brush_transform`을 둔다.
+`frame.rs`의 테스트에는 **`Extend` 매핑**과 **브러시 변환**을 고정한다. 1b가
+`appending_a_gradient_path_passes_no_brush_transform`으로 그렇게 했다 — 같은 형태로 두
+테스트를 둔다. **두 번째가 이 태스크의 핵심 회귀 가드다**: 패턴은 스케일을 나르는 브러시
+변환을 *반드시* 가져야 하므로, "`None`이다"를 단언하면 안 된다.
+
+```rust
+    #[test]
+    fn a_tiled_pattern_path_passes_a_scaling_brush_transform() {
+        // `brush_transform` must not be `None` for a pattern: with the identity
+        // the shader treats one image pixel as one path-local unit, so `scale`
+        // would have no effect at all (P-D8).
+        let path = pattern_path(PreparedPatternRepeat::Tile, 50.0);
+        // The captured transform's scale must equal the tile pitch.
+        assert_eq!(captured.scale(), 50.0);
+    }
+
+    #[test]
+    fn a_pattern_never_passes_the_path_affine_as_its_brush_transform() {
+        // 1b's Critical: the path affine is already in `transform`, and vello
+        // composes `transform * brush_transform`, so passing it again would
+        // apply it twice.
+    }
+```
 
 - [ ] **Step 2: 실패를 확인한다**
 
@@ -308,25 +350,52 @@ Expected: 컴파일 실패
 `prepared.rs`: `PreparedFill`에 `Pattern` 변형을 추가한다. `PreparedPatternRepeat`은 `PreparedGradientExtend`와 같은 스타일(PascalCase unit variant, `#[serde(rename_all)]` 없음)을 따른다.
 
 `shape_renderer::fill()`: `ShapeFill::Pattern(spec)` arm에서
-- `origin`을 프레임 로컬로 편다: `[frame.x + origin[0] * frame.width, frame.y + origin[1] * frame.height]` (1b의 그라디언트와 **같은 규칙**)
+- `origin`을 **경로 로컬**로 편다: `[spec.origin[0] * frame.width, spec.origin[1] * frame.height]`
+  — 그라디언트와 **같은 규칙**이고 **`frame.x`/`frame.y`를 더하지 않는다**(경로 로컬 원점이
+  이미 프레임 좌상단이다)
 - `scale`을 프레임 **폭**으로 편다: `spec.scale * frame.width` (그라디언트의 `radius * frame.width`와 같은 관례)
-- `angle_degrees`는 쓰지 않는다
+- `extent`에 `[frame.width, frame.height]`를 넣는다 — `Stretch`가 필요로 한다
+- `rotation_degrees`를 **그대로 나른다** — 렌더러가 브러시 변환을 만들 때 읽는다
+- `angle_degrees`는 쓰지 않는다 (경로 변환이 회전을 나른다)
+- `image`는 `None`이다 — 픽셀은 자산을 아는 호출자가 채운다(Task 3)
 
 `frame.rs`의 `PreparedPath::append_to`: `Some(PreparedFill::Pattern { .. })` arm에서
+
 ```rust
-let brush = ImageBrush::new(ImageData { /* decoded pixels */ })
-    .with_extend(match pattern.repeat {
-        PreparedPatternRepeat::Tile => Extend::Repeat,
-        PreparedPatternRepeat::Stretch => Extend::Pad,
-    });
-// `brush_transform` stays `None`: vello composes it with the path transform, so
-// passing the path affine would apply it twice (see the gradient arm's note).
-scene.fill(fill(rule), affine, &brush, None, &path);
+let brush = ImageBrush::new(ImageData {
+    data: Blob::new(Arc::clone(&image.pixels)),
+    format: ImageFormat::Rgba8,
+    alpha_type: ImageAlphaType::Alpha,
+    width: image.width,
+    height: image.height,
+})
+.with_extend(match pattern.repeat {
+    PreparedPatternRepeat::Tile => Extend::Repeat,
+    PreparedPatternRepeat::Stretch => Extend::Pad,
+});
+scene.fill(fill(rule), affine, &brush, Some(pattern.brush_transform()), &path);
 ```
 
-**`Stretch`의 스케일.** `Extend::Pad`만으로는 이미지가 원래 픽셀 크기로 그려진다. 도형 박스에 맞추려면 `ImageBrush`에 스케일 변환을 줘야 한다 — `ImageBrush`의 변환은 `Scene::fill`의 `brush_transform` 인자가 담당하므로, **`Stretch`일 때만** `Some(도형_박스_크기로_가는_아핀)`을 넘긴다. **`Tile`일 때는 반드시 `None`이다.** 이 비대칭의 이유를 주석에 남긴다 — 1b의 Critical이 정확히 이 인자의 오용이었다.
+**브러시 변환은 `Some`이다.** `composed = transform * brush_transform`이고
+(`scene.rs:328-331`) `composed`는 **이미지 픽셀 → 페이지**를 보내므로, 여기서 만드는
+변환은 이미지 픽셀 공간에서 경로 로컬 공간으로 가는 사상이다:
 
-패턴 자산이 없거나 디코드에 실패하면 **`Solid { color: fallback, rule }`을 돌려준다**(P-D6). `append_to`가 아니라 `fill()`에서 결정하는 편이 낫다 — `fill()`이 이미 `Option<PreparedFill>`을 돌려주므로 폴백이 자연스럽고, `append_to`는 "무엇을 그릴지"를 다시 판단하지 않는다. **어느 쪽을 택했든 이유를 남긴다.**
+- `Tile`: `Affine::translate(origin) * Affine::rotate(θ.to_radians()) * Affine::scale(scale)`
+  — 이미지 픽셀 `(0,0)`이 로컬 `origin`에 놓이고 픽셀 하나가 `scale` 로컬 단위를 차지한다.
+  `scale`은 `fill()`이 이미 `scale * frame.width`로 편 값이다.
+- `Stretch`: 비균일 스케일로 이미지 한 장을 박스에 채우고, 박스 중심을 축으로 회전한다.
+  `origin`/`scale`은 무시한다(스펙이 그렇게 정했다).
+
+`Affine`은 kurbo 것이고 `(A * B) * v == A * (B * v)`다(`affine.rs:44-46`). 즉 위 순서는
+스케일 → 회전 → 이동 순으로 점에 적용된다.
+
+**`image`가 `None`이면**(자산 없음·디코드 실패·크기 0) **`Solid { color: fallback, rule }`을
+그린다**(P-D6) — 오류가 아니다. **`append_to`가 아니라 `fill()`에서 결정하는 편이 낫다**:
+`fill()`이 이미 `Option<PreparedFill>`을 돌려주고 자산 유무를 아는 것은 호출자지만,
+"무엇을 그릴지"를 두 곳이 판단하면 권위가 둘이 된다. 따라서 **호출자가 자산 해석에
+실패하면 `image: None`인 `Pattern`을 그대로 두고, `append_to`가 `None`을 보고 `fallback`
+Solid로 그린다** — 그리는 지점이 하나이므로 커밋과 미리보기가 어긋날 수 없다. 이 선택의
+이유를 주석에 남긴다.
 
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
@@ -434,7 +503,18 @@ git commit -m "feat(app): set a shape's pattern fill"
 
 `lib/shapes.ts`에 `defaultPatternSpec`과, 그라디언트의 `previewGradient`에 대응하는 패턴 조립을 넣는다. **1b와 같은 회전 규칙을 따른다**: `frame.origin + normalized * extent`를 구한 뒤 `rotatePoint`로 프레임 중심 기준 회전. `angle_degrees`를 그라디언트 조립에 쓰지 않는 것과 같은 이유다.
 
+**픽셀을 어디서 얻는가.** 미리보기는 커밋 전이므로 아직 레이어 자산이 없다. 프론트가
+**업로드 시점에 한 번** `createImageBitmap` + 2D 캔버스 `getImageData`로 RGBA8을 얻어
+캐시하고, `CanvasPathFill::Pattern`에 담아 보낸다. 서버로 보낼 인코딩 바이트는 어차피
+업로드 시점에 읽으므로 **추가 왕복이 없다**. 픽셀은 `PreparedPatternImage`로 역직렬화되어
+`append_to`가 그대로 쓴다 — 네이티브와 **같은 그리기 지점**을 지나므로 커밋과 미리보기가
+어긋날 수 없다.
+
 **정확한 좌표를 단언하는 테스트를 둔다.** 1b에서 미리보기와 커밋이 어긋난 버그는 이 테스트가 없어서 생겼다. 1b가 쓴 값을 그대로 재사용해 회전 규칙이 같음을 확인한다(프레임 `{0,0,200,100,angle 90}`에서 제어점이 `(150,-50)`으로 가는지).
+
+**`brush_transform`을 프론트가 계산하지 않는다.** 변환은 `append_to`가 만들고, 프론트는
+스펙과 픽셀만 보낸다 — 회전·스케일 규칙이 두 곳에 생기면 미리보기와 커밋이 갈라진다.
+이것이 1b에서 배운 규칙이다.
 
 - [ ] **Step 3: 확인한다**
 
@@ -567,6 +647,21 @@ Run: `bun run --filter '@koharu/app' test`
 2. **P-D5.** "타일링을 직접 구현한다"에서 "라이브러리에 맡긴다"로 바뀌었다.
 3. **미리보기.** 초판은 자리표시자였으나 브러시 경로가 생겼으므로 정상 구현한다.
 4. **열린 문제 3(타일 상한).** 해결됐다 — 셰이더가 샘플링하므로 타일 수가 draw 수에 영향을 주지 않는다.
+
+**계획 2판이 계획 1판을 정정한 곳 (구현자가 찾아낸 사실)**
+
+1판은 `brush_transform`에 대해 **1b의 규칙을 그대로 적용해 `None`이라고 썼고, 그것이
+틀렸다.** 이것은 B2의 `flood_fill_mut` 무한 루프, 1c 초판의 잘못된 렌더러 설계에 이어
+**세 번째로 라이브러리 동작에 대한 검증되지 않은 가정**이었다. 이번에는 구현을 멈추고
+셰이더·인코딩·해석 경로를 읽어 확정했다.
+
+| # | 1판 | 확정된 사실 |
+|---|---|---|
+| 1 | `Tile`은 `brush_transform: None` | **불가능.** `draw_leaf.wgsl:250`이 `inverse(composed)`를 저장하고 셰이더가 그 좌표를 **이미지 픽셀**로 취급한다(`fine.wgsl:1326`). `None`이면 1 픽셀 = 1 로컬 단위라 `scale`이 **무효**다. → P-D8 |
+| 2 | `origin = frame.x + n * frame.width` (테스트가 `[110, 45]` 단언) | **이중 offset.** `PreparedPattern`의 좌표는 **경로 로컬**이고 경로 로컬 원점이 곧 프레임 좌상단이다. 그라디언트가 `frame.x`를 쓰지 않는다(`shape_renderer.rs:311`). → 기대값 `[100, 25]` |
+| 3 | `rotation_degrees`를 나르되 읽지 않음 | **죽은 필드.** 패턴 회전은 도형 각도와 **별개인 사용자 노브**이므로 브러시 변환에 들어가야 한다 |
+
+정정은 스펙(P-D8 + 렌더링 절)과 이 계획(전역 제약 · Review Focus 3 · Task 2)에 반영했다.
 
 **계획이 스펙에 더한 것**
 
