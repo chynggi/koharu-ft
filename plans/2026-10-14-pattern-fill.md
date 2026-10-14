@@ -501,7 +501,22 @@ git commit -m "feat(app): set a shape's pattern fill"
 
 - [ ] **Step 2: 프론트 조립과 변환을 구현한다**
 
-`lib/shapes.ts`에 `defaultPatternSpec`과, 그라디언트의 `previewGradient`에 대응하는 패턴 조립을 넣는다. **1b와 같은 회전 규칙을 따른다**: `frame.origin + normalized * extent`를 구한 뒤 `rotatePoint`로 프레임 중심 기준 회전. `angle_degrees`를 그라디언트 조립에 쓰지 않는 것과 같은 이유다.
+`lib/shapes.ts`에 `defaultPatternSpec`과, 그라디언트의 `previewGradient`에 대응하는 패턴 조립을 넣는다.
+
+**1b의 회전 규칙을 그대로 복사하면 안 된다 — 패턴은 다르다.** 그라디언트는 제어 *점*을 회전하면 램프가 함께 돌지만, 패턴은 **타일 격자의 방향 자체**가 돌아야 한다. 타일 원점 하나를 회전시키는 것으로는 격자가 돌지 않는다.
+
+정확히 계산하면(`P = R(θ_frame) + 이동`, 서버의 `transform()`은 회전+이동뿐이고 스케일이 없다 — `shape_renderer.rs:121-133`):
+
+```
+composed = P · T(origin_local) · R(θ_pattern) · S(pitch)
+         = T(P(origin_local)) · R(θ_frame + θ_pattern) · S(pitch)
+```
+
+(수치로 검증했다: `θ_frame=30°, θ_pattern=20°, origin=40/10, pitch=25`에서 양변이 소수점 6자리까지 일치한다.)
+
+즉 미리보기는 **페이지 좌표의 원점**(1b 규칙이 `rotatePoint`로 주는 값)과 **`θ_frame + θ_pattern`의 회전**을 함께 넘겨야 한다. `θ_frame`은 `f32`이므로 이 합은 정수가 아니며, 이것이 **P-D9**가 존재하는 이유다: `PreparedPattern.rotation_degrees`는 `f32`다(저장 스펙은 `i32` 유지).
+
+**정확한 좌표를 단언하는 테스트를 둔다.** 1b에서 미리보기와 커밋이 어긋난 버그는 이 테스트가 없어서 생겼다. 다만 **1b의 리터럴 값을 재사용할 수 없다** — 패턴의 기대값은 회전이 합성되므로 다르다. `θ_frame=90°, θ_pattern=0`, 프레임 `{0,0,200,100}`일 때 원점 `(0,0)`이 페이지 `(0,200)` 근처로 가고 회전이 90°가 되는지 스스로 계산해 단언한다.
 
 **픽셀을 어디서 얻는가.** 미리보기는 커밋 전이므로 아직 레이어 자산이 없다. 프론트가
 **업로드 시점에 한 번** `createImageBitmap` + 2D 캔버스 `getImageData`로 RGBA8을 얻어
@@ -509,8 +524,6 @@ git commit -m "feat(app): set a shape's pattern fill"
 업로드 시점에 읽으므로 **추가 왕복이 없다**. 픽셀은 `PreparedPatternImage`로 역직렬화되어
 `append_to`가 그대로 쓴다 — 네이티브와 **같은 그리기 지점**을 지나므로 커밋과 미리보기가
 어긋날 수 없다.
-
-**정확한 좌표를 단언하는 테스트를 둔다.** 1b에서 미리보기와 커밋이 어긋난 버그는 이 테스트가 없어서 생겼다. 1b가 쓴 값을 그대로 재사용해 회전 규칙이 같음을 확인한다(프레임 `{0,0,200,100,angle 90}`에서 제어점이 `(150,-50)`으로 가는지).
 
 **`brush_transform`을 프론트가 계산하지 않는다.** 변환은 `append_to`가 만들고, 프론트는
 스펙과 픽셀만 보낸다 — 회전·스케일 규칙이 두 곳에 생기면 미리보기와 커밋이 갈라진다.

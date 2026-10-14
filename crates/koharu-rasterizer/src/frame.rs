@@ -1090,7 +1090,7 @@ mod tests {
                     repeat,
                     origin: [0.0, 0.0],
                     scale,
-                    rotation_degrees: 0,
+                    rotation_degrees: 0.0,
                     fallback: [7, 8, 9, 255],
                     extent: [100.0, 100.0],
                     image: None,

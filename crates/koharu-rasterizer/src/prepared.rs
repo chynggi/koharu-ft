@@ -802,11 +802,20 @@ pub struct PreparedPattern {
     /// Clockwise degrees applied about the tile origin (`Tile`) or the box
     /// centre (`Stretch`).
     ///
-    /// This is the *pattern's* own rotation, which the author sets independently
-    /// of the shape's angle. The shape's angle reaches the brush through
-    /// [`PreparedPath::transform`] and must not be folded in here, or a rotated
-    /// shape would rotate its pattern twice.
-    pub rotation_degrees: i32,
+    /// This is the *pattern's* own rotation plus, for a brush whose path
+    /// transform carries no rotation, the shape's angle — see
+    /// [`PreparedPattern::brush_transform`]. It is `f32` rather than the
+    /// persisted `PatternSpec`'s `i32` **on purpose**: this type is a transient
+    /// command argument, never stored, and the browser preview has to express a
+    /// sum of the author's integer angle and the shape's fractional one. Rounding
+    /// that sum would put the live preview up to half a degree away from the
+    /// committed shape. The integer type still governs the saved spec, where it
+    /// is what prevents serialization drift (P-D7).
+    ///
+    /// The shape's angle must not be folded in when the renderer emits a path
+    /// transform that already rotates: `fill()` passes only the author's angle,
+    /// or a rotated shape would rotate its pattern twice.
+    pub rotation_degrees: f32,
     /// Drawn as a solid fill when [`PreparedPattern::image`] is `None`.
     pub fallback: [u8; 4],
     /// The shape's box in path-local coordinates: `(0, 0)` to this extent.
@@ -864,8 +873,7 @@ impl PreparedPattern {
             // caller's single `fill` call uniform rather than branching here.
             return Affine::IDENTITY;
         };
-        let degrees = f64::from(self.rotation_degrees);
-        match self.repeat {
+        let degrees = f64::from(self.rotation_degrees);        match self.repeat {
             PreparedPatternRepeat::Tile => {
                 // Image pixel (0,0) lands on the tile origin, and one pixel
                 // spans `scale` path-local units, so `scale` is the pitch the
@@ -913,10 +921,13 @@ impl PreparedPattern {
         if self.origin.iter().any(|value| !value.is_finite()) {
             return Err(Error::invalid("prepared pattern origin must be finite"));
         }
-        if !(-360..=360).contains(&self.rotation_degrees) {
-            return Err(Error::invalid(
-                "prepared pattern rotation must be within -360..=360",
-            ));
+        // Only finiteness is required. This value is a *sum* of the author's
+        // pattern angle and, for a transform-free brush, the shape's angle, so
+        // any magnitude is a legitimate rotation and rotation is periodic:
+        // bounding it at ±360 would reject a preview at 450° that is perfectly
+        // drawable. `brush_transform` normalizes before use.
+        if !self.rotation_degrees.is_finite() {
+            return Err(Error::invalid("prepared pattern rotation must be finite"));
         }
         if self
             .extent
@@ -1422,6 +1433,138 @@ fn finite_affine(affine: [f64; 6], label: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn prepared_pattern() -> PreparedPattern {
+        PreparedPattern {
+            repeat: PreparedPatternRepeat::Tile,
+            origin: [1.0, 2.0],
+            scale: 4.0,
+            rotation_degrees: 30.0,
+            fallback: [1, 2, 3, 255],
+            extent: [10.0, 20.0],
+            image: Some(PreparedPatternImage {
+                width: 1,
+                height: 1,
+                pixels: Arc::from(&[0u8, 0, 0, 255][..]),
+            }),
+        }
+    }
+
+    fn pattern_path_with(pattern: PreparedPattern) -> PreparedPath {
+        PreparedPath {
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            elements: vec![
+                PathElement::MoveTo([0.0, 0.0]),
+                PathElement::LineTo([1.0, 0.0]),
+                PathElement::Close,
+            ],
+            fill: Some(PreparedFill::Pattern {
+                pattern,
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+        }
+    }
+
+    /// `PreparedPath::validate` must actually reach a pattern fill. The gradient
+    /// arm was once the only checked one, so a broken pattern would have been
+    /// accepted and then divided by its own extents at draw time.
+    #[test]
+    fn a_prepared_path_validates_its_pattern_fill() {
+        assert!(pattern_path_with(prepared_pattern()).validate().is_ok());
+        for broken in [
+            PreparedPattern {
+                scale: 0.0,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                scale: f32::NAN,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                origin: [f32::INFINITY, 0.0],
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                rotation_degrees: f32::NAN,
+                ..prepared_pattern()
+            },
+            PreparedPattern {
+                extent: [-1.0, 10.0],
+                ..prepared_pattern()
+            },
+        ] {
+            assert!(
+                pattern_path_with(broken.clone()).validate().is_err(),
+                "a prepared path must reject {broken:?}"
+            );
+        }
+    }
+
+    /// A rotation outside `-360..=360` is legal: the value is the sum of the
+    /// author's angle and, for a transform-free brush, the shape's, and rotation
+    /// is periodic, so a preview at 450° draws fine. Only non-finite values are
+    /// rejected. Pinning this stops someone re-adding a range check that would
+    /// break the browser preview at large shape angles.
+    #[test]
+    fn a_prepared_pattern_rotation_is_periodic_not_bounded() {
+        assert!(
+            pattern_path_with(PreparedPattern {
+                rotation_degrees: 450.0,
+                ..prepared_pattern()
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            pattern_path_with(PreparedPattern {
+                rotation_degrees: -720.0,
+                ..prepared_pattern()
+            })
+            .validate()
+            .is_ok()
+        );
+    }
+
+    /// A pattern's pixel buffer must match its declared dimensions, or the brush
+    /// would read past the upload.
+    #[test]
+    fn a_prepared_pattern_image_length_must_match_its_dimensions() {
+        let truncated = PreparedPattern {
+            image: Some(PreparedPatternImage {
+                width: 2,
+                height: 2,
+                pixels: Arc::from(&[0u8; 4][..]),
+            }),
+            ..prepared_pattern()
+        };
+        assert!(pattern_path_with(truncated).validate().is_err());
+    }
+
+    /// The identity is returned when there are no pixels, so the one `fill` call
+    /// site stays uniform. With pixels, the transform must actually scale: a
+    /// `None`-equivalent identity would make `scale` inert (the bug this whole
+    /// design exists to avoid).
+    #[test]
+    fn a_prepared_pattern_brush_transform_carries_its_scale() {
+        let without_image = PreparedPattern {
+            image: None,
+            ..prepared_pattern()
+        };
+        assert_eq!(without_image.brush_transform(), Affine::IDENTITY);
+
+        let with_image = prepared_pattern();
+        let transform = with_image.brush_transform();
+        let origin = transform * vello::kurbo::Point::new(0.0, 0.0);
+        assert!((origin.x - 1.0).abs() < 1e-9 && (origin.y - 2.0).abs() < 1e-9);
+        // One image pixel spans `scale` path-local units.
+        let next = transform * vello::kurbo::Point::new(1.0, 0.0);
+        let span = ((next.x - origin.x).powi(2) + (next.y - origin.y).powi(2)).sqrt();
+        assert!(
+            (span - 4.0).abs() < 1e-9,
+            "one pixel must span the scale, got {span}"
+        );
+    }
 
     fn bundle() -> PreparedFrameBundle {
         let resource =

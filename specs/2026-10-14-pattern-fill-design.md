@@ -35,6 +35,7 @@ wire 계약 테스트라는 재사용 가능한 골격을 만들었다. 1c는 **
 | P-D8 | 패턴의 **스케일·원점·회전은 `brush_transform`이 나른다** (`Stretch` 포함, `None`이 아니다) | `ImageBrush`의 행렬은 `transform_inverse(composed)`이고(`vello_shaders-0.10.0/shader/draw_leaf.wgsl:250`), 셰이더는 그 역행렬로 얻은 좌표를 **이미지 픽셀 단위**로 취급한다(`fine.wgsl:1326`, `extend_mode(..., max = image.extents)`). 따라서 `composed`는 **이미지 픽셀 → 페이지**를 보내는 사상이고, `brush_transform: None`이면 1 이미지 픽셀 = 1 경로 로컬 단위가 되어 **`scale`이 아무 효과를 갖지 못한다.** 브러시 변환을 주는 것은 안전하다 — 1b의 함정은 *경로* 아핀을 준 것이었고, 브러시 변환은 vello가 정확히 한 번 합성한다(`scene.rs:328-331`) |
 | P-D6 | 자산이 없거나 디코드에 실패하면 **`Solid`로 폴백하고 채우기는 성공한다** | 실패를 오류로 만들면 패턴 자산 하나가 깨졌을 때 페이지 전체가 열리지 않는다. 1b에서 그라디언트 스톱이 비정상일 때의 처리와 같은 원칙이다. 폴백 색은 `PatternSpec::fallback`에 저장한다 |
 | P-D7 | 패턴 회전은 **도(degree) 정수**로 저장한다 | 1b의 `ShapeLayer.angle_degrees`와 단위를 맞춘다. 부동소수를 저장하면 직렬화 왕복에서 값이 흔들린다 |
+| P-D9 | **`PreparedPattern.rotation_degrees`는 `f32`다** (저장되는 `PatternSpec`의 `i32`와 다르다) | `PreparedPattern`은 저장되지 않는 **일시적 커맨드 인자**다. 브라우저 미리보기는 경로 변환이 항등이므로 브러시가 **도형 각도 + 패턴 각도**를 함께 나눠야 하는데(`P = R(θ_frame) + 이동`이므로 `composed = T(P(origin))·R(θ_frame+θ_pattern)·S`), `θ_frame`이 `f32`라 합을 정수로 표현할 수 없다. 반올림하면 미리보기가 커밋된 도형에서 최대 0.5° 어긋난다 — 1b의 Critical과 이 서브프로젝트의 단일 권위 규칙이 막으려는 바로 그 실패다. **저장 스펙은 `i32`를 유지**한다(P-D7의 직렬화 안정성). `fill()`은 `spec.rotation_degrees as f32`로 정확히 변환하고, 미리보기는 합을 넘긴다. 회전은 주기적이므로 커맨드 인자의 회전은 **유한성만** 검증한다(±360 제한 없음) |
 
 ### P-D2가 이 서브프로젝트의 핵심 결정이다
 

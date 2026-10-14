@@ -370,9 +370,11 @@ fn fill(style: &ShapeStyle, frame: ShapeFrame, has_head: bool) -> Option<Prepare
                 scale: spec.scale * frame.width,
                 // The pattern's own rotation, carried for
                 // `PreparedPattern::brush_transform`. It is deliberately not the
-                // shape's `angle_degrees`: that one lives in the path transform,
-                // and folding it in here would rotate the pattern twice.
-                rotation_degrees: spec.rotation_degrees,
+                // shape's `angle_degrees`: this path's transform already rotates
+                // by that angle, and folding it in would rotate the pattern
+                // twice. The conversion is exact — `rotation_degrees` is an
+                // integer in the saved spec.
+                rotation_degrees: spec.rotation_degrees as f32,
                 // P-D6's stand-in colour. `append_to` applies it when the asset
                 // is missing, undecodable, or empty.
                 fallback: spec.fallback,
