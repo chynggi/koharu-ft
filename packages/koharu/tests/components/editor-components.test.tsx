@@ -32,6 +32,7 @@ import {
   queryClient,
   useCommand,
 } from '@/lib/queries'
+import { fillKind } from '@/lib/shapes'
 import { useKoharuStore } from '@/lib/store'
 import * as canvasRuntime from '@koharu/bridge/canvas'
 import {
@@ -901,6 +902,39 @@ describe('greenfield editor', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Fill' })).toBeDisabled()
+  })
+
+  it('offers a pattern as a new-shape preset and reports it as active', async () => {
+    // Without this the preset could only ever be solid or gradient, so
+    // `previewPattern` and the pattern branch of a fresh shape were
+    // unreachable: a user could choose a pattern only after drawing.
+    installProject()
+    const user = userEvent.setup()
+    render(
+      <TooltipProvider>
+        <ToolBar />
+      </TooltipProvider>,
+    )
+
+    // The shape presets only mount while the shape tool is active, and the
+    // fill-kind radios live inside the kind popover.
+    await user.click(screen.getByRole('button', { name: 'Shape' }))
+    await user.click(screen.getByRole('button', { name: 'Shape kind: Rectangle' }))
+    const pattern = await screen.findByRole('radio', { name: 'Pattern' })
+    expect(pattern).toHaveAttribute('aria-checked', 'false')
+    await user.click(pattern)
+
+    // The store preset is the pattern kind, and the radio reflects it. The
+    // elimination-style test this replaced reported a pattern as a *solid*,
+    // which is why the assertion is on all three radios.
+    expect(fillKind(useKoharuStore.getState().shapeStyle.fill)).toBe('pattern')
+    expect(screen.getByRole('radio', { name: 'Pattern' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Solid' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: 'Gradient' })).toHaveAttribute('aria-checked', 'false')
+    // A preset carries no image, so it must still have a drawable colour.
+    const spec = useKoharuStore.getState().shapeStyle.fill
+    if (!spec || !('pattern' in spec)) throw new Error('expected a pattern preset')
+    expect(spec.pattern.fallback).toEqual([255, 255, 255, 255])
   })
 
   it('edits a selected shape style and rasterizes it from the inspector', async () => {
