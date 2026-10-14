@@ -253,13 +253,21 @@ Expected: 컴파일 실패 (`ColorAdjust` 등 미정의)
 - `Hue { degrees }` — `huerotate_in_place(image, degrees)`
 - `Grayscale` — **직접 구현한다.** `image::imageops::grayscale`은 쓰지 않는다. 각 픽셀에 대해 `let luma = (0.2126*r + 0.7152*g + 0.0722*b)` (또는 이미 있는 가중치 관례가 있으면 그것)로 계산하고 `r=g=b=luma`, `a`는 그대로 둔다. 그레이 계수 선택 이유를 주석에 남긴다.
 
-**알파 0 스킵이 `brighten_in_place` 같은 크레이트 함수와 함께 동작하지 않는다는 점에 주의한다.** 그 함수들은 이미지 전체를 순회하므로, 알파 0 스킵을 지키려면 **스킵이 필요한 변형(즉 모든 변형)에 대해 순회를 직접 소유**해야 한다. 다음 구조를 쓴다:
+**가져다 쓰는 크레이트 함수 중 일부는 알파를 망가뜨린다.** `contrast_in_place`가 그렇다 — 내부가 `image.get_pixel(x, y).map(|b| ...)`이고(`image-0.25.10/src/imageops/colorops.rs:137`) `Pixel::map`은 **알파까지 포함한 모든 채널**에 클로저를 적용한다. 실측: 알파 200인 픽셀에 `percent = 50.0`을 주면 `((200/255 - 0.5) * 2.25 + 0.5) * 255 = 255`이 되어 반투명이 불투명이 된다. 반면 `brighten_in_place`는 `map_with_alpha(f, |a| a)`(`:200`)로, `huerotate_in_place`는 `channels4()`를 `(r,g,b,a)`로 받아 앞 셋만 쓴다(`:315-325`)로 안전하다.
+
+**그러므로 모든 변형에 대해 다음 구조를 쓴다** — "알파 0만 복원"으로는 부분 투명 픽셀이 불투명해지는 것을 막지 못한다:
 
 1. 원본을 복제해 `let before = image.clone()`
-2. ���레이트 함수를 `image`에 적용
-3. `before`와 비교해 `before`의 알파가 0인 픽셀만 `image`에서 되돌린다
+2. 크레이트 함수를 `image`에 적용
+3. 각 픽셀에 대해:
+   - `before`의 알파가 **0이면 픽셀 전체를 `before`로 되돌린다** (완전 투명 픽셀의 RGB 보존)
+   - 그 외에는 **`image`의 알파 채널만 `before`의 값으로 되돌린다** (부분 투명 보존)
 
-이렇게 하면 크레이트 함수를 그대로 쓰면서 불변식을 지킬 수 있다. 이 이유를 주석에 남긴다.
+이렇게 하면 크레이트 함수를 그대로 쓰면서 B-D8의 불변식을 지킬 수 있다. 이 이유와 `contrast_in_place`의 구체적 위험을 주석에 남긴다.
+
+**알파 불변식에는 자기 테스트가 필요하다.** 변형별 테스트가 그것을 대신하지 못한다 — 알파 255는 `contrast` 변환의 **고정점**이라 알파 255만 쓰는 테스트는 이 버그를 절대 보지 못한다. 알파 200 같은 부분 투명 픽셀에 **다섯 변형 모두**를 적용해 알파가 그대로인지 단언하는 테스트를 둔다.
+
+**import 경로에 주의한다.** `brighten_in_place`/`contrast_in_place`/`huerotate_in_place`는 `image::imageops`에 재수출되지 않는다(`image-0.25.10/src/imageops/mod.rs:24-27`은 in-place 아닌 형태만 재수출한다). `image::imageops::colorops` 하위 모듈의 경로를 쓴다.
 
 - [ ] **Step 5: 테스트가 통과하는지 확인한다**
 
