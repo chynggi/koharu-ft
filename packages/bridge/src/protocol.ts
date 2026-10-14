@@ -939,9 +939,31 @@ export type PageSummary = {
 	layer_count: number,
 };
 
+export type RampAxis = "horizontal" | "vertical";
+
+/**
+ * A two-colour ramp for the brush. Command arguments, so this is internally
+ * tagged (`kind`) like `ColorAdjust` rather than externally tagged like the
+ * persisted scene components.
+ */
+export type BrushRamp =
+	| {
+			kind: "along_stroke",
+			from: [number, number, number, number],
+			to: [number, number, number, number],
+	  }
+	| {
+			kind: "fixed_axis",
+			from: [number, number, number, number],
+			to: [number, number, number, number],
+			axis: RampAxis,
+	  };
+
 export type PaintBrush = {
 	diameter: number,
 	color: [number, number, number, number],
+	/** Absent (`null`) means a flat `color` stroke. */
+	ramp: BrushRamp | null,
 };
 
 export type PipelineConfig = {
