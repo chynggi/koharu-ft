@@ -83,21 +83,27 @@ LTR에서 `offsets[i]`는 "왼쪽 페이지들의 누적 폭"이고, RTL에서�
 | 테스트 | 페이지 폭 | 현재 단언 (LTR) | RTL 기대값 | 비고 |
 |---|---|---|---|---|
 | `merging_adjacent_pages_composes_a_wide_spread_and_keeps_layers` | `(2, 4)` | `region.points[0].x == 2.0` | 첫 페이지 `4.0`, 둘째 `0.0` | LTR/RTL이 서로 다른 값이라 회귀를 잡는다 |
-| `merging_pages_shifts_a_line_shape_with_its_polygon` | `(20, 30)` | `first.x == 20.0` | `first.x == 30.0` | 도형이 **둘째 페이지**(`right`)에 있다. 두 값 모두 0이 아니므로 유효한 회귀 |
-| `merging_pages_repads_a_rasterized_shape_asset` | `(20, 30)` | 폭이 `(50, 10)`인지만 단언 | `(50, 10)` 그대로 — **통과** | 도형이 `right`에 있으므로 재패딩 offset이 20 → 30으로 바뀌지만, 이 테스트는 **치수가 아니라 캔버스 크기**만 본다. RTL 회귀를 잡지 못하므로 픽셀 위치 단언을 추가한다 |
-| `merging_pages_keeps_a_shapes_pattern_asset` | `(20, 30)` | 부모·픽셀값만 단언 | **통과** | 패턴 자산은 엔티티에 붙어 함께 이동하고 재패딩 대상이 아니다(`rasterized: false`). 위치와 무관 |
+| `merging_pages_shifts_a_line_shape_with_its_polygon` | `(20, 30)` | `first.x == 20.0` | **`0.0` — 도형을 옮겨야 한다(아래)** | 도형이 `right`=**마지막 페이지**라 RTL offset이 0이다 |
+| `merging_pages_repads_a_rasterized_shape_asset` | `(20, 30)` | 폭이 `(50, 10)`인지만 단언 | `(50, 10)` 그대로 | 도형이 역시 `right`라 RTL offset 0 → 재패딩이 항등이다 |
+| `merging_pages_keeps_a_shapes_pattern_asset` | `(20, 30)` | 부모·픽셀값만 단언 | **통과** | 패턴 자산은 엔티티에 붙어 함께 이동하고 재패딩 대상이 아니다(`rasterized: false`) |
 
 계산한 offset(`total_width - offset - width`):
 
 ```
 spread (2,4):  total=6   LTR=[0,2]  RTL=[4,0]   → 어긋난다. 회귀를 잡는다
-line  (20,30): total=50  LTR=[0,20] RTL=[30,0]  → 어긋난다. 회귀를 잡는다
-repad (20,30): 도형이 right → 재패딩 offset 20 → 30, 그러나 치수만 단언하므로 통과
+line  (20,30): total=50  LTR=[0,20] RTL=[30,0]  → right(idx1)는 RTL에서 0이다
+repad (20,30): 도형이 right → RTL offset 0 → 재패딩이 항등. 치수만 단언하므로 통과하나
+               위치 회귀를 전혀 잡지 못한다
 ```
 
-포크도 자기 테스트를 `left`/`right` → `first`/`second`로 개명하고 `4.0`/`0.0`으로
-바꿨다. 우리는 기존 테스트를 **RTL 기대값으로 갱신**하고, RTL을 되돌리면 실패하는지
-확인해 회귀를 실제로 고정한다.
+**두 테스트가 조용히 무력해진다 — 이것이 RTL 전환의 진짜 함정이다.** 위 표의 `line`과 `repad`는 도형을 **`right`, 즉 마지막 페이지**에 둔다. RTL에서 마지막 페이지의 offset은 **0**이므로:
+
+- `line` 테스트: `if offset == 0.0 { continue; }`(`project.rs:722-724`) 때문에 **shift 경로를 한 번도 실행하지 않는다.** 이 테스트가 존재하는 이유(1c에서 `write_geometry`가 선의 파생 끝점을 함께 옮기지 않아 생긴 결함을 고정)가 사라진다.
+- `repad` 테스트: 재패딩이 항등이 되어, RTL을 검출할 픽셀 경계가 존재하지 않는다.
+
+**그래서 두 테스트의 도형을 `left`(인덱스 0)로 옮긴다.** 그러면 offset이 `LTR=0 → RTL=30`이 되어 양쪽 방향에서 shift 경로를 실행하고 검출 경계가 생긴다. 이동에 따라 `line`의 기대값은 `20.0 → 30.0`이 되고, `repad`의 베이크 치수 단언은 `(30, 10) → (20, 10)`이 된다.
+
+포크도 자기 테스트를 `left`/`right` → `first`/`second`로 개명하고 `4.0`/`0.0`으로 바꿨다. 우리는 기존 테스트를 **RTL 기대값으로 갱신**하고, RTL을 되돌리면 실패하는지 확인해 회귀를 실제로 고정한다.
 
 **주의 — 두 페이지 폭이 같은 경우.** `widths = [w, w]`이면 RTL offset도 `[w, 0]`이
 아니라 `[0, w]`이므로 여전히 구분된다(`offset = total - offset - w`에서 `total = 2w`).
