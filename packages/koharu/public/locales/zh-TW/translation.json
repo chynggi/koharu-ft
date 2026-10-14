@@ -193,6 +193,7 @@
       "levels": "色階",
       "low": "最低",
       "percent": "百分比",
+      "singleLayer": "請只選擇一個點陣圖層進行調整。",
       "title": "調整類型"
     },
     "alignBottom": "底端對齊",

@@ -362,12 +362,27 @@ function AdjustInspector() {
   const [contrast, setContrast] = useState(0)
   const [hue, setHue] = useState(0)
   const [levels, setLevels] = useState({ low: 0, high: 255 })
+  const [applying, setApplying] = useState(false)
+  // The fields describe one layer, so a new target starts from neutral values
+  // rather than carrying numbers that were never chosen for it.
+  const currentId = current?.id
+  useEffect(() => {
+    setBrightness(0)
+    setContrast(0)
+    setHue(0)
+    setLevels({ low: 0, high: 255 })
+  }, [currentId])
   if (!current || !page) return null
 
+  // The command takes a single layer and one apply is one commit (B-D5/B-D6), so
+  // a multi-layer selection cannot be served by one click. Applying to the first
+  // layer silently would be worse than saying which selection is supported.
+  const multipleSelected = selected.length > 1
   // The server rejects `low >= high`, so the apply control is unreachable while
   // the levels are inverted; the range inputs are also clamped to 0..=255.
   const levelsInvalid = kind === 'levels' && levels.low >= levels.high
   const disabled = revision === null
+  const busy = disabled || applying || multipleSelected || levelsInvalid
   const adjust: ColorAdjust =
     kind === 'brightness'
       ? { type: 'brightness', delta: brightness }
@@ -379,10 +394,12 @@ function AdjustInspector() {
             ? { type: 'hue', degrees: hue }
             : { type: 'grayscale' }
   const apply = () => {
-    if (disabled || levelsInvalid) return
+    if (busy) return
+    setApplying(true)
     void call(commands.adjustRaster, revision, current.id, adjust)
       .then(() => refresh(projectKey, pageKey))
       .catch(() => undefined)
+      .finally(() => setApplying(false))
   }
 
   return (
@@ -465,11 +482,14 @@ function AdjustInspector() {
             )}
           </>
         )}
+        {multipleSelected && (
+          <p className='text-[9px] text-muted-foreground'>{t('inspector.adjust.singleLayer')}</p>
+        )}
         <Button
           type='button'
           variant='outline'
           size='sm'
-          disabled={disabled || levelsInvalid}
+          disabled={busy}
           className='justify-start gap-1.5 text-[10px]'
           onClick={apply}
         >

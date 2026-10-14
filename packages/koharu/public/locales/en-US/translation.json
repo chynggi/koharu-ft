@@ -185,7 +185,7 @@
       "brightness": "Brightness",
       "contrast": "Contrast",
       "degrees": "Degrees",
-      "delta": "Delta",
+      "delta": "Amount",
       "grayscale": "Grayscale",
       "high": "High",
       "hue": "Hue",
@@ -193,6 +193,7 @@
       "levels": "Levels",
       "low": "Low",
       "percent": "Percent",
+      "singleLayer": "Select a single raster layer to adjust it.",
       "title": "Adjustment kind"
     },
     "alignBottom": "Align bottom",

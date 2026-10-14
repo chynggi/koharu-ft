@@ -193,6 +193,7 @@
       "levels": "色阶",
       "low": "最低",
       "percent": "百分比",
+      "singleLayer": "请只选择一个栅格图层进行调整。",
       "title": "调整类型"
     },
     "alignBottom": "底端对齐",

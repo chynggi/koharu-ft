@@ -971,7 +971,7 @@ describe('greenfield editor', () => {
     // explicit commit, not a live preview.
     expect(adjustRaster).not.toHaveBeenCalled()
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Delta' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
       target: { value: '40' },
     })
     expect(adjustRaster).not.toHaveBeenCalled()
@@ -1084,7 +1084,7 @@ describe('greenfield editor', () => {
     render(<Inspector />)
 
     // Brightness is -255..=255; a typed 9990 must not reach the command.
-    fireEvent.change(screen.getByRole('textbox', { name: 'Delta' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
       target: { value: '9990' },
     })
     await user.click(screen.getByRole('button', { name: 'Apply' }))
@@ -1123,6 +1123,99 @@ describe('greenfield editor', () => {
     await waitFor(() =>
       expect(adjustRaster).toHaveBeenCalledWith(1, 'raster', { type: 'grayscale' }),
     )
+  })
+
+  it('disables apply when more than one raster layer is selected', async () => {
+    // The command takes a single layer, and applying once per layer would need
+    // one undo per layer for one click. Disabling says that plainly instead of
+    // silently adjusting whichever layer happens to be first.
+    installProject()
+    const user = userEvent.setup()
+    const adjustRaster = vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster', 'raster-2'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    const apply = screen.getByRole('button', { name: 'Apply' })
+    expect(apply).toBeDisabled()
+    expect(screen.getByText('Select a single raster layer to adjust it.')).toBeInTheDocument()
+    await user.click(apply)
+    expect(adjustRaster).not.toHaveBeenCalled()
+  })
+
+  it('re-enables apply when the selection returns to a single raster layer', async () => {
+    installProject()
+    const user = userEvent.setup()
+    vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster', 'raster-2'], canvasRevision: 1 })
+    render(<Inspector />)
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+
+    act(() => useKoharuStore.setState({ selectedLayers: ['raster'] }))
+
+    expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+  })
+
+  it('ignores a second apply while the first is still in flight', async () => {
+    // Both clicks would carry the same expected revision, so the second would
+    // fail `ensure_revision` and surface an error the user cannot act on.
+    installProject()
+    const user = userEvent.setup()
+    let settle: ((value: { revision: number; layer: string }) => void) | undefined
+    const adjustRaster = vi
+      .spyOn(commands, 'adjustRaster')
+      .mockReturnValue(new Promise((resolve) => {
+        settle = resolve
+      }))
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(adjustRaster).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      settle?.({ revision: 2, layer: 'raster' })
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled())
+  })
+
+  it('resets the adjustment fields when the selected raster layer changes', async () => {
+    installProject()
+    vi.spyOn(commands, 'adjustRaster').mockResolvedValue({ revision: 2, layer: 'raster' })
+    const second: Layer = { ...rasterLayer, id: 'raster-2', name: 'Paint 2' }
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [...page.layers, rasterLayer, second],
+    }))
+    useKoharuStore.setState({ selectedLayers: ['raster'], canvasRevision: 1 })
+    render(<Inspector />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '77' } })
+    expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('77')
+    // Selecting another layer in the list blurs the field first, which is what
+    // settles typed text back to its canonical form; the reset has to hold for
+    // the text the field then displays.
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Amount' }))
+
+    act(() => useKoharuStore.setState({ selectedLayers: ['raster-2'] }))
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('0'))
   })
 
   it('names a shape layer from its stored name and kind in the layer list', async () => {

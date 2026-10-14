@@ -193,6 +193,7 @@
       "levels": "Seviyeler",
       "low": "Düşük",
       "percent": "Yüzde",
+      "singleLayer": "Ayarlamak için tek bir raster katman seçin.",
       "title": "Ayar türü"
     },
     "alignBottom": "Alta hizala",

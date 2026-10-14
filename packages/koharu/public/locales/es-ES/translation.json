@@ -193,6 +193,7 @@
       "levels": "Niveles",
       "low": "Mínimo",
       "percent": "Porcentaje",
+      "singleLayer": "Selecciona una sola capa ráster para ajustarla.",
       "title": "Tipo de ajuste"
     },
     "alignBottom": "Alinear abajo",

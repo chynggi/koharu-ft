@@ -193,6 +193,7 @@
       "levels": "レベル",
       "low": "最小",
       "percent": "割合",
+      "singleLayer": "調整するラスターレイヤーを1つだけ選択してください。",
       "title": "調整の種類"
     },
     "alignBottom": "下揃え",

@@ -193,6 +193,7 @@
       "levels": "Níveis",
       "low": "Mínimo",
       "percent": "Porcentagem",
+      "singleLayer": "Selecione uma única camada raster para ajustá-la.",
       "title": "Tipo de ajuste"
     },
     "alignBottom": "Alinhar embaixo",
