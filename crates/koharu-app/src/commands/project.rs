@@ -1563,6 +1563,7 @@ impl Project {
             bail!("page dimensions must be positive");
         }
         let mut targets = Vec::with_capacity(shapes.len());
+        let pattern_role = AssetRole::new("pattern")?;
         for shape in shapes {
             if snapshot.parent(shape)? != Some(page) {
                 bail!("a rasterized shape must be a layer on the active page");
@@ -1584,12 +1585,44 @@ impl Project {
             // `Polygon`/`Freeform` to the entity's points and every other kind
             // to the shape's parameters. Calling `shape_path` directly would
             // bake the two point-backed kinds as an empty path.
-            let path = koharu_renderer::shape_renderer::shape_layer_path(
+            let mut path = koharu_renderer::shape_renderer::shape_layer_path(
                 &layer.geometry,
                 &geometry.points,
                 &layer.style,
                 frame,
             );
+            // A pattern fill needs its pixels before it can draw. `PatternSpec`
+            // references no asset (P-D2), so this is the only place that can
+            // resolve the owning layer's `pattern` blob, and without it
+            // `append_to` would paint `fallback` — a baked pattern would become a
+            // flat colour. Decoding failures are deliberately not fatal here:
+            // `append_to` draws the fallback for a missing image (P-D6), and one
+            // broken pattern asset must not make rasterizing a page fail.
+            if let Some(asset) = snapshot.asset(shape, &pattern_role)? {
+                let bytes = snapshot.read_blob(asset.blob).await?;
+                match image::load_from_memory(&bytes) {
+                    Ok(decoded) => {
+                        let decoded = decoded.to_rgba8();
+                        let attached = koharu_renderer::shape_renderer::attach_pattern_image(
+                            &mut path,
+                            koharu_rasterizer::PreparedPatternImage {
+                                width: decoded.width(),
+                                height: decoded.height(),
+                                pixels: Arc::from(decoded.into_raw()),
+                            },
+                        );
+                        if !attached {
+                            tracing::warn!(
+                                ?shape,
+                                "a pattern asset was found but the fill is not a pattern"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(?shape, %error, "the pattern asset could not be decoded");
+                    }
+                }
+            }
             targets.push((shape, layer, path));
         }
         if targets.is_empty() {
@@ -2817,6 +2850,99 @@ mod tests {
             (50, 10),
             "a rasterized shape must be re-padded to the merged page width"
         );
+    }
+
+    /// Merging pages must carry a non-rasterized shape's `pattern` asset across,
+    /// so the merged page's pattern still draws.
+    ///
+    /// `merge_pages` moves every child of each source page onto the merged page
+    /// and shifts its polygon. Assets are stored per entity rather than per page,
+    /// so they should move with the entity — but 1a's Critical was exactly this
+    /// function losing a piece of shape state while moving the geometry, so the
+    /// asset is asserted rather than assumed.
+    #[tokio::test]
+    async fn merging_pages_keeps_a_shapes_pattern_asset() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let pattern_role = AssetRole::new("pattern").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 20.0, 10.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 30.0, 10.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 20u32, 10u32), (right, 30u32, 10u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (_, element) = project
+            .add_shape(
+                right,
+                SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                ShapeStyle {
+                    fill: Some(ShapeFill::Pattern(PatternSpec {
+                        repeat: PatternRepeat::Tile,
+                        origin: [0.0, 0.0],
+                        scale: 0.5,
+                        rotation_degrees: 0,
+                        fallback: [1, 2, 3, 255],
+                    })),
+                    stroke: None,
+                },
+                0.0,
+            )
+            .await
+            .unwrap();
+        let tile = {
+            let mut bytes = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, image::Rgba([9, 8, 7, 255])))
+                .write_to(&mut bytes, ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        project
+            .set_shape_pattern_asset(element, tile, "image/png".to_owned())
+            .await
+            .unwrap();
+
+        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        project.record_commit(&commit);
+        let snapshot = project.snapshot();
+
+        // The shape moved to the merged page...
+        assert_eq!(snapshot.parent(element).unwrap(), Some(merged));
+        // ...and its pattern asset came with it, with its pixels intact.
+        let asset = snapshot
+            .asset(element, &pattern_role)
+            .unwrap()
+            .expect("the merged page's shape must still own its pattern asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (2, 2));
+        assert_eq!(decoded.get_pixel(0, 0)[0], 9);
     }
 
     /// The pixel dimensions of an entity's `source` asset.
@@ -4634,6 +4760,81 @@ mod tests {
             panic!("expected a shape layer");
         };
         assert!(rasterized);
+    }
+
+    /// A rasterized shape with a pattern fill must bake **the pattern**, not its
+    /// fallback colour.
+    ///
+    /// `rasterize_shapes` builds the path with `shape_layer_path` and draws it
+    /// directly, and `shape_layer_path` has no way to reach the layer's `pattern`
+    /// asset — `PatternSpec` references no asset by design (P-D2), so only a
+    /// caller holding the snapshot can attach the pixels. Without that
+    /// attachment `append_to` sees `image: None` and paints `fallback`, so a
+    /// baked pattern would silently become a flat colour.
+    ///
+    /// The uploaded pattern is one red pixel, and the fallback is a distinct
+    /// blue, so the two outcomes cannot be confused.
+    #[tokio::test]
+    async fn a_rasterized_shape_bakes_its_pattern_not_its_fallback() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let page = setup
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let fallback = [0, 0, 255, 255];
+        let style = ShapeStyle {
+            fill: Some(ShapeFill::Pattern(PatternSpec {
+                repeat: PatternRepeat::Tile,
+                origin: [0.0, 0.0],
+                scale: 0.25,
+                rotation_degrees: 0,
+                fallback,
+            })),
+            stroke: None,
+        };
+        let (_, element) = project
+            .add_shape(
+                page,
+                SceneGeometry::rectangle(10.0, 10.0, 80.0, 80.0),
+                ShapeGeometry::Rectangle { corner_radius: 0.0 },
+                style,
+                0.0,
+            )
+            .await
+            .unwrap();
+        // One opaque red pixel: every tile is red, so a correct bake is red
+        // everywhere inside the shape and never the blue fallback.
+        let red = {
+            let mut bytes = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255]).unwrap())
+                .write_to(&mut bytes, ImageFormat::Png)
+                .unwrap();
+            bytes.into_inner()
+        };
+        project
+            .set_shape_pattern_asset(element, red, "image/png".to_owned())
+            .await
+            .unwrap();
+        project.rasterize_shapes(page, vec![element]).await.unwrap();
+
+        let snapshot = project.snapshot();
+        let asset = snapshot
+            .asset(element, &AssetRole::new("source").unwrap())
+            .unwrap()
+            .expect("a rasterized shape must own a source asset");
+        let bytes = snapshot.read_blob(asset.blob).await.unwrap();
+        let baked = image::load_from_memory(&bytes).unwrap().to_rgba8();
+
+        let center = baked.get_pixel(50, 50);
+        assert_eq!(center[3], 255, "the pattern must fill the shape");
+        assert!(
+            center[0] > 200 && center[2] < 60,
+            "the baked shape must show the uploaded red pattern, not the blue \
+             fallback; got {center:?}"
+        );
     }
 
     /// A `Polygon` has no drawing parameters of its own: its path comes from

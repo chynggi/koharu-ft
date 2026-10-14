@@ -714,9 +714,110 @@ mod tests {
         assert!(document.layers.iter().all(|layer| layer.id > 0));
     }
 
+    /// A pattern-filled shape must export the **pattern**, not its fallback.
+    ///
+    /// Shapes are rasterized into the PSD, so the pattern reaches the pixels
+    /// through the same `shape_renderer` path as everything else — but only if
+    /// the layer's `pattern` asset was resolved and attached before drawing.
+    /// `PatternSpec` references no asset (P-D2), so if the renderer's attachment
+    /// were dropped the export would show a flat fallback colour instead, with
+    /// every other PSD test still passing.
     #[tokio::test]
-    async fn a_rotated_shape_is_not_clipped_by_its_crop() {
-        // Task 4 made `Layer::bounds` the AABB of the rotated frame box, which
+    async fn a_pattern_filled_shape_exports_its_pattern() {
+        let (mut session, page) = scene_with_a_page(64, 64, [255, 255, 255, 255]).await;
+        let fallback = [0, 0, 255, 255];
+        let patch = session
+            .snapshot()
+            .patch(|edit| {
+                let entity = add_ellipse(
+                    edit,
+                    page,
+                    "Pattern 1",
+                    Geometry::rectangle(8.0, 8.0, 48.0, 48.0),
+                );
+                let mut layer = ShapeLayer {
+                    origin: Origin::User,
+                    name: "Pattern 1".to_owned(),
+                    geometry: ShapeGeometry::Ellipse,
+                    style: ShapeStyle {
+                        fill: Some(ShapeFill::Pattern(koharu_scene::PatternSpec {
+                            repeat: koharu_scene::PatternRepeat::Tile,
+                            origin: [0.0, 0.0],
+                            scale: 0.25,
+                            rotation_degrees: 0,
+                            fallback,
+                        })),
+                        stroke: None,
+                    },
+                    angle_degrees: Some(0.0),
+                    rasterized: false,
+                };
+                // The nearest possible image: one opaque red pixel, so every
+                // tile is red and any correct render is red inside the ellipse.
+                let mut encoded = std::io::Cursor::new(Vec::new());
+                RgbaImage::from_pixel(1, 1, Rgba([255, 0, 0, 255]))
+                    .write_to(&mut encoded, image::ImageFormat::Png)
+                    .expect("encode the pattern png");
+                edit.set_asset(
+                    entity,
+                    &AssetRole::new("pattern")?,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(1),
+                            height: Some(1),
+                            attributes: BTreeMap::new(),
+                        },
+                    ),
+                )?;
+                layer.rasterized = false;
+                edit.set(entity, &layer)?;
+                Ok(())
+            })
+            .expect("build the pattern patch");
+        let snapshot = session.commit(patch).await.unwrap().snapshot;
+
+        let frame = Renderer::default().render(&snapshot, page).await.unwrap();
+        let rasterizer = Arc::new(Rasterizer::new().expect("a WGPU adapter is required"));
+        let document = build(
+            &snapshot,
+            &frame,
+            rasterizer,
+            RasterOptions::default(),
+            &PsdExportOptions::default(),
+        )
+        .await
+        .expect("a pattern fill must not break export");
+
+        let shape_layer = document
+            .layers
+            .iter()
+            .find(|layer| layer.name.starts_with("Shape"))
+            .expect("the shape layer must be emitted");
+        // Red-dominant pixels prove the pattern drew; a blue fallback would be
+        // blue-dominant, and an empty crop would have no pixels at all.
+        let mut red = 0usize;
+        let mut blue = 0usize;
+        for pixel in shape_layer.pixels.pixels() {
+            if pixel[3] == 0 {
+                continue;
+            }
+            if pixel[0] > pixel[2] {
+                red += 1;
+            } else if pixel[2] > pixel[0] {
+                blue += 1;
+            }
+        }
+        assert!(red > 0, "the exported shape must contain pattern pixels");
+        assert!(
+            blue == 0,
+            "the fallback colour leaked into the export ({blue} blue pixels, {red} red)"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rotated_shape_is_not_clipped_by_its_crop() {        // Task 4 made `Layer::bounds` the AABB of the rotated frame box, which
         // is what `Frame::cropped` clips to. This pins that result for export: a
         // 45°-rotated 48x32 rect must crop at least as tall as its swept height
         // (48/√2 + 32/√2 ≈ 56.6), not the unrotated 32.
