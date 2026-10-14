@@ -78,7 +78,7 @@
   - `PatternRepeat::{Tile, Stretch}`
   - `PatternSpec::validate(&self) -> Result<()>`
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `shapes.rs`의 `mod tests`에 추가한다. 기존 그라디언트 검증 테스트(`validate_spec` 계열)의 스타일을 따른다.
 
@@ -169,12 +169,12 @@
     }
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `cargo test -j 6 -p koharu-scene --lib pattern`
 Expected: 컴파일 실패 (`PatternSpec` 미정의)
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `ShapeFill`의 **맨 뒤에** `Pattern(PatternSpec)`을 추가하고, 그 이유를 기존 `Gradient` 주석처럼 남긴다.
 
@@ -210,12 +210,12 @@ pub struct PatternSpec {
 
 `components.rs`와 `lib.rs`의 `pub use`에 `PatternSpec`, `PatternRepeat`를 추가한다. **1b에서 이 재수출을 빠뜨려 리뷰 지적이 났으므로 두 목록 모두 확인한다.**
 
-- [ ] **Step 4: 테스트가 통과하는지 확인한다**
+- [x] **Step 4: 테스트가 통과하는지 확인한다**
 
 Run: `cargo test -j 6 -p koharu-scene --lib`
 Expected: 기존 + 8 passed. **`ShapeFill`에 변형을 추가했으므로 이 크레이트를 쓰는 모든 곳이 컴파일 실패할 수 있다** — 그 목록을 보고에 남긴다(Task 2가 고친다).
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/koharu-scene/src/components/shapes.rs crates/koharu-scene/src/components.rs crates/koharu-scene/src/lib.rs
@@ -247,7 +247,7 @@ git commit -m "feat(scene): add the pattern fill model"
 자산을 아는 쪽(네이티브 렌더러·래스터화·WASM)이고, 셋 다 같은 함수를 쓴다.
 `FillPath`가 아니거나 패턴이 아니면 `false`를 돌려준다(호출자가 폴백을 판단하지 않도록).
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `shape_renderer.rs`의 `mod tests`에 추가한다. 1b의 그라디언트 스프레드 테스트와 같은 형태다.
 
@@ -340,12 +340,12 @@ git commit -m "feat(scene): add the pattern fill model"
     }
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `cargo test -j 6 -p koharu-renderer --lib pattern`, `cargo test -j 6 -p koharu-rasterizer --lib pattern`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `prepared.rs`: `PreparedFill`에 `Pattern` 변형을 추가한다. `PreparedPatternRepeat`은 `PreparedGradientExtend`와 같은 스타일(PascalCase unit variant, `#[serde(rename_all)]` 없음)을 따른다.
 
@@ -397,12 +397,12 @@ scene.fill(fill(rule), affine, &brush, Some(pattern.brush_transform()), &path);
 Solid로 그린다** — 그리는 지점이 하나이므로 커밋과 미리보기가 어긋날 수 없다. 이 선택의
 이유를 주석에 남긴다.
 
-- [ ] **Step 4: 테스트가 통과하는지 확인한다**
+- [x] **Step 4: 테스트가 통과하는지 확인한다**
 
 Run: `cargo test -j 6 -p koharu-rasterizer -p koharu-renderer --lib`
 Expected: 전부 통과
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/koharu-rasterizer/src/prepared.rs crates/koharu-rasterizer/src/frame.rs crates/koharu-renderer/src/shape_renderer.rs
@@ -427,7 +427,7 @@ git commit -m "feat(renderer): fill a shape with a pattern brush"
   - 라우트 `POST /canvas/shape/pattern`, `POST /canvas/shape/pattern/asset`
   - TS `commands.setShapePattern`, `commands.setShapePatternAsset`
 
-- [ ] **Step 1: `protocol.ts`를 갱신하고 커밋한다**
+- [x] **Step 1: `protocol.ts`를 갱신하고 커밋한다**
 
 ```ts
 export type PatternRepeat = "tile" | "stretch";
@@ -445,38 +445,38 @@ export type PatternSpec = {
 
 **`origin`과 `scale`은 `Stretch`에서 무시된다**는 사실을 주석에 남긴다.
 
-- [ ] **Step 2: 타입 검사**
+- [x] **Step 2: 타입 검사**
 
 Run: `bunx tsc --noEmit -p packages/koharu/tsconfig.json`
 Expected: exit 0
 
-- [ ] **Step 3: 커밋**
+- [x] **Step 3: 커밋**
 
 ```bash
 git add packages/bridge/src/protocol.ts
 git commit -m "feat(bridge): declare the pattern fill wire contract"
 ```
 
-- [ ] **Step 4: `Project` 메서드 2개를 구현한다**
+- [x] **Step 4: `Project` 메서드 2개를 구현한다**
 
 `set_shape_pattern`은 `set_shape_style` 계열을 본뜬다. `None`이면 `Solid`로 되돌린다.
 `set_shape_pattern_asset`은 **도형 레이어에만** 허용하고(P-D2), `AssetRole::new("pattern")`으로 자산을 쓴다. 래스터 레이어의 `pattern` 역할은 거부한다.
 
 테스트: `set_shape_pattern`이 `None`으로 `Solid`가 되는지, 자산 커맨드가 래스터를 거부하는지, **wire 계약 리터럴**(1b Task 4 방식)로 `{"pattern":{…}}`를 고정한다.
 
-- [ ] **Step 5: 커맨드 2개와 라우트 2개를 추가한다**
+- [x] **Step 5: 커맨드 2개와 라우트 2개를 추가한다**
 
 `canvas.rs`의 `set_shape_style`과 `adjust_raster`를 본뜬다. 순서는 기존과 같다: `ensure_revision` → 프로젝트 메서드 → `record_commit` → `synchronize` → `publish` → `LayerCommit`.
 
 **라우트 문자열이 `router()` 체인에 있는지 grep으로 확인한다** — 핸들러만 있고 라우팅되지 않는 것이 이 규칙이 막으려는 실패다.
 
-- [ ] **Step 6: 컴파일과 테스트**
+- [x] **Step 6: 컴파일과 테스트**
 
 Run: `cargo check -j 6 -p koharu-rpc -p koharu-app`
 Run: `cargo test -j 6 -p koharu-app --lib`
 Expected: 성공, 기존 통과
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add crates/koharu-app/src/commands/project.rs crates/koharu-app/src/commands/canvas.rs crates/koharu-rpc/src/routes/canvas.rs
@@ -495,11 +495,11 @@ git commit -m "feat(app): set a shape's pattern fill"
 **Interfaces:**
 - Produces: `CanvasPathFill`에 `Pattern` 변형; `shapePreviewPath`가 패턴을 조립
 
-- [ ] **Step 1: `CanvasPathFill`에 변형을 추가한다**
+- [x] **Step 1: `CanvasPathFill`에 변형을 추가한다**
 
 `canvas.ts`의 `CanvasPathFill`에 `Pattern`을 그라디언트와 나란히 넣는다. **B1에서 확인했듯 `web.rs`는 `wasm32`에서만 컴파일되므로 `cargo check -p koharu-canvas`는 그 파일을 검사하지 않는다** — 검증에 `--target wasm32-unknown-unknown`을 반드시 포함한다.
 
-- [ ] **Step 2: 프론트 조립과 변환을 구현한다**
+- [x] **Step 2: 프론트 조립과 변환을 구현한다**
 
 `lib/shapes.ts`에 `defaultPatternSpec`과, 그라디언트의 `previewGradient`에 대응하는 패턴 조립을 넣는다.
 
@@ -529,13 +529,13 @@ composed = P · T(origin_local) · R(θ_pattern) · S(pitch)
 스펙과 픽셀만 보낸다 — 회전·스케일 규칙이 두 곳에 생기면 미리보기와 커밋이 갈라진다.
 이것이 1b에서 배운 규칙이다.
 
-- [ ] **Step 3: 확인한다**
+- [x] **Step 3: 확인한다**
 
 Run: `cargo check -j 6 -p koharu-canvas --target wasm32-unknown-unknown`
 Run: `bun run --filter '@koharu/app' test -- tests/lib/shapes.test.ts`
 Expected: 성공
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add packages/bridge/src/canvas.ts packages/koharu/lib/shapes.ts packages/koharu/tests/lib/shapes.test.ts crates/koharu-canvas/src/web.rs
@@ -612,15 +612,15 @@ git commit -m "feat(ui): choose a pattern fill"
 
 이 태스크가 **Review Focus 4·5**를 닫는다. 둘 다 1a·1b에서 실제로 버그가 난 자리다.
 
-- [ ] **Step 1: PSD 내보내기가 패턴을 그리는지 확인하고 테스트한다**
+- [x] **Step 1: PSD 내보내기가 패턴을 그리는지 확인하고 테스트한다**
 
 도형은 PSD에서 래스터화된다. 래스터화가 `shape_renderer`를 지나므로 패턴도 자동으로 그려져야 하지만, **확인 없이 가정하지 않는다.** 패턴 채우기 도형이 있는 페이지를 내보내고 그 레이어에 `fallback`도 흰색도 아닌 패턴 픽셀이 있는지 단언한다.
 
-- [ ] **Step 2: `merge_pages`가 `pattern` 역할 자산을 옮기는지 확인하고 테스트한다**
+- [x] **Step 2: `merge_pages`가 `pattern` 역할 자산을 옮기는지 확인하고 테스트한다**
 
 1a의 Critical이 `merge_pages`였다. 두 페이지를 병합하고 **한쪽 도형의 패턴이 병합 후에도 살아 있는지** 단언한다.
 
-- [ ] **Step 3: 전체 회귀**
+- [x] **Step 3: 전체 회귀**
 
 Run: `cargo test -j 6 -p koharu-scene -p koharu-rasterizer -p koharu-renderer -p koharu-app -p koharu-psd -p koharu-rpc --lib`
 Run: `cargo check -j 6 --workspace`
@@ -629,7 +629,7 @@ Run: `bun run --filter '@koharu/app' test`
 
 **1b의 그라디언트 테스트가 그대로 통과하는지 확인한다** — `ShapeFill`에 변형을 추가했으므로 기존 arm이 깨질 수 있다. 특히 `appending_a_gradient_path_passes_no_brush_transform`(1b Critical의 회귀 가드)이 살아 있어야 한다.
 
-- [ ] **Step 4: 보고**
+- [x] **Step 4: 보고**
 
 테스트 결과와 `git diff --stat`를 남긴다.
 
