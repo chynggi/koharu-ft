@@ -397,6 +397,7 @@ async fn set_page_chapter_start(
 #[derive(Deserialize)]
 struct MergePagesRequest {
     pages: Vec<EntityId>,
+    delete_originals: bool,
 }
 
 /// 인접한 페이지들을 하나의 넓은 스프레드로 합치고 새 페이지 id를 돌려준다.
@@ -407,6 +408,7 @@ async fn merge_pages(
     Ok(Json(
         editing::merge_pages(
             request.pages,
+            request.delete_originals,
             app.state::<koharu_desktop::Desktop>(),
             app.state::<CurrentProject>(),
             app.state::<CanvasChannel>(),

@@ -149,6 +149,7 @@ pub async fn move_page(
 #[specta::specta]
 pub async fn merge_pages(
     pages: Vec<EntityId>,
+    delete_originals: bool,
     desktop: State<'_, Desktop>,
     project: State<'_, CurrentProject>,
     canvas_channel: State<'_, CanvasChannel>,
@@ -156,7 +157,7 @@ pub async fn merge_pages(
     let (commit, merged) = {
         let mut project = project.project.lock().await;
         let project = project.as_mut().context("no project is open")?;
-        let (commit, merged) = project.merge_pages(pages).await?;
+        let (commit, merged) = project.merge_pages(pages, delete_originals).await?;
         project.record_commit(&commit);
         project.select_page(merged)?;
         (commit, merged)

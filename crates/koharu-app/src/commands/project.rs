@@ -557,8 +557,14 @@ impl Project {
     /// page with the right-hand pages translated by the accumulated width of the
     /// pages to their left. Relations are document scoped, so moving the entities
     /// keeps `Presents`, `RecognizedFrom`, `FitsTo`, `FlowsIn`, and `Inside`
-    /// intact rather than rebuilding text content from scratch.
-    pub(crate) async fn merge_pages(&mut self, pages: Vec<EntityId>) -> Result<(Commit, EntityId)> {
+    /// intact rather than rebuilding text content from scratch. When
+    /// `delete_originals` is false the source pages stay in the project as
+    /// image-only pages, their layers having moved to the spread.
+    pub(crate) async fn merge_pages(
+        &mut self,
+        pages: Vec<EntityId>,
+        delete_originals: bool,
+    ) -> Result<(Commit, EntityId)> {
         let snapshot = self.snapshot();
         let order = snapshot.pages().map(|page| page.id()).collect::<Vec<_>>();
         let pages = Self::contiguous_run(&order, pages)?;
@@ -746,8 +752,10 @@ impl Project {
                 }
             }
 
-            for &page in &pages {
-                edit.remove_entity(page, RemovePolicy::Cascade)?;
+            if delete_originals {
+                for &page in &pages {
+                    edit.remove_entity(page, RemovePolicy::Cascade)?;
+                }
             }
             Ok(())
         })?;
@@ -2629,7 +2637,7 @@ mod tests {
         session.commit(setup.finish().unwrap()).await.unwrap();
         let mut project = Project::new(session, "test".to_owned());
 
-        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        let (commit, merged) = project.merge_pages(vec![left, right], true).await.unwrap();
         project.record_commit(&commit);
 
         let snapshot = project.snapshot();
@@ -2658,6 +2666,83 @@ mod tests {
         // Undo restores the two source pages.
         project.undo().await.unwrap();
         assert_eq!(Project::pages(&project.snapshot()).unwrap().len(), 2);
+    }
+
+    /// Port of nekoharu `8af42854`'s `merging_can_keep_the_original_pages`: with
+    /// `delete_originals = false` a merge leaves its sources behind as
+    /// image-only pages. Their layers move to the spread rather than being
+    /// copied, otherwise the text would render twice.
+    #[tokio::test]
+    async fn merging_can_keep_the_original_pages() {
+        let mut session = Session::memory().await.unwrap();
+        let source = AssetRole::new("source").unwrap();
+        let mut setup = session.snapshot().edit();
+        let left = setup
+            .add_page(PageDraft::new("left", 2.0, 3.0), At::End)
+            .unwrap();
+        let right = setup
+            .add_page(PageDraft::new("right", 4.0, 3.0), At::End)
+            .unwrap();
+        for (page, width, height) in [(left, 2u32, 3u32), (right, 4u32, 3u32)] {
+            let image = RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]));
+            let mut encoded = Cursor::new(Vec::new());
+            DynamicImage::ImageRgba8(image)
+                .write_to(&mut encoded, ImageFormat::Png)
+                .unwrap();
+            setup
+                .set_asset(
+                    page,
+                    &source,
+                    AssetInput::new(
+                        Arc::<[u8]>::from(encoded.into_inner()),
+                        "image/png",
+                        AssetMetadata {
+                            width: Some(width),
+                            height: Some(height),
+                            attributes: Default::default(),
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+
+        let layout = SceneTextLayout {
+            origin: Origin::User,
+            kind: TextLayoutKind::Point,
+            angle_degrees: None,
+        };
+        let left_content = setup.add_text_content(left, At::End).unwrap();
+        let left_layer = setup
+            .add_text_layer(left, At::End, left_content, &layout)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+
+        let (commit, merged) = project.merge_pages(vec![left, right], false).await.unwrap();
+        project.record_commit(&commit);
+
+        let snapshot = project.snapshot();
+        // The two sources survive next to the new spread.
+        assert_eq!(Project::pages(&snapshot).unwrap().len(), 3);
+        // The first page's text layer moved onto the merged page...
+        let group = snapshot.parent(left_layer).unwrap().unwrap();
+        assert_eq!(snapshot.parent(group).unwrap(), Some(merged));
+        // ...and the source page does not keep a second copy of it: the only
+        // text layer in the document is the original entity, re-parented under
+        // the spread. A merge that cloned layers instead of moving them would
+        // leave `left` owning a duplicate.
+        let mut layers = snapshot
+            .entities_with::<SceneTextLayout>()
+            .unwrap()
+            .map(|layer| layer.id());
+        assert_eq!(layers.next(), Some(left_layer));
+        assert_eq!(layers.next(), None);
+        assert!(
+            !snapshot
+                .children(left)
+                .unwrap()
+                .any(|child| child == left_layer)
+        );
     }
 
     /// A merge shifts every entity's polygon by the page offset. A `Line` draws
@@ -2734,7 +2819,7 @@ mod tests {
         session.commit(setup.finish().unwrap()).await.unwrap();
         let mut project = Project::new(session, "test".to_owned());
 
-        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        let (commit, merged) = project.merge_pages(vec![left, right], true).await.unwrap();
         project.record_commit(&commit);
 
         let snapshot = project.snapshot();
@@ -2848,7 +2933,7 @@ mod tests {
             "the bake is the source page's surface"
         );
 
-        let (commit, _) = project.merge_pages(vec![left, right]).await.unwrap();
+        let (commit, _) = project.merge_pages(vec![left, right], true).await.unwrap();
         project.record_commit(&commit);
 
         assert_eq!(
@@ -2934,7 +3019,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (commit, merged) = project.merge_pages(vec![left, right]).await.unwrap();
+        let (commit, merged) = project.merge_pages(vec![left, right], true).await.unwrap();
         project.record_commit(&commit);
         let snapshot = project.snapshot();
 

@@ -78,6 +78,7 @@ export function PageRail() {
   const selected = useKoharuStore((state) => state.selectedPages)
   const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
+  const mergeDeleteOriginals = useForkPreferences((state) => state.preferences.mergeDeleteOriginals)
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const { importPages, importing } = useImportPages()
   const anchor = useRef<number | null>(null)
@@ -265,7 +266,7 @@ export function PageRail() {
     // 합칠 순서가 나온다. 서버도 인접 여부를 다시 확인한다.
     const ordered = pages.filter((page) => selected.includes(page.id)).map((page) => page.id)
     if (ordered.length < 2) return
-    void call(commands.mergePages, ordered)
+    void call(commands.mergePages, ordered, mergeDeleteOriginals)
       .then((merged) => {
         selectPages([merged])
         selectLayers([])

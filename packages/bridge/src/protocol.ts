@@ -206,7 +206,9 @@ export const commands = {
 	deletePages: (pages: EntityId[]) => post<null>("/pages/delete", { pages }),
 	movePage: (page: EntityId, index: number) => post<null>("/page/move", { page, index }),
 	// 인접한 페이지들을 하나의 넓은 스프레드로 합치고 새 페이지 id를 돌려준다.
-	mergePages: (pages: EntityId[]) => post<EntityId>("/pages/merge", { pages }),
+	// `delete_originals`는 라우트 구조체가 snake_case 그대로 읽으므로 JSON 키도 snake_case다.
+	mergePages: (pages: EntityId[], deleteOriginals: boolean) =>
+		post<EntityId>("/pages/merge", { pages, delete_originals: deleteOriginals }),
 	setSourceText: (layer: EntityId, text: string) =>
 		post<null>("/layers/source-text", { layer, text }),
 	setTranslation: (layer: EntityId, text: string | null) =>
