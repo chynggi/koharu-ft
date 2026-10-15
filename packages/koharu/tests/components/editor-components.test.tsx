@@ -570,6 +570,38 @@ describe('greenfield editor', () => {
     useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
   })
 
+  it('merges selected adjacent pages in document order with the fork deletion preference', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const merge = vi.spyOn(commands, 'mergePages').mockResolvedValue('merged')
+    const pages: PageSummary[] = ['Page 1', 'Page 2'].map((label, index) => ({
+      id: `page-${index + 1}`,
+      label,
+      size: { width: 1000, height: 1500 },
+      source_asset: null,
+      chapter_start: false,
+      layer_count: 0,
+    }))
+    queryClient.setQueryData(pagesKey, pages)
+    vi.spyOn(commands, 'getPages').mockResolvedValue(pages)
+    useKoharuStore.setState({ selectedPages: ['page-1', 'page-2'] })
+    render(<PageRail />)
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Page 1' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Merge into spread' }))
+    // N-D3: this fork keeps deleting the originals unless the preference says
+    // otherwise, so a clean store must pass `true` on the third argument.
+    await waitFor(() => expect(merge).toHaveBeenCalledWith(['page-1', 'page-2'], true))
+
+    useForkPreferences.getState().setPreference('mergeDeleteOriginals', false)
+    useKoharuStore.setState({ selectedPages: ['page-1', 'page-2'] })
+    await user.click(screen.getByRole('button', { name: 'Actions for Page 2' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Merge into spread' }))
+    await waitFor(() => expect(merge).toHaveBeenLastCalledWith(['page-1', 'page-2'], false))
+    // The preference store outlives the test, and other tests render the rail.
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
+  })
+
   it('loads page thumbnails into the filmstrip', async () => {
     installProject()
     const thumbnail = vi

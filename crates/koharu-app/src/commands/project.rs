@@ -707,9 +707,11 @@ impl Project {
             let mut roots = Vec::new();
             for (&page, &offset) in pages.iter().zip(&offsets) {
                 for child in snapshot.children(page)? {
-                    if Some(child) == target_group {
-                        continue;
-                    }
+                    // The adopted group is already re-parented above, but its
+                    // children still belong to this page and must take this
+                    // page's offset like every other layer; falling through to
+                    // the group branch below re-parents them under the group
+                    // itself without moving the group a second time.
                     if snapshot.component::<SceneTextGroup>(child)?.is_some() {
                         let group = target_group
                             .expect("a merged text group exists when text layers are present");
@@ -2634,12 +2636,18 @@ mod tests {
             angle_degrees: None,
         };
         let left_content = setup.add_text_content(left, At::End).unwrap();
-        setup
+        let left_layer = setup
             .add_text_layer(left, At::End, left_content, &layout)
+            .unwrap();
+        setup
+            .set(left_layer, &SceneGeometry::rectangle(0.0, 0.0, 2.0, 2.0))
             .unwrap();
         let right_content = setup.add_text_content(right, At::End).unwrap();
         let right_layer = setup
             .add_text_layer(right, At::End, right_content, &layout)
+            .unwrap();
+        setup
+            .set(right_layer, &SceneGeometry::rectangle(0.0, 0.0, 2.0, 2.0))
             .unwrap();
         let left_region = setup
             .add_analysis_region::<koharu_scene::PanelRegion>(
@@ -2692,6 +2700,18 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(region.points[0].x, 0.0);
+        // The adopted text group's layers take the same offsets as every other
+        // child: the first page's layer shifts by 4, the second stays put.
+        let left_layer_geometry = snapshot
+            .component::<SceneGeometry>(left_layer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(left_layer_geometry.points[0].x, 4.0);
+        let right_layer_geometry = snapshot
+            .component::<SceneGeometry>(right_layer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(right_layer_geometry.points[0].x, 0.0);
 
         // Undo restores the two source pages.
         project.undo().await.unwrap();

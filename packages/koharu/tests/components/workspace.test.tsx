@@ -311,7 +311,13 @@ describe('canvas interaction adapter', () => {
     })
     renderWorkspace()
 
-    fireEvent.keyDown(window, { key: 'd', ctrlKey: true })
+    const event = new KeyboardEvent('keydown', {
+      key: 'd',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    window.dispatchEvent(event)
 
     await waitFor(() => expect(paste).toHaveBeenCalledWith([textLayer.id], 'page'))
     await waitFor(() =>
@@ -319,6 +325,34 @@ describe('canvas interaction adapter', () => {
     )
     // Duplicating must not clobber the clipboard.
     expect(useKoharuStore.getState().copiedTextLayers).toEqual([])
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('leaves Ctrl+D to the browser when no text layer is selected', () => {
+    installProject()
+    queryClient.setQueryData(pageKey, {
+      id: 'page',
+      label: 'Page',
+      size: { width: 1000, height: 1000 },
+      layers: [layer],
+      regions: [],
+    })
+    // An image layer is selected: duplication would find no text layer and do
+    // nothing, so the shortcut must not be swallowed.
+    useKoharuStore.setState({ selectedLayers: [layer.id] })
+    const paste = vi.spyOn(commands, 'pasteTextLayers')
+    renderWorkspace()
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'd',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(paste).not.toHaveBeenCalled()
   })
 
   it('announces WebGPU startup failures and offers recovery', () => {

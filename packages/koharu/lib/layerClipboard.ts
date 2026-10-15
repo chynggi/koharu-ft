@@ -20,6 +20,12 @@ export function copySelectedTextLayers(page: Page | undefined): boolean {
   return true
 }
 
+/** Whether a duplicate would find anything to act on. Duplication is async, so
+/// shortcut guards need this synchronous view of the same selection. */
+export function hasSelectedTextLayers(page: Page | undefined): boolean {
+  return selectedTextLayerIds(page).length > 0
+}
+
 export async function pasteCopiedTextLayers(page: Page | undefined): Promise<void> {
   const copied = useKoharuStore.getState().copiedTextLayers
   if (!page || !copied.length) return

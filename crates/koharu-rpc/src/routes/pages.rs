@@ -603,7 +603,7 @@ async fn move_page(
 
 #[cfg(test)]
 mod tests {
-    use super::archive_directory;
+    use super::{MergePagesRequest, archive_directory};
 
     #[test]
     fn a_nested_export_keeps_its_subfolders_in_the_archive() {
@@ -638,5 +638,19 @@ mod tests {
     fn an_empty_export_is_still_an_error() {
         let root = tempfile::tempdir().unwrap();
         assert!(archive_directory(root.path()).is_err());
+    }
+
+    /// The TypeScript client sends `delete_originals` verbatim, so the request
+    /// must accept snake_case and reject camelCase; serde would otherwise ignore
+    /// the field and silently fall back to a default.
+    #[test]
+    fn merge_request_reads_delete_originals_in_snake_case() {
+        let request: MergePagesRequest =
+            serde_json::from_str(r#"{"pages":[],"delete_originals":false}"#).unwrap();
+        assert!(!request.delete_originals);
+        assert!(
+            serde_json::from_str::<MergePagesRequest>(r#"{"pages":[],"deleteOriginals":false}"#)
+                .is_err()
+        );
     }
 }

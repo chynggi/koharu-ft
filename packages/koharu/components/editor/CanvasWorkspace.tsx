@@ -25,6 +25,7 @@ import {
 import {
   copySelectedTextLayers,
   duplicateSelectedTextLayers,
+  hasSelectedTextLayers,
   pasteCopiedTextLayers,
 } from '@/lib/layerClipboard'
 import {
@@ -412,9 +413,11 @@ export function CanvasWorkspace() {
         return
       }
       if (command && event.key.toLowerCase() === 'd') {
-        if (useKoharuStore.getState().selectedLayers.length > 0 && page) {
+        // Duplication only ever touches text layers, so a shape or raster
+        // selection must leave the browser's bookmark shortcut alone.
+        if (hasSelectedTextLayers(page ?? undefined)) {
           event.preventDefault()
-          void duplicateSelectedTextLayers(page).catch(() => undefined)
+          void duplicateSelectedTextLayers(page ?? undefined).catch(() => undefined)
         }
         return
       }
