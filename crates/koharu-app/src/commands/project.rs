@@ -551,11 +551,14 @@ impl Project {
         self.commit(patch).await
     }
 
-    /// Combines an adjacent run of pages into one wide spread page. Source and
-    /// cleanup pixels are laid out left to right, while every child layer, text
-    /// group, translation, and analysis region is re-parented under the merged
-    /// page with the right-hand pages translated by the accumulated width of the
-    /// pages to their left. Relations are document scoped, so moving the entities
+    /// Combines an adjacent run of pages into one wide spread page. NeKoharu
+    /// diverges from upstream here: manga reads right to left, so the run's
+    /// first page lands on the right half of the spread and every later page is
+    /// placed to its left. Source and cleanup pixels follow those offsets while
+    /// every child layer, text group, translation, and analysis region is
+    /// re-parented under the merged page with the offset pages translated by the
+    /// accumulated width of the pages to their right. Relations are document
+    /// scoped, so moving the entities
     /// keeps `Presents`, `RecognizedFrom`, `FitsTo`, `FlowsIn`, and `Inside`
     /// intact rather than rebuilding text content from scratch. When
     /// `delete_originals` is false the source pages stay in the project as
@@ -573,6 +576,7 @@ impl Project {
         // Read every page-sized image before building the patch, because blob
         // reads are asynchronous while the scene edit itself is synchronous.
         let mut offsets = Vec::with_capacity(pages.len());
+        let mut widths = Vec::with_capacity(pages.len());
         let mut source_images = Vec::with_capacity(pages.len());
         let mut total_width = 0u32;
         let mut total_height = 0u32;
@@ -580,6 +584,7 @@ impl Project {
             let value = snapshot.page(page)?.page()?;
             let width = value.width.round().max(1.0) as u32;
             let height = value.height.round().max(1.0) as u32;
+            widths.push(width);
             offsets.push(total_width);
             total_width = total_width
                 .checked_add(width)
@@ -590,6 +595,16 @@ impl Project {
                 .with_context(|| format!("page {page} has no source image to merge"))?;
             source_images.push(snapshot.read_blob(asset.blob).await?);
         }
+        // Deliberate divergence from upstream, which composes left to right:
+        // manga reads right to left, so each page sits at the far right of the
+        // pages that follow it — the total width minus the end of its original
+        // left-to-right slot. Everything below reads this one vector, so the
+        // composed pixels and the entity offsets cannot disagree.
+        offsets = offsets
+            .into_iter()
+            .zip(&widths)
+            .map(|(offset, &width)| total_width - offset - width)
+            .collect();
         if total_width > MAX_MERGE_DIMENSION || total_height > MAX_MERGE_DIMENSION {
             bail!("the merged page is larger than Koharu supports");
         }
@@ -2626,6 +2641,14 @@ mod tests {
         let right_layer = setup
             .add_text_layer(right, At::End, right_content, &layout)
             .unwrap();
+        let left_region = setup
+            .add_analysis_region::<koharu_scene::PanelRegion>(
+                left,
+                At::End,
+                &SceneGeometry::rectangle(0.0, 0.0, 2.0, 2.0),
+                None,
+            )
+            .unwrap();
         let region = setup
             .add_analysis_region::<koharu_scene::PanelRegion>(
                 right,
@@ -2656,12 +2679,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(snapshot.parent(right_layer).unwrap(), Some(group.id()));
-        // The right page's region is translated by the left page's width.
+        // NeKoharu spreads read right to left: the first page lands on the
+        // right half, so its region is translated by the second page's width
+        // while the second page's region stays at the origin.
+        let left_region = snapshot
+            .component::<SceneGeometry>(left_region)
+            .unwrap()
+            .unwrap();
+        assert_eq!(left_region.points[0].x, 4.0);
         let region = snapshot
             .component::<SceneGeometry>(region)
             .unwrap()
             .unwrap();
-        assert_eq!(region.points[0].x, 2.0);
+        assert_eq!(region.points[0].x, 0.0);
 
         // Undo restores the two source pages.
         project.undo().await.unwrap();
@@ -2782,7 +2812,10 @@ mod tests {
                 )
                 .unwrap();
         }
-        let entity = setup.add_entity(right, At::End).unwrap();
+        // The shape lives on the first page: in a right-to-left spread the
+        // first page is the one that moves, so this is the case that exercises
+        // the polygon shift at all.
+        let entity = setup.add_entity(left, At::End).unwrap();
         setup
             .set(
                 entity,
@@ -2834,7 +2867,10 @@ mod tests {
             .unwrap();
         let first = *geometry.points.first().unwrap();
         let last = *geometry.points.last().unwrap();
-        assert_eq!(first.x, 20.0, "the right page's polygon must shift left");
+        assert_eq!(
+            first.x, 30.0,
+            "the first page's polygon shifts right in a right-to-left spread"
+        );
 
         let ShapeGeometry::Line { start, end, .. } = snapshot
             .component::<SceneShapeLayer>(entity)
@@ -2909,10 +2945,11 @@ mod tests {
         let mut project = Project::new(session, "test".to_owned());
 
         // A rasterized shape owns a page-sized `source` asset, exactly like a
-        // cleanup or paint raster layer.
+        // cleanup or paint raster layer. It lives on the first page so its
+        // re-padding actually moves pixels in a right-to-left spread.
         let (_, element) = project
             .add_shape(
-                right,
+                left,
                 SceneGeometry::rectangle(0.0, 0.0, 10.0, 10.0),
                 ShapeGeometry::Rectangle { corner_radius: 0.0 },
                 ShapeStyle {
@@ -2923,13 +2960,10 @@ mod tests {
             )
             .await
             .unwrap();
-        project
-            .rasterize_shapes(right, vec![element])
-            .await
-            .unwrap();
+        project.rasterize_shapes(left, vec![element]).await.unwrap();
         assert_eq!(
             asset_dimensions(&project.snapshot(), element).await,
-            (30, 10),
+            (20, 10),
             "the bake is the source page's surface"
         );
 
@@ -2940,6 +2974,24 @@ mod tests {
             asset_dimensions(&project.snapshot(), element).await,
             (50, 10),
             "a rasterized shape must be re-padded to the merged page width"
+        );
+
+        // The shape covers x = 0..10 on the first page and is re-padded onto
+        // the spread's full width. Both boundaries are asserted because one
+        // alone cannot tell the two directions apart: left to right would put
+        // the red pixels at 0..10 and leave 30..40 empty, the mirror image of
+        // what right to left produces. The red channel decides, since a
+        // re-padded layer is composited on an otherwise transparent canvas.
+        let decoded = decode_source_asset(&project.snapshot(), element).await;
+        assert_eq!(
+            decoded.get_pixel(5, 5)[0],
+            0,
+            "right to left leaves the spread's left half empty for the first page"
+        );
+        assert_eq!(
+            decoded.get_pixel(35, 5)[0],
+            255,
+            "the first page's shape lands at the spread's right edge"
         );
     }
 
@@ -3038,15 +3090,17 @@ mod tests {
 
     /// The pixel dimensions of an entity's `source` asset.
     async fn asset_dimensions(snapshot: &Snapshot, entity: EntityId) -> (u32, u32) {
+        decode_source_asset(snapshot, entity).await.dimensions()
+    }
+
+    /// Decodes an entity's `source` asset to RGBA pixels.
+    async fn decode_source_asset(snapshot: &Snapshot, entity: EntityId) -> RgbaImage {
         let asset = snapshot
             .asset(entity, &AssetRole::new("source").unwrap())
             .unwrap()
             .expect("the entity must own a source asset");
         let bytes = snapshot.read_blob(asset.blob).await.unwrap();
-        image::load_from_memory(&bytes)
-            .unwrap()
-            .to_rgba8()
-            .dimensions()
+        image::load_from_memory(&bytes).unwrap().to_rgba8()
     }
 
     #[test]
