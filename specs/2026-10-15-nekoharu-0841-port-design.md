@@ -247,7 +247,7 @@ flattened leaf 키 집합이 `en-US`와 동일**할 것을 요구하므로, 하�
 | 즐겨찾기 (editor-components) | 별 클릭 → 헤더 아래 상단 고정 → localStorage 영속 → 해제 시 헤더 사라짐. `getByRole('option')` 순서로 고정을 확인 |
 | 페이지 번호 (editor-components) | 레이블과 순서가 다를 때 `[data-page-number]`가 1,2를 표시. **번호가 축소판 div 안에 없음**을 단언(N-D8) |
 | 페이지 번호 숨김 (editor-components) | 설정이 꺼지면 `[data-page-number]`가 없고 레이어 수 텍스트는 남음 |
-| 병합 설정 (editor-components) | 기본 `false`가 아니라 N-D3의 `true`로 호출되고, 토글 후 `true`로 호출됨 |
+| 병합 설정 (editor-components) | 기본값이 포크의 `false`가 아니라 N-D3의 `true`로 호출되고, 토글 후 `false`로 호출됨 |
 | 설정 탭 (editor-components) | 탭 클릭 → 제목 → 두 스위치 토글 → localStorage 값 |
 | 로케일 (localization, 기존) | 9개 로케일 키 집합 동일 |
 
