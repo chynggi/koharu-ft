@@ -432,12 +432,15 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Files:**
 - 없음 (측정)
 
-- [ ] **Step 1: 디버그 바이너리를 빌드한다**
+- [x] **Step 1: 디버그 바이너리를 빌드한다**
 
-Run: `cargo build --bin run`
+Run: `cargo build -p koharu-pipeline --bin run`
 Expected: 성공. 게이트 스크립트가 `target/debug/run`을 실행한다.
+결과: 성공. `--bin run`만 쓰면 `no bin target named 'run' in default-run packages`로
+실패하므로 `-p koharu-pipeline`을 붙여야 한다. 빌드 후 바이너리 mtime이 소스보다
+최신인지 확인했다.
 
-- [ ] **Step 2: 게이트 스크립트를 복사해 출력 경로를 바꾼다**
+- [x] **Step 2: 게이트 스크립트를 복사해 출력 경로를 바꾼다**
 
 기존 `g4-two` 결과를 보존하기 위해 새 디렉터리에 쓴다. 스크립트는 스크래치패드에 있다.
 
@@ -449,55 +452,79 @@ grep -n "OUT=" "$G/../gate_tools/g4_two.sh"
 ```
 Expected: 복사본의 `OUT`이 `out/g4-two-after`를 가리키고, 다른 설정(입력 2장, `--inpainting flux3-klein`, `--llm gemma4-12b-it`)은 `g4-two`와 같다.
 
-- [ ] **Step 3: 게이트를 실행한다**
+- [x] **Step 3: 게이트를 실행한다**
 
 Run: `bash "C:/Users/chyng/AppData/Local/Temp/claude/M--koharu-ft/1f1a87d2-bfa9-4469-8e35-d9020b125795/scratchpad/gate_tools/g4_two_after.sh"`
 Expected: `exit=0`, `wall=` 값이 출력된다. 약 30분 걸린다.
 
-- [ ] **Step 4: 피크를 뽑는다**
+결과: `exit=0`, `wall=832s`. 기준선 `g4-two`는 1751s였다.
 
-Run:
-```bash
-python -I - <<'PY'
-import re
-from pathlib import Path
-run = Path(r"C:/Users/chyng/AppData/Local/Temp/claude/M--koharu-ft/1f1a87d2-bfa9-4469-8e35-d9020b125795/scratchpad/gate/out/g4-two-after")
-vram = [int(x) for x in (run / "vram.log").read_text(errors="replace").split() if x.strip().isdigit()]
-lines = [f"peak = {max(vram)} MiB of 12288 MiB"]
-bucket = 20
-for start in range(0, len(vram) // 2, bucket):
-    win = vram[start * 2:(start + bucket) * 2]
-    lines.append(f"t={start:5d}s min={min(win):6d} max={max(win):6d}")
-print("\n".join(lines))
-PY
-```
-Expected: `peak`가 **7500 MiB 이하**다. 변경 전 2페이지 피크는 12,069 MiB였다. 12GB 대비 여유가 300MiB에서 4.5GB 이상으로 벌어져야 한다.
+- [x] **Step 4: 피크를 뽑는다**
 
-- [ ] **Step 5: 회귀 신호를 확인한다**
+Expected: `peak`가 **7500 MiB 이하**다.
 
-Run:
-```bash
-O="C:/Users/chyng/AppData/Local/Temp/claude/M--koharu-ft/1f1a87d2-bfa9-4469-8e35-d9020b125795/scratchpad/gate/out/g4-two-after"
-grep -c "retrying stage after memory pressure" "$O/stderr.log" || echo "0 (expected)"
-grep -c "CUDA0 model buffer size" "$O/stderr.log"
-ls "$O/rendered"
-```
+결과: **`peak = 10,776 MiB`** (기준선 12,069 MiB). 예측이 틀렸다. 원인은 아래
+Step 5에 적었다.
+
+단계별 최대(이벤트 타임스탬프로 구간을 잘라 계산):
+
+| 구간 | 피크 | 평균 |
+|---|---|---|
+| 1페이지 detection | 1,551 MiB | 1,091 MiB |
+| 1페이지 ocr | 3,398 MiB | 2,698 MiB |
+| 1페이지 인페인팅 phase 1 (PUP) | 8,010 MiB | 5,541 MiB |
+| 1페이지 인페인팅 phase 2 (타일 11개) | 1,784 MiB | 1,670 MiB |
+| 1페이지 번역 | **10,478 MiB** | 7,613 MiB |
+| 2페이지 detection+ocr | 10,478 MiB | 3,345 MiB |
+| 2페이지 인페인팅 (캡션+타일 22개) | 8,119 MiB | 5,770 MiB |
+| 2페이지 번역 | **10,776 MiB** | 7,514 MiB |
+| 전체 | **10,776 MiB** | 5,635 MiB |
+
+p50은 11,819 MiB에서 **5,482 MiB**로 내려갔다.
+
+- [x] **Step 5: 회귀 신호를 확인한다**
+
 Expected:
-- `retrying stage after memory pressure`가 0건이다. 1건 이상이면 퇴거가 부족해 OOM 재시도가 일어난 것이다.
-- `CUDA0 model buffer size` 라인을 모델별로 세어 기록한다. 변경 전 기준선은 `g4-two`가 4줄(OCR 688.14 ×1, PUP 4812.25 ×2, gemma 6390.19 ×1)이었다. 퇴거가 적용되면 **6줄 이상**이다 — OCR과 gemma도 페이지 사이에 내려가서 페이지마다 다시 올라온다. FLUX 3는 sd.cpp 경로라 이 라인에 나타나지 않는다.
+- `retrying stage after memory pressure`가 0건이다.
+- `CUDA0 model buffer size`가 6줄 이상이다.
 - `rendered/`에 `page1.png`, `page2.png`가 있다.
 
-- [ ] **Step 6: 수치를 파일로 남긴다**
+결과:
+- `retrying stage after memory pressure` **0건**. OOM 재시도는 없었다.
+- `model_unload` **7건**. stage 전환 7회와 정확히 일치한다.
+- `CUDA0 model buffer size` **6줄**: 688.14(OCR), 4,812.25(PUP), 6,390.19(gemma)가
+  각각 2회. 페이지마다 재로드되었으므로 퇴거가 실제로 일어났다. 기준선은 4줄이었다.
+- `rendered/page1.png`, `rendered/page2.png` 둘 다 있다.
 
-게이트 결과를 다음 Task가 읽는다.
+**피크 10,776의 정체.** 스파이크는 번역 구간에만 있다. 퇴거 후 gemma 단독 상주
+상태의 실측 footprint가 예상보다 크다:
 
-```bash
-O="C:/Users/chyng/AppData/Local/Temp/claude/M--koharu-ft/1f1a87d2-bfa9-4469-8e35-d9020b125795/scratchpad/gate/out/g4-two-after"
-grep "finished in" "$O/stderr.log" | sed 's/\x1b\[[0-9;]*m//g' | tail -6
-cat "$O/exit.txt"
-```
+| 항목 | MiB |
+|---|---|
+| `CUDA0 model buffer` (gemma) | 6,390 |
+| `CUDA0 KV buffer` (non-SWA 44 + SWA 880) | 924 |
+| `CUDA0 compute buffer` | 1,168 |
+| CLIP vision + compute | ≈ 72 |
+| 합계 (CUDA 컨텍스트 오버헤드 제외) | ≈ 8,554 |
 
-출력에서 인페인팅 `finished in`과 `pipeline finished in` 값을 읽어 Task 8의 표에 쓸 준비를 한다.
+계획의 "약 7.1–7.5 GB (gemma 6,390 + 오버헤드)"는 KV·compute 버퍼를 빠뜨린
+추정이었다. 다른 stage가 전부 퇴거된 상태이므로 10,776은 이 정책에서 나올 수 있는
+값에 가깝다. 12,069 → 10,776 감소 자체가 겹침 제거의 증거다.
+
+**주의: 스크립트 추출기 버그.** `vram.log`의 첫 100줄(0–99)이 누락되어
+`vram.log` 기반 피크는 10,794로 나온다(`stderr.log`·타임스탬프 교차검증 결과 실제
+피크는 10,776). Task 8에는 타임스탬프 기준값을 쓴다.
+
+- [x] **Step 6: 수치를 파일로 남긴다**
+
+결과: `exit.txt` = `exit=0`, `wall=832s`. `pipeline finished in 801.22s`.
+
+페이지당 단계 시간(타임스탬프 교차검증):
+
+| 페이지 | 인페인팅 | 번역 |
+|---|---|---|
+| 1페이지 | 265.20s (타일 11개) | — |
+| 2페이지 | 504.73s (타일 22개) | 503.58s |
 
 ---
 
