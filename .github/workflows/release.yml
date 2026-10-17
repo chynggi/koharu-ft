@@ -75,6 +75,7 @@ jobs:
         run: bun install
 
       - name: Setup Sentry CLI
+        if: github.repository == 'koharu-rs/koharu'
         uses: matbour/setup-sentry-cli@v3
         with:
           token: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -120,10 +121,11 @@ jobs:
           prerelease: false
           args: >-
             ${{ matrix.args }}
-            --config '{"build":{"beforeBundleCommand":"bash .github/sentry.sh"}}'
+            ${{ github.repository == 'koharu-rs/koharu' && '--config ''{"build":{"beforeBundleCommand":"bash .github/sentry.sh"}}''' || '' }}
 
   winget:
     needs: release
+    if: github.repository == 'koharu-rs/koharu'
     runs-on: ubuntu-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@main
