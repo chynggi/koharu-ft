@@ -622,6 +622,28 @@ export type Flux2KleinSourceConfig = {
 	vae?: ComponentSourceConfig,
 };
 
+export type Flux3KleinConfig = {
+	/**  The instruction the prompt upsampler expands into one caption per tile. */
+	request?: string,
+	/**  Which checkpoints the image model and the upsampler are loaded from. */
+	source?: Flux3KleinSourceConfig,
+	steps?: number,
+	strength?: number,
+	/**  `-1` draws a fresh seed for every call. */
+	seed?: number,
+	padding_mask_crop?: number | null,
+	/**  The working area every tile is shrunk to before denoising. */
+	max_pixels?: number,
+};
+
+export type Flux3KleinSourceConfig = {
+	transformer?: ComponentSourceConfig,
+	text_encoder?: ComponentSourceConfig,
+	vae?: ComponentSourceConfig,
+	upsampler?: ComponentSourceConfig,
+	upsampler_mmproj?: ComponentSourceConfig,
+};
+
 export type FontFace = {
 	postscript_name: string,
 	weight: number,
@@ -707,7 +729,7 @@ export type InpaintingModel = {
 	model: "lama",
 } & LaMaConfig | { model: "mi-gan" } & MiGanConfig | { model: "manga-inpaintor" } & MangaInpaintorConfig | { model: "aot-inpainting" } | {
 	model: "flux2-klein",
-} & Flux2KleinConfig | { model: "powerpaint" } & PowerPaintConfig | {
+} & Flux2KleinConfig | { model: "flux3-klein" } & Flux3KleinConfig | { model: "powerpaint" } & PowerPaintConfig | {
 	model: "rorem-mixed",
 } & RoremMixedConfig;
 
@@ -1040,6 +1062,7 @@ export type ProcessorConfig = {
 	"mi-gan"?: MiGanConfig | null,
 	"manga-inpaintor"?: MangaInpaintorConfig | null,
 	"flux2-klein"?: Flux2KleinConfig | null,
+	"flux3-klein"?: Flux3KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
 	powerpaint?: PowerPaintConfig | null,
 };
