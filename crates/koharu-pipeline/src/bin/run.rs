@@ -267,8 +267,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// The gate reads `koharu_metrics` events (`model_unload`) out of this binary's
-/// stderr, so it needs the same subscriber shape the desktop app installs.
+/// The residency gate reads the accelerator's eviction logs out of this
+/// binary's stderr; they are `debug` events, so run it with
+/// `RUST_LOG=koharu_pipeline=debug`.
 fn init_tracing() {
     use tracing_subscriber::{Layer as _, layer::SubscriberExt as _};
     tracing::subscriber::set_global_default(

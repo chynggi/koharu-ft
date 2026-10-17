@@ -88,12 +88,6 @@ impl ExportOptions {
 ///
 /// 선택창을 띄우기 **전에** 다른 작업이 도는지 확인한다. 거절할 것이면
 /// 사용자를 폴더 선택으로 붙잡아두기 전에 거절해야 한다.
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "export",
-    skip_all,
-    fields(origin = "user", export_formats = ?options.formats),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn export_pages(
@@ -253,11 +247,6 @@ pub async fn export_pages_to(
                 }
                 let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 progress(done, total, page_id);
-                tracing::info!(
-                    target: "koharu_metrics",
-                    metric = "page_exported",
-                    format = ?format,
-                );
                 Ok(())
             }
         })
@@ -283,12 +272,6 @@ pub async fn export_pages_to(
         .await?;
     }
 
-    tracing::info!(
-        target: "koharu_metrics",
-        metric = "export",
-        export_formats = ?options.formats,
-        page_count,
-    );
     Ok(())
 }
 
@@ -379,11 +362,6 @@ async fn write_cbz(
         archive.start_file(format!("{stem}.png"), options)?;
         archive.write_all(&bytes)?;
         report(*page_id);
-        tracing::info!(
-            target: "koharu_metrics",
-            metric = "page_exported",
-            format = ?ExportFormat::Cbz,
-        );
     }
     archive.finish()?;
     Ok(())

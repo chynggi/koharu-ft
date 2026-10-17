@@ -31,12 +31,6 @@ pub struct TypographyUpdate {
     pub typography: Typography,
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "page_renamed",
-    skip_all,
-    fields(origin = "user", character_count = label.chars().count(), empty = label.is_empty()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn rename_page(
@@ -58,12 +52,6 @@ pub async fn rename_page(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "page_chapter_start_changed",
-    skip_all,
-    fields(origin = "user", chapter_start)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_page_chapter_start(
@@ -85,12 +73,6 @@ pub async fn set_page_chapter_start(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "pages_deleted",
-    skip_all,
-    fields(origin = "user", entity_count = pages.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_pages(
@@ -112,12 +94,6 @@ pub async fn delete_pages(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "page_moved",
-    skip_all,
-    fields(origin = "user", page_number = index + 1),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn move_page(
@@ -139,12 +115,6 @@ pub async fn move_page(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "pages_merged",
-    skip_all,
-    fields(origin = "user", entity_count = pages.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn merge_pages(
@@ -167,12 +137,6 @@ pub async fn merge_pages(
     Ok(merged)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "source_text_edited",
-    skip_all,
-    fields(origin = "user", character_count = text.chars().count(), empty = text.is_empty()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_source_text(
@@ -194,16 +158,6 @@ pub async fn set_source_text(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "translation_edited",
-    skip_all,
-    fields(
-        origin = "user",
-        character_count = text.as_ref().map_or(0, |text| text.chars().count()),
-        empty = text.as_ref().is_none_or(String::is_empty),
-    ),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_translation(
@@ -225,12 +179,6 @@ pub async fn set_translation(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "typography_edited",
-    skip_all,
-    fields(origin = "user", entity_count = updates.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_typography(
@@ -251,12 +199,6 @@ pub async fn set_typography(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "geometry_edited",
-    skip_all,
-    fields(origin = "user", entity_count = updates.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_geometry(
@@ -277,12 +219,6 @@ pub async fn set_geometry(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "visibility_edited",
-    skip_all,
-    fields(origin = "user", entity_count = layers.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_visibility(
@@ -305,12 +241,6 @@ pub async fn set_visibility(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "layers_deleted",
-    skip_all,
-    fields(origin = "user", entity_count = layers.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_layers(
@@ -331,12 +261,6 @@ pub async fn delete_layers(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "layer_moved",
-    skip_all,
-    fields(origin = "user", entity_count = 1_u64)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn move_layer(
@@ -363,12 +287,6 @@ pub async fn move_layer(
     Ok(view)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "text_layers_pasted",
-    skip_all,
-    fields(origin = "user", entity_count = layers.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn paste_text_layers(
@@ -390,12 +308,6 @@ pub async fn paste_text_layers(
     Ok(added)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "undo",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn undo(
@@ -415,12 +327,6 @@ pub async fn undo(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "redo",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn redo(

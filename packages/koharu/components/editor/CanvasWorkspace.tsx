@@ -38,12 +38,7 @@ import {
   usePage,
   usePages,
 } from '@/lib/queries'
-import {
-  shapeGeometry,
-  shapePolygon,
-  shapePreviewPath,
-  type ShapeKind,
-} from '@/lib/shapes'
+import { shapeGeometry, shapePolygon, shapePreviewPath, type ShapeKind } from '@/lib/shapes'
 import {
   isBrushTool,
   maxBrushDiameter,
@@ -160,7 +155,6 @@ export function CanvasWorkspace() {
 
   const page = usePage().data
   const pages = usePages().data
-  const camera = useKoharuStore((state) => state.camera)
   const canvasPage = useKoharuStore((state) => state.canvasPage)
   const canvasRevision = useKoharuStore((state) => state.canvasRevision)
   const canvasGeneration = useKoharuStore((state) => state.canvasGeneration)
@@ -346,9 +340,22 @@ export function CanvasWorkspace() {
     }
   }, [report])
 
+  // The camera reaches the canvas from the store, not from a render: a passive effect lands a
+  // frame late under continuous input and halves the presented rate.
   useEffect(() => {
-    canvas?.setView(camera.zoom, camera.translation)
-  }, [canvas, camera])
+    if (!canvas) return
+    const apply = ({ zoom, translation }: CanvasView) => {
+      try {
+        canvas.setView(zoom, translation)
+      } catch (error) {
+        receiveError(errorMessage(error))
+      }
+    }
+    apply(useKoharuStore.getState().camera)
+    return useKoharuStore.subscribe((state, previous) => {
+      if (state.camera !== previous.camera) apply(state.camera)
+    })
+  }, [canvas])
 
   useEffect(() => {
     if (
@@ -536,6 +543,7 @@ export function CanvasWorkspace() {
     }
 
     if (current.kind === 'pan') {
+      const { zoom } = useKoharuStore.getState().camera
       const bounds = surface.current!.getBoundingClientRect()
       const dpr = window.devicePixelRatio
       let translation: [number, number] = [
@@ -544,14 +552,14 @@ export function CanvasWorkspace() {
       ]
       translation = clampCameraTranslation(
         translation,
-        camera.zoom,
+        zoom,
         pageWidth ?? page.size.width,
         pageHeight ?? page.size.height,
         bounds.width * dpr,
         bounds.height * dpr,
         dpr,
       )
-      useKoharuStore.setState({ camera: { zoom: camera.zoom, translation, fitted: false } })
+      useKoharuStore.setState({ camera: { zoom, translation, fitted: false } })
       return
     }
 
@@ -628,8 +636,8 @@ export function CanvasWorkspace() {
     } else if (current.kind === 'move') {
       finishTransform()
     } else if (current.kind === 'text') {
-      const pointText =
-        current.frame.width < 4 / camera.zoom && current.frame.height < 4 / camera.zoom
+      const { zoom } = useKoharuStore.getState().camera
+      const pointText = current.frame.width < 4 / zoom && current.frame.height < 4 / zoom
       setDraft(null)
       void (
         pointText
@@ -649,7 +657,8 @@ export function CanvasWorkspace() {
       // a horizontal line and a vertical line each leave one axis at the
       // `draftFrame` floor, and requiring both axes would silently discard the
       // two most natural line gestures.
-      if (Math.hypot(frame.width, frame.height) < SHAPE_MINIMUM_DRAG / camera.zoom) {
+      const { zoom } = useKoharuStore.getState().camera
+      if (Math.hypot(frame.width, frame.height) < SHAPE_MINIMUM_DRAG / zoom) {
         shapeUpdates.clear()
         canvas?.cancelShape()
         return
@@ -688,7 +697,8 @@ export function CanvasWorkspace() {
     } else if (current.kind === 'manual_box') {
       const frame = current.frame
       setDraft(null)
-      if (frame.width < 4 / camera.zoom || frame.height < 4 / camera.zoom) return
+      const { zoom } = useKoharuStore.getState().camera
+      if (frame.width < 4 / zoom || frame.height < 4 / zoom) return
       void call(commands.manualOcr, [
         { x: frame.x, y: frame.y },
         { x: frame.x + frame.width, y: frame.y + frame.height },
@@ -702,7 +712,8 @@ export function CanvasWorkspace() {
       const points = current.points
       setLasso(null)
       const bbox = points.length >= 3 ? boundsOf(points) : null
-      if (!bbox || bbox.width < 4 / camera.zoom || bbox.height < 4 / camera.zoom) return
+      const { zoom } = useKoharuStore.getState().camera
+      if (!bbox || bbox.width < 4 / zoom || bbox.height < 4 / zoom) return
       void call(commands.manualOcr, points)
         .then((result) => {
           selectLayers([result.layer])
@@ -720,33 +731,33 @@ export function CanvasWorkspace() {
       const operation =
         current.kind === 'paint'
           ? enqueue(() =>
-            call(commands.commitPaint, current.revision, current.layer, current.points, {
-              diameter: current.diameter,
-              color: current.color!,
-              // The commit must carry the same ramp the preview drew with.
-              // Omitting it would ramp the screen and land flat in the document.
-              ramp: current.ramp ?? null,
-            }),
-          ).then((result) => {
-            selectLayers([result.layer])
-            return refresh(projectKey, pagesKey, pageKey)
-          })
-          : current.kind === 'erase'
-            ? enqueue(() =>
-              call(
-                commands.commitErase,
-                current.revision,
-                current.layer!,
-                current.points,
-                current.diameter,
-              ),
+              call(commands.commitPaint, current.revision, current.layer, current.points, {
+                diameter: current.diameter,
+                color: current.color!,
+                // The commit must carry the same ramp the preview drew with.
+                // Omitting it would ramp the screen and land flat in the document.
+                ramp: current.ramp ?? null,
+              }),
             ).then((result) => {
               selectLayers([result.layer])
               return refresh(projectKey, pagesKey, pageKey)
             })
+          : current.kind === 'erase'
+            ? enqueue(() =>
+                call(
+                  commands.commitErase,
+                  current.revision,
+                  current.layer!,
+                  current.points,
+                  current.diameter,
+                ),
+              ).then((result) => {
+                selectLayers([result.layer])
+                return refresh(projectKey, pagesKey, pageKey)
+              })
             : enqueue(() =>
-              call(commands.commitInpaint, current.revision, current.points, current.diameter),
-            )
+                call(commands.commitInpaint, current.revision, current.points, current.diameter),
+              )
       commitPending.current = true
       void operation
         .catch(() => canvas?.cancelStroke())
@@ -792,7 +803,7 @@ export function CanvasWorkspace() {
                 kind: 'pan',
                 pointer: event.pointerId,
                 start: physical,
-                translation: camera.translation,
+                translation: useKoharuStore.getState().camera.translation,
               }
             } else if (tool === 'select') {
               const target = hitTestLayers(page.layers, point, layerFrames)
@@ -833,7 +844,12 @@ export function CanvasWorkspace() {
               setDraft(frame)
             } else if (tool === 'manual_ocr_box') {
               const frame = draftFrame(point, point)
-              gesture.current = { kind: 'manual_box', pointer: event.pointerId, start: point, frame }
+              gesture.current = {
+                kind: 'manual_box',
+                pointer: event.pointerId,
+                start: point,
+                frame,
+              }
               setDraft(frame)
             } else if (tool === 'shape') {
               const frame = draftFrame(point, point)
@@ -1031,20 +1047,24 @@ export function CanvasWorkspace() {
             useKoharuStore.setState({ camera: { zoom, translation, fitted: false } })
           }}
         >
-          {selectionRect && (
-            <div
-              data-testid='selection-rectangle'
-              className='pointer-events-none absolute z-10 border border-[var(--canvas-selection)] bg-[var(--canvas-selection)]/10'
-              style={{
-                left:
-                  (selectionRect.x * camera.zoom + camera.translation[0]) / window.devicePixelRatio,
-                top:
-                  (selectionRect.y * camera.zoom + camera.translation[1]) / window.devicePixelRatio,
-                width: (selectionRect.width * camera.zoom) / window.devicePixelRatio,
-                height: (selectionRect.height * camera.zoom) / window.devicePixelRatio,
-              }}
-            />
-          )}
+          {selectionRect &&
+            (() => {
+              // Every drag step sets `selectionRect` and re-renders, so reading the camera here
+              // keeps the rectangle current without subscribing the workspace to camera changes.
+              const { zoom, translation } = useKoharuStore.getState().camera
+              return (
+                <div
+                  data-testid='selection-rectangle'
+                  className='pointer-events-none absolute z-10 border border-[var(--canvas-selection)] bg-[var(--canvas-selection)]/10'
+                  style={{
+                    left: (selectionRect.x * zoom + translation[0]) / window.devicePixelRatio,
+                    top: (selectionRect.y * zoom + translation[1]) / window.devicePixelRatio,
+                    width: (selectionRect.width * zoom) / window.devicePixelRatio,
+                    height: (selectionRect.height * zoom) / window.devicePixelRatio,
+                  }}
+                />
+              )
+            })()}
           <canvas
             ref={setCanvasElement}
             data-testid='webgpu-canvas'
@@ -1054,7 +1074,6 @@ export function CanvasWorkspace() {
           {page && canvasState.status === 'ready' && (
             <CanvasOverlay
               page={page}
-              camera={camera}
               selected={selected}
               hovered={hovered}
               frames={layerFrames}
@@ -1225,7 +1244,7 @@ class FrameCommand<Value> {
   constructor(
     private readonly execute: (value: Value) => void | Promise<unknown>,
     private readonly merge: (current: Value, next: Value) => Value = (_current, next) => next,
-  ) { }
+  ) {}
 
   schedule(value: Value): void {
     this.pending = this.pending === undefined ? value : this.merge(this.pending, value)

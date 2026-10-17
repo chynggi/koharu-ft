@@ -165,12 +165,6 @@ pub async fn get_canvas_page_resource(
     ))
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "point_text_added",
-    skip_all,
-    fields(origin = "user", point_count = 1_u64)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn add_point_text(
@@ -197,12 +191,6 @@ pub async fn add_point_text(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "text_box_added",
-    skip_all,
-    fields(origin = "user", entity_count = 1_u64)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn add_text_box(
@@ -240,12 +228,6 @@ pub struct ManualOcrCommit {
 /// Manual OCR: the user marks an area that detection missed and the OCR stage
 /// runs on it. The area becomes an ordinary text region first, so the run is a
 /// normal pipeline job — scoped to that region so only it is re-recognized.
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "manual_ocr_requested",
-    skip_all,
-    fields(origin = "user", point_count = points.len())
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn manual_ocr(
@@ -287,12 +269,6 @@ pub async fn manual_ocr(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "paint_committed",
-    skip_all,
-    fields(origin = "user", point_count = points.len(), size = f64::from(brush.diameter)),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn commit_paint(
@@ -319,12 +295,6 @@ pub async fn commit_paint(
     .await
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "erase_committed",
-    skip_all,
-    fields(origin = "user", point_count = points.len(), size = f64::from(diameter)),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn commit_erase(
@@ -353,12 +323,6 @@ pub async fn commit_erase(
     .await
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "raster_adjusted",
-    skip_all,
-    fields(origin = "user", adjustment = ?adjust)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn adjust_raster(
@@ -385,12 +349,6 @@ pub async fn adjust_raster(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "raster_filled",
-    skip_all,
-    fields(origin = "user", layer = ?layer)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn fill_raster(
@@ -466,12 +424,6 @@ async fn commit_raster_stroke(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "transform_committed",
-    skip_all,
-    fields(origin = "user", entity_count = elements.len()),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn commit_transform(
@@ -507,12 +459,6 @@ pub struct ShapeStyleUpdate {
 // Nine parameters because the IPC body is flat: the shape payload plus the
 // three injected `State`s. The HTTP route destructures the same fields.
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_added",
-    skip_all,
-    fields(origin = "user", entity_count = 1_u64)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn add_shape(
@@ -546,12 +492,6 @@ pub async fn add_shape(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_style_edited",
-    skip_all,
-    fields(origin = "user", entity_count = updates.len())
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_shape_style(
@@ -578,12 +518,6 @@ pub async fn set_shape_style(
     Ok(commit.revision)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_pattern_edited",
-    skip_all,
-    fields(origin = "user", layer = ?layer)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_shape_pattern(
@@ -610,12 +544,6 @@ pub async fn set_shape_pattern(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_pattern_asset_written",
-    skip_all,
-    fields(origin = "user", layer = ?layer, bytes = bytes.len(), media_type = %media_type)
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn set_shape_pattern_asset(
@@ -645,12 +573,6 @@ pub async fn set_shape_pattern_asset(
     })
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "shape_rasterized",
-    skip_all,
-    fields(origin = "user", entity_count = shapes.len())
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn rasterize_shapes(
@@ -674,12 +596,6 @@ pub async fn rasterize_shapes(
     Ok(commit.revision)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "inpaint_requested",
-    skip_all,
-    fields(origin = "user", point_count = points.len(), size = f64::from(diameter)),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn commit_inpaint(

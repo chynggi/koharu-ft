@@ -300,12 +300,6 @@ pub async fn list_projects(
     Ok(library.list()?)
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "project_created",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn create_project(
@@ -318,12 +312,6 @@ pub async fn create_project(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "project_opened",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn open_project(
@@ -336,12 +324,6 @@ pub async fn open_project(
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "project_closed",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn close_project(handle: AppHandle<CefRuntime>) -> std::result::Result<(), Error> {
@@ -349,12 +331,6 @@ pub async fn close_project(handle: AppHandle<CefRuntime>) -> std::result::Result
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "project_deleted",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_project(
@@ -400,12 +376,6 @@ async fn close_current_project(handle: &AppHandle<CefRuntime>) -> Result<()> {
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "import",
-    skip_all,
-    fields(origin = "user", method = ?source),
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn import_pages(
@@ -446,7 +416,6 @@ pub async fn import_pages(
     let pages = tokio::task::spawn_blocking(move || import::import(files))
         .await
         .context("page import worker stopped unexpectedly")??;
-    let page_count = pages.len();
 
     let (commit, page) = {
         let mut project = project.project.lock().await;
@@ -487,22 +456,9 @@ pub async fn import_pages(
     desktop.synchronize(&commit.snapshot, page, &commit).await?;
     let canvas = desktop.canvas_state();
     canvas_channel.publish(canvas);
-    tracing::info!(
-        target: "koharu_metrics",
-        metric = "import",
-        import_source = ?source,
-        page_count,
-    );
-    tracing::info!(target: "koharu_metrics", metric = "page_imported", page_count);
     Ok(())
 }
 
-#[tracing::instrument(
-    target = "koharu_metrics",
-    name = "page_selected",
-    skip_all,
-    fields(origin = "user")
-)]
 #[tauri::command]
 #[specta::specta]
 pub async fn select_page(

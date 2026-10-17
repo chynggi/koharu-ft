@@ -7,7 +7,7 @@ use clap::Parser as _;
 use koharu::panic;
 use koharu::sentry;
 use koharu_app as app;
-use tracing_subscriber::{Layer as _, filter::filter_fn, layer::SubscriberExt as _};
+use tracing_subscriber::layer::SubscriberExt as _;
 
 #[derive(clap::Parser)]
 #[command(version, about)]
@@ -75,7 +75,6 @@ async fn main() {
         .parse()
         .expect("the generated frontend URL is always valid");
 
-    let filter = filter_fn(|metadata| metadata.target() != "koharu_metrics");
     tracing::subscriber::set_global_default(
         tracing_subscriber::registry()
             .with(
@@ -83,9 +82,8 @@ async fn main() {
                     .with_default_directive(tracing::Level::INFO.into())
                     .from_env_lossy(),
             )
-            .with(sentry::tracing_layer().with_filter(filter.clone()))
-            .with(koharu_metrics::layer())
-            .with(koharu::tracing::TimingLayer::new().with_filter(filter)),
+            .with(sentry::tracing_layer())
+            .with(koharu::tracing::TimingLayer::new()),
     )
     .expect("failed to set the global tracing subscriber");
     tokio::task::block_in_place(|| app::run(tauri::generate_context!(), frontend_url))

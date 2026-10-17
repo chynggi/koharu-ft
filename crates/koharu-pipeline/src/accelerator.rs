@@ -90,11 +90,10 @@ fn eviction_targets(requested: Stage) -> impl Iterator<Item = Stage> {
 
 /// Drops every other stage's model so that only `requested` may hold one. The
 /// caller cannot tell whether anything was evicted, and does not need to: each
-/// drop reports itself as a `model_unload` metric.
+/// drop logs itself.
 fn unload_other_models(requested: Stage, stages: &Stages) {
     for stage in eviction_targets(requested) {
         if stages.unload(stage) {
-            tracing::info!(target: "koharu_metrics", metric = "model_unload", stage = %stage);
             tracing::debug!(%stage, "unloaded a model to free the accelerator");
         }
     }
