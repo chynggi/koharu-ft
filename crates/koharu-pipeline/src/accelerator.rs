@@ -59,14 +59,48 @@ impl AcceleratorPermit {
     }
 }
 
+/// Stages whose models must be dropped so that only `requested` may hold one.
+/// The order follows `Stage::ALL`, which keeps eviction order predictable in
+/// logs. The requesting stage is never a target: keeping it resident lets the
+/// next page of the same stage reuse its cell without reloading.
+fn eviction_targets(requested: Stage) -> impl Iterator<Item = Stage> {
+    Stage::ALL.into_iter().filter(move |stage| *stage != requested)
+}
+
 fn unload_other_models(requested: Stage, stages: &Stages) -> bool {
     let mut unloaded = false;
-    for stage in Stage::ALL {
-        if stage != requested && stages.unload(stage) {
+    for stage in eviction_targets(requested) {
+        if stages.unload(stage) {
             unloaded = true;
             tracing::info!(target: "koharu_metrics", metric = "model_unload", stage = %stage);
-            tracing::debug!(%stage, "unloaded model while recovering from memory pressure");
+            tracing::debug!(%stage, "unloaded a model to free the accelerator");
         }
     }
     unloaded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eviction_targets_exclude_only_the_requested_stage() {
+        assert_eq!(
+            eviction_targets(Stage::Inpainting).collect::<Vec<_>>(),
+            [Stage::Detection, Stage::Ocr, Stage::Translation]
+        );
+        assert_eq!(
+            eviction_targets(Stage::Detection).collect::<Vec<_>>(),
+            [Stage::Ocr, Stage::Translation, Stage::Inpainting]
+        );
+    }
+
+    #[test]
+    fn every_stage_evicts_every_other_stage() {
+        for requested in Stage::ALL {
+            let targets = eviction_targets(requested).collect::<Vec<_>>();
+            assert_eq!(targets.len(), Stage::ALL.len() - 1);
+            assert!(!targets.contains(&requested));
+        }
+    }
 }
