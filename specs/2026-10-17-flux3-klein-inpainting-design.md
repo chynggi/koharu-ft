@@ -184,8 +184,14 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
 
 - 호스트 RAM 추가 사용량은 약 12GB다(FLUX 3 스택 상주 + PUP 페이지 캐시). G4 실측으로 확정한다.
 - 최초 다운로드는 고정 파일 6개의 합인 12.36GB다(Hub API로 확인, 실측 불필요).
-- PUP 로드에 실패하면 기존 `accelerator.recover` 경로가 다른 stage를 언로드한 뒤 재시도할 수 있다.
-  이 경로는 변경하지 않는다.
+- PUP 로드나 컨텍스트 생성이 실패하면 페이지 처리는 오류로 끝난다. llama.cpp는 이 실패를 "null result"나
+  "failed to create llama.cpp context"로 보고하는데, 이 메시지들은 `stage_runner`의 OOM 판별 문자열에 걸리지
+  않는다. 그래서 `accelerator.recover`(다른 stage 언로드 후 재시도)를 거치지 않는다. 이 판별 한계는 OCR·번역
+  LLM 로드에도 원래 있던 것이고, 고친다면 OOM 판별을 맡은 곳에서 별도로 다룬다. 이 설계는 경로를 바꾸지 않는다.
+- detection·OCR·번역 모델은 페이지 사이에도 상주한다(`accelerator.rs`). 그래서 Phase 1 피크는 이 모델들이
+  함께 올라와 있는 전체 파이프라인 상태에서 다시 확인한다(Task 9 Step 8). 실측 결과 번역 LLM(6,390MiB)과
+  PUP(4,812MiB)의 동시 상주가 2페이지 피크를 12,069MiB까지 밀어 올렸다. 순차 레지던시 설계
+  (`specs/2026-10-17-sequential-model-residency-design.md`)가 이 문제를 다룬다.
 - 캡션 캐시는 두지 않는다. 같은 페이지를 다시 실행하면 캡션도 다시 생성한다.
 
 ## 디버그 바이너리 — `crates/koharu-ml/src/bin/flux3_klein.rs`
