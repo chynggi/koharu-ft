@@ -23,8 +23,11 @@ use koharu_translator::{GenerationConfig, Language, ModelSelection, Provider, Pr
 #[derive(Debug, Parser)]
 #[command(version, about = "Run Koharu's complete in-process pipeline")]
 struct Arguments {
-    #[arg(short, long, value_name = "INPUT")]
-    input: PathBuf,
+    /// Repeat to process several pages in one run. A single input renders to
+    /// `--output` as a file; several inputs render one PNG per page into
+    /// `--output`, which is then a directory.
+    #[arg(short, long, value_name = "INPUT", num_args = 1.., required = true)]
+    input: Vec<PathBuf>,
 
     #[arg(short, long, value_name = "OUTPUT")]
     output: PathBuf,
@@ -161,45 +164,48 @@ impl Arguments {
 #[tokio::main]
 async fn main() -> Result<()> {
     let arguments = Arguments::parse();
+    init_tracing();
     initialize_with_retry().await;
 
-    let source = fs::read(&arguments.input)
-        .with_context(|| format!("failed to read {}", arguments.input.display()))?;
-    let decoded = image::load_from_memory(&source).context("failed to decode input image")?;
-    let name = arguments
-        .input
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("input");
     let mut session = Session::memory().await?;
-    let mut page = None;
-    let patch = session.snapshot().patch(|edit| {
-        let id = edit.add_page(
-            PageDraft::new(
-                name,
-                f64::from(decoded.width()),
-                f64::from(decoded.height()),
-            ),
-            At::End,
-        )?;
-        edit.set_asset(
-            id,
-            &AssetRole::new("source")?,
-            AssetInput::new(
-                Arc::<[u8]>::from(source),
-                image_media_type(&arguments.input),
-                AssetMetadata {
-                    width: Some(decoded.width()),
-                    height: Some(decoded.height()),
-                    attributes: BTreeMap::new(),
-                },
-            ),
-        )?;
-        page = Some(id);
-        Ok(())
-    })?;
-    session.commit(patch).await?;
-    let page = page.expect("page ID is assigned by the edit");
+    let mut pages = Vec::with_capacity(arguments.input.len());
+    for input in &arguments.input {
+        let source = fs::read(input)
+            .with_context(|| format!("failed to read {}", input.display()))?;
+        let decoded = image::load_from_memory(&source).context("failed to decode input image")?;
+        let name = input
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("input");
+        let mut page = None;
+        let patch = session.snapshot().patch(|edit| {
+            let id = edit.add_page(
+                PageDraft::new(
+                    name,
+                    f64::from(decoded.width()),
+                    f64::from(decoded.height()),
+                ),
+                At::End,
+            )?;
+            edit.set_asset(
+                id,
+                &AssetRole::new("source")?,
+                AssetInput::new(
+                    Arc::<[u8]>::from(source),
+                    image_media_type(input),
+                    AssetMetadata {
+                        width: Some(decoded.width()),
+                        height: Some(decoded.height()),
+                        attributes: BTreeMap::new(),
+                    },
+                ),
+            )?;
+            page = Some(id);
+            Ok(())
+        })?;
+        session.commit(patch).await?;
+        pages.push(page.expect("page ID is assigned by the edit"));
+    }
 
     let device = koharu_ml::device(arguments.cpu);
     let pipeline = Pipeline::from_config(
@@ -214,7 +220,7 @@ async fn main() -> Result<()> {
             snapshot,
             Request {
                 operation: Operation::Full,
-                scope: Scope::Pages(vec![page]),
+                scope: Scope::Pages(pages.clone()),
                 progress: Some(Arc::new(|event| {
                     if let Progress::Finished { stage, elapsed, .. } = event {
                         eprintln!("{stage} finished in {:.2}s", elapsed.as_secs_f64());
@@ -228,22 +234,55 @@ async fn main() -> Result<()> {
     eprintln!("pipeline finished in {:.2}s", report.elapsed.as_secs_f64());
 
     let renderer = Renderer::new()?;
-    let render_started = Instant::now();
-    let snapshot = session.snapshot();
-    let frame = renderer.render(&snapshot, page).await?;
     let rasterizer = Rasterizer::new()?;
-    let raster = rasterizer.rasterize(&frame.raster_frame()?, RasterOptions::default())?;
-    let render_elapsed = render_started.elapsed();
-    raster
-        .image
-        .save(&arguments.output)
-        .with_context(|| format!("failed to write {}", arguments.output.display()))?;
-    eprintln!(
-        "rendered {} in {:.2}s",
-        arguments.output.display(),
-        render_elapsed.as_secs_f64()
-    );
+    let single = pages.len() == 1;
+    if !single {
+        fs::create_dir_all(&arguments.output)
+            .with_context(|| format!("failed to create {}", arguments.output.display()))?;
+    }
+    for (index, page) in pages.iter().enumerate() {
+        let render_started = Instant::now();
+        let snapshot = session.snapshot();
+        let frame = renderer.render(&snapshot, *page).await?;
+        let raster = rasterizer.rasterize(&frame.raster_frame()?, RasterOptions::default())?;
+        let target = if single {
+            arguments.output.clone()
+        } else {
+            let stem = arguments.input[index]
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("page");
+            arguments.output.join(format!("{stem}.png"))
+        };
+        raster
+            .image
+            .save(&target)
+            .with_context(|| format!("failed to write {}", target.display()))?;
+        eprintln!(
+            "rendered {} in {:.2}s",
+            target.display(),
+            render_started.elapsed().as_secs_f64()
+        );
+    }
     Ok(())
+}
+
+/// The gate reads `koharu_metrics` events (`model_unload`) out of this binary's
+/// stderr, so it needs the same subscriber shape the desktop app installs.
+fn init_tracing() {
+    use tracing_subscriber::{Layer as _, layer::SubscriberExt as _};
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(
+                    tracing_subscriber::filter::EnvFilter::builder()
+                        .with_default_directive(tracing::Level::INFO.into())
+                        .from_env_lossy(),
+                ),
+        ),
+    )
+    .expect("failed to set the global tracing subscriber");
 }
 
 async fn initialize_with_retry() {
@@ -306,5 +345,23 @@ mod tests {
             arguments.pipeline_config().inpainting,
             InpaintingModel::Flux2Klein(_)
         ));
+    }
+
+    #[test]
+    fn several_inputs_are_accepted_for_one_output_directory() {
+        let arguments = Arguments::try_parse_from([
+            "run",
+            "--input",
+            "one.jpg",
+            "--input",
+            "two.jpg",
+            "--output",
+            "rendered",
+        ])
+        .unwrap();
+        assert_eq!(
+            arguments.input,
+            [PathBuf::from("one.jpg"), PathBuf::from("two.jpg")]
+        );
     }
 }

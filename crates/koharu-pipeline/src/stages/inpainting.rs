@@ -789,6 +789,7 @@ impl Model {
                 // is the only model with weights on the accelerator; it is dropped
                 // before phase 2 inpaints. Captions come from the untouched crops;
                 // phase 2 still cuts each tile from the output earlier tiles left.
+                tracing::info!(tiles = crops.len(), "captioning the FLUX 3 tile plan");
                 let captions = upsampler.caption(crops, config.request.clone()).await?;
                 let inpaint = inpaint.clone();
                 let options = config.options();

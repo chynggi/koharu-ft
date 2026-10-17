@@ -4958,6 +4958,7 @@ dependencies = [
  "tokio-rayon",
  "toml",
  "tracing",
+ "tracing-subscriber",
  "windows 0.62.2",
 ]
 
