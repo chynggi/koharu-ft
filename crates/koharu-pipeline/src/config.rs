@@ -658,6 +658,48 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_flux3_selection_with_its_processor_section() {
+        let config = toml::from_str::<PipelineConfig>(
+            r#"
+                [detection]
+                model = "koharu-layout-rfdetr-seg-2xl"
+
+                [inpainting]
+                model = "flux3-klein"
+
+                [processor."flux3-klein"]
+                request = "Erase the lettering."
+            "#,
+        )
+        .unwrap();
+
+        let InpaintingModel::Flux3Klein(config) = config.inpainting().unwrap() else {
+            panic!("expected FLUX 3 profile")
+        };
+        assert_eq!(config.request, "Erase the lettering.");
+        assert_eq!(config.steps, 16);
+    }
+
+    #[test]
+    fn serializes_a_flux3_selection_under_processor() {
+        let config = PipelineConfig {
+            inpainting: InpaintingModel::Flux3Klein(Flux3KleinConfig {
+                request: "Erase the lettering.".to_owned(),
+                ..Default::default()
+            }),
+            ..PipelineConfig::default()
+        };
+        let document = toml::to_string(&config).unwrap();
+        assert!(document.contains("[processor.flux3-klein]"));
+
+        let restored = toml::from_str::<PipelineConfig>(&document).unwrap();
+        assert!(matches!(
+            restored.inpainting().unwrap(),
+            InpaintingModel::Flux3Klein(config) if config.request == "Erase the lettering."
+        ));
+    }
+
+    #[test]
     fn keeps_profiles_separate_from_active_stage_selection() {
         let config = toml::from_str::<PipelineConfig>(
             r#"

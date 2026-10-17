@@ -773,19 +773,23 @@ impl Model {
                 upsampler,
                 config,
             } => {
-                let plan = TilePlan::new(
-                    &prepared.image,
-                    &prepared.mask,
-                    &prepared.text_mask,
-                    &prepared.flat_fill_regions,
-                )?;
-                // Phase 1 holds the accelerator with the upsampler alone and
-                // drops it before phase 2 loads FLUX 3, so a 12 GB card never
-                // holds both. Captions come from the untouched crops; phase 2
-                // still cuts each tile from the output earlier tiles left.
-                let captions = upsampler
-                    .caption(plan.crops(), config.request.clone())
-                    .await?;
+                let (plan, crops) = tokio_rayon::spawn(move || -> Result<_> {
+                    let plan = TilePlan::new(
+                        &prepared.image,
+                        &prepared.mask,
+                        &prepared.text_mask,
+                        &prepared.flat_fill_regions,
+                    )?;
+                    let crops = plan.crops();
+                    Ok((plan, crops))
+                })
+                .await?;
+                // The stage runner holds the accelerator permit for the whole page.
+                // FLUX 3 keeps its weights in RAM, so during phase 1 the upsampler
+                // is the only model with weights on the accelerator; it is dropped
+                // before phase 2 inpaints. Captions come from the untouched crops;
+                // phase 2 still cuts each tile from the output earlier tiles left.
+                let captions = upsampler.caption(crops, config.request.clone()).await?;
                 let inpaint = inpaint.clone();
                 let options = config.options();
                 (
@@ -1657,11 +1661,23 @@ mod tests {
                 ..Default::default()
             },
             Flux3KleinConfig {
+                request: "   ".to_owned(),
+                ..Default::default()
+            },
+            Flux3KleinConfig {
                 steps: 0,
                 ..Default::default()
             },
             Flux3KleinConfig {
                 strength: 1.5,
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                strength: 0.0,
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                max_pixels: 1024,
                 ..Default::default()
             },
             Flux3KleinConfig {
