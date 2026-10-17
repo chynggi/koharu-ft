@@ -246,14 +246,8 @@ impl Flux2KleinInpaint {
             );
         }
 
-        let strength = if options.strength >= 1.0 {
-            1.0
-        } else {
-            let effective_steps = options.num_inference_steps
-                - (options.num_inference_steps as f64 * (1.0 - options.strength)).floor() as usize;
-            let boundary = effective_steps as f32 / options.num_inference_steps as f32;
-            f32::from_bits(boundary.to_bits() - 1)
-        };
+        let strength =
+            Flux2ImageProcessor::sd_strength(options.strength, options.num_inference_steps);
 
         let generated = self
             .model

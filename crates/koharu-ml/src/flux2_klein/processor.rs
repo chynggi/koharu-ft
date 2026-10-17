@@ -57,6 +57,18 @@ impl Default for Flux2KleinInpaintOptions {
 pub(crate) struct Flux2ImageProcessor;
 
 impl Flux2ImageProcessor {
+    /// Maps diffusers' `get_timesteps` onto stable-diffusion.cpp's
+    /// `t_enc = (size_t)(steps * strength)` truncation, so sd.cpp starts at the
+    /// step diffusers would. The midpoint below the boundary keeps the f32
+    /// product from rounding up onto it, which a one-ulp offset does not.
+    pub(crate) fn sd_strength(strength: f64, steps: usize) -> f32 {
+        if strength >= 1.0 {
+            return 1.0;
+        }
+        let effective_steps = steps - (steps as f64 * (1.0 - strength)).floor() as usize;
+        ((effective_steps as f64 - 0.5) / steps as f64) as f32
+    }
+
     /// The working area has to leave room for the 16-pixel alignment every
     /// FLUX.2 input is cropped to.
     pub(crate) fn check_max_pixels(max_pixels: u32) -> Result<()> {
@@ -286,6 +298,20 @@ mod tests {
     use image::{GrayImage, Luma, Rgb, RgbImage};
 
     use super::Flux2ImageProcessor;
+
+    #[test]
+    fn sd_strength_starts_where_diffusers_does() {
+        for steps in 1..=64usize {
+            for percent in 1..100u32 {
+                let strength = f64::from(percent) / 100.0;
+                let effective = steps - (steps as f64 * (1.0 - strength)).floor() as usize;
+                let t_enc =
+                    (steps as f32 * Flux2ImageProcessor::sd_strength(strength, steps)) as usize;
+                assert_eq!(t_enc, effective - 1, "steps={steps} strength={strength}");
+            }
+        }
+        assert_eq!(Flux2ImageProcessor::sd_strength(1.0, 16), 1.0);
+    }
 
     #[test]
     fn overlay_without_a_crop_preserves_unmasked_pixels() {
