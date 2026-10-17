@@ -122,7 +122,10 @@ beforeEach(() => {
   prefetchCanvasPages.mockClear()
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 function flushAnimationFrames() {
   const pending = [...animationFrames.values()]
@@ -434,7 +437,120 @@ describe('canvas interaction adapter', () => {
       ramp,
     })
   })
+  it.each([
+    {
+      keys: ['ArrowRight'],
+      repeat: 'ArrowRight',
+      release: 'ArrowRight',
+      expected: { x: 32, y: 40 },
+    },
+    {
+      keys: ['ArrowUp', 'ArrowRight'],
+      repeat: 'ArrowRight',
+      release: 'ArrowRight',
+      expected: { x: 32, y: 36 },
+    },
+    {
+      keys: ['ArrowRight', 'ArrowUp'],
+      repeat: 'ArrowUp',
+      release: 'ArrowRight',
+      expected: { x: 33, y: 37 },
+    },
+    {
+      keys: ['ArrowLeft', 'ArrowRight'],
+      repeat: 'ArrowRight',
+      release: 'ArrowRight',
+      expected: { x: 28, y: 40 },
+    },
+    {
+      keys: ['ArrowUp', 'ArrowDown'],
+      repeat: 'ArrowDown',
+      release: 'ArrowDown',
+      expected: { x: 30, y: 38 },
+    },
+  ])('text box nudge with arrow key: $keys', async ({ keys, repeat, release, expected }) => {
+    vi.useFakeTimers()
+    installProject()
 
+    queryClient.setQueryData(pageKey, (page: { layers: Layer[] }) => ({
+      ...page,
+      layers: [
+        {
+          type: 'text',
+          id: 'element',
+          parent: 'page',
+          geometry: layer.geometry,
+          angle_degrees: 0,
+          visibility: { visible: true, opacity: 1 },
+          content: {
+            id: 'content',
+            source: { text: 'Source', language: 'en' },
+            translation: { text: 'Rendered', language: null },
+            role: null,
+            source_region: null,
+          },
+          typography: null,
+          layout: 'paragraph',
+          automatic_region: null,
+        },
+      ],
+    }))
+
+    useKoharuStore.setState({
+      selectedLayers: ['element'],
+      layerFrames: {
+        element: { x: 30, y: 40, width: 50, height: 20, angle_degrees: 0 },
+      },
+    })
+
+    const commit = vi.spyOn(commands, 'commitTransform').mockResolvedValue(2)
+    const surface = renderWorkspace()
+
+    act(() =>
+      useKoharuStore.setState({
+        camera: { zoom: 4, translation: [0, 0], fitted: false },
+      }),
+    )
+
+    for (const key of keys) fireEvent.keyDown(surface, { key })
+
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+
+    fireEvent.keyDown(surface, { key: repeat, repeat: true })
+
+    fireEvent.keyUp(surface, { key: release })
+    const remaining = keys.filter((key) => key !== release)
+
+    if (remaining.length) {
+      expect(commit).not.toHaveBeenCalled()
+    }
+
+    act(() => {
+      vi.advanceTimersByTime(30)
+    })
+
+    for (const key of remaining) {
+      fireEvent.keyUp(surface, { key })
+    }
+
+    vi.useRealTimers()
+
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(1, [
+        {
+          element: 'element',
+          frame: {
+            ...expected,
+            width: 50,
+            height: 20,
+            angle_degrees: 0,
+          },
+        },
+      ]),
+    )
+  })
   it.each([
     ['revision', { canvasRevision: 2 }],
     ['generation', { canvasGeneration: 2 }],
@@ -649,9 +765,7 @@ describe('canvas interaction adapter', () => {
       layers: [...page.layers, paintLayer],
     }))
     useKoharuStore.setState({ tool: 'fill', selectedLayers: ['paint'], fillColor: '#102030' })
-    const fill = vi
-      .spyOn(commands, 'fillRaster')
-      .mockResolvedValue({ revision: 2, layer: 'paint' })
+    const fill = vi.spyOn(commands, 'fillRaster').mockResolvedValue({ revision: 2, layer: 'paint' })
     const surface = renderWorkspace()
 
     fireEvent.pointerDown(surface, { button: 0, pointerId: 30, clientX: 30, clientY: 40 })
