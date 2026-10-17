@@ -16,6 +16,7 @@ concurrency:
 jobs:
   update:
     name: Update sponsor graph
+    if: github.repository == 'koharu-rs/koharu'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

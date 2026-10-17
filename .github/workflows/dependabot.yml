@@ -9,6 +9,7 @@ permissions: {}
 jobs:
   auto-merge:
     if: >-
+      github.repository == 'koharu-rs/koharu' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
