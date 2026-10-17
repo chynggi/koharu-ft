@@ -189,6 +189,17 @@ revision이므로 이전 v2 파일과 충돌하지 않는다.
 | G3 | 체크포인트 동등성 | `cargo test -p koharu-ml -- --ignored checkpoint_matches_upstream_character_sequence` | `benches/fixtures/ocr/title.png`에서 `"対策委員会です!"` |
 | G4 | 픽셀 언셔플 채널 순서 | `cargo test -p koharu-ml -- --ignored pixel_unshuffle_channel_order` | 통과 |
 
+### 결과 (2026-10-17)
+
+CPU, debug 프로필, 브랜치 `feat/hayai-v25-nova`.
+
+| # | 결과 | 비고 |
+|---|---|---|
+| G1 | 통과 | `hayai_ocr` 단위 테스트 8개(격자 1, 정규화 5, 기존 전처리 2) |
+| G2 | 통과 | 경고 없음 |
+| G3 | 통과 | 출력 `"対策委員会です!"`. Nova 체크포인트가 이름 불일치 없이 로드됨 |
+| G4 | 통과 | 3×3 격자, 2채널, 패딩 3행 |
+
 G3·G4는 LibTorch 런타임과 체크포인트 다운로드를 요구하므로 `#[ignore]`를 유지한다.
 **G3의 기대값은 가정이 아니라 확인 대상이다.** 참조 포크가 같은 픽스처에 같은 문자열을
 기대하지만, 그 포크가 실제로 통과하는지는 이 저장소에서 확인되지 않았다. 실패하면
