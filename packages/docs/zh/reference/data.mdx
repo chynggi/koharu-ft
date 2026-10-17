@@ -27,7 +27,7 @@ icon: 'database'
 
 ## 运行时与模型缓存
 
-在 macOS 和 Linux 上，软件包位于系统缓存目录中的 `<cache>/koharu/packages/`；在 Windows 上，位于 Koharu 安装目录内的 `store` 目录。这些数据可以重新获取：关闭 Koharu 后移除它们，会让需要的软件包重新下载。
+软件包位于系统本地应用数据目录中的 `Koharu/store/`：Windows 上为 `%LOCALAPPDATA%\Koharu\store`，macOS 上为 `~/Library/Application Support/Koharu/store`，Linux 上为 `~/.local/share/Koharu/store`。调试构建与发布构建共用同一个存储。这些数据可以重新获取：关闭 Koharu 后移除它们，会让需要的软件包重新下载。
 
 桌面进程可能仍加载原生库时，不要删除相应软件包。
 

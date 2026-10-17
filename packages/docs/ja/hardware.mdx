@@ -48,7 +48,7 @@ Koharu は使用する機能に必要なネイティブライブラリとモデ�
 | バージョンを固定したモデルの重み                      | 選択した処理モデルの初回使用時     |
 | ローカル GGUF 量子化ファイル                          | そのファイルを選択して使用するとき |
 
-パッケージは macOS と Linux では OS キャッシュ内の `koharu/packages`、Windows では Koharu のインストールディレクトリ内の `store` ディレクトリに保存されます。プロジェクトは `Documents/Koharu`、設定は `~/.koharu/config.toml` に保存されます。[データの保存先](/ja/reference/data)も参照してください。
+パッケージは OS のローカルアプリデータディレクトリ内の `Koharu/store` に保存されます。プロジェクトは `Documents/Koharu`、設定は `~/.koharu/config.toml` に保存されます。[データの保存先](/ja/reference/data)も参照してください。
 
 ダウンロードは一時領域で準備してからキャッシュへ公開します。中断した場合は次の起動やモデル使用時に再試行できます。
 

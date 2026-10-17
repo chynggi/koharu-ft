@@ -30,7 +30,7 @@ Provider credentials use the operating system's secure credential service. A pro
 
 ## Runtime and model cache
 
-On macOS and Linux, packages are stored at `<cache>/koharu/packages/` under the operating system cache directory. On Windows, they are stored in the `store` directory inside Koharu's installation directory. This data is replaceable: removing it while Koharu is closed causes the required packages to download again.
+Packages are stored in `Koharu/store/` under the operating system's local application data directory: `%LOCALAPPDATA%\Koharu\store` on Windows, `~/Library/Application Support/Koharu/store` on macOS, and `~/.local/share/Koharu/store` on Linux. Debug and release builds share this store. This data is replaceable: removing it while Koharu is closed causes the required packages to download again.
 
 Never remove a package while the desktop process may still have a native library loaded.
 

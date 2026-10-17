@@ -29,7 +29,7 @@ icon: 'database'
 
 ## ランタイムとモデルのキャッシュ
 
-macOS と Linux では OS キャッシュ内の `<cache>/koharu/packages/`、Windows では Koharu のインストールディレクトリ内の `store` ディレクトリに保存します。このデータは再取得可能で、Koharu を閉じた状態で削除すると、必要なパッケージを再取得します。
+OS のローカルアプリデータディレクトリ内の `Koharu/store/` に保存します。Windows では `%LOCALAPPDATA%\Koharu\store`、macOS では `~/Library/Application Support/Koharu/store`、Linux では `~/.local/share/Koharu/store` です。デバッグビルドとリリースビルドは同じストアを共有します。このデータは再取得可能で、Koharu を閉じた状態で削除すると、必要なパッケージを再取得します。
 
 プロセスがネイティブライブラリを読み込んでいる可能性がある間は削除しないでください。
 

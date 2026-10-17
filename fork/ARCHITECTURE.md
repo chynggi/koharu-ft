@@ -295,8 +295,8 @@ Everything in `Flux2KleinInpaintOptions` (`processor.rs:31`) is reachable but un
 
 `crates/koharu-runtime`
 
-- `Store::root()` (`store.rs:50`) = `<os cache dir>/koharu/packages`, overridable once
-  per process.
+- `Store::root()` (`store.rs:21`) = `<os local data dir>/Koharu/store`, shared by every
+  build profile and binary (matches Tauri's `app_local_data_dir()` for identifier `Koharu`).
 - `HuggingFaceFile` (`source/hugging_face.rs`) — `pinned(repo, sha, file)` or
   `latest(repo, file)`. `latest` resolves the repo HEAD **once per process** and caches
   it, so a multi-file model can't be assembled from mixed revisions (doc comment line 44).
