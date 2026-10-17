@@ -77,6 +77,8 @@ enum OcrChoice {
     PaddleOcrVl1_6MangaLora,
     #[value(name = "manga-ocr")]
     MangaOcr,
+    #[value(name = "manga-ocr-cpt-flex")]
+    MangaOcrCptFlex,
     #[value(name = "baberu-ocr")]
     BaberuOcr,
     #[value(name = "hayai-ocr")]
@@ -119,6 +121,7 @@ impl Arguments {
                     OcrModel::PaddleOcrVl1_6MangaLora(PaddleOcrVl1_6MangaLoraConfig::default())
                 }
                 OcrChoice::MangaOcr => OcrModel::MangaOcr,
+                OcrChoice::MangaOcrCptFlex => OcrModel::MangaOcrCptFlex,
                 OcrChoice::BaberuOcr => OcrModel::BaberuOcr,
                 OcrChoice::HayaiOcr => OcrModel::HayaiOcr,
             },
