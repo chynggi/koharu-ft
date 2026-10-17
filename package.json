@@ -6,7 +6,7 @@
   "scripts": {
     "release": "bun tauri build && cargo build --release -p koharu -j 6",
     "tauri": "cargo tauri",
-    "postinstall": "cargo install tauri-cli --git https://github.com/tauri-apps/tauri --rev 1991873f5e2baa68773f21465f61baa93077498f --locked",
+    "postinstall": "cargo install tauri-cli --git https://github.com/chynggi/tauri --rev af7fedb9cf1e837b2b1dda5457ddffd5f9ed130c --locked",
     "predev": "kill-port 3000",
     "dev": "cargo tauri dev",
     "build": "cargo tauri build --no-bundle",
