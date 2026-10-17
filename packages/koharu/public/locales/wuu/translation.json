@@ -11,6 +11,8 @@
     "downloadingFiles": "来勒下载 {{count}} 个文件",
     "downloadingFiles_one": "来勒下载 {{count}} 个文件",
     "downloadingFiles_other": "来勒下载 {{count}} 个文件",
+    "exportFailed": "导出失败哉。",
+    "exporting": "来勒导出",
     "modelDownload": "模型下载",
     "pageLabel": "第 {{number}} 页：{{label}}",
     "processing": "来勒处理",
@@ -62,6 +64,8 @@
   "colorPicker": {
     "brushColor": "笔刷颜色",
     "hexCode": "十六进制颜色代码",
+    "recent": "最近使用的颜色",
+    "recentColor": "最近使用的颜色 {{color}}",
     "sampleCanvas": "从画布浪取颜色",
     "transparent": "透明"
   },
@@ -76,16 +80,38 @@
     "fatalTitle": "Koharu 运行弗下去哉",
     "tryAgain": "再试一趟"
   },
+  "export": {
+    "cancel": "取消",
+    "cbzHint": "拿所有 PNG 页面打包成一个压缩包，文件名用项目名称。",
+    "description": "拿页面渲染成图像文件。",
+    "formats": "格式",
+    "pattern": "文件名模式",
+    "patternError": {
+      "separator": "模式里向勿好包含路径分隔符或者 '..'。",
+      "token": "勿认得个标记。请用 {index} 或者 {label}。",
+      "unclosed": "模式里向有勿配对个花括号。",
+      "width": "位数一定要是数字。"
+    },
+    "scope": "页面",
+    "scopeAll": "全部页面（{{count}}）",
+    "scopeSelected": "所选页面（{{count}}）",
+    "start": "导出",
+    "subfolders": "按格式分文件夹",
+    "title": "导出页面"
+  },
   "fontPicker": {
     "activeFilterCount": "当前启用个筛选条件：{{count}} 个",
     "activeFilterCount_one": "当前启用个筛选条件：{{count}} 个",
     "activeFilterCount_other": "当前启用个筛选条件：{{count}} 个",
+    "addFavorite": "将{{family}}添加到收藏",
+    "allFonts": "所有字体",
     "allPurposes": "全部用途",
     "allScripts": "全部文字体系",
     "allSources": "全部来源",
     "allStyles": "全部样式",
     "choose": "选字体",
     "clearFilters": "清除筛选条件",
+    "favorites": "收藏",
     "filter": "筛选字体",
     "filterActiveLabel": "筛选字体，当前启用个筛选条件有 {{count}} 个",
     "fontCount": "{{count}} 种字体",
@@ -95,6 +121,7 @@
     "fonts": "字体",
     "noResults": "寻弗着符合条件个字体",
     "purpose": "用途",
+    "removeFavorite": "从收藏中移除{{family}}",
     "script": "文字体系",
     "scripts": {
       "arab": "阿拉伯文",
@@ -157,6 +184,22 @@
     "stopProcessing": "停止处理"
   },
   "inspector": {
+    "adjust": {
+      "apply": "应用",
+      "brightness": "亮度",
+      "contrast": "对比度",
+      "degrees": "角度",
+      "delta": "增减",
+      "grayscale": "灰度",
+      "high": "最高",
+      "hue": "色相",
+      "invalidLevels": "最低值一定要比最高值小。",
+      "levels": "色阶",
+      "low": "最低",
+      "percent": "百分比",
+      "singleLayer": "请只选一个栅格图层来调整。",
+      "title": "调整类型"
+    },
     "alignBottom": "底端对齐",
     "alignCenter": "水平居中",
     "alignLeft": "左对齐",
@@ -189,6 +232,53 @@
     "placement": "位置",
     "resetAutoFit": "重置成自动适配",
     "selectPage": "先选一页，再看箇页个图层。",
+    "shape": {
+      "addStop": "添加色标",
+      "dash": "虚线",
+      "fill": "填充",
+      "fillKind": {
+        "gradient": "渐变",
+        "pattern": "图案",
+        "solid": "纯色"
+      },
+      "fillKindLabel": "填充类型",
+      "gradientKind": {
+        "linear": "线性",
+        "radial": "径向"
+      },
+      "gradientKindLabel": "渐变类型",
+      "kind": {
+        "arrow": "箭头",
+        "ellipse": "椭圆",
+        "line": "直线",
+        "rectangle": "矩形"
+      },
+      "kindLabel": "形状类型：{{kind}}",
+      "kindTitle": "形状类型",
+      "pattern": {
+        "ignoredForStretch": "拉伸个辰光，原点搭缩放勿起作用。",
+        "originX": "原点 X",
+        "originY": "原点 Y",
+        "repeat": {
+          "stretch": "拉伸",
+          "tile": "平铺"
+        },
+        "repeatLabel": "重复",
+        "replace": "替换图片",
+        "rotation": "旋转",
+        "scale": "缩放",
+        "title": "图案",
+        "upload": "选择图片"
+      },
+      "rasterize": "栅格化",
+      "removeStop": "删除色标",
+      "stopColor": "色标 {{index}} 颜色",
+      "stopOffset": "色标 {{index}} 位置",
+      "stops": "色标",
+      "stopsTooClose": "色标中间呒没空位哉",
+      "stroke": "描边",
+      "strokeWidth": "描边宽度"
+    },
     "size": "字号",
     "source": "原文",
     "style": "样式",
@@ -204,6 +294,7 @@
   "languages": {
     "en-US": "English",
     "es-ES": "Español",
+    "fr-FR": "Français",
     "ja-JP": "日本語",
     "ko-KR": "한국어",
     "pt-BR": "Português brasileiro",
@@ -214,6 +305,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "复制所选文本图层",
     "delete": "删除 {{name}}",
     "edit": "编辑 {{name}}",
     "empty": "箇页浪呒没图层。",
@@ -226,6 +318,7 @@
       "group": "组",
       "image": "图像",
       "paint": "绘制",
+      "shape": "形状",
       "text": "文本",
       "textGroup": "文本组"
     },
@@ -235,6 +328,7 @@
     "moveUp": "拿 {{name}} 移上去一格",
     "opacityLabel": "{{name}} 个不透明度",
     "originalArtwork": "原始图稿",
+    "pasteCopied": "粘贴已复制的文本图层",
     "show": "显示 {{name}}",
     "sourceLabel": "{{name}} 个原文",
     "textName": "文本 {{index}}",
@@ -280,6 +374,8 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 个操作",
+    "mergeAsSpread": "合并为跨页",
+    "chapterStart": "章节开始",
     "delete": "删除",
     "emptyDescription": "要添加页面，先导入图像文件或者文件夹。",
     "emptyTitle": "还呒没页面",
@@ -289,9 +385,12 @@
     "importFolder": "文件夹…",
     "importing": "来勒导入页面…",
     "importingAction": "来勒导入…",
+    "dropToImport": "拿文件或者文件夹拖进来导入",
     "layerCount": "{{count}} 个图层",
     "layerCount_one": "{{count}} 个图层",
     "layerCount_other": "{{count}} 个图层",
+    "markChapterStart": "标记为章节开始",
+    "removeChapterStart": "移除章节开始标记",
     "noImage": "呒没图像",
     "noResults": "呒没符合箇个筛选条件个页面。",
     "pageName": "页面名称",
@@ -336,12 +435,18 @@
   },
   "resources": {
     "cpu": "CPU",
+    "memoryScope": {
+      "device": "this device, all applications",
+      "process": "Koharu only",
+      "system": "this machine, shared memory"
+    },
     "processUtilization": "进程利用率",
     "ram": "RAM",
     "summary": "RAM {{ram}}%，CPU {{cpu}}%",
     "title": "系统资源",
     "tooltip": "RAM {{ramUsed}} / {{ramTotal}} · CPU {{cpu}}%",
     "usedOfTotal": "已用 {{used}}，总共 {{total}}",
+    "vramScoped": "{{value}} VRAM · {{scope}}",
     "vramUnavailable": "呒没显存用量数据",
     "vramValue": "{{value}} VRAM"
   },
@@ -360,6 +465,15 @@
       "title": "外观"
     },
     "backToEditor": "返回编辑器",
+    "features": {
+      "title": "NeKoharu 功能",
+      "description": "NeKoharu 分支专属选项。",
+      "pages": "页面",
+      "mergeDeleteOriginals": "合并后删除原始页面",
+      "mergeDeleteOriginalsDescription": "页面合并成跨页以后删脱原始页面。关脱个辰光，原始页面会留下来，只有文字搭清理图层会移到跨页里向。",
+      "showPageNumbers": "显示页码",
+      "showPageNumbersDescription": "勒页面栏里向，每个页面名称下头显示伊个位置编号。"
+    },
     "generation": {
       "description": "微调语言模型生成译文个方式。",
       "enableReasoning": "启用推理",
@@ -379,15 +493,108 @@
       "vision": "视觉",
       "visionDescription": "翻译个辰光，也拿页面图像输入畀 LLM。"
     },
+    "llm": {
+      "accelerator": "Accelerator",
+      "acceleratorDescription": "Offload and attention settings passed to llama.cpp.",
+      "activeDevice": "Running on {{device}} ({{backend}}).",
+      "batchSizes": "Batch sizes",
+      "batchThreads": "Batch",
+      "batching": "Batching",
+      "batchingDescription": "Leave a field empty to keep Koharu's automatic value.",
+      "context": "Context",
+      "contextDescription": "Koharu sizes the context from each prompt. These settings bound that.",
+      "contextMode": "Context mode",
+      "contextModeDescription": "Dynamic allocates exactly what a page needs.",
+      "contextModes": {
+        "bounded": "Dynamic with limits",
+        "dynamic": "Dynamic",
+        "fixed": "Fixed"
+      },
+      "contextSize": "Context size",
+      "flashAttention": "Flash attention",
+      "flashAttentionModes": {
+        "auto": "Auto",
+        "off": "Off",
+        "on": "On"
+      },
+      "generationThreads": "Generation",
+      "gpuLayerModes": {
+        "all": "All",
+        "custom": "Custom"
+      },
+      "gpuLayers": "GPU layers",
+      "kvCache": "KV cache type",
+      "kvCacheKey": "Key",
+      "kvCacheValue": "Value",
+      "layers": "Layers",
+      "maxOutputTokens": "Max output tokens",
+      "maxOutputTokensDescription": "Raising this raises KV cache memory on every request.",
+      "maximumContext": "Maximum",
+      "minimumContext": "Minimum",
+      "noGpuOffload": "No accelerator is active, so every layer runs on the CPU.",
+      "threads": "Threads",
+      "tokens": "Tokens"
+    },
     "loading": "来勒加载偏好设置…",
+    "models": {
+      "add": "Add a model",
+      "addDescription": "Pick a .gguf file already on this device.",
+      "addLocal": "Add local model",
+      "browseProjector": "Choose a projector file",
+      "description": "Register your own GGUF files and tune how llama.cpp runs them.",
+      "name": "Display name",
+      "none": "No registered models",
+      "noneDescription": "Add a .gguf file to use it as a translation model.",
+      "path": "Model path",
+      "pathPlaceholder": "Path to a .gguf on the machine running Koharu",
+      "projector": "Projector",
+      "projectorPlaceholder": "Optional mmproj .gguf for vision",
+      "registered": "Registered models",
+      "registeredDescription": "Files are read in place. Koharu never modifies a .gguf.",
+      "remove": "Remove {{model}}",
+      "title": "Local models"
+    },
     "pipeline": {
       "description": "选好每一页处理个辰光要用个模型搭选项。",
       "modelLabel": "{{stage}}模型",
       "options": {
         "bubbleThreshold": "气泡阈值",
+        "checkpointSource": "检查点来源",
+        "format": "格式",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
+        "maxPixels": "Max pixels",
         "negativePrompt": "负面提示词",
+        "paddingMaskCrop": "Mask crop padding",
         "panelThreshold": "分镜阈值",
+        "powerpaintEmbeddings": "任务嵌入目录",
+        "powerpaintModel": "模型文件",
         "prompt": "提示词",
+        "seed": "Seed",
+        "source": {
+          "inpaintor": "修复模型",
+          "line": "线稿模型",
+          "text_encoder": "Text encoder",
+          "transformer": "Transformer",
+          "vae": "VAE"
+        },
+        "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
+        "sourceDigest": "摘要 (BLAKE3)",
+        "sourceFilename": "File",
+        "sourceKind": {
+          "builtin": "Bundled",
+          "huggingFace": "Hugging Face",
+          "localFile": "Local file",
+          "url": "URL"
+        },
+        "sourcePath": "Path",
+        "sourceRepository": "Repository",
+        "sourceRevision": "修订版本（40 位提交哈希）",
+        "sourceUrl": "URL",
+        "steps": "Steps",
+        "strength": "Strength",
         "textThreshold": "文本阈值"
       },
       "processing": "来勒处理",
@@ -426,6 +633,8 @@
     },
     "tabs": {
       "appearance": "外观",
+      "features": "NeKoharu 功能",
+      "models": "Models",
       "pipeline": "处理流程",
       "providers": "提供商",
       "shortcuts": "快捷键",
@@ -434,10 +643,14 @@
     },
     "title": "设置",
     "translation": {
+      "batching": "请求批处理",
+      "combinePages": "将页面合并到一个请求中",
+      "combinePagesDescription": "拿所选数量个连续页面放勒一道翻译，保持名称搭剧情一致。多页请求只用文本，勿会带页面图像。",
       "description": "先选已经配置好个提供商底下个模型，再设置各个模型共用个翻译搭生成选项。",
       "instructionsDescription": "名字、语气、术语或者格式个说明。",
       "instructionsLabel": "翻译说明",
       "instructionsPlaceholder": "好填整个项目通用个说明，也好弗填",
+      "maxPagesPerRequest": "每个请求的最大页数",
       "model": "模型",
       "modelDescription": "提供商标签标明各个模型来勒啥地方运行；连接要另外配置。",
       "modelQuantization": "模型量化",
@@ -495,6 +708,12 @@
     "zoom": "缩放"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "沿笔画",
+      "fixedAxis": "固定轴",
+      "none": "无"
+    },
+    "brushRampTitle": "画笔渐变",
     "brushSize": "笔刷大小",
     "brushSizeInput": "笔刷大小",
     "brushSizePixels": "笔刷大小：{{size}} 像素",
@@ -503,10 +722,22 @@
     "decreaseBrushSize": "拿笔刷调小点",
     "draw": "笔刷",
     "eraser": "橡皮擦",
+    "fill": "填充",
+    "fillColor": "填充颜色",
     "increaseBrushSize": "拿笔刷调大点",
+    "manual_ocr_box": "手动 OCR（矩形）",
+    "manual_ocr_lasso": "手动 OCR（自由绘制）",
     "pan": "平移",
+    "rampAxis": {
+      "horizontal": "水平",
+      "vertical": "垂直"
+    },
+    "rampAxisTitle": "轴",
+    "rampFrom": "起始颜色",
+    "rampTo": "结束颜色",
     "remove": "移除",
     "select": "选择",
+    "shape": "形状",
     "text": "文本"
   },
   "updater": {
