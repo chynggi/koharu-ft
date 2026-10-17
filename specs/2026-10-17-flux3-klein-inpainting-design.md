@@ -99,11 +99,15 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
 - 시스템 메시지는 `system_prompts["i2i"]`다.
 - 사용자 메시지는 이미지 1장 다음에 아래 텍스트가 오는 형태다.
   `"Reference images follow in order (the first image, the second image, ...).\nUser request: {request}\nOutput the caption."`
-- `add_generation_prompt`, `enable_thinking=False`, greedy 디코딩, `max_new_tokens=3584`.
+- `add_generation_prompt`, `enable_thinking=False`, greedy 디코딩(`temperature 0`, 반복 패널티 1.0 —
+  `GenerationOptions` 기본값 1.2를 명시적으로 덮는다), `max_new_tokens=3584`.
+- 참조 이미지는 upstream 추론 코드처럼 최대 1MP로 줄인다(`Flux2ImageProcessor::fit_to_area`).
+- 채팅 프롬프트는 이미지와 무관하므로 `caption` 호출마다 한 번만 렌더링한다.
 - 출력은 특수 토큰을 빼고 디코딩한 뒤 trim한다.
 - 수명주기: `caption`이 한 번의 호출 안에서 ① `Llm`을 로드하고(VRAM 점유) ② 모든 이미지의 캡션을 만든 뒤
   ③ `Llm`을 drop해서 VRAM을 반환한다. 해제를 호출자에게 맡기지 않으므로, 오류가 나도 VRAM이 남지 않는다.
-  다음 호출에서는 OS 파일 캐시에 남은 같은 파일을 다시 읽는다.
+  페이지마다 가중치를 다시 읽는다. OS 파일 캐시에서 올지 디스크에서 올지는 llama.cpp 로드 모드에 달려 있다.
+  반환된 future를 drop해도 작업 스레드에 넘어간 캡션 생성은 멈추지 않는다. 모델은 남은 이미지가 끝난 뒤 해제된다.
 
 ### `Flux3KleinInpaint::inference(caption, image, mask, options)`
 
@@ -113,7 +117,12 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
   → `init_image` + `mask_image` + `reference_images=[init_image]` + `strength` → overlay 합성.
 - FLUX 3 고유 값
   - `sample_steps` 기본 16, `text_cfg` 1.0, `SampleMethod::Euler`
-  - 스케줄러는 sd.cpp FLUX.3 기본값(discrete, flow shift 6.93)을 쓴다. `Scheduler::Flux2`는 넘기지 않는다
+  - 스케줄러는 `Scheduler::Discrete`를 명시하고 flow shift는 비워 둔다. sd.cpp가 FLUX.3 기본값 6.93으로 채운다
+  - init 이미지를 편집 reference로도 넘기는 것은 FLUX.2 인페인트 포트를 따른 것이다. FLUX 3에는 upstream 인페인트
+    파이프라인이 없으므로 효과(또는 지운 글자의 재등장)는 품질 게이트에서 확인한다
+- strength는 `Flux2ImageProcessor::sd_strength`(FLUX.2와 공유)로 변환한다. diffusers `get_timesteps`의 시작
+  스텝을 정확히 재현하고, sd.cpp의 f32 `t_enc` 절삭이 같은 스텝에 떨어지도록 경계 아래 중간값을 넘긴다. 이 공유
+  함수는 기존 FLUX.2 산식의 off-by-one(일부 비기본 스텝 수)도 함께 고친다
 - 전처리와 overlay는 `crate::flux2_klein::processor::Flux2ImageProcessor`를 그대로 쓴다. FLUX 3는 FLUX.2
   VAE와 16픽셀 정렬을 공유하고, 마스크 인페인팅 전처리는 모델 아키텍처가 아니라 diffusers FLUX.2 인페인트
   파이프라인에서 옮긴 우리 코드다. 소유권은 그 upstream 대응을 가진 FLUX.2 모듈에 남기고, 가시성만 `pub(crate)`로 넓힌다.
@@ -121,8 +130,9 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
 ### 런타임 최신화
 
 - `crates/koharu-runtime/src/runtime/packages/diffusion.rs`의 `RELEASE`를 `master-968-8cd731e`로 올린다.
-- `koharu-diffusion-sys`의 `include/stable-diffusion.h`와 바인딩은 `.agents/skills/runtime` 생성기로
-  다시 만든다. 손으로 고치지 않는다.
+- `koharu-diffusion-sys`의 `include/stable-diffusion.h`는 같은 태그의 upstream 파일을 그대로 받는다
+  (`.agents/skills/runtime/scripts/sync.sh`는 llama 헤더까지 최신으로 바꾸므로 diffusion 줄만 고정 태그로 실행).
+  바인딩은 `build.rs`의 bindgen이 빌드 시 만든다. 손으로 고치지 않는다.
 - 헤더 변경 때문에 `koharu-diffusion`의 안전 API가 바뀌면, 같은 변경 안에서 인-리포 소비자를 모두 갱신한다.
   호환 레이어는 두지 않는다.
 
@@ -180,10 +190,13 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
 
 ## 디버그 바이너리 — `crates/koharu-ml/src/bin/flux3_klein.rs`
 
-- 입력: 이미지, 마스크, `--request`, 컴포넌트 오버라이드, `--steps`, `--strength`, `--seed`, `--out`.
-- `--caption-only`: PUP로 캡션만 출력한다(G2).
+- 입력: `--input`, `--mask`, `--output`, `--request`, `--steps`, `--strength`, `--seed`, `--padding-mask-crop`,
+  `--max-pixels`, `--cpu`, 컴포넌트별 오버라이드(`--transformer`, `--text-encoder`, `--vae`, `--upsampler`, `--upsampler-mmproj`).
+- `--caption-only`: PUP로 캡션만 출력한다(G2). sd.cpp 런타임은 건드리지 않는다.
 - `--no-upsampler`: `request`를 그대로 캡션으로 쓴다. 비교 측정 전용이며 파이프라인 설정에는 대응 항목이 없다(D6).
-- 단계별 시간(PUP 로드, 캡션, 해제, 인페인팅)과 VRAM 피크를 출력한다.
+- 순서는 파이프라인과 같다: FLUX 3 로드(`phase=load`) → 그 컨텍스트가 상주한 채로 캡션(`phase=caption`,
+  로드+생성+해제 합산) → 워밍업 1회 뒤 측정한 인페인팅(`phase=inpaint`). 시작할 때 장치·입력 크기·옵션을 한 줄로 출력한다.
+- VRAM 피크는 바이너리가 아니라 외부 샘플러(`nvidia-smi`)로 잰다(Task 8).
 
 ## UI
 

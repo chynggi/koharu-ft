@@ -15,6 +15,18 @@
 
 **Spec:** `specs/2026-10-17-flux3-klein-inpainting-design.md`
 
+## 실행 기록 — Task 1–7 (브랜치 `feat/flux3-klein`, `f64f00d0..f2ce7f82`)
+
+Task 1–7은 구현과 리뷰를 마쳤다. 아래 Task 1–7의 코드 블록은 **작업 지시로서의 역사적 기록**이며, 실제 코드는 커밋이 권위다. 리뷰를 거치며 계획과 달라진 점은 다음과 같다(스펙에도 반영됨).
+
+- Task 1: FLUX.2 전후 비교(Step 1, 5, 6)는 사용자 결정으로 **Task 8로 미뤘다**(Task 8 Step 0 참고). 새 헤더는 `sd_ctx_params_t`에 `flash_attn_mode`/`conv_direct_mode`만 추가했고, 안전 래퍼는 둘을 `ptr::null()`(기존 bool 플래그 유지)로 채운다.
+- Task 2: `tile_crops_match_the_tiles_run_visits_in_order`는 크기가 아니라 **픽셀 내용**을 비교한다.
+- Task 4: VAE 주석과 모듈 문서는 실제로 확인한 사실만 말한다(미러 파일과 SHA-256 동일, system prompts는 BFL 공식 파일, 업샘플러 가중치는 커뮤니티 GGUF). sd.cpp 링크는 전체 해시 `8cd731e7b4667eb8f40a153315b9a7125d09a58d`.
+- Task 5: `generation_options()`가 `temperature 0`, `repeat_penalty 1.0`을 고정한다(기본값 1.2를 덮음). 채팅 프롬프트는 `caption` 호출당 한 번 렌더링하고, 참조 이미지는 1MP로 줄인다. "OS 파일 캐시" 주장은 제거했고, future drop 시 동작을 doc에 적었다. 테스트는 5개 + ignored 1개.
+- Task 6: strength 변환은 공유 함수 `Flux2ImageProcessor::sd_strength`가 맡는다(diffusers `get_timesteps`를 정확히 재현 + sd.cpp `t_enc` 절삭용 중간값). 이 변경은 **기존 FLUX.2의 비기본 스텝 수 동작도 고친다**. 스케줄러는 `Scheduler::Discrete`를 명시한다. init 이미지를 reference로 쓰는 부분에 미검증 주석을 달았다.
+- Task 7: 바이너리는 파이프라인과 같은 순서로 **FLUX 3를 먼저 로드**한 뒤 캡션을 만든다. 시작할 때 장치·입력 크기·옵션을 한 줄 출력한다.
+- 커밋 트레일러는 각 커밋을 실제로 작성한 모델 이름을 쓴다.
+
 ## Global Constraints
 
 - **하위 호환 레이어를 두지 않는다**(`AGENTS.md`). `inpaint_tiled`는 `TilePlan`으로 대체하고 지운다.
@@ -1206,6 +1218,23 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `specs/2026-10-17-flux3-klein-inpainting-design.md` (끝에 `## 게이트 측정 결과` 절 추가)
 
 준비물은 Task 1과 같은 `$KOHARU_SAMPLE_CROP`, `$KOHARU_SAMPLE_MASK`, `$KOHARU_GATE_DIR`에 더해, 서로 다른 페이지에서 고른 크롭·마스크 쌍 3–5개다(각 768×768 이하).
+
+- [ ] **Step 0: G1 — Task 1에서 미룬 FLUX.2 전후 비교**
+
+업그레이드 직전 커밋 `f64f00d0`(RELEASE `master-956-1b0ba10`)을 별도 worktree로 꺼내 기준선을 만든다.
+```bash
+git worktree add "$KOHARU_GATE_DIR/pre-upgrade" f64f00d0
+cargo run --manifest-path "$KOHARU_GATE_DIR/pre-upgrade/Cargo.toml" -p koharu-ml --bin flux2_klein -- \
+  --input "$KOHARU_SAMPLE_CROP" --mask "$KOHARU_SAMPLE_MASK" \
+  --output "$KOHARU_GATE_DIR/flux2-before.png" \
+  --prompt "Remove the text and reconstruct the background." --seed 42
+cargo run -p koharu-ml --bin flux2_klein -- \
+  --input "$KOHARU_SAMPLE_CROP" --mask "$KOHARU_SAMPLE_MASK" \
+  --output "$KOHARU_GATE_DIR/flux2-after.png" \
+  --prompt "Remove the text and reconstruct the background." --seed 42
+git worktree remove "$KOHARU_GATE_DIR/pre-upgrade"
+```
+그다음 Task 1 Step 6의 비교 스크립트를 실행한다. 판정 기준은 Task 1 Step 6과 같다. 다만 이 비교에는 런타임 업그레이드와 `sd_strength` 변경이 함께 섞여 있다. 기본값(4스텝, 0.8)에서는 두 산식 모두 sd.cpp가 같은 시작 스텝(`t_enc` 3)을 쓰지만, sd.cpp에 넘기는 strength 값 자체는 다르다(0.99999994 → 0.875). 그러니 PSNR이 기준에 못 미치면, worktree 쪽 `flux2_klein/mod.rs`에서 strength만 새 산식으로 바꿔 다시 비교해 원인을 가른다.
 
 - [ ] **Step 1: G2 — 업샘플러 로드와 캡션**
 
