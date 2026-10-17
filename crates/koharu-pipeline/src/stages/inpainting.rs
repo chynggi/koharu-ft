@@ -1832,11 +1832,7 @@ mod tests {
     fn tile_crops_match_the_tiles_run_visits_in_order() {
         let mut image = RgbImage::new(1200, 700);
         for (x, y, pixel) in image.enumerate_pixels_mut() {
-            *pixel = if (x + y).is_multiple_of(2) {
-                Rgb([0, 40, 80])
-            } else {
-                Rgb([255, 215, 175])
-            };
+            *pixel = Rgb([(x % 256) as u8, (y % 256) as u8, ((x / 256) * 40) as u8]);
         }
         let mut mask = GrayImage::new(1200, 700);
         mask.put_pixel(10, 10, Luma([u8::MAX]));
@@ -1846,7 +1842,7 @@ mod tests {
         let crops = plan.crops();
         let mut visited = Vec::new();
         plan.run(|index, tile, _| {
-            assert_eq!(tile.dimensions(), crops[index].dimensions());
+            assert_eq!(tile.to_rgb8(), crops[index].to_rgb8());
             visited.push(index);
             Ok(tile.clone())
         })
