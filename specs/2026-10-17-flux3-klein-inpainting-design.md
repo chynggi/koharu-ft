@@ -191,7 +191,8 @@ upstream 모델 카드의 `upsample(prompt, images)`를 1:1로 따른다.
 - detection·OCR·번역 모델은 페이지 사이에도 상주한다(`accelerator.rs`). 그래서 Phase 1 피크는 이 모델들이
   함께 올라와 있는 전체 파이프라인 상태에서 다시 확인한다(Task 9 Step 8). 실측 결과 번역 LLM(6,390MiB)과
   PUP(4,812MiB)의 동시 상주가 2페이지 피크를 12,069MiB까지 밀어 올렸다. 순차 레지던시 설계
-  (`specs/2026-10-17-sequential-model-residency-design.md`)가 이 문제를 다룬다.
+  (`specs/2026-10-17-sequential-model-residency-design.md`)가 이 문제를 다룬다. 그 설계가 적용되면 한 stage가
+  가속기를 잡을 때 다른 stage의 모델을 내리므로, 페이지 사이에 상주하는 것은 그 stage의 모델 하나뿐이다.
 - 캡션 캐시는 두지 않는다. 같은 페이지를 다시 실행하면 캡션도 다시 생성한다.
 
 ## 디버그 바이너리 — `crates/koharu-ml/src/bin/flux3_klein.rs`

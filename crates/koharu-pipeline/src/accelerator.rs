@@ -19,7 +19,8 @@ impl AcceleratorGate {
             resources,
             // Heterogeneous CUDA model pairs took 2.5-4x longer together than
             // back-to-back on the target workload. Keep accelerator work
-            // serialized while loaded weights remain resident between pages.
+            // serialized; a stage that takes the lane keeps only its own model
+            // resident, because `acquire` evicts the rest.
             lane: accelerated.then(|| Arc::new(tokio::sync::Semaphore::new(1))),
         }
     }
@@ -27,11 +28,15 @@ impl AcceleratorGate {
     /// Takes the accelerator for `stage`, dropping every other stage's model
     /// before the caller loads its own.
     ///
-    /// The eviction happens *after* the permit is held. With the single lane
-    /// that means no other stage can be mid-run, so nothing that is running
-    /// gets its memory pulled out from under it. On CPU there is no lane and
-    /// two stages may genuinely overlap; there `ModelCell::unload` is
-    /// best-effort and a busy stage keeps its model.
+    /// The eviction happens *after* the permit is held, so on the single lane
+    /// no other stage can be mid-run and nothing running gets its memory
+    /// pulled out from under it. On CPU there is no lane and two stages may
+    /// genuinely overlap.
+    ///
+    /// The eviction itself is best-effort: `ModelCell::unload` uses `try_lock`,
+    /// so a model whose cell is busy stays loaded. A miss shows up only as a
+    /// missing `model_unload` metric. Nothing here refuses a load, and a load
+    /// that then runs out of memory is caught by the stage runner's retry.
     pub(crate) async fn acquire(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
         let permit = self.lane_acquire().await;
         unload_other_models(stage, stages);
@@ -39,9 +44,10 @@ impl AcceleratorGate {
     }
 
     /// Retries after memory pressure. The eviction already happened in
-    /// [`Self::acquire`], so all that is left is to let the driver actually
-    /// return the memory and let the monitor publish a fresh reading, which
-    /// the next load sees as its headroom.
+    /// [`Self::acquire`], so all that is left is to let the driver return the
+    /// memory and let the monitor publish a fresh reading, which the next load
+    /// sees as its headroom. The wait is unconditional whenever a lane exists:
+    /// this path only runs after a failure, so one sample period is cheap.
     pub(crate) async fn recover(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
         let permit = self.acquire(stage, stages).await;
         if self.lane.is_some() {
@@ -82,16 +88,16 @@ fn eviction_targets(requested: Stage) -> impl Iterator<Item = Stage> {
     Stage::ALL.into_iter().filter(move |stage| *stage != requested)
 }
 
-fn unload_other_models(requested: Stage, stages: &Stages) -> bool {
-    let mut unloaded = false;
+/// Drops every other stage's model so that only `requested` may hold one. The
+/// caller cannot tell whether anything was evicted, and does not need to: each
+/// drop reports itself as a `model_unload` metric.
+fn unload_other_models(requested: Stage, stages: &Stages) {
     for stage in eviction_targets(requested) {
         if stages.unload(stage) {
-            unloaded = true;
             tracing::info!(target: "koharu_metrics", metric = "model_unload", stage = %stage);
             tracing::debug!(%stage, "unloaded a model to free the accelerator");
         }
     }
-    unloaded
 }
 
 #[cfg(test)]
@@ -119,25 +125,40 @@ mod tests {
         }
     }
 
+    /// The lane serializes accelerator work, and that serialization is what
+    /// makes the eviction in `acquire` safe to do without locking. Build the
+    /// gate for an accelerated device so the lane exists, and check that the
+    /// second caller really does wait for the first permit to drop.
     #[tokio::test]
-    async fn acquire_returns_a_permit_with_no_models_loaded() {
-        let device = koharu_ml::Device::cpu();
+    async fn a_second_acquire_waits_for_the_first_permit() {
+        let device = koharu_ml::Device::cuda(0);
+        let resources = crate::resources::ResourceMonitor::new(&device);
         let translator = koharu_translator::Translator::from_config(
-            device.clone(),
+            koharu_ml::Device::cpu(),
             koharu_config::Config::memory(koharu_translator::ProvidersConfig::default()),
         )
         .unwrap();
-        let resources = crate::resources::ResourceMonitor::new(&device);
         let stages = Stages::new(
             &crate::PipelineConfig::default(),
             translator,
-            &device,
+            &koharu_ml::Device::cpu(),
             resources.clone(),
         )
         .unwrap();
-        let gate = AcceleratorGate::new(&device, resources);
+        let gate = Arc::new(AcceleratorGate::new(&device, resources));
 
-        let _permit = gate.acquire(Stage::Inpainting, &stages).await;
-        let _permit = gate.recover(Stage::Inpainting, &stages).await;
+        let held = gate.acquire(Stage::Inpainting, &stages).await;
+        let second = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.acquire(Stage::Ocr, &stages).await }
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), second)
+                .await
+                .is_err(),
+            "the second acquire must block while the first permit is held"
+        );
+        drop(held);
+        assert!(gate.lane.is_some(), "this test needs the accelerator lane");
     }
 }
