@@ -4847,6 +4847,7 @@ dependencies = [
  "criterion",
  "encoding_rs",
  "fast_image_resize",
+ "icu_normalizer",
  "icu_properties",
  "image",
  "imageproc",

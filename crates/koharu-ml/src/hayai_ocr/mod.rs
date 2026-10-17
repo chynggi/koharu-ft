@@ -11,10 +11,10 @@ use crate::backend::TryIntoDevice;
 use self::{
     config::HayaiConfig,
     model::Model,
-    processor::{ImageProcessor, Tokenizer},
+    processor::{ImageProcessor, Tokenizer, normalize_text},
 };
 
-crate::model_repository!("JustANormalTinkerer/hayai-ocr-v2" @ "4a4ce477c9a8841f208b94e1d9ed5c0938965e05" {
+crate::model_repository!("JustANormalTinkerer/hayai-ocr-v2.5-nova" @ "2803d0dc005fa4396ab1e7c5a472d2c450a247f7" {
     CONFIG = "config.json",
     WEIGHTS = "model.safetensors",
     TOKENIZER = "tokenizer.json",
@@ -22,9 +22,11 @@ crate::model_repository!("JustANormalTinkerer/hayai-ocr-v2" @ "4a4ce477c9a8841f2
 
 /// Fast crop-level OCR for Japanese, Chinese, Korean, and English text.
 ///
-/// Port of the Hayai OCR v2 vision-to-text model: a SigLIP2 NaFlex encoder
-/// paired with a small GQA transformer decoder over a shared visual/textual
-/// prefix with block-causal attention and 2D multimodal RoPE.
+/// Port of the Hayai OCR v2.5 Nova vision-to-text model: a SigLIP2 NaFlex
+/// encoder, a DSC projector that merges 2x2 patch blocks into one decoder
+/// token, and a small GQA transformer decoder over a shared visual/textual
+/// prefix with block-causal attention and 2D multimodal RoPE on the
+/// compressed grid.
 #[derive(Debug)]
 pub struct HayaiOcr {
     model: Model,
@@ -85,7 +87,9 @@ impl HayaiOcr {
         koharu_torch::no_grad(|| {
             let input = self.processor.preprocess(image)?;
             let token_ids = self.model.generate(&input, &self.tokenizer, self.device)?;
-            self.tokenizer.decode(&token_ids)
+            self.tokenizer
+                .decode(&token_ids)
+                .map(|text| normalize_text(&text))
         })
     }
 }
@@ -104,8 +108,8 @@ mod tests {
         let input =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benches/fixtures/ocr/title.png");
         let text = model.inference(&image::open(input)?)?;
-        // Verified against the pinned upstream `HayaiModel.generate` in greedy
-        // mode on the identical fixture crop.
+        // Greedy output of the pinned upstream `HayaiModel.generate` on the
+        // identical fixture crop, after `normalize_text`.
         assert_eq!(text, "対策委員会です!");
         Ok(())
     }
