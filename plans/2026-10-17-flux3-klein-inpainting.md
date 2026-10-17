@@ -1633,8 +1633,9 @@ Expected: 모두 PASS·성공. 컴파일러가 `match`가 빠짐없지 않다고
 
 - [ ] **Step 8: 실제 페이지로 한 번 확인한다 (수동)**
 
-G4 머신에서 `koharu-pipeline`의 `run` 바이너리를 `--help`로 확인하고, 인페인팅 선택을 `flux3-klein`으로 해서 대표 페이지 1장을 처리한다. 확인할 것은 세 가지다.
-- 로그에 `model_unload` 없이 페이지가 끝나는지
+G4 머신에서 `koharu-pipeline`의 `run` 바이너리를 `--help`로 확인하고, 인페인팅 선택을 `flux3-klein`으로 해서 대표 페이지 1장을 처리한다. 확인할 것은 네 가지다.
+- 로그에 `stage_retry`(`"retrying stage after memory pressure"` WARN)가 없는지. `model_unload`는 정상 경로의 stage 전환에서도 나므로 OOM 복구의 증거가 아니다(`specs/2026-10-17-sequential-model-residency-design.md`).
+- `tiles=` 로그의 타일 개수
 - 결과 PNG가 만들어지는지
 - 처리 시간
 
