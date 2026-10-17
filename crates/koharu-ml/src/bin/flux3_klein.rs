@@ -114,6 +114,16 @@ async fn main() -> Result<()> {
         cli.max_pixels
     );
 
+    // Load FLUX 3 first, as the pipeline does, so the caption phase runs beside its resident context.
+    let pipeline = if cli.caption_only {
+        None
+    } else {
+        let started = Instant::now();
+        let pipeline = Flux3KleinInpaint::load(device.clone(), &source).await?;
+        eprintln!("phase=load seconds={:.2}", started.elapsed().as_secs_f64());
+        Some(pipeline)
+    };
+
     let caption = if cli.no_upsampler {
         cli.request.clone()
     } else {
@@ -132,13 +142,10 @@ async fn main() -> Result<()> {
         caption
     };
     println!("{caption}");
-    if cli.caption_only {
+    let Some(pipeline) = pipeline else {
         return Ok(());
-    }
+    };
 
-    let started = Instant::now();
-    let pipeline = Flux3KleinInpaint::load(device, &source).await?;
-    eprintln!("phase=load seconds={:.2}", started.elapsed().as_secs_f64());
     let options = Flux3KleinInpaintOptions {
         num_inference_steps: cli.steps,
         strength: cli.strength,
