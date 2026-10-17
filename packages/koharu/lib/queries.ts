@@ -12,7 +12,7 @@ import {
 import { commands, type FontFamily } from '@koharu/bridge/protocol'
 
 import { call } from './backend'
-import { runImport } from './transfer'
+import { importDroppedFiles, importDroppedPaths, runImport } from './transfer'
 
 export const projectKey = ['project'] as const
 export const pagesKey = ['pages'] as const
@@ -104,6 +104,24 @@ export function useImportPages() {
     refresh(projectKey, pagesKey, pageKey),
   )
   return { importPages: run, importing: busy }
+}
+
+/**
+ * 드롭으로 들어온 페이지를 가져온다.
+ *
+ * 데스크톱은 네이티브 경로를, 브라우저는 업로드할 파일을 넘긴다. 어느 쪽이
+ * 비어 있는지로 갈래가 정해지며, 둘 다 가져오기 mutation 키를 공유하므로
+ * `importing`은 어느 경로든 진행 중임을 반영한다.
+ */
+export function useImportDroppedPages() {
+  const { run, busy } = useCommand(
+    ['import-pages'],
+    ({ paths, files }: { paths?: string[]; files?: File[] }) =>
+      paths && paths.length > 0 ? importDroppedPaths(paths) : importDroppedFiles(files ?? []),
+    'navigator.importing',
+    () => refresh(projectKey, pagesKey, pageKey),
+  )
+  return { importDropped: run, importing: busy }
 }
 
 export async function refresh(...keys: QueryKey[]): Promise<void> {

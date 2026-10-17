@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { useTranslation } from 'react-i18next'
 
 import { ResourceMonitor } from '@/components/editor/ResourceMonitor'
+import { usePageImportDrop } from '@/components/editor/usePageImportDrop'
 import { call } from '@/lib/backend'
 import { useForkPreferences } from '@/lib/forkPreferences'
 import {
@@ -26,6 +27,7 @@ import {
   projectKey,
   queryClient,
   refresh,
+  useImportDroppedPages,
   useImportPages,
   usePage,
   usePages,
@@ -81,6 +83,9 @@ export function PageRail() {
   const mergeDeleteOriginals = useForkPreferences((state) => state.preferences.mergeDeleteOriginals)
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const { importPages, importing } = useImportPages()
+  const { importDropped } = useImportDroppedPages()
+  const railRef = useRef<HTMLElement>(null)
+  const { overDropZone, dropHandlers } = usePageImportDrop(railRef, importDropped)
   const anchor = useRef<number | null>(null)
   const selectionRequest = useRef(0)
   const intentPrefetch = useRef<IntentPrefetchState | null>(null)
@@ -329,7 +334,20 @@ export function PageRail() {
 
   return (
     <>
-      <aside className='flex h-full min-h-0 flex-col bg-[var(--surface-sidebar)]'>
+      <aside
+        ref={railRef}
+        data-drop-active={overDropZone}
+        className={cn(
+          'relative flex h-full min-h-0 flex-col bg-[var(--surface-sidebar)]',
+          overDropZone && 'ring-2 ring-inset ring-primary',
+        )}
+        {...dropHandlers}
+      >
+        {overDropZone && (
+          <div className='pointer-events-none absolute inset-0 z-20 grid place-items-center bg-primary/[0.06] text-[11px] font-medium text-foreground'>
+            {t('navigator.dropToImport')}
+          </div>
+        )}
         <header className='flex h-10 shrink-0 items-center px-2.5'>
           <div className='flex min-w-0 items-center gap-2'>
             <h2 className='text-[11px] font-semibold'>{t('navigator.pages')}</h2>
@@ -481,6 +499,13 @@ export function PageRail() {
                 )
               })}
             </div>
+            <div className='px-0.5 pt-1.5 pb-0.5'>
+              <PageImportMenu
+                importing={importing}
+                onImport={importPages}
+                className='w-full justify-center'
+              />
+            </div>
           </ScrollArea>
         )}
 
@@ -548,9 +573,11 @@ export function PageRail() {
 function PageImportMenu({
   importing,
   onImport,
+  className,
 }: {
   importing: boolean
   onImport: (source: PageImportSource) => void
+  className?: string
 }) {
   const { t } = useTranslation()
   const icon = importing ? (
@@ -568,7 +595,7 @@ function PageImportMenu({
             variant='outline'
             disabled={importing}
             aria-busy={importing}
-            className='rounded-lg text-[10px]'
+            className={cn('rounded-lg text-[10px]', className)}
           />
         }
       >

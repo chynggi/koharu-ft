@@ -383,6 +383,7 @@
     "importFolder": "資料夾…",
     "importing": "正在匯入頁面…",
     "importingAction": "正在匯入…",
+    "dropToImport": "拖放檔案或資料夾以匯入",
     "layerCount": "{{count}} 個圖層",
     "layerCount_one": "{{count}} 個圖層",
     "layerCount_other": "{{count}} 個圖層",

@@ -383,6 +383,7 @@
     "importFolder": "Папка…",
     "importing": "Импорт страниц…",
     "importingAction": "Импорт…",
+    "dropToImport": "Перетащите файлы или папки для импорта",
     "layerCount": "Слоёв: {{count}}",
     "layerCount_one": "Слоёв: {{count}}",
     "layerCount_other": "Слоёв: {{count}}",

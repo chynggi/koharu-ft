@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { finishExport, runExport, runImport } from '@/lib/transfer'
+import {
+  filesFromDataTransfer,
+  finishExport,
+  importDroppedFiles,
+  importDroppedPaths,
+  runExport,
+  runImport,
+} from '@/lib/transfer'
 import { commands, type ExportFormat } from '@koharu/bridge/protocol'
 
 function pretendEmbedded(): void {
@@ -24,6 +31,48 @@ describe('page transfer', () => {
     expect(upload).not.toHaveBeenCalled()
   })
 
+})
+
+describe('dropped pages', () => {
+  it('sends native paths in the desktop window', async () => {
+    pretendEmbedded()
+    const paths = vi.spyOn(commands, 'importPages').mockResolvedValue([])
+    const upload = vi.spyOn(commands, 'importPagesUpload')
+
+    await importDroppedPaths(['/a.png'])
+
+    expect(paths).toHaveBeenCalledWith(['/a.png'])
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('uploads files in a browser', async () => {
+    const file = new File(['x'], 'a.png')
+    const upload = vi.spyOn(commands, 'importPagesUpload').mockResolvedValue([])
+
+    await importDroppedFiles([file])
+
+    expect(upload).toHaveBeenCalledWith([file])
+  })
+
+  it('ignores a drop the other transport owns', async () => {
+    pretendEmbedded()
+    const upload = vi.spyOn(commands, 'importPagesUpload')
+
+    await importDroppedFiles([new File(['x'], 'a.png')])
+
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('filters unsupported files and only reads directory entries', async () => {
+    const png = new File(['x'], 'a.png')
+    const text = new File(['x'], 'notes.txt')
+    const transfer = {
+      items: [],
+      files: [png, text],
+    } as unknown as DataTransfer
+
+    await expect(filesFromDataTransfer(transfer)).resolves.toEqual([png])
+  })
 })
 
 describe('runExport', () => {

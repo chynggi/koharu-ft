@@ -383,6 +383,7 @@
     "importFolder": "Klasör…",
     "importing": "Sayfalar içe aktarılıyor…",
     "importingAction": "İçe aktarılıyor…",
+    "dropToImport": "İçe aktarmak için dosya veya klasör bırakın",
     "layerCount": "{{count}} katman",
     "layerCount_one": "{{count}} katman",
     "layerCount_other": "{{count}} katman",

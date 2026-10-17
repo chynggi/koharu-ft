@@ -146,12 +146,8 @@ async fn import_pages(
     Json(request): Json<ImportPagesRequest>,
 ) -> ApiResult<Json<Vec<PageSummary>>> {
     reject_while_processing(&app)?;
-    let files: Vec<PathBuf> = request
-        .files
-        .into_iter()
-        .map(PathBuf::from)
-        .filter(|path| path.is_file())
-        .collect();
+    let files: Vec<PathBuf> =
+        import::expand(request.files.into_iter().map(PathBuf::from).collect());
     if files.is_empty() {
         return Err(anyhow::anyhow!("none of the provided files exist").into());
     }

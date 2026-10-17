@@ -383,6 +383,7 @@
     "importFolder": "Folder…",
     "importing": "Importing pages…",
     "importingAction": "Importing…",
+    "dropToImport": "Drop files or folders to import",
     "layerCount": "{{count}} layers",
     "layerCount_one": "{{count}} layer",
     "layerCount_other": "{{count}} layers",

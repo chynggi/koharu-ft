@@ -383,6 +383,7 @@
     "importFolder": "Carpeta…",
     "importing": "Importando páginas…",
     "importingAction": "Importando…",
+    "dropToImport": "Suelta archivos o carpetas para importar",
     "layerCount": "{{count}} capas",
     "layerCount_one": "{{count}} capas",
     "layerCount_other": "{{count}} capas",

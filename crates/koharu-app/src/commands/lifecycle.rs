@@ -7,7 +7,6 @@ use specta::Type;
 use strum::{EnumMessage as _, IntoEnumIterator as _};
 use tauri::{AppHandle, Manager as _, State, WebviewWindow, ipc::Channel};
 use tauri_runtime_cef::CefRuntime;
-use walkdir::WalkDir;
 
 use super::{
     ChannelExt as _, Error,
@@ -433,25 +432,10 @@ pub async fn import_pages(
                 .map(|file| file.path().to_owned())
                 .collect::<Vec<_>>()
         }),
-        PageImportSource::Folder => dialog.pick_folder().await.map(|folder| {
-            WalkDir::new(folder.path())
-                .follow_links(false)
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    Ok(entry) if entry.file_type().is_file() => Some(entry.into_path()),
-                    Ok(_) => None,
-                    Err(error) => {
-                        tracing::warn!(%error, "could not inspect an import directory entry");
-                        None
-                    }
-                })
-                .filter(|path| {
-                    path.extension()
-                        .and_then(|extension| extension.to_str())
-                        .is_some_and(|extension| extension.parse::<import::Format>().is_ok())
-                })
-                .collect::<Vec<_>>()
-        }),
+        PageImportSource::Folder => dialog
+            .pick_folder()
+            .await
+            .map(|folder| import::expand(vec![folder.path().to_owned()])),
     };
     let Some(files) = files else {
         return Ok(());

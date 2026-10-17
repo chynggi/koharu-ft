@@ -383,6 +383,7 @@
     "importFolder": "Pasta…",
     "importing": "Importando páginas…",
     "importingAction": "Importando…",
+    "dropToImport": "Solte arquivos ou pastas para importar",
     "layerCount": "{{count}} camadas",
     "layerCount_one": "{{count}} camadas",
     "layerCount_other": "{{count}} camadas",

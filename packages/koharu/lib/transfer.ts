@@ -29,6 +29,13 @@ export function isEmbedded(): boolean {
 /** Mirrors the extensions `koharu_app::commands::import::Format` accepts. */
 const IMPORT_ACCEPT = '.png,.jpg,.jpeg,.webp,.cbz,.zip,.rar,.pdf'
 
+const IMPORT_EXTENSIONS = IMPORT_ACCEPT.split(',')
+
+function isImportable(name: string): boolean {
+  const lower = name.toLocaleLowerCase()
+  return IMPORT_EXTENSIONS.some((extension) => lower.endsWith(extension))
+}
+
 /**
  * Ask the browser for files. Resolves empty when the user dismisses the
  * picker, which callers should treat as "nothing to do" rather than an error.
@@ -54,6 +61,76 @@ export async function runImport(source: PageImportSource): Promise<PageSummary[]
   const files = await pickFiles(source)
   if (files.length === 0) return []
   return commands.importPagesUpload(files)
+}
+
+/**
+ * 데스크톱 창에 떨어진 파일·폴더를 가져온다.
+ *
+ * 네이티브 드롭은 실제 경로를 주므로 바이트가 움직이지 않는다 — 다이얼로그와
+ * 같은 `/pages/import` 경로를 쓴다. 서버가 디렉터리를 재귀 탐색한다.
+ */
+export function importDroppedPaths(paths: string[]): Promise<PageSummary[]> {
+  if (!isEmbedded() || paths.length === 0) return Promise.resolve([])
+  return commands.importPages(paths)
+}
+
+/** 브라우저에 떨어진 파일을 가져온다. 경로가 없으므로 업로드한다. */
+export function importDroppedFiles(files: File[]): Promise<PageSummary[]> {
+  if (isEmbedded() || files.length === 0) return Promise.resolve([])
+  return commands.importPagesUpload(files)
+}
+
+async function readEntry(entry: FileSystemEntry, files: File[]): Promise<void> {
+  if (entry.isFile) {
+    const file = await new Promise<File | null>((resolve) => {
+      ;(entry as FileSystemFileEntry).file(
+        (value) => resolve(value),
+        () => resolve(null),
+      )
+    })
+    if (file && isImportable(file.name)) files.push(file)
+    return
+  }
+  if (!entry.isDirectory) return
+  const reader = (entry as FileSystemDirectoryEntry).createReader()
+  // `readEntries`는 배치 단위로 돌려주며 끝에서 빈 배열을 준다. 한 번에 전부
+  // 오지 않으므로 빌 때까지 반복해야 폴더가 잘리지 않는다.
+  for (;;) {
+    const batch = await new Promise<FileSystemEntry[]>((resolve) => {
+      reader.readEntries(
+        (entries) => resolve(entries),
+        () => resolve([]),
+      )
+    })
+    if (batch.length === 0) break
+    for (const child of batch) await readEntry(child, files)
+  }
+}
+
+/**
+ * 브라우저 드롭에서 가져올 파일들을 모은다.
+ *
+ * 폴더는 `DataTransfer.files`에 담기지 않으므로 엔트리를 재귀 탐색한다. 지원
+ * 형식이 아닌 파일은 조용히 건너뛴다 — 서버도 같은 확장자만 디코드한다.
+ */
+export async function filesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = dataTransfer.items
+  if (!items || items.length === 0) {
+    return Array.from(dataTransfer.files).filter((file) => isImportable(file.name))
+  }
+  const files: File[] = []
+  const entries: FileSystemEntry[] = []
+  for (const item of Array.from(items)) {
+    if (item.kind !== 'file') continue
+    const entry = item.webkitGetAsEntry()
+    if (entry) entries.push(entry)
+    else {
+      const file = item.getAsFile()
+      if (file && isImportable(file.name)) files.push(file)
+    }
+  }
+  for (const entry of entries) await readEntry(entry, files)
+  return files
 }
 
 /**

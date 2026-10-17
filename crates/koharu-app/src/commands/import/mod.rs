@@ -9,6 +9,7 @@ use anyhow::{Context as _, Result, bail};
 use image::{ImageFormat, ImageReader};
 use rayon::prelude::*;
 use strum::{EnumIter, EnumMessage, EnumString};
+use walkdir::WalkDir;
 
 mod pdf;
 mod rar;
@@ -71,6 +72,45 @@ fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
         width,
         height,
     })
+}
+
+/// `Format`을 아는 확장자인지 본다.
+pub fn is_supported(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.parse::<Format>().is_ok())
+}
+
+/// 가져올 파일 목록으로 펼친다.
+///
+/// 디렉터리는 재귀적으로 훑어 지원 형식만 취한다. 드래그 & 드롭이 폴더를 그대로
+/// 넘기므로, 다이얼로그의 폴더 선택과 같은 규칙을 여기 한 곳에 둔다.
+pub fn expand(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut expanded = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for path in paths {
+        if path.is_dir() {
+            for entry in WalkDir::new(&path)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    Ok(entry) if entry.file_type().is_file() => Some(entry.into_path()),
+                    Ok(_) => None,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not inspect an import directory entry");
+                        None
+                    }
+                })
+            {
+                if is_supported(&entry) && seen.insert(entry.clone()) {
+                    expanded.push(entry);
+                }
+            }
+        } else if path.is_file() && is_supported(&path) && seen.insert(path.clone()) {
+            expanded.push(path);
+        }
+    }
+    expanded
 }
 
 /// Decode image/archive/PDF paths into pages, sorted in reading order.
@@ -147,5 +187,41 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["page1.png", "page2.png", "page10.PNG"]
         );
+    }
+
+    #[test]
+    fn expand_walks_directories_and_keeps_only_supported_files() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "koharu-import-expand-{}-{timestamp}",
+            std::process::id()
+        ));
+        let nested = directory.join("chapter");
+        fs::create_dir_all(&nested).expect("create fixture directory");
+        let supported = vec![directory.join("a.png"), nested.join("b.PDF")];
+        for path in &supported {
+            fs::write(path, b"x").expect("write fixture");
+        }
+        fs::write(nested.join("notes.txt"), b"x").expect("write fixture");
+        // A single file mixed in with the directory is kept; an unsupported one
+        // is dropped rather than left for the decoder to reject.
+        let single = directory.join("single.png");
+        fs::write(&single, b"x").expect("write fixture");
+
+        let mut expanded = expand(vec![
+            directory.clone(),
+            single.clone(),
+            nested.join("notes.txt"),
+        ]);
+        expanded.sort();
+        let mut expected = supported.clone();
+        expected.push(single);
+        expected.sort();
+        assert_eq!(expanded, expected);
+
+        fs::remove_dir_all(&directory).expect("remove fixture directory");
     }
 }

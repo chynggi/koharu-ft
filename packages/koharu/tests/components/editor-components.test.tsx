@@ -58,6 +58,9 @@ const nativeWindow = vi.hoisted(() => ({
   close: vi.fn(async () => undefined),
   isMaximized: vi.fn(async () => false),
   minimize: vi.fn(async () => undefined),
+  onDragDropEvent: vi.fn<(handler: (event: { payload: unknown }) => void) => Promise<() => void>>(
+    async () => () => undefined,
+  ),
   onResized: vi.fn(async () => () => undefined),
   startResizeDragging: vi.fn(async () => undefined),
   toggleMaximize: vi.fn(async () => undefined),
@@ -614,6 +617,70 @@ describe('greenfield editor', () => {
       'blob:koharu-thumbnail',
     )
     expect(screen.queryByText('01')).not.toBeInTheDocument()
+  })
+
+  it('offers the import menu below the last page', async () => {
+    installProject()
+    const user = userEvent.setup()
+    const dialog = vi.spyOn(commands, 'importPagesDialog').mockResolvedValue([])
+    render(<PageRail />)
+
+    // The rail already has an import affordance in its empty state; this one
+    // sits at the end of the list, so it must be a second control.
+    const importButtons = screen.getAllByRole('button', { name: 'Import' })
+    expect(importButtons).toHaveLength(1)
+    await user.click(importButtons[0]!)
+    await user.click(await screen.findByRole('menuitem', { name: 'Files…' }))
+    await waitFor(() => expect(dialog).toHaveBeenCalledWith('files'))
+  })
+
+  it('imports pages dropped onto the rail in the desktop window', async () => {
+    installProject()
+    const importPages = vi.spyOn(commands, 'importPages').mockResolvedValue([])
+    let handler: ((event: { payload: unknown }) => void) | undefined
+    nativeWindow.onDragDropEvent.mockImplementation(async (fn) => {
+      handler = fn as typeof handler
+      return () => undefined
+    })
+    const view = render(<PageRail />)
+    const rail = view.container.querySelector('aside')!
+    // jsdom lays nothing out, so the drop-zone rect has to be supplied for the
+    // physical-position check to have something to test against.
+    rail.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 600,
+        width: 200,
+        height: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    await waitFor(() => expect(handler).toBeDefined())
+    await act(async () => {
+      handler!({ payload: { type: 'drop', paths: ['/pages/a.png'], position: { x: 10, y: 10 } } })
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(importPages).toHaveBeenCalledWith(['/pages/a.png']))
+  })
+
+  it('uploads files dropped onto the rail in a browser', async () => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+    installProject()
+    const upload = vi.spyOn(commands, 'importPagesUpload').mockResolvedValue([])
+    render(<PageRail />)
+
+    const file = new File(['x'], 'page.png', { type: 'image/png' })
+    fireEvent.drop(screen.getByText('Page 1').closest('aside')!, {
+      dataTransfer: { types: ['Files'], items: [], files: [file] },
+    })
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1))
+    expect(upload.mock.calls[0]![0]).toEqual([file])
   })
 
   it('keeps rapid page switches on the latest native selection', async () => {

@@ -383,6 +383,7 @@
     "importFolder": "폴더…",
     "importing": "페이지 가져오는 중…",
     "importingAction": "가져오는 중…",
+    "dropToImport": "가져오려면 파일이나 폴더를 놓으세요",
     "layerCount": "레이어 {{count}}개",
     "layerCount_one": "레이어 {{count}}개",
     "layerCount_other": "레이어 {{count}}개",
