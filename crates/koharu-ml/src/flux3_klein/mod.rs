@@ -138,7 +138,10 @@ impl Flux3KleinInpaint {
         let image = Flux2ImageProcessor::fit_to_area(image, options.max_pixels);
         let width = (image.width() / 16) * 16;
         let height = (image.height() / 16) * 16;
-        ensure!(width > 0 && height > 0);
+        ensure!(
+            width > 0 && height > 0,
+            "image is smaller than one 16-pixel FLUX 3 patch"
+        );
         let source = image.to_rgb8();
         let mut image = RgbImage::new(width, height);
         Resizer::new()
@@ -184,6 +187,10 @@ impl Flux3KleinInpaint {
         let strength =
             Flux2ImageProcessor::sd_strength(options.strength, options.num_inference_steps);
 
+        // Following the FLUX.2 Klein inpaint port, the init image is also the edit
+        // reference. FLUX 3 has no upstream inpaint pipeline, so whether this
+        // helps or brings the erased lettering back is unverified until the
+        // quality gate.
         let reference_images = vec![init_image.clone()];
         let generated = self
             .model
@@ -200,9 +207,9 @@ impl Flux3KleinInpaint {
                         text_cfg: 1.0,
                         ..GuidanceParams::default()
                     },
-                    // `Auto` with the default flow shift lets stable-diffusion.cpp
-                    // apply FLUX.3's own discrete schedule (shift 6.93).
-                    scheduler: Scheduler::Auto,
+                    // FLUX.3's own discrete schedule; the unset flow shift resolves to
+                    // stable-diffusion.cpp's FLUX.3 default of 6.93.
+                    scheduler: Scheduler::Discrete,
                     sample_method: SampleMethod::Euler,
                     sample_steps: i32::try_from(options.num_inference_steps)?,
                     ..SampleParams::default()

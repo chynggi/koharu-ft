@@ -61,9 +61,8 @@ fn context_params(device: &crate::Device, paths: ModelPaths) -> ContextParams {
         // FLUX 3 Image Klein decodes with the FLUX.2 autoencoder.
         vae_format: VaeFormat::Flux2,
         backend: Some(device.name.clone()),
-        // Unlike FLUX.2 Klein, parameters always stay in RAM: the prompt
-        // upsampler takes the accelerator between pages, so this context must
-        // hand its VRAM back after every call instead of keeping weights there.
+        // Unlike FLUX.2 Klein, weights always stay in RAM so the prompt
+        // upsampler can claim the accelerator between pages.
         params_backend: use_accelerator.then(|| "*=cpu".to_owned()),
         ..ContextParams::default()
     }
