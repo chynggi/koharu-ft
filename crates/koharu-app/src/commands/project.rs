@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    hash::{BuildHasherDefault, Hasher},
     io::Cursor,
     path::PathBuf,
     sync::Arc,
@@ -2468,6 +2469,33 @@ fn encode_png(image: RgbaImage) -> Result<Arc<[u8]>> {
     Ok(Arc::from(encoded.into_inner()))
 }
 
+/// A fast, non-cryptographic hasher for the small `(u32, u32)` pixel keys
+/// accumulated while rasterizing a stroke. The standard library's default
+/// hasher is deliberately slow (DoS-resistant), which is unwarranted for
+/// this purely in-process, short-lived map and is measurable overhead when
+/// a stroke revisits the same pixels many times, such as scribbling back
+/// and forth to fill an area.
+#[derive(Default)]
+struct PixelHasher(u64);
+
+impl Hasher for PixelHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.0 = (self.0 ^ u64::from(value)).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+type PixelMap<V> = HashMap<(u32, u32), V, BuildHasherDefault<PixelHasher>>;
+
 fn rasterize_stroke(
     image: &mut RgbaImage,
     mode: RasterStrokeMode,
@@ -2477,11 +2505,17 @@ fn rasterize_stroke(
     points: &[ScenePoint],
 ) {
     let radius = f64::from(diameter) * 0.5;
+    let segments: Vec<(&ScenePoint, &ScenePoint)> = match points {
+        [] => return,
+        [single] => vec![(single, single)],
+        many => many.iter().zip(many.iter().skip(1)).collect(),
+    };
+
     // An `AlongStroke` ramp runs over the whole polyline, so it needs each
-    // point's *cumulative* distance: `t` below is only a per-segment projection
-    // parameter and restarts at 0 for every segment. A single-point stroke
-    // leaves `total` at zero, and the `total > 0.0` guard in the pixel loop
-    // turns that into position 0.0 instead of a NaN.
+    // point's *cumulative* distance: `t` from `scan_segment` is only a
+    // per-segment projection parameter and restarts at 0 for every segment. A
+    // single-point stroke leaves `total` at zero, which `paint` turns into
+    // position 0.0 instead of a NaN.
     let mut cumulative = Vec::with_capacity(points.len());
     let mut total = 0.0;
     for (index, point) in points.iter().enumerate() {
@@ -2492,83 +2526,178 @@ fn rasterize_stroke(
     }
     let page_width = f64::from(image.width());
     let page_height = f64::from(image.height());
-    for (index, (start, end)) in points
-        .iter()
-        .zip(points.iter().skip(1))
-        .chain(points.last().map(|point| (point, point)))
-        .enumerate()
-    {
-        let left = (start.x.min(end.x) - radius - 0.5).floor().max(0.0) as u32;
-        let top = (start.y.min(end.y) - radius - 0.5).floor().max(0.0) as u32;
-        let right = (start.x.max(end.x) + radius + 0.5)
-            .ceil()
-            .min(f64::from(image.width())) as u32;
-        let bottom = (start.y.max(end.y) + radius + 0.5)
-            .ceil()
-            .min(f64::from(image.height())) as u32;
-        let dx = end.x - start.x;
-        let dy = end.y - start.y;
-        let length_squared = dx * dx + dy * dy;
-        for y in top..bottom {
-            for x in left..right {
-                let px = f64::from(x) + 0.5;
-                let py = f64::from(y) + 0.5;
-                let t = if length_squared == 0.0 {
-                    0.0
-                } else {
-                    (((px - start.x) * dx + (py - start.y) * dy) / length_squared).clamp(0.0, 1.0)
-                };
-                let distance =
-                    ((px - (start.x + t * dx)).powi(2) + (py - (start.y + t * dy)).powi(2)).sqrt();
-                let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0) as f32;
-                if coverage == 0.0 {
-                    continue;
+    // Colour of segment `index` at projection `t` for pixel `(x, y)`. The ramp
+    // position is page-normalized for `FixedAxis`, so several strokes can
+    // share one ramp; a frame or viewport coordinate would make the colour
+    // depend on the camera.
+    let paint = |index: usize, t: f64, length: f64, x: u32, y: u32| -> [u8; 4] {
+        ramp.map_or(color, |ramp| {
+            let position = match ramp {
+                BrushRamp::AlongStroke { .. } => {
+                    if total > 0.0 {
+                        (cumulative[index] + t * length) / total
+                    } else {
+                        0.0
+                    }
                 }
-                // The ramp position is page-normalized for `FixedAxis`, so
-                // several strokes can share one ramp; a frame or viewport
-                // coordinate would make the colour depend on the camera.
-                let paint = ramp.map_or(color, |ramp| {
-                    let position = match ramp {
-                        BrushRamp::AlongStroke { .. } => {
-                            if total > 0.0 {
-                                (cumulative[index] + t * length_squared.sqrt()) / total
-                            } else {
-                                0.0
-                            }
-                        }
-                        BrushRamp::FixedAxis { axis, .. } => match axis {
-                            RampAxis::Horizontal => px / page_width,
-                            RampAxis::Vertical => py / page_height,
-                        },
-                    };
-                    ramp.color_at(position as f32)
-                });
-                let pixel = image.get_pixel_mut(x, y);
-                match mode {
-                    RasterStrokeMode::Paint => {
-                        let source_alpha = f32::from(paint[3]) / 255.0 * coverage;
-                        let destination_alpha = f32::from(pixel[3]) / 255.0;
-                        let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
-                        if output_alpha > 0.0 {
-                            for channel in 0..3 {
-                                let source = f32::from(paint[channel]) / 255.0;
-                                let destination = f32::from(pixel[channel]) / 255.0;
-                                pixel[channel] = (((source * source_alpha
-                                    + destination * destination_alpha * (1.0 - source_alpha))
-                                    / output_alpha)
-                                    * 255.0)
-                                    .round() as u8;
-                            }
-                        }
-                        pixel[3] = (output_alpha * 255.0).round() as u8;
-                    }
-                    // `Erase` composites by coverage alone and never reads the
-                    // colour, so a ramp deliberately does not affect it.
-                    RasterStrokeMode::Erase => {
-                        pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
-                    }
+                BrushRamp::FixedAxis { axis, .. } => match axis {
+                    RampAxis::Horizontal => (f64::from(x) + 0.5) / page_width,
+                    RampAxis::Vertical => (f64::from(y) + 0.5) / page_height,
+                },
+            };
+            ramp.color_at(position as f32)
+        })
+    };
+
+    // A lone segment cannot overlap itself, so there is nothing for the
+    // accumulator below to deduplicate: blend it directly, exactly as before
+    // this fix, to keep a single dab or a short two-point stroke as fast as
+    // it always was.
+    if let [(start, end)] = segments[..] {
+        let (width, height) = (image.width(), image.height());
+        let length = (end.x - start.x).hypot(end.y - start.y);
+        scan_segment(width, height, radius, start, end, |x, y, value, t| {
+            let paint = paint(0, t, length, x, y);
+            blend_pixel(image.get_pixel_mut(x, y), mode, paint, value);
+        });
+        return;
+    }
+
+    // The stroke's outline is the union of every segment's capsule. Adjacent
+    // segments share a point and therefore overlap at that joint, so
+    // coverage is accumulated as the maximum across all segments and every
+    // pixel is blended exactly once, rather than once per segment whose
+    // capsule happens to reach it. The accumulator is keyed by pixel rather
+    // than a dense buffer over the stroke's bounding box: a long or
+    // spread-out freehand stroke made of many short segments can have a
+    // bounding box far larger than the pixels any segment actually reaches.
+    //
+    // The map is still sized up front, from the smaller of two upper bounds
+    // on the touched-pixel count, so it does not grow one rehash at a time
+    // as a long stroke is accumulated:
+    // - the sum of each capsule's own area (length times width), which is
+    //   tight for a few long, mostly separate segments but overcounts
+    //   heavily for a dense, self-overlapping stroke such as a tight
+    //   scribble, where many segments repeatedly cover the same pixels;
+    // - the stroke's overall axis-aligned bounding box, which every touched
+    //   pixel lies within by construction and is tight for exactly that
+    //   self-overlapping case, but is far larger than the touched pixels for
+    //   a long, thin diagonal segment.
+    let capsule_area_estimate: f64 = segments
+        .iter()
+        .map(|(start, end)| {
+            let length = (end.x - start.x).hypot(end.y - start.y);
+            (length + 1.0) * (2.0 * radius + 2.0)
+        })
+        .sum();
+    let (mut bounds_left, mut bounds_top, mut bounds_right, mut bounds_bottom) =
+        (u32::MAX, u32::MAX, 0u32, 0u32);
+    for (start, end) in &segments {
+        bounds_left = bounds_left.min((start.x.min(end.x) - radius - 0.5).floor().max(0.0) as u32);
+        bounds_top = bounds_top.min((start.y.min(end.y) - radius - 0.5).floor().max(0.0) as u32);
+        bounds_right = bounds_right.max(
+            (start.x.max(end.x) + radius + 0.5)
+                .ceil()
+                .min(f64::from(image.width())) as u32,
+        );
+        bounds_bottom = bounds_bottom.max(
+            (start.y.max(end.y) + radius + 0.5)
+                .ceil()
+                .min(f64::from(image.height())) as u32,
+        );
+    }
+    let bounding_box_estimate = f64::from(bounds_right.saturating_sub(bounds_left))
+        * f64::from(bounds_bottom.saturating_sub(bounds_top));
+    let estimated_pixels = capsule_area_estimate.min(bounding_box_estimate);
+    // Fork divergence from koharu-rs/koharu#1164: with a ramp the colour
+    // varies along the stroke, so each pixel also keeps the colour of the
+    // segment that covers it most. A joint pixel then takes one segment's
+    // colour instead of a blend of both, matching how its coverage is chosen.
+    let mut coverage: PixelMap<(f32, [u8; 4])> = PixelMap::with_capacity_and_hasher(
+        estimated_pixels as usize,
+        BuildHasherDefault::default(),
+    );
+    let (width, height) = (image.width(), image.height());
+    for (index, (start, end)) in segments.iter().enumerate() {
+        let length = (end.x - start.x).hypot(end.y - start.y);
+        scan_segment(width, height, radius, start, end, |x, y, value, t| {
+            let entry = coverage.entry((x, y)).or_insert((0.0, color));
+            if value > entry.0 {
+                *entry = (value, paint(index, t, length, x, y));
+            }
+        });
+    }
+
+    for ((x, y), (coverage, paint)) in coverage {
+        blend_pixel(image.get_pixel_mut(x, y), mode, paint, coverage);
+    }
+}
+
+/// Visits every pixel whose capsule-distance coverage from `start` to `end`
+/// is nonzero, within `width`/`height`, with its coverage and its projection
+/// parameter `t` onto the segment.
+fn scan_segment(
+    width: u32,
+    height: u32,
+    radius: f64,
+    start: &ScenePoint,
+    end: &ScenePoint,
+    mut visit: impl FnMut(u32, u32, f32, f64),
+) {
+    let left = (start.x.min(end.x) - radius - 0.5).floor().max(0.0) as u32;
+    let top = (start.y.min(end.y) - radius - 0.5).floor().max(0.0) as u32;
+    let right = (start.x.max(end.x) + radius + 0.5)
+        .ceil()
+        .min(f64::from(width)) as u32;
+    let bottom = (start.y.max(end.y) + radius + 0.5)
+        .ceil()
+        .min(f64::from(height)) as u32;
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let length_squared = dx * dx + dy * dy;
+    for y in top..bottom {
+        for x in left..right {
+            let px = f64::from(x) + 0.5;
+            let py = f64::from(y) + 0.5;
+            let t = if length_squared == 0.0 {
+                0.0
+            } else {
+                (((px - start.x) * dx + (py - start.y) * dy) / length_squared).clamp(0.0, 1.0)
+            };
+            let distance =
+                ((px - (start.x + t * dx)).powi(2) + (py - (start.y + t * dy)).powi(2)).sqrt();
+            let value = (radius + 0.5 - distance).clamp(0.0, 1.0) as f32;
+            if value == 0.0 {
+                continue;
+            }
+            visit(x, y, value, t);
+        }
+    }
+}
+
+fn blend_pixel(pixel: &mut image::Rgba<u8>, mode: RasterStrokeMode, color: [u8; 4], coverage: f32) {
+    match mode {
+        RasterStrokeMode::Paint => {
+            let source_alpha = f32::from(color[3]) / 255.0 * coverage;
+            let destination_alpha = f32::from(pixel[3]) / 255.0;
+            let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
+            if output_alpha > 0.0 {
+                for channel in 0..3 {
+                    let source = f32::from(color[channel]) / 255.0;
+                    let destination = f32::from(pixel[channel]) / 255.0;
+                    pixel[channel] = (((source * source_alpha
+                        + destination * destination_alpha * (1.0 - source_alpha))
+                        / output_alpha)
+                        * 255.0)
+                        .round() as u8;
                 }
             }
+            pixel[3] = (output_alpha * 255.0).round() as u8;
+        }
+        // `Erase` composites by coverage alone and never reads the colour, so
+        // a ramp deliberately does not affect it.
+        RasterStrokeMode::Erase => {
+            pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
         }
     }
 }
@@ -5113,9 +5242,11 @@ mod tests {
         // everywhere inside the shape and never the blue fallback.
         let red = {
             let mut bytes = Cursor::new(Vec::new());
-            DynamicImage::ImageRgba8(image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255]).unwrap())
-                .write_to(&mut bytes, ImageFormat::Png)
-                .unwrap();
+            DynamicImage::ImageRgba8(
+                image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255]).unwrap(),
+            )
+            .write_to(&mut bytes, ImageFormat::Png)
+            .unwrap();
             bytes.into_inner()
         };
         project
@@ -5325,5 +5456,109 @@ mod tests {
             serde_json::to_string(&sweep).unwrap(),
             r#"{"gradient":{"kind":{"sweep":{"center":[0.5,0.5],"start_degrees":0.0,"end_degrees":360.0}},"stops":[{"offset":0.0,"color":[255,0,0,255]},{"offset":1.0,"color":[0,0,255,255]}],"extend":"reflect"}}"#
         );
+    }
+
+    #[test]
+    fn raster_stroke_does_not_double_blend_the_final_point() {
+        // A translucent dab applied once over a transparent pixel keeps the
+        // source alpha exactly, because the destination starts at zero.
+        let mut single = RgbaImage::new(20, 20);
+        rasterize_stroke(
+            &mut single,
+            RasterStrokeMode::Paint,
+            [100, 150, 200, 128],
+            None,
+            5.0,
+            &[ScenePoint { x: 10.0, y: 10.0 }],
+        );
+        assert_eq!(single.get_pixel(10, 10)[3], 128);
+
+        // A two-point stroke ending at the same spot must blend that pixel
+        // with the same single dab, not re-apply the brush a second time
+        // for the synthetic closing segment.
+        let mut stroke = RgbaImage::new(20, 20);
+        rasterize_stroke(
+            &mut stroke,
+            RasterStrokeMode::Paint,
+            [100, 150, 200, 128],
+            None,
+            5.0,
+            &[
+                ScenePoint { x: 2.0, y: 10.0 },
+                ScenePoint { x: 10.0, y: 10.0 },
+            ],
+        );
+        assert_eq!(stroke.get_pixel(10, 10)[3], 128);
+    }
+
+    #[test]
+    fn raster_stroke_does_not_double_blend_interior_joints() {
+        // Three collinear points with an opaque color, matching the real
+        // app's brush (the editor always sends alpha 255). The anti-aliased
+        // ring near the shared joint between the two segments must read the
+        // same as a single continuous stroke covering the same path, not be
+        // blended once per adjacent segment that reaches it.
+        let mut joint = RgbaImage::new(20, 20);
+        rasterize_stroke(
+            &mut joint,
+            RasterStrokeMode::Paint,
+            [200, 50, 50, 255],
+            None,
+            5.0,
+            &[
+                ScenePoint { x: 2.0, y: 10.0 },
+                ScenePoint { x: 10.0, y: 10.0 },
+                ScenePoint { x: 18.0, y: 10.0 },
+            ],
+        );
+
+        let mut reference = RgbaImage::new(20, 20);
+        rasterize_stroke(
+            &mut reference,
+            RasterStrokeMode::Paint,
+            [200, 50, 50, 255],
+            None,
+            5.0,
+            &[
+                ScenePoint { x: 2.0, y: 10.0 },
+                ScenePoint { x: 18.0, y: 10.0 },
+            ],
+        );
+
+        assert_eq!(joint.get_pixel(10, 12)[3], reference.get_pixel(10, 12)[3]);
+    }
+
+    #[test]
+    fn erase_stroke_does_not_double_erase_interior_joints() {
+        let opaque = image::Rgba([1, 2, 3, 255]);
+
+        let mut joint = RgbaImage::from_pixel(20, 20, opaque);
+        rasterize_stroke(
+            &mut joint,
+            RasterStrokeMode::Erase,
+            [0, 0, 0, 0],
+            None,
+            5.0,
+            &[
+                ScenePoint { x: 2.0, y: 10.0 },
+                ScenePoint { x: 10.0, y: 10.0 },
+                ScenePoint { x: 18.0, y: 10.0 },
+            ],
+        );
+
+        let mut reference = RgbaImage::from_pixel(20, 20, opaque);
+        rasterize_stroke(
+            &mut reference,
+            RasterStrokeMode::Erase,
+            [0, 0, 0, 0],
+            None,
+            5.0,
+            &[
+                ScenePoint { x: 2.0, y: 10.0 },
+                ScenePoint { x: 18.0, y: 10.0 },
+            ],
+        );
+
+        assert_eq!(joint.get_pixel(10, 12)[3], reference.get_pixel(10, 12)[3]);
     }
 }
