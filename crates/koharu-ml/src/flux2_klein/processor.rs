@@ -65,7 +65,7 @@ impl Flux2ImageProcessor {
         if strength >= 1.0 {
             return 1.0;
         }
-        let effective_steps = steps - (steps as f64 * (1.0 - strength)).floor() as usize;
+        let effective_steps = (steps - (steps as f64 * (1.0 - strength)).floor() as usize).max(1);
         ((effective_steps as f64 - 0.5) / steps as f64) as f32
     }
 
@@ -311,6 +311,7 @@ mod tests {
             }
         }
         assert_eq!(Flux2ImageProcessor::sd_strength(1.0, 16), 1.0);
+        assert!(Flux2ImageProcessor::sd_strength(1e-17, 16) > 0.0);
     }
 
     #[test]
