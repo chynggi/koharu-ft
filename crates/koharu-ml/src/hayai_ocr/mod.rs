@@ -11,7 +11,7 @@ use crate::backend::TryIntoDevice;
 use self::{
     config::HayaiConfig,
     model::Model,
-    processor::{ImageProcessor, Tokenizer},
+    processor::{ImageProcessor, Tokenizer, normalize_text},
 };
 
 crate::model_repository!("JustANormalTinkerer/hayai-ocr-v2" @ "4a4ce477c9a8841f208b94e1d9ed5c0938965e05" {
@@ -85,7 +85,9 @@ impl HayaiOcr {
         koharu_torch::no_grad(|| {
             let input = self.processor.preprocess(image)?;
             let token_ids = self.model.generate(&input, &self.tokenizer, self.device)?;
-            self.tokenizer.decode(&token_ids)
+            self.tokenizer
+                .decode(&token_ids)
+                .map(|text| normalize_text(&text))
         })
     }
 }

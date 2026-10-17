@@ -10,6 +10,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
+use icu_normalizer::ComposingNormalizerBorrowed;
 use image::{DynamicImage, RgbImage};
 use koharu_torch::{Device, Kind, Tensor};
 use tokenizers::Tokenizer as HuggingFaceTokenizer;
@@ -236,6 +237,43 @@ impl Tokenizer {
     }
 }
 
+/// Cleans a decoded transcription like the upstream model card's
+/// `normalize_text`: NFKC, whitespace runs collapsed to one space, spaces
+/// between CJK characters removed, ends trimmed.
+///
+/// Deliberate divergence: upstream strips CJK-internal whitespace with one
+/// non-overlapping `re.sub`, which leaves `"漢 字 漢"` as `"漢字 漢"`. That is a
+/// side effect of the scan rather than intent, and translation input reads
+/// better without the space, so this joins every CJK pair.
+pub(crate) fn normalize_text(text: &str) -> String {
+    let text = ComposingNormalizerBorrowed::new_nfkc().normalize(text);
+    let mut normalized = String::with_capacity(text.len());
+    for word in text.split_whitespace() {
+        let joins_cjk = normalized
+            .chars()
+            .next_back()
+            .zip(word.chars().next())
+            .is_some_and(|(previous, next)| is_cjk(previous) && is_cjk(next));
+        if !normalized.is_empty() && !joins_cjk {
+            normalized.push(' ');
+        }
+        normalized.push_str(word);
+    }
+    normalized
+}
+
+/// Character class of the upstream `cjk_char` pattern: CJK unified ideographs,
+/// hiragana and katakana, CJK extension A, and Hangul syllables.
+fn is_cjk(character: char) -> bool {
+    matches!(
+        character,
+        '\u{4E00}'..='\u{9FFF}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{AC00}'..='\u{D7AF}'
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +301,38 @@ mod tests {
             get_image_size_for_max_num_patches(4, 4, 16, 256),
             (256, 256)
         );
+    }
+
+    #[test]
+    fn normalize_text_applies_nfkc() {
+        assert_eq!(normalize_text("ＡＢＣ１２３！"), "ABC123!");
+        assert_eq!(normalize_text("ｶﾀｶﾅ"), "カタカナ");
+    }
+
+    #[test]
+    fn normalize_text_collapses_and_trims_whitespace() {
+        assert_eq!(normalize_text("  hello \r\n\t world  "), "hello world");
+        // NFKC maps the ideographic space to U+0020 before collapsing.
+        assert_eq!(normalize_text("a\u{3000}\u{3000}b"), "a b");
+    }
+
+    #[test]
+    fn normalize_text_removes_every_space_between_cjk_characters() {
+        // Upstream's single non-overlapping `re.sub` would leave "漢字 漢".
+        assert_eq!(normalize_text("漢 字 漢"), "漢字漢");
+        assert_eq!(normalize_text("ひら がな\nカタ カナ"), "ひらがなカタカナ");
+        assert_eq!(normalize_text("안녕 하세요"), "안녕하세요");
+    }
+
+    #[test]
+    fn normalize_text_keeps_spaces_next_to_non_cjk_text() {
+        assert_eq!(normalize_text("こんにちは world"), "こんにちは world");
+        assert_eq!(normalize_text("第 3 話"), "第 3 話");
+    }
+
+    #[test]
+    fn normalize_text_of_blank_input_is_empty() {
+        assert_eq!(normalize_text(""), "");
+        assert_eq!(normalize_text(" \n "), "");
     }
 }
