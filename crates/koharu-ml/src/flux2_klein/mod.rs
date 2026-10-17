@@ -4,7 +4,10 @@
 //! https://github.com/huggingface/diffusers/blob/a37f6f8394ac2a7ee8360c3abea811efe54512b1/src/diffusers/pipelines/flux2/pipeline_flux2_klein_inpaint.py
 
 mod model;
-mod processor;
+// FLUX 3 Image Klein shares the FLUX.2 VAE and its 16-pixel alignment, so its
+// inpainting path reuses this preprocessing unchanged; ownership stays here
+// with the diffusers FLUX.2 port it traces.
+pub(crate) mod processor;
 mod source;
 
 use std::path::PathBuf;

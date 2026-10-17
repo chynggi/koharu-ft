@@ -54,12 +54,12 @@ impl Default for Flux2KleinInpaintOptions {
     }
 }
 
-pub(super) struct Flux2ImageProcessor;
+pub(crate) struct Flux2ImageProcessor;
 
 impl Flux2ImageProcessor {
     /// The working area has to leave room for the 16-pixel alignment every
     /// FLUX.2 input is cropped to.
-    pub(super) fn check_max_pixels(max_pixels: u32) -> Result<()> {
+    pub(crate) fn check_max_pixels(max_pixels: u32) -> Result<()> {
         ensure!(
             max_pixels >= 64 * 64,
             "max_pixels must be at least {} (64x64), got {max_pixels}",
@@ -70,14 +70,14 @@ impl Flux2ImageProcessor {
 
     /// Shrinks an oversized image onto the working area and leaves everything
     /// that already fits untouched.
-    pub(super) fn fit_to_area(image: &DynamicImage, max_pixels: u32) -> DynamicImage {
+    pub(crate) fn fit_to_area(image: &DynamicImage, max_pixels: u32) -> DynamicImage {
         if u64::from(image.width()) * u64::from(image.height()) <= u64::from(max_pixels) {
             return image.clone();
         }
         Self::_resize_to_target_area(image, max_pixels)
     }
 
-    pub(super) fn check_image_input(image: &DynamicImage) -> Result<()> {
+    pub(crate) fn check_image_input(image: &DynamicImage) -> Result<()> {
         ensure!(
             image.width() >= 64 && image.height() >= 64,
             "FLUX.2 reference images must be at least 64x64, got {}x{}",
@@ -95,7 +95,7 @@ impl Flux2ImageProcessor {
         Ok(())
     }
 
-    pub(super) fn _resize_to_target_area(image: &DynamicImage, target_area: u32) -> DynamicImage {
+    pub(crate) fn _resize_to_target_area(image: &DynamicImage, target_area: u32) -> DynamicImage {
         let scale = (f64::from(target_area)
             / (f64::from(image.width()) * f64::from(image.height())))
         .sqrt();
@@ -116,7 +116,7 @@ impl Flux2ImageProcessor {
     }
 
     // https://github.com/huggingface/diffusers/blob/a37f6f8394ac2a7ee8360c3abea811efe54512b1/src/diffusers/image_processor.py#L288-L375
-    pub(super) fn get_crop_region(
+    pub(crate) fn get_crop_region(
         mask_image: &GrayImage,
         width: u32,
         height: u32,
@@ -190,7 +190,7 @@ impl Flux2ImageProcessor {
         ))
     }
 
-    pub(super) fn _resize_and_fill(image: &DynamicImage, width: u32, height: u32) -> DynamicImage {
+    pub(crate) fn _resize_and_fill(image: &DynamicImage, width: u32, height: u32) -> DynamicImage {
         let ratio = f64::from(width) / f64::from(height);
         let source_ratio = f64::from(image.width()) / f64::from(image.height());
         let resized_width = if ratio > source_ratio {
@@ -224,7 +224,7 @@ impl Flux2ImageProcessor {
         DynamicImage::ImageRgb8(output)
     }
 
-    pub(super) fn _resize_and_crop(
+    pub(crate) fn _resize_and_crop(
         image: &DynamicImage,
         width: u32,
         height: u32,
@@ -242,13 +242,13 @@ impl Flux2ImageProcessor {
         Ok(image.crop_imm(left, top, width, height))
     }
 
-    pub(super) fn binarize(image: &mut GrayImage) {
+    pub(crate) fn binarize(image: &mut GrayImage) {
         for pixel in image.pixels_mut() {
             *pixel = Luma([if pixel.0[0] < 128 { 0 } else { 255 }]);
         }
     }
 
-    pub(super) fn apply_overlay(
+    pub(crate) fn apply_overlay(
         mask: &GrayImage,
         init_image: &RgbImage,
         image: RgbImage,
