@@ -577,30 +577,22 @@ Task 7에서 읽은 값으로 채운다. `{peak}`·`{단계별}`·`{픽셀}`은 
 | D8 | 공용 VRAM↔RAM 레지던시 매니저(접근법 B)는 **후속 조사**로 둔다 | 범위가 크고, 런타임마다 "RAM 강등"의 의미가 다르다. `fork/VRAM-ACCOUNTING-DESIGN.md`의 미결 항목과 얽힌다. **닫힘(2026-10-17)**: 2페이지 실측이 순차 레지던시를 필요로 함을 보였다. `specs/2026-10-17-sequential-model-residency-design.md`가 이 항목을 다룬다 |
 ```
 
-- [ ] **Step 3: 확인한다**
+- [x] **Step 3: 확인한다**
 
 Run: `git diff specs/2026-10-17-flux3-klein-inpainting-design.md`
-Expected: G4 행, D4 행, D8 행만 바뀐다. `{...}` 자리 표시가 하나도 남지 않았는지 눈으로 확인한다.
+Expected: G4 행, D4 행, D8 행만 바뀐다.
+결과: `3 insertions(+), 3 deletions(-)`. G4·D4·D8 세 행만 바뀌었다. `{...}` 자리
+표시는 남지 않았다(`{request}`는 i18n 키를 가리키는 기존 문장이라 무관하다).
 
-- [ ] **Step 4: 커밋한다**
+- [x] **Step 4: 커밋한다**
 
-```bash
-git add specs/2026-10-17-flux3-klein-inpainting-design.md
-git commit -m "docs(specs): replace the stale G4 row with full-pipeline measurements
-
-The old row measured one stage at a time (7434 MiB peak, 5.2-5.5 GB
-inpainting). The full pipeline keeps detection, OCR and translation
-resident, so the real figures come from the two-page run. Also mark D4 as
-amended and D8 as closed by the residency design.
-
-Co-Authored-By: Claude Code <noreply@anthropic.com>"
-```
+결과: `a7cabee5`.
 
 ---
 
 ## Task 9: 최종 확인
 
-- [ ] **Step 1: 관련 테스트를 한 번 돌린다**
+- [x] **Step 1: 관련 테스트를 한 번 돌린다**
 
 Run:
 ```bash
@@ -609,11 +601,17 @@ cargo test -p koharu-pipeline --lib stages::inpainting::tests
 cargo check -p koharu-pipeline -p koharu-app --bins
 ```
 Expected: 모두 PASS·성공.
+결과: `accelerator::tests` 3 passed, `stages::inpainting::tests` 22 passed,
+`cargo check` 성공. 셋 다 exit 0.
 
-- [ ] **Step 2: 변경 범위를 확인한다**
+- [x] **Step 2: 변경 범위를 확인한다**
 
 Run: `git diff --stat main...HEAD`
-Expected: `accelerator.rs`와 `stage_runner.rs`가 이 계획의 코드 변경 전부이고, 나머지는 문서·계측이다. 이 계획 밖의 파일이 보이면 되돌린다.
+Expected: `accelerator.rs`와 `stage_runner.rs`가 이 계획의 코드 변경 전부다.
+결과: 이 계획의 커밋 범위(`5d7a9683^..HEAD`)에서 `.rs` 변경은 정확히 그 두 파일뿐이다
+(`accelerator.rs` +77−19, `stage_runner.rs` 1줄). 나머지는 문서다.
+`main...HEAD` 전체 diff에는 FLUX 3 작업(Task 1–9)의 코드가 함께 보이는데, 이는
+같은 브랜치에서 이어진 앞선 계획의 몫이다.
 
 ---
 
