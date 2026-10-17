@@ -9,8 +9,12 @@
 //! The upsampler weights themselves are a community GGUF conversion.
 
 mod source;
+mod upsampler;
 
-pub use self::source::{ComponentSource, Flux3KleinSource};
+pub use self::{
+    source::{ComponentSource, Flux3KleinSource},
+    upsampler::Flux3PromptUpsampler,
+};
 
 crate::model_repository!("DogukanUrker/FLUX.3-Image-Klein-GGUF" @ "652e3dae6f7f26777c8749c99dcb3bb643a8350c" {
     TRANSFORMER_WEIGHTS = "flux3-image-klein-Q4_K.gguf"
