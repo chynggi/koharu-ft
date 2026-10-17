@@ -191,6 +191,7 @@ function ModelOptions({
     case 'paddleocr-vl-1.6':
     case 'paddleocr-vl-1.6-manga-lora':
     case 'manga-ocr':
+    case 'manga-ocr-cpt-flex':
     case 'baberu-ocr':
     case 'hayai-ocr':
     case 'aot-inpainting':

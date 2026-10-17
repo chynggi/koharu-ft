@@ -909,7 +909,7 @@ export type ModelSelection = {
 
 export type OcrModel = { model: "paddleocr-vl-1.6" } | {
 	model: "paddleocr-vl-1.6-manga-lora",
-} & PaddleOcrVl1_6MangaLoraConfig | { model: "manga-ocr" } | { model: "baberu-ocr" } | { model: "hayai-ocr" };
+} & PaddleOcrVl1_6MangaLoraConfig | { model: "manga-ocr" } | { model: "manga-ocr-cpt-flex" } | { model: "baberu-ocr" } | { model: "hayai-ocr" };
 
 /**
  *  The manga reader variant of quantized PaddleOCR-VL-1.6: the fine-tuned

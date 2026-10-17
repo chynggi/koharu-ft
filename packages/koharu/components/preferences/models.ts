@@ -16,6 +16,7 @@ export const modelOptions = {
     'paddleocr-vl-1.6',
     'paddleocr-vl-1.6-manga-lora',
     'manga-ocr',
+    'manga-ocr-cpt-flex',
     'baberu-ocr',
     'hayai-ocr',
   ],
@@ -35,6 +36,7 @@ export const modelNames: Record<ModelName, string> = {
   'paddleocr-vl-1.6': 'PaddleOCR-VL 1.6',
   'paddleocr-vl-1.6-manga-lora': 'PaddleOCR-VL 1.6 Manga LoRA',
   'manga-ocr': 'Manga OCR',
+  'manga-ocr-cpt-flex': 'Manga OCR CPT-flex',
   'baberu-ocr': 'Baberu OCR',
   'hayai-ocr': 'Hayai OCR',
   lama: 'LaMa',
@@ -53,6 +55,7 @@ export function defaultModel(model: ModelName): PipelineModel {
     case 'paddleocr-vl-1.6':
     case 'paddleocr-vl-1.6-manga-lora':
     case 'manga-ocr':
+    case 'manga-ocr-cpt-flex':
     case 'baberu-ocr':
     case 'hayai-ocr':
     case 'lama':
