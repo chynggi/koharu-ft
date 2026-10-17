@@ -9,6 +9,7 @@ use koharu_ml::{
     baberu_ocr::BaberuOcr,
     hayai_ocr::HayaiOcr,
     manga_ocr::MangaOcr,
+    manga_ocr_cpt::MangaOcrCptFlex,
     paddle_ocr_vl::PaddleOCRVLTask,
     paddle_ocr_vl_quantized::{LoraSource, PaddleOCRVLQuantized, PaddleOCRVLQuantizedSource},
     source::ComponentSource,
@@ -96,6 +97,7 @@ impl StageProcessor for Processor {
     fn model(&self) -> &'static str {
         match self.config {
             OcrModel::MangaOcr => "manga-ocr",
+            OcrModel::MangaOcrCptFlex => "manga-ocr-cpt-flex",
             OcrModel::BaberuOcr => "baberu-ocr",
             OcrModel::HayaiOcr => "hayai-ocr",
             OcrModel::PaddleOcrVl1_6 => "paddleocr-vl-1.6",
@@ -126,6 +128,7 @@ impl StageProcessor for Processor {
 
 enum Model {
     Manga(Arc<Mutex<MangaOcr>>),
+    MangaCptFlex(Arc<Mutex<MangaOcrCptFlex>>),
     Baberu(Arc<Mutex<BaberuOcr>>),
     Hayai(Arc<Mutex<HayaiOcr>>),
     /// The quantized PaddleOCR-VL family shares one runtime; the name records
@@ -138,6 +141,9 @@ impl Model {
         match config {
             OcrModel::MangaOcr => Ok(Self::Manga(Arc::new(Mutex::new(
                 MangaOcr::load(device).await?,
+            )))),
+            OcrModel::MangaOcrCptFlex => Ok(Self::MangaCptFlex(Arc::new(Mutex::new(
+                MangaOcrCptFlex::load(device).await?,
             )))),
             OcrModel::BaberuOcr => Ok(Self::Baberu(Arc::new(Mutex::new(
                 BaberuOcr::load(device).await?,
@@ -164,6 +170,7 @@ impl Model {
     async fn run(&self, input: StageInput) -> Result<koharu_scene::Patch> {
         let model_name = match self {
             Self::Manga(_) => "manga-ocr",
+            Self::MangaCptFlex(_) => "manga-ocr-cpt-flex",
             Self::Baberu(_) => "baberu-ocr",
             Self::Hayai(_) => "hayai-ocr",
             Self::Paddle(_, name) => name,
@@ -214,6 +221,12 @@ impl Model {
 
         let results = match self {
             Self::Manga(model) => {
+                infer_text(model.clone(), targets, |model, image| {
+                    model.inference(image)
+                })
+                .await?
+            }
+            Self::MangaCptFlex(model) => {
                 infer_text(model.clone(), targets, |model, image| {
                     model.inference(image)
                 })

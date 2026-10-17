@@ -214,6 +214,24 @@ self-attention 캐시는 기존 포트들처럼 `Tensor::cat`으로 늘린다.
 | G4 | 체크포인트 동등성 | `cargo test -p koharu-ml -- --ignored manga_ocr_cpt::tests::checkpoint_matches_upstream_character_sequence` | `benches/fixtures/ocr/title.png`에서 업스트림 plain 경로(CPU fp32)와 같은 문자열 |
 | G5 | 프론트엔드 타입 | `bunx tsc --noEmit -p packages/koharu/tsconfig.json` | 성공. `ModelName` 유니온이 늘어도 `modelNames`·`defaultModel`·`PipelinePreferences`의 망라 검사가 통과 |
 
+### 결과 (2026-10-17)
+
+CPU, debug 프로필, 브랜치 `feat/manga-ocr-cpt-flex`. 기준 출력은 고정 커밋의 업스트림
+`model.py`·`preprocess.py`와 고정 가중치를 임시 venv(torch 2.11.0+cu128)에서 CPU fp32 plain
+경로로 실행해 얻었다.
+
+| # | 결과 | 비고 |
+|---|---|---|
+| G1 | 통과 | 단위 테스트 8개(config 2, processor 6). `title.png` 캔버스 6×32 격자, 512×96, 채움값 255, 합계 허용 범위 안 |
+| G2 | 통과 | 경고 없음 |
+| G3 | 통과 | 변수 260개, 대표 경로 shape 일치 |
+| G4 | 통과 | `"対策委員会です!"`. 업스트림 토큰 id `[1767, 4323, 1601, 1238, 653, 377, 363, 5]` |
+| G5 | 통과 | `tsc --noEmit` 오류 없음 |
+
+설계와 다르게 구현한 점: 영어 문서 경로가 upstream 병합 뒤 `packages/docs/models/vision.mdx`로
+바뀌었다. 파이프라인 등록 문자열 테스트는 upstream AGENTS.md 규칙(등록 문자열을 고정하는 테스트
+금지)에 따라 넣지 않았다.
+
 **G4의 기대 문자열은 가정하지 않는다.** 구현 전에 업스트림 `MangaOcrCPT("flex", device="cpu",
 backend="plain")`을 같은 픽스처에 한 번 돌려 얻은 문자열을 테스트에 넣는다. 실패하면 전처리
 (격자, 리사이즈 크기, 중앙값, luma)부터 업스트림 `preprocess` 출력과 텐서 단위로 비교하고,

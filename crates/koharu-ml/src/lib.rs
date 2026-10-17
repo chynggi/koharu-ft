@@ -21,6 +21,7 @@ pub mod lama;
 pub mod llm;
 pub mod manga_inpaintor;
 pub mod manga_ocr;
+pub mod manga_ocr_cpt;
 pub mod manga_text_mask;
 pub mod mi_gan;
 pub mod paddle_ocr_vl;
