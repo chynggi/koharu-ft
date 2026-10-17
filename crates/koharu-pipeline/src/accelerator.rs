@@ -24,7 +24,34 @@ impl AcceleratorGate {
         }
     }
 
-    pub(crate) async fn acquire(&self) -> AcceleratorPermit {
+    /// Takes the accelerator for `stage`, dropping every other stage's model
+    /// before the caller loads its own.
+    ///
+    /// The eviction happens *after* the permit is held. With the single lane
+    /// that means no other stage can be mid-run, so nothing that is running
+    /// gets its memory pulled out from under it. On CPU there is no lane and
+    /// two stages may genuinely overlap; there `ModelCell::unload` is
+    /// best-effort and a busy stage keeps its model.
+    pub(crate) async fn acquire(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
+        let permit = self.lane_acquire().await;
+        unload_other_models(stage, stages);
+        permit
+    }
+
+    /// Retries after memory pressure. The eviction already happened in
+    /// [`Self::acquire`], so all that is left is to let the driver actually
+    /// return the memory and let the monitor publish a fresh reading, which
+    /// the next load sees as its headroom.
+    pub(crate) async fn recover(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
+        let permit = self.acquire(stage, stages).await;
+        if self.lane.is_some() {
+            let mut changed = self.resources.subscribe();
+            let _ = tokio::time::timeout(Duration::from_millis(600), changed.changed()).await;
+        }
+        permit
+    }
+
+    async fn lane_acquire(&self) -> AcceleratorPermit {
         let Some(lane) = self.lane.as_ref() else {
             return AcceleratorPermit::cpu();
         };
@@ -34,18 +61,6 @@ impl AcceleratorGate {
                 .await
                 .expect("accelerator lane is never closed"),
         )
-    }
-
-    pub(crate) async fn recover(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
-        let permit = self.acquire().await;
-        if self.lane.is_none() {
-            return permit;
-        }
-        if unload_other_models(stage, stages) {
-            let mut changed = self.resources.subscribe();
-            let _ = tokio::time::timeout(Duration::from_millis(600), changed.changed()).await;
-        }
-        permit
     }
 }
 
@@ -102,5 +117,27 @@ mod tests {
             assert_eq!(targets.len(), Stage::ALL.len() - 1);
             assert!(!targets.contains(&requested));
         }
+    }
+
+    #[tokio::test]
+    async fn acquire_returns_a_permit_with_no_models_loaded() {
+        let device = koharu_ml::Device::cpu();
+        let translator = koharu_translator::Translator::from_config(
+            device.clone(),
+            koharu_config::Config::memory(koharu_translator::ProvidersConfig::default()),
+        )
+        .unwrap();
+        let resources = crate::resources::ResourceMonitor::new(&device);
+        let stages = Stages::new(
+            &crate::PipelineConfig::default(),
+            translator,
+            &device,
+            resources.clone(),
+        )
+        .unwrap();
+        let gate = AcceleratorGate::new(&device, resources);
+
+        let _permit = gate.acquire(Stage::Inpainting, &stages).await;
+        let _permit = gate.recover(Stage::Inpainting, &stages).await;
     }
 }
