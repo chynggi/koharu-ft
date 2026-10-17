@@ -106,15 +106,6 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |application| {
-            #[cfg(all(target_os = "windows", not(debug_assertions)))]
-            koharu_runtime::Store::configure(
-                application
-                    .path()
-                    .app_local_data_dir()
-                    .context("failed to locate Koharu's local data directory")?
-                    .join("store"),
-            )?;
-
             application.manage(CurrentProject {
                 project: Mutex::new(None),
             });

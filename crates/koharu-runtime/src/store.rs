@@ -14,45 +14,16 @@ static ROOT: OnceLock<PathBuf> = OnceLock::new();
 pub struct Store;
 
 impl Store {
-    /// Selects the store before the first artifact or runtime is resolved.
-    pub fn configure(root: impl Into<PathBuf>) -> Result<()> {
-        let requested = root.into();
-        ensure!(
-            requested.is_absolute(),
-            "runtime store must be absolute: {}",
-            requested.display()
-        );
-
-        if let Some(active) = ROOT.get() {
-            ensure!(
-                active == &requested,
-                "runtime store is already {}",
-                active.display()
-            );
-            return Ok(());
-        }
-
-        if let Err(requested) = ROOT.set(requested) {
-            let active = ROOT
-                .get()
-                .context("runtime store was configured concurrently without a value")?;
-            ensure!(
-                active == &requested,
-                "runtime store is already {}",
-                active.display()
-            );
-        }
-        Ok(())
-    }
-
-    /// Returns the configured root, or the operating system cache by default.
+    /// Returns the store shared by every build profile and binary. It is the
+    /// Tauri app-local data directory (`identifier` "Koharu") joined with
+    /// `store`, so a debug build reuses the installed app's packages.
     #[must_use]
     pub fn root() -> &'static Path {
         ROOT.get_or_init(|| {
-            dirs::cache_dir()
+            dirs::data_local_dir()
                 .unwrap_or_else(std::env::temp_dir)
-                .join("koharu")
-                .join("packages")
+                .join("Koharu")
+                .join("store")
         })
     }
 
