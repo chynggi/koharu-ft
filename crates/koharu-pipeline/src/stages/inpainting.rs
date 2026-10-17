@@ -538,19 +538,19 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("LaMa model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(model.inference(
-                                    image,
-                                    mask,
-                                    &InpaintRequest::default(),
-                                )?))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(model.inference(
+                                image,
+                                mask,
+                                &InpaintRequest::default(),
+                            )?))
+                        })
                     })
                     .await?,
                 )
@@ -563,19 +563,19 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("MI-GAN model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(model.inference(
-                                    image,
-                                    mask,
-                                    &InpaintRequest::default(),
-                                )?))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(model.inference(
+                                image,
+                                mask,
+                                &InpaintRequest::default(),
+                            )?))
+                        })
                     })
                     .await
                     .context("MI-GAN task panicked")??,
@@ -589,19 +589,19 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("Manga inpainter model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(model.inference(
-                                    image,
-                                    mask,
-                                    &InpaintRequest::default(),
-                                )?))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(model.inference(
+                                image,
+                                mask,
+                                &InpaintRequest::default(),
+                            )?))
+                        })
                     })
                     .await
                     .context("Manga inpainter task panicked")??,
@@ -615,15 +615,15 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("AOT model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(model.inference(image, mask)?))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(model.inference(image, mask)?))
+                        })
                     })
                     .await?,
                 )
@@ -637,21 +637,21 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("FLUX model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                model.inference(
-                                    &config.prompt,
-                                    image,
-                                    None,
-                                    &DynamicImage::ImageLuma8(mask.clone()),
-                                    &config.options(),
-                                )
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            model.inference(
+                                &config.prompt,
+                                image,
+                                None,
+                                &DynamicImage::ImageLuma8(mask.clone()),
+                                &config.options(),
+                            )
+                        })
                     })
                     .await?,
                 )
@@ -665,21 +665,21 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("RORem model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(model.inference(
-                                    image,
-                                    mask,
-                                    &config.prompt,
-                                    &config.negative_prompt,
-                                    &RoremMixedOptions::default(),
-                                )?))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(model.inference(
+                                image,
+                                mask,
+                                &config.prompt,
+                                &config.negative_prompt,
+                                &RoremMixedOptions::default(),
+                            )?))
+                        })
                     })
                     .await?,
                 )
@@ -693,17 +693,17 @@ impl Model {
                         let model = model
                             .lock()
                             .map_err(|_| anyhow!("PowerPaint model lock is poisoned"))?;
-                        inpaint_tiled(
+                        TilePlan::new(
                             &prepared.image,
                             &prepared.mask,
                             &prepared.text_mask,
                             &prepared.flat_fill_regions,
-                            |image, mask| {
-                                Ok(DynamicImage::ImageRgb8(
-                                    model.inference(image, mask, &options)?,
-                                ))
-                            },
-                        )
+                        )?
+                        .run(|_, image, mask| {
+                            Ok(DynamicImage::ImageRgb8(
+                                model.inference(image, mask, &options)?,
+                            ))
+                        })
                     })
                     .await
                     .context("PowerPaint task panicked")??,
@@ -963,48 +963,87 @@ struct MaskComponent {
 // https://github.com/dmMaze/BallonsTranslator/blob/4bcc635c19f6c63a902872cf77b3d554e14ed1b7/ballontranslator/modules/inpaint/base.py#L168-L200
 // Koharu uses the detected bubble polygons as those blocks. Uniform bubbles are
 // filled first; only the remaining mask is split into bounded model crops.
-fn inpaint_tiled(
-    image: &DynamicImage,
-    mask: &GrayImage,
-    text_mask: &GrayImage,
-    flat_fill_regions: &[FlatFillRegion],
-    mut inference: impl FnMut(&DynamicImage, &GrayImage) -> Result<DynamicImage>,
-) -> Result<DynamicImage> {
-    ensure!(
-        image.dimensions() == mask.dimensions() && mask.dimensions() == text_mask.dimensions(),
-        "image and mask dimensions differ: image={:?}, mask={:?}, text_mask={:?}",
-        image.dimensions(),
-        mask.dimensions(),
-        text_mask.dimensions()
-    );
+struct TilePlan {
+    output: RgbImage,
+    pending_mask: GrayImage,
+    labels: ImageBuffer<Luma<u32>, Vec<u32>>,
+    tiles: Vec<InpaintTile>,
+}
 
-    let mut output = image.to_rgb8();
-    let mut pending_mask = mask.clone();
-    fill_uniform_regions(&mut output, &mut pending_mask, text_mask, flat_fill_regions);
-    let (component_labels, tiles) = inpaint_tiles(&pending_mask);
-    for tile in &tiles {
-        let [left, top, right, bottom] = tile.crop;
-        let crop_width = right - left;
-        let crop_height = bottom - top;
-        let crop_image =
-            image::imageops::crop_imm(&output, left, top, crop_width, crop_height).to_image();
-        let crop_mask = crop_tile_mask(&pending_mask, tile);
-
-        let generated = inference(&DynamicImage::ImageRgb8(crop_image), &crop_mask)?;
-        let generated = if generated.dimensions() == (crop_width, crop_height) {
-            generated.to_rgb8()
-        } else {
-            generated
-                .resize_exact(
-                    crop_width,
-                    crop_height,
-                    image::imageops::FilterType::Lanczos3,
-                )
-                .to_rgb8()
-        };
-        composite_generated(&mut output, &component_labels, tile, &generated);
+impl TilePlan {
+    fn new(
+        image: &DynamicImage,
+        mask: &GrayImage,
+        text_mask: &GrayImage,
+        flat_fill_regions: &[FlatFillRegion],
+    ) -> Result<Self> {
+        ensure!(
+            image.dimensions() == mask.dimensions() && mask.dimensions() == text_mask.dimensions(),
+            "image and mask dimensions differ: image={:?}, mask={:?}, text_mask={:?}",
+            image.dimensions(),
+            mask.dimensions(),
+            text_mask.dimensions()
+        );
+        let mut output = image.to_rgb8();
+        let mut pending_mask = mask.clone();
+        fill_uniform_regions(&mut output, &mut pending_mask, text_mask, flat_fill_regions);
+        let (labels, tiles) = inpaint_tiles(&pending_mask);
+        Ok(Self {
+            output,
+            pending_mask,
+            labels,
+            tiles,
+        })
     }
-    Ok(DynamicImage::ImageRgb8(output))
+
+    /// Every tile's image before any tile is inpainted, in the order `run`
+    /// visits them. Overlapping tiles are cut from the same untouched output
+    /// here, while `run` cuts each one from the output its predecessors left.
+    fn crops(&self) -> Vec<DynamicImage> {
+        self.tiles
+            .iter()
+            .map(|tile| DynamicImage::ImageRgb8(crop_tile_image(&self.output, tile)))
+            .collect()
+    }
+
+    fn run(
+        self,
+        mut inference: impl FnMut(usize, &DynamicImage, &GrayImage) -> Result<DynamicImage>,
+    ) -> Result<DynamicImage> {
+        let Self {
+            mut output,
+            pending_mask,
+            labels,
+            tiles,
+        } = self;
+        for (index, tile) in tiles.iter().enumerate() {
+            let [left, top, right, bottom] = tile.crop;
+            let crop_width = right - left;
+            let crop_height = bottom - top;
+            let crop_image = crop_tile_image(&output, tile);
+            let crop_mask = crop_tile_mask(&pending_mask, tile);
+
+            let generated = inference(index, &DynamicImage::ImageRgb8(crop_image), &crop_mask)?;
+            let generated = if generated.dimensions() == (crop_width, crop_height) {
+                generated.to_rgb8()
+            } else {
+                generated
+                    .resize_exact(
+                        crop_width,
+                        crop_height,
+                        image::imageops::FilterType::Lanczos3,
+                    )
+                    .to_rgb8()
+            };
+            composite_generated(&mut output, &labels, tile, &generated);
+        }
+        Ok(DynamicImage::ImageRgb8(output))
+    }
+}
+
+fn crop_tile_image(output: &RgbImage, tile: &InpaintTile) -> RgbImage {
+    let [left, top, right, bottom] = tile.crop;
+    image::imageops::crop_imm(output, left, top, right - left, bottom - top).to_image()
 }
 
 fn fill_uniform_regions(
@@ -1614,16 +1653,17 @@ mod tests {
         }
         let mut calls = 0;
 
-        let output = inpaint_tiled(
+        let output = TilePlan::new(
             &DynamicImage::ImageRgb8(image),
             &mask,
             &mask,
             &[rectangle_region([0, 0, 96, 96])],
-            |_, _| {
-                calls += 1;
-                Ok(DynamicImage::new_rgb8(1, 1))
-            },
         )
+        .unwrap()
+        .run(|_, _, _| {
+            calls += 1;
+            Ok(DynamicImage::new_rgb8(1, 1))
+        })
         .unwrap()
         .to_rgb8();
 
@@ -1662,7 +1702,7 @@ mod tests {
         }
         let mut calls = 0;
 
-        let output = inpaint_tiled(
+        let output = TilePlan::new(
             &DynamicImage::ImageRgb8(image),
             &mask,
             &mask,
@@ -1670,11 +1710,12 @@ mod tests {
                 rectangle_region([10, 10, 90, 90]),
                 rectangle_region([110, 10, 190, 90]),
             ],
-            |_, _| {
-                calls += 1;
-                Ok(DynamicImage::new_rgb8(1, 1))
-            },
         )
+        .unwrap()
+        .run(|_, _, _| {
+            calls += 1;
+            Ok(DynamicImage::new_rgb8(1, 1))
+        })
         .unwrap()
         .to_rgb8();
 
@@ -1694,12 +1735,9 @@ mod tests {
         }
         let mut calls = 0;
 
-        let output = inpaint_tiled(
-            &DynamicImage::ImageRgb8(image),
-            &mask,
-            &mask,
-            &[],
-            |tile, tile_mask| {
+        let output = TilePlan::new(&DynamicImage::ImageRgb8(image), &mask, &mask, &[])
+            .unwrap()
+            .run(|_, tile, tile_mask| {
                 calls += 1;
                 assert_eq!(
                     tile_mask.pixels().filter(|pixel| pixel[0] >= 127).count(),
@@ -1710,10 +1748,9 @@ mod tests {
                     tile.height(),
                     Rgb([1, 2, 3]),
                 )))
-            },
-        )
-        .unwrap()
-        .to_rgb8();
+            })
+            .unwrap()
+            .to_rgb8();
 
         assert_eq!(calls, 1);
         assert_eq!(output.get_pixel(500, 500), &Rgb([1, 2, 3]));
@@ -1770,12 +1807,9 @@ mod tests {
         mask.put_pixel(1100, 600, Luma([u8::MAX]));
         let mut calls = 0;
 
-        let output = inpaint_tiled(
-            &DynamicImage::ImageRgb8(image),
-            &mask,
-            &mask,
-            &[],
-            |tile, _| {
+        let output = TilePlan::new(&DynamicImage::ImageRgb8(image), &mask, &mask, &[])
+            .unwrap()
+            .run(|_, tile, _| {
                 calls += 1;
                 assert!(tile.width() <= TILE_CONTEXT * 2 + 1);
                 assert!(tile.height() <= TILE_CONTEXT * 2 + 1);
@@ -1784,14 +1818,41 @@ mod tests {
                     tile.height(),
                     Rgb([1, 2, 3]),
                 )))
-            },
-        )
-        .unwrap()
-        .to_rgb8();
+            })
+            .unwrap()
+            .to_rgb8();
 
         assert_eq!(calls, 2);
         assert_eq!(output.get_pixel(10, 10), &Rgb([1, 2, 3]));
         assert_eq!(output.get_pixel(1100, 600), &Rgb([1, 2, 3]));
         assert_eq!(output.get_pixel(500, 300), original.get_pixel(500, 300));
+    }
+
+    #[test]
+    fn tile_crops_match_the_tiles_run_visits_in_order() {
+        let mut image = RgbImage::new(1200, 700);
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            *pixel = if (x + y).is_multiple_of(2) {
+                Rgb([0, 40, 80])
+            } else {
+                Rgb([255, 215, 175])
+            };
+        }
+        let mut mask = GrayImage::new(1200, 700);
+        mask.put_pixel(10, 10, Luma([u8::MAX]));
+        mask.put_pixel(1100, 600, Luma([u8::MAX]));
+
+        let plan = TilePlan::new(&DynamicImage::ImageRgb8(image), &mask, &mask, &[]).unwrap();
+        let crops = plan.crops();
+        let mut visited = Vec::new();
+        plan.run(|index, tile, _| {
+            assert_eq!(tile.dimensions(), crops[index].dimensions());
+            visited.push(index);
+            Ok(tile.clone())
+        })
+        .unwrap();
+
+        assert_eq!(crops.len(), 2);
+        assert_eq!(visited, vec![0, 1]);
     }
 }
