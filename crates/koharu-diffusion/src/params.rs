@@ -315,8 +315,8 @@ impl ContextParams {
             sage_attn: self.sage_attention,
             conditioning_cache_size: self.conditioning_cache_size,
             // NULL keeps the boolean flash-attention and direct-conv flags above authoritative.
-            flash_attn_mode: std::ptr::null(),
-            conv_direct_mode: std::ptr::null(),
+            flash_attn_mode: ptr::null(),
+            conv_direct_mode: ptr::null(),
         };
         Ok(NativeContextParams {
             raw,
