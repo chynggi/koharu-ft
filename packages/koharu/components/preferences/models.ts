@@ -26,6 +26,7 @@ export const modelOptions = {
     'manga-inpaintor',
     'aot-inpainting',
     'flux2-klein',
+    'flux3-klein',
     'rorem-mixed',
     'powerpaint',
   ],
@@ -44,6 +45,7 @@ export const modelNames: Record<ModelName, string> = {
   'manga-inpaintor': 'Manga Inpaintor',
   'aot-inpainting': 'AOT Inpainting',
   'flux2-klein': 'FLUX.2 Klein',
+  'flux3-klein': 'FLUX 3 Image Klein',
   'rorem-mixed': 'RORem Mixed',
   powerpaint: 'PowerPaint',
 }
@@ -65,6 +67,11 @@ export function defaultModel(model: ModelName): PipelineModel {
       return { model }
     case 'flux2-klein':
       return { model, prompt: 'Remove the text and reconstruct the background.' }
+    case 'flux3-klein':
+      return {
+        model,
+        request: 'Remove all text and lettering, and reconstruct the background behind it.',
+      }
     case 'rorem-mixed':
       return { model }
     case 'powerpaint':
@@ -143,6 +150,19 @@ export function replaceStage(
             : {}),
           ...(model.model === 'flux2-klein'
             ? { 'flux2-klein': { prompt: model.prompt ?? undefined } }
+            : {}),
+          ...(model.model === 'flux3-klein'
+            ? {
+                'flux3-klein': {
+                  request: model.request ?? undefined,
+                  source: model.source ?? undefined,
+                  steps: model.steps ?? undefined,
+                  strength: model.strength ?? undefined,
+                  seed: model.seed ?? undefined,
+                  padding_mask_crop: model.padding_mask_crop ?? undefined,
+                  max_pixels: model.max_pixels ?? undefined,
+                },
+              }
             : {}),
           ...(model.model === 'rorem-mixed'
             ? {

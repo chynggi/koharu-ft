@@ -4,6 +4,7 @@ import { Eraser, FileText, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Flux2KleinOptions } from '@/components/preferences/Flux2KleinOptions'
+import { Flux3KleinOptions } from '@/components/preferences/Flux3KleinOptions'
 import { LaMaOptions } from '@/components/preferences/LaMaOptions'
 import { MangaInpaintorOptions } from '@/components/preferences/MangaInpaintorOptions'
 import { MiGanOptions } from '@/components/preferences/MiGanOptions'
@@ -169,6 +170,13 @@ function ModelOptions({
     case 'flux2-klein':
       return (
         <Flux2KleinOptions
+          value={model}
+          onChange={(changes) => onChange({ ...model, ...changes })}
+        />
+      )
+    case 'flux3-klein':
+      return (
+        <Flux3KleinOptions
           value={model}
           onChange={(changes) => onChange({ ...model, ...changes })}
         />
