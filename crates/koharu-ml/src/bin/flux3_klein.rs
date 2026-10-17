@@ -7,6 +7,9 @@ use koharu_ml::flux3_klein::{
     Flux3KleinInpaintOptions, Flux3KleinSource, Flux3PromptUpsampler,
 };
 
+/// Measures FLUX 3 Image Klein inpainting for the release gates. `phase=load`
+/// includes downloading the checkpoints on a cold cache, so run once before
+/// recording timings. Pass a fixed `--seed` when comparing outputs.
 #[derive(Debug, Parser)]
 struct Cli {
     #[arg(short, long, value_name = "FILE")]
@@ -41,6 +44,7 @@ struct Cli {
     #[arg(long, default_value_t = 0.8)]
     strength: f64,
 
+    /// `-1` draws a fresh seed for every call.
     #[arg(long, default_value_t = -1)]
     seed: i64,
 
@@ -50,18 +54,23 @@ struct Cli {
     #[arg(long, default_value_t = DEFAULT_MAX_PIXELS)]
     max_pixels: u32,
 
+    /// Replaces the pinned transformer with a checkpoint already on disk.
     #[arg(long, value_name = "FILE")]
     transformer: Option<PathBuf>,
 
+    /// Replaces the pinned text encoder with a checkpoint already on disk.
     #[arg(long, value_name = "FILE")]
     text_encoder: Option<PathBuf>,
 
+    /// Replaces the pinned VAE with a checkpoint already on disk.
     #[arg(long, value_name = "FILE")]
     vae: Option<PathBuf>,
 
+    /// Replaces the pinned prompt upsampler with a checkpoint already on disk.
     #[arg(long, value_name = "FILE")]
     upsampler: Option<PathBuf>,
 
+    /// Replaces the pinned upsampler projector with a checkpoint already on disk.
     #[arg(long, value_name = "FILE")]
     upsampler_mmproj: Option<PathBuf>,
 
@@ -94,6 +103,16 @@ async fn main() -> Result<()> {
     };
     source.validate()?;
     let device = koharu_ml::device(cli.cpu);
+    eprintln!(
+        "device={} input={}x{} steps={} strength={} seed={} max_pixels={}",
+        device.name,
+        input.width(),
+        input.height(),
+        cli.steps,
+        cli.strength,
+        cli.seed,
+        cli.max_pixels
+    );
 
     let caption = if cli.no_upsampler {
         cli.request.clone()
