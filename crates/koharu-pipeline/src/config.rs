@@ -4,8 +4,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use specta::Type;
 
 use crate::stages::{
-    Flux2KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig,
-    MiGanConfig, PaddleOcrVl1_6MangaLoraConfig, PowerPaintConfig, RoremMixedConfig,
+    Flux2KleinConfig, Flux3KleinConfig, KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig,
+    MangaInpaintorConfig, MiGanConfig, PaddleOcrVl1_6MangaLoraConfig, PowerPaintConfig,
+    RoremMixedConfig,
 };
 
 #[derive(Clone, Debug, PartialEq, Type)]
@@ -75,6 +76,7 @@ impl Serialize for PipelineConfig {
             InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
+            InpaintingModel::Flux3Klein(_) => "flux3-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
             InpaintingModel::PowerPaint(_) => "powerpaint",
         };
@@ -102,6 +104,9 @@ impl Serialize for PipelineConfig {
             }
             InpaintingModel::Flux2Klein(config) => {
                 processor.flux2_klein.get_or_insert_with(|| config.clone());
+            }
+            InpaintingModel::Flux3Klein(config) => {
+                processor.flux3_klein.get_or_insert_with(|| config.clone());
             }
             InpaintingModel::RoremMixed(config) => {
                 processor.rorem_mixed.get_or_insert_with(|| config.clone());
@@ -173,6 +178,9 @@ impl<'de> Deserialize<'de> for PipelineConfig {
             "aot-inpainting" => InpaintingModel::AotInpainting {},
             "flux2-klein" => {
                 InpaintingModel::Flux2Klein(file.processor.flux2_klein.clone().unwrap_or_default())
+            }
+            "flux3-klein" => {
+                InpaintingModel::Flux3Klein(file.processor.flux3_klein.clone().unwrap_or_default())
             }
             "rorem-mixed" => {
                 InpaintingModel::RoremMixed(file.processor.rorem_mixed.clone().unwrap_or_default())
@@ -285,6 +293,12 @@ impl PipelineConfig {
                     .clone()
                     .unwrap_or_else(|| config.clone()),
             )),
+            InpaintingModel::Flux3Klein(config) => Ok(InpaintingModel::Flux3Klein(
+                self.processor
+                    .flux3_klein
+                    .clone()
+                    .unwrap_or_else(|| config.clone()),
+            )),
             InpaintingModel::RoremMixed(config) => Ok(InpaintingModel::RoremMixed(
                 self.processor
                     .rorem_mixed
@@ -341,6 +355,8 @@ pub struct ProcessorConfig {
     pub manga_inpaintor: Option<MangaInpaintorConfig>,
     #[serde(rename = "flux2-klein")]
     pub flux2_klein: Option<Flux2KleinConfig>,
+    #[serde(rename = "flux3-klein")]
+    pub flux3_klein: Option<Flux3KleinConfig>,
     #[serde(rename = "rorem-mixed")]
     pub rorem_mixed: Option<RoremMixedConfig>,
     #[serde(rename = "powerpaint")]
@@ -382,6 +398,8 @@ pub enum InpaintingModel {
     AotInpainting {},
     #[serde(rename = "flux2-klein")]
     Flux2Klein(Flux2KleinConfig),
+    #[serde(rename = "flux3-klein")]
+    Flux3Klein(Flux3KleinConfig),
     #[serde(rename = "rorem-mixed")]
     RoremMixed(RoremMixedConfig),
     #[serde(rename = "powerpaint")]

@@ -10,10 +10,10 @@ use anyhow::{Context as _, Result};
 use clap::{Parser, ValueEnum};
 use koharu_config::Config;
 use koharu_pipeline::{
-    Committer, DetectionModel, Flux2KleinConfig, InpaintingModel, KoharuLayoutRFDetrSeg2XLConfig,
-    LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel, Operation,
-    PaddleOcrVl1_6MangaLoraConfig, Pipeline, PipelineConfig, PowerPaintConfig, Progress, Request,
-    RoremMixedConfig, Scope, StageOutput, TranslationConfig,
+    Committer, DetectionModel, Flux2KleinConfig, Flux3KleinConfig, InpaintingModel,
+    KoharuLayoutRFDetrSeg2XLConfig, LaMaConfig, MangaInpaintorConfig, MiGanConfig, OcrModel,
+    Operation, PaddleOcrVl1_6MangaLoraConfig, Pipeline, PipelineConfig, PowerPaintConfig, Progress,
+    Request, RoremMixedConfig, Scope, StageOutput, TranslationConfig,
 };
 use koharu_rasterizer::{RasterOptions, Rasterizer};
 use koharu_renderer::Renderer;
@@ -92,6 +92,8 @@ enum InpaintingChoice {
     AotInpainting,
     #[value(name = "flux2-klein")]
     Flux2Klein,
+    #[value(name = "flux3-klein")]
+    Flux3Klein,
     #[value(name = "rorem-mixed")]
     RoremMixed,
     #[value(name = "powerpaint")]
@@ -140,6 +142,9 @@ impl Arguments {
                 InpaintingChoice::AotInpainting => InpaintingModel::AotInpainting {},
                 InpaintingChoice::Flux2Klein => {
                     InpaintingModel::Flux2Klein(Flux2KleinConfig::default())
+                }
+                InpaintingChoice::Flux3Klein => {
+                    InpaintingModel::Flux3Klein(Flux3KleinConfig::default())
                 }
                 InpaintingChoice::RoremMixed => {
                     InpaintingModel::RoremMixed(RoremMixedConfig::default())

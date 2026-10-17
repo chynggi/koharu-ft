@@ -15,6 +15,10 @@ use imageproc::region_labelling::{Connectivity, connected_components};
 use koharu_ml::{
     aot_inpainting::AotInpainting,
     flux2_klein::{Flux2KleinInpaint, Flux2KleinInpaintOptions, Flux2KleinSource},
+    flux3_klein::{
+        DEFAULT_REQUEST as FLUX3_DEFAULT_REQUEST, Flux3KleinInpaint, Flux3KleinInpaintOptions,
+        Flux3KleinSource, Flux3PromptUpsampler,
+    },
     lama::{InpaintRequest, LaMa},
     manga_inpaintor::{MangaInpaintor, MangaSource},
     mi_gan::MiGan,
@@ -230,6 +234,95 @@ impl Flux2KleinConfig {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct Flux3KleinSourceConfig {
+    pub transformer: ComponentSourceConfig,
+    pub text_encoder: ComponentSourceConfig,
+    pub vae: ComponentSourceConfig,
+    pub upsampler: ComponentSourceConfig,
+    pub upsampler_mmproj: ComponentSourceConfig,
+}
+
+impl From<Flux3KleinSourceConfig> for Flux3KleinSource {
+    fn from(value: Flux3KleinSourceConfig) -> Self {
+        Self {
+            transformer: value.transformer.into(),
+            text_encoder: value.text_encoder.into(),
+            vae: value.vae.into(),
+            upsampler: value.upsampler.into(),
+            upsampler_mmproj: value.upsampler_mmproj.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct Flux3KleinConfig {
+    /// The instruction the prompt upsampler expands into one caption per tile.
+    pub request: String,
+    /// Which checkpoints the image model and the upsampler are loaded from.
+    pub source: Flux3KleinSourceConfig,
+    pub steps: u32,
+    pub strength: f64,
+    /// `-1` draws a fresh seed for every call.
+    #[specta(type = f64)]
+    pub seed: i64,
+    pub padding_mask_crop: Option<u32>,
+    /// The working area every tile is shrunk to before denoising.
+    pub max_pixels: u32,
+}
+
+impl Default for Flux3KleinConfig {
+    fn default() -> Self {
+        let defaults = Flux3KleinInpaintOptions::default();
+        Self {
+            request: FLUX3_DEFAULT_REQUEST.to_owned(),
+            source: Flux3KleinSourceConfig::default(),
+            steps: u32::try_from(defaults.num_inference_steps)
+                .expect("the default step count fits in u32"),
+            strength: defaults.strength,
+            seed: defaults.seed,
+            padding_mask_crop: defaults.padding_mask_crop,
+            max_pixels: defaults.max_pixels,
+        }
+    }
+}
+
+impl Flux3KleinConfig {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.request.trim().is_empty(),
+            "FLUX 3 upsampler request is empty"
+        );
+        ensure!(
+            !self.request.contains('\0'),
+            "FLUX 3 upsampler request contains NUL"
+        );
+        ensure!(self.steps > 0, "FLUX 3 steps must be greater than zero");
+        ensure!(
+            self.strength > 0.0 && self.strength <= 1.0,
+            "FLUX 3 strength must be greater than zero and at most one"
+        );
+        ensure!(
+            self.max_pixels >= 64 * 64,
+            "FLUX 3 max pixels must be at least {} (64x64)",
+            64 * 64
+        );
+        Flux3KleinSource::from(self.source.clone()).validate()
+    }
+
+    fn options(&self) -> Flux3KleinInpaintOptions {
+        Flux3KleinInpaintOptions {
+            padding_mask_crop: self.padding_mask_crop,
+            strength: self.strength,
+            num_inference_steps: self.steps as usize,
+            seed: self.seed,
+            max_pixels: self.max_pixels,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct RoremMixedConfig {
@@ -334,6 +427,7 @@ impl InpaintingModel {
             Self::MangaInpaintor(settings) => settings.validate()?,
             Self::AotInpainting {} => {}
             Self::Flux2Klein(settings) => settings.validate()?,
+            Self::Flux3Klein(settings) => settings.validate()?,
             Self::RoremMixed(settings) => {
                 ensure!(
                     !settings.prompt.contains('\0') && !settings.negative_prompt.contains('\0'),
@@ -396,6 +490,7 @@ impl StageProcessor for Processor {
             InpaintingModel::MangaInpaintor(_) => "manga-inpaintor",
             InpaintingModel::AotInpainting {} => "aot-inpainting",
             InpaintingModel::Flux2Klein(_) => "flux2-klein",
+            InpaintingModel::Flux3Klein(_) => "flux3-klein",
             InpaintingModel::RoremMixed(_) => "rorem-mixed",
             InpaintingModel::PowerPaint(_) => "powerpaint",
         }
@@ -450,6 +545,11 @@ enum Model {
         /// 다른 변형은 로더 핸들만 들고 있어서, 이 설정만 상자에 넣어 열거형
         /// 크기를 핸들 크기로 맞춘다.
         config: Box<Flux2KleinConfig>,
+    },
+    Flux3 {
+        inpaint: Arc<Mutex<Flux3KleinInpaint>>,
+        upsampler: Arc<Flux3PromptUpsampler>,
+        config: Box<Flux3KleinConfig>,
     },
     Rorem {
         model: Arc<Mutex<RoremMixed>>,
@@ -506,6 +606,18 @@ impl Model {
                 log_weight_estimate(&source).await;
                 Ok(Self::Flux {
                     model: Arc::new(Mutex::new(Flux2KleinInpaint::load(device, &source).await?)),
+                    config: Box::new(config.clone()),
+                })
+            }
+            InpaintingModel::Flux3Klein(config) => {
+                let source: Flux3KleinSource = config.source.clone().into();
+                let (inpaint, upsampler) = tokio::try_join!(
+                    Flux3KleinInpaint::load(device.clone(), &source),
+                    Flux3PromptUpsampler::load(device, &source),
+                )?;
+                Ok(Self::Flux3 {
+                    inpaint: Arc::new(Mutex::new(inpaint)),
+                    upsampler: Arc::new(upsampler),
                     config: Box::new(config.clone()),
                 })
             }
@@ -650,6 +762,44 @@ impl Model {
                                 None,
                                 &DynamicImage::ImageLuma8(mask.clone()),
                                 &config.options(),
+                            )
+                        })
+                    })
+                    .await?,
+                )
+            }
+            Self::Flux3 {
+                inpaint,
+                upsampler,
+                config,
+            } => {
+                let plan = TilePlan::new(
+                    &prepared.image,
+                    &prepared.mask,
+                    &prepared.text_mask,
+                    &prepared.flat_fill_regions,
+                )?;
+                // Phase 1 holds the accelerator with the upsampler alone and
+                // drops it before phase 2 loads FLUX 3, so a 12 GB card never
+                // holds both. Captions come from the untouched crops; phase 2
+                // still cuts each tile from the output earlier tiles left.
+                let captions = upsampler
+                    .caption(plan.crops(), config.request.clone())
+                    .await?;
+                let inpaint = inpaint.clone();
+                let options = config.options();
+                (
+                    "flux3-klein",
+                    tokio_rayon::spawn(move || -> Result<DynamicImage> {
+                        let model = inpaint
+                            .lock()
+                            .map_err(|_| anyhow!("FLUX 3 model lock is poisoned"))?;
+                        plan.run(|index, image, mask| {
+                            model.inference(
+                                &captions[index],
+                                image,
+                                &DynamicImage::ImageLuma8(mask.clone()),
+                                &options,
                             )
                         })
                     })
@@ -1481,6 +1631,67 @@ mod tests {
         ] {
             assert!(config.validate().is_err(), "{config:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn flux3_defaults_reproduce_the_model_options() {
+        let config = Flux3KleinConfig::default();
+        assert_eq!(config.request, koharu_ml::flux3_klein::DEFAULT_REQUEST);
+        assert_eq!(config.options(), Flux3KleinInpaintOptions::default());
+        assert_eq!(
+            Flux3KleinSource::from(config.source.clone()),
+            Flux3KleinSource::default()
+        );
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn invalid_flux3_settings_are_rejected() {
+        for config in [
+            Flux3KleinConfig {
+                request: String::new(),
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                request: "Erase\0".to_owned(),
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                steps: 0,
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                strength: 1.5,
+                ..Default::default()
+            },
+            Flux3KleinConfig {
+                source: Flux3KleinSourceConfig {
+                    upsampler: ComponentSourceConfig::LocalFile {
+                        path: PathBuf::from("relative.gguf"),
+                    },
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ] {
+            assert!(config.validate().is_err(), "{config:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn a_flux3_section_round_trips_through_toml() {
+        let config = Flux3KleinConfig {
+            request: "Erase the lettering.".to_owned(),
+            steps: 12,
+            ..Default::default()
+        };
+        let document = toml::to_string(&config).unwrap();
+        assert_eq!(
+            toml::from_str::<Flux3KleinConfig>(&document).unwrap(),
+            config
+        );
+        let partial: Flux3KleinConfig = toml::from_str("request = \"Erase.\"").unwrap();
+        assert_eq!(partial.options(), Flux3KleinInpaintOptions::default());
     }
 
     #[test]
