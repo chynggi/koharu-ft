@@ -23,6 +23,7 @@ Document only durable, repository-specific constraints here. Do not record curre
 - Accept a device abstraction at the model boundary, convert it once, and avoid unnecessary transfers or synchronization.
 - Use the established runtime and variable-store loading paths unless they are proven insufficient.
 - Disable gradient tracking during inference.
+- Let one stage hold the accelerator at a time. A stage that takes it drops every other stage's model before loading its own, and keeps its own resident so repeat pages reload nothing.
 
 ## Upstream Alignment
 
