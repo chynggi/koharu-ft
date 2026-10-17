@@ -57,16 +57,22 @@ impl Default for Flux2KleinInpaintOptions {
 pub(crate) struct Flux2ImageProcessor;
 
 impl Flux2ImageProcessor {
-    /// Maps diffusers' `get_timesteps` onto stable-diffusion.cpp's
-    /// `t_enc = (size_t)(steps * strength)` truncation, so sd.cpp starts at the
-    /// step diffusers would. The midpoint below the boundary keeps the f32
-    /// product from rounding up onto it, which a one-ulp offset does not.
+    /// Maps diffusers' [`get_timesteps`] onto stable-diffusion.cpp's
+    /// [`t_enc` truncation], so sd.cpp starts at the step diffusers would. The
+    /// midpoint below the boundary keeps the f32 product from rounding up onto
+    /// it, which a one-ulp offset does not.
+    ///
+    /// [`get_timesteps`]: https://github.com/huggingface/diffusers/blob/a37f6f8394ac2a7ee8360c3abea811efe54512b1/src/diffusers/pipelines/flux2/pipeline_flux2_klein_inpaint.py#L695-L704
+    /// [`t_enc` truncation]: https://github.com/leejet/stable-diffusion.cpp/blob/8cd731e7b4667eb8f40a153315b9a7125d09a58d/src/pipeline/image.cpp#L153-L156
     pub(crate) fn sd_strength(strength: f64, steps: usize) -> f32 {
         if strength >= 1.0 {
             return 1.0;
         }
-        let effective_steps = (steps - (steps as f64 * (1.0 - strength)).floor() as usize).max(1);
-        ((effective_steps as f64 - 0.5) / steps as f64) as f32
+        let steps_f = steps as f64;
+        // diffusers `get_timesteps`: t_start = int(max(steps - min(steps * strength, steps), 0)).
+        let t_start = (steps_f - (steps_f * strength).min(steps_f)).max(0.0) as usize;
+        let effective_steps = (steps - t_start).max(1);
+        ((effective_steps as f64 - 0.5) / steps_f) as f32
     }
 
     /// The working area has to leave room for the 16-pixel alignment every
@@ -304,12 +310,19 @@ mod tests {
         for steps in 1..=64usize {
             for percent in 1..100u32 {
                 let strength = f64::from(percent) / 100.0;
-                let effective = steps - (steps as f64 * (1.0 - strength)).floor() as usize;
+                let t_start =
+                    (steps as f64 - (steps as f64 * strength).min(steps as f64)).max(0.0) as usize;
+                let effective = (steps - t_start).max(1);
                 let t_enc =
                     (steps as f32 * Flux2ImageProcessor::sd_strength(strength, steps)) as usize;
                 assert_eq!(t_enc, effective - 1, "steps={steps} strength={strength}");
             }
         }
+        // diffusers runs 8 steps at (10, 0.8), so sd.cpp must start at t_enc 7.
+        assert_eq!(
+            (10.0f32 * Flux2ImageProcessor::sd_strength(0.8, 10)) as usize,
+            7
+        );
         assert_eq!(Flux2ImageProcessor::sd_strength(1.0, 16), 1.0);
         assert!(Flux2ImageProcessor::sd_strength(1e-17, 16) > 0.0);
     }
