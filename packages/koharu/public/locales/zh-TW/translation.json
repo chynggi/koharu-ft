@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "對話框閾值",
         "checkpointSource": "檢查點來源",
+        "flux3": {
+          "license": "FLUX Kommunity License：僅允許非商業用途，以及年營收低於 US$5M 的組織進行商業輸出。",
+          "licenseLink": "閱讀授權條款",
+          "resources": "需要 {{vram}} GB 顯示記憶體、約 {{ram}} GB 額外系統記憶體，首次下載 {{download}} GB。",
+          "speed": "比 FLUX.2 Klein 慢：每頁都會讓上取樣器與影像模型輪流使用 GPU。"
+        },
         "format": "格式",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "任務嵌入目錄",
         "powerpaintModel": "模型檔案",
         "prompt": "提示詞",
+        "request": "上取樣器指令",
+        "requestDescription": "官方提示詞上取樣器會依此指令為每個圖塊產生完整描述。",
         "seed": "Seed",
         "source": {
           "inpaintor": "修復模型",
           "line": "線稿模型",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "提示詞上取樣器",
+          "upsampler_mmproj": "上取樣器投影器",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",

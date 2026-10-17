@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "气泡阈值",
         "checkpointSource": "检查点来源",
+        "flux3": {
+          "license": "FLUX Kommunity License：只允许非商业用途，搭年收入低于 US$5M 个组织做商业输出。",
+          "licenseLink": "看许可证",
+          "resources": "需要 {{vram}} GB 显存、大约 {{ram}} GB 额外系统内存，头一趟下载 {{download}} GB。",
+          "speed": "比 FLUX.2 Klein 慢：每页上采样器搭图像模型要轮流用 GPU。"
+        },
         "format": "格式",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "任务嵌入目录",
         "powerpaintModel": "模型文件",
         "prompt": "提示词",
+        "request": "上采样器指令",
+        "requestDescription": "官方提示词上采样器会根据搿条指令，为每块图块生成完整描述。",
         "seed": "Seed",
         "source": {
           "inpaintor": "修复模型",
           "line": "线稿模型",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "提示词上采样器",
+          "upsampler_mmproj": "上采样器投影器",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",

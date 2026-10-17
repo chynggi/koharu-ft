@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "Konuşma balonu eşiği",
         "checkpointSource": "Kontrol noktası kaynağı",
+        "flux3": {
+          "license": "FLUX Kommunity License: ticari olmayan kullanım ve yalnızca yıllık geliri 5 milyon ABD dolarının altındaki kuruluşlar için ticari çıktı.",
+          "licenseLink": "Lisansı oku",
+          "resources": "{{vram}} GB VRAM, yaklaşık {{ram}} GB ek sistem belleği ve ilk indirme için {{download}} GB gerekir.",
+          "speed": "FLUX.2 Klein'dan yavaştır: upsampler ve görüntü modeli her sayfada GPU'yu sırayla kullanır."
+        },
         "format": "Biçim",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "Görev gömme dizini",
         "powerpaintModel": "Model dosyası",
         "prompt": "İstem",
+        "request": "Upsampler talimatı",
+        "requestDescription": "Resmî istem upsampler'ı bu talimatı her döşeme için eksiksiz bir açıklamaya dönüştürür.",
         "seed": "Seed",
         "source": {
           "inpaintor": "İnpyntör",
           "line": "Çizgi modeli",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "İstem upsampler'ı",
+          "upsampler_mmproj": "Upsampler projektörü",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",

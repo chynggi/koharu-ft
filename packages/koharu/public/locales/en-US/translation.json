@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "Bubble threshold",
         "checkpointSource": "Checkpoint source",
+        "flux3": {
+          "license": "FLUX Kommunity License: non-commercial use, and commercial output only for organizations under US$5M annual revenue.",
+          "licenseLink": "Read the license",
+          "resources": "Needs {{vram}} GB of VRAM, about {{ram}} GB of extra system RAM, and a {{download}} GB first download.",
+          "speed": "Slower than FLUX.2 Klein: the upsampler and the image model take turns on the GPU for every page."
+        },
         "format": "Format",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "Task embeddings directory",
         "powerpaintModel": "Model file",
         "prompt": "Prompt",
+        "request": "Upsampler request",
+        "requestDescription": "The official prompt upsampler turns this request into a full caption for every tile.",
         "seed": "Seed",
         "source": {
           "inpaintor": "Inpaintor",
           "line": "Line model",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "Prompt upsampler",
+          "upsampler_mmproj": "Upsampler projector",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",

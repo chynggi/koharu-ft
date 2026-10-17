@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "Порог пузыря",
         "checkpointSource": "Источник контрольной точки",
+        "flux3": {
+          "license": "FLUX Kommunity License: некоммерческое использование и коммерческий вывод только для организаций с годовым доходом менее 5 млн долларов США.",
+          "licenseLink": "Прочитать лицензию",
+          "resources": "Требуется {{vram}} ГБ видеопамяти, около {{ram}} ГБ дополнительной оперативной памяти и {{download}} ГБ при первой загрузке.",
+          "speed": "Медленнее, чем FLUX.2 Klein: апсемплер и модель изображения по очереди используют GPU на каждой странице."
+        },
         "format": "Формат",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "Каталог эмбеддингов задачи",
         "powerpaintModel": "Файл модели",
         "prompt": "Промпт",
+        "request": "Инструкция для апсемплера",
+        "requestDescription": "Официальный апсемплер промптов превращает эту инструкцию в полное описание для каждого фрагмента.",
         "seed": "Seed",
         "source": {
           "inpaintor": "Инпейнтер",
           "line": "Модель линий",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "Апсемплер промптов",
+          "upsampler_mmproj": "Проектор апсемплера",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",

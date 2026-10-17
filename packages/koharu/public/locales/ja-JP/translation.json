@@ -560,6 +560,12 @@
       "options": {
         "bubbleThreshold": "吹き出ししきい値",
         "checkpointSource": "チェックポイントのソース",
+        "flux3": {
+          "license": "FLUX Kommunity License：非商用利用と、年間売上 US$5M 未満の組織による商用出力のみ許可されます。",
+          "licenseLink": "ライセンスを読む",
+          "resources": "VRAM {{vram}} GB、追加のシステム RAM 約 {{ram}} GB、初回ダウンロード {{download}} GB が必要です。",
+          "speed": "FLUX.2 Klein より遅くなります。ページごとにアップサンプラーと画像モデルが交互に GPU を使います。"
+        },
         "format": "フォーマット",
         "formatKind": {
           "safeTensors": "Safetensors",
@@ -572,12 +578,16 @@
         "powerpaintEmbeddings": "タスク埋め込みディレクトリ",
         "powerpaintModel": "モデルファイル",
         "prompt": "プロンプト",
+        "request": "アップサンプラーへの指示",
+        "requestDescription": "公式のプロンプトアップサンプラーが、この指示からタイルごとに完全なキャプションを生成します。",
         "seed": "Seed",
         "source": {
           "inpaintor": "補完モデル",
           "line": "線画モデル",
           "text_encoder": "Text encoder",
           "transformer": "Transformer",
+          "upsampler": "プロンプトアップサンプラー",
+          "upsampler_mmproj": "アップサンプラーのプロジェクター",
           "vae": "VAE"
         },
         "sourceDescription": "Overrides load a checkpoint of your choice. FLUX.2 Klein reads its architecture from the file, so an incompatible checkpoint fails when the model is loaded.",
