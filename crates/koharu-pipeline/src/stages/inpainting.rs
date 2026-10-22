@@ -1388,7 +1388,7 @@ fn crop_tile_mask(mask: &GrayImage, tile: &InpaintTile) -> GrayImage {
 
 /// The background a bubble's lettering sits on, predicted for any pixel inside
 /// the bubble's bounds.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum RegionBackground {
     Flat(Rgb<u8>),
 }
@@ -1430,8 +1430,7 @@ fn region_background(
 }
 
 /// The share of samples the background predicts within the tolerance on every
-/// channel. A few outline pixels the polygon catches lower it only by their own
-/// share, unlike a standard deviation.
+/// channel. An outline pixel the polygon catches lowers it only by its own share.
 fn inlier_ratio(
     background: &RegionBackground,
     bounds: [u32; 4],
