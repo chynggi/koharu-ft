@@ -1098,6 +1098,8 @@ const TILE_SIZE: u32 = 512;
 const TILE_CONTEXT: u32 = 128;
 const UNIFORM_BACKGROUND_MIN_PIXELS: usize = 16;
 const FLAT_FILL_EDGE_MARGIN: f32 = 3.0;
+const BACKGROUND_INLIER_TOLERANCE: u8 = 12;
+const BACKGROUND_INLIER_RATIO: f64 = 0.9;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InpaintTile {
@@ -1223,11 +1225,11 @@ fn fill_uniform_regions(
         if targets.is_empty() {
             continue;
         }
-        let Some(color) = uniform_region_color(output, pending_mask, region) else {
+        let Some(background) = region_background(output, pending_mask, region) else {
             continue;
         };
         for (x, y) in targets {
-            output.put_pixel(x, y, color);
+            output.put_pixel(x, y, background.color(region.bounds, x, y));
             pending_mask.put_pixel(x, y, Luma([0]));
         }
     }
@@ -1384,13 +1386,28 @@ fn crop_tile_mask(mask: &GrayImage, tile: &InpaintTile) -> GrayImage {
     crop
 }
 
-fn uniform_region_color(
+/// The background a bubble's lettering sits on, predicted for any pixel inside
+/// the bubble's bounds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum RegionBackground {
+    Flat(Rgb<u8>),
+}
+
+impl RegionBackground {
+    fn color(&self, _bounds: [u32; 4], _x: u32, _y: u32) -> Rgb<u8> {
+        match self {
+            Self::Flat(color) => *color,
+        }
+    }
+}
+
+fn region_background(
     image: &RgbImage,
     mask: &GrayImage,
     region: &FlatFillRegion,
-) -> Option<Rgb<u8>> {
+) -> Option<RegionBackground> {
     let [left, top, right, bottom] = region.bounds;
-    let mut channels = [Vec::new(), Vec::new(), Vec::new()];
+    let mut samples = Vec::new();
     for y in top..bottom {
         for x in left..right {
             let point = (x as f32 + 0.5, y as f32 + 0.5);
@@ -1401,29 +1418,45 @@ fn uniform_region_color(
             {
                 continue;
             }
-            let pixel = image.get_pixel(x, y);
-            for channel in 0..3 {
-                channels[channel].push(pixel[channel]);
-            }
+            samples.push((x, y, *image.get_pixel(x, y)));
         }
     }
-    if channels[0].len() < UNIFORM_BACKGROUND_MIN_PIXELS {
+    if samples.len() < UNIFORM_BACKGROUND_MIN_PIXELS {
         return None;
     }
 
-    let medians = channels.each_mut().map(|values| median(values));
-    let deviations = std::array::from_fn::<_, 3, _>(|channel| {
-        standard_deviation(&channels[channel], f64::from(medians[channel]))
-    });
-    let mean_deviation = deviations.iter().sum::<f64>() / deviations.len() as f64;
-    let channel_spread = (deviations
+    let flat = RegionBackground::Flat(median_color(samples.iter().map(|&(_, _, color)| color)));
+    (inlier_ratio(&flat, region.bounds, &samples) >= BACKGROUND_INLIER_RATIO).then_some(flat)
+}
+
+/// The share of samples the background predicts within the tolerance on every
+/// channel. A few outline pixels the polygon catches lower it only by their own
+/// share, unlike a standard deviation.
+fn inlier_ratio(
+    background: &RegionBackground,
+    bounds: [u32; 4],
+    samples: &[(u32, u32, Rgb<u8>)],
+) -> f64 {
+    let inliers = samples
         .iter()
-        .map(|deviation| (deviation - mean_deviation).powi(2))
-        .sum::<f64>()
-        / deviations.len() as f64)
-        .sqrt();
-    let threshold = if channel_spread > 1.0 { 7.0 } else { 10.0 };
-    (deviations.iter().copied().fold(0.0, f64::max) < threshold).then_some(Rgb(medians))
+        .filter(|&&(x, y, color)| {
+            let predicted = background.color(bounds, x, y);
+            (0..3).all(|channel| {
+                color[channel].abs_diff(predicted[channel]) <= BACKGROUND_INLIER_TOLERANCE
+            })
+        })
+        .count();
+    inliers as f64 / samples.len() as f64
+}
+
+fn median_color(colors: impl Iterator<Item = Rgb<u8>>) -> Rgb<u8> {
+    let mut channels = [Vec::new(), Vec::new(), Vec::new()];
+    for color in colors {
+        for channel in 0..3 {
+            channels[channel].push(color[channel]);
+        }
+    }
+    Rgb(channels.each_mut().map(|values| median(values)))
 }
 
 fn point_in_polygon(point: (f32, f32), polygon: &[(f32, f32)]) -> bool {
@@ -1475,15 +1508,6 @@ fn median(values: &mut [u8]) -> u8 {
     } else {
         values[middle]
     }
-}
-
-fn standard_deviation(values: &[u8], center: f64) -> f64 {
-    (values
-        .iter()
-        .map(|value| (f64::from(*value) - center).powi(2))
-        .sum::<f64>()
-        / values.len() as f64)
-        .sqrt()
 }
 
 fn composite_generated(
@@ -1867,6 +1891,36 @@ mod tests {
                 (left as f32, bottom as f32),
             ],
         }
+    }
+
+    #[test]
+    fn outline_ink_inside_an_opaque_bubble_does_not_block_the_flat_fill() {
+        let mut image = RgbImage::from_pixel(100, 100, Rgb([250, 250, 250]));
+        // The polygon catches the bubble outline: two dark columns past the
+        // edge margin, about 4% of the sampled background.
+        for y in 14..86 {
+            image.put_pixel(14, y, Rgb([0, 0, 0]));
+            image.put_pixel(85, y, Rgb([0, 0, 0]));
+        }
+        let mut mask = GrayImage::new(100, 100);
+        for y in 30..70 {
+            for x in 30..70 {
+                image.put_pixel(x, y, Rgb([10, 10, 10]));
+                mask.put_pixel(x, y, Luma([u8::MAX]));
+            }
+        }
+        let mut output = image.clone();
+        let mut pending_mask = mask.clone();
+
+        fill_uniform_regions(
+            &mut output,
+            &mut pending_mask,
+            &mask,
+            &[rectangle_region([10, 10, 90, 90])],
+        );
+
+        assert_eq!(output.get_pixel(50, 50), &Rgb([250, 250, 250]));
+        assert_eq!(pending_mask.get_pixel(50, 50), &Luma([0]));
     }
 
     #[test]
