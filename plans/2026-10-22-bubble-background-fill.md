@@ -99,7 +99,7 @@ const BACKGROUND_INLIER_RATIO: f64 = 0.9;
 ```rust
 /// The background a bubble's lettering sits on, predicted for any pixel inside
 /// the bubble's bounds.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum RegionBackground {
     Flat(Rgb<u8>),
 }
@@ -141,8 +141,7 @@ fn region_background(
 }
 
 /// The share of samples the background predicts within the tolerance on every
-/// channel. A few outline pixels the polygon catches lower it only by their own
-/// share, unlike a standard deviation.
+/// channel. An outline pixel the polygon catches lowers it only by its own share.
 fn inlier_ratio(
     background: &RegionBackground,
     bounds: [u32; 4],
@@ -347,7 +346,7 @@ Task 1의 `enum RegionBackground`와 `impl RegionBackground`를 아래로 바꾼
 ```rust
 /// The background a bubble's lettering sits on, predicted for any pixel inside
 /// the bubble's bounds.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum RegionBackground {
     Flat(Rgb<u8>),
     /// One color per row, starting at the bounds' top edge.
