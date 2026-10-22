@@ -2050,6 +2050,38 @@ mod tests {
     }
 
     #[test]
+    fn a_horizontal_gradient_box_is_filled_from_its_column_profile() {
+        let mut image = RgbImage::from_fn(200, 60, |x, _| {
+            let value = (x * 255 / 199) as u8;
+            Rgb([value, value, value])
+        });
+        let expected = *image.get_pixel(100, 30);
+        let mut mask = GrayImage::new(200, 60);
+        for y in 15..45 {
+            for x in 20..180 {
+                image.put_pixel(x, y, Rgb([255, 255, 255]));
+                mask.put_pixel(x, y, Luma([u8::MAX]));
+            }
+        }
+        let mut output = image.clone();
+        let mut pending_mask = mask.clone();
+
+        fill_uniform_regions(
+            &mut output,
+            &mut pending_mask,
+            &mask,
+            &[rectangle_region([0, 0, 200, 60])],
+        );
+
+        let filled = output.get_pixel(100, 30);
+        assert!(
+            (0..3).all(|channel| filled[channel].abs_diff(expected[channel]) <= 2),
+            "filled {filled:?}, expected about {expected:?}"
+        );
+        assert_eq!(pending_mask.get_pixel(100, 30), &Luma([0]));
+    }
+
+    #[test]
     fn a_screentone_bubble_is_left_for_the_model() {
         let mut image = RgbImage::from_fn(100, 100, |x, y| {
             if (x / 2 + y / 2).is_multiple_of(2) {
