@@ -1100,6 +1100,7 @@ const UNIFORM_BACKGROUND_MIN_PIXELS: usize = 16;
 const FLAT_FILL_EDGE_MARGIN: f32 = 3.0;
 const BACKGROUND_INLIER_TOLERANCE: u8 = 12;
 const BACKGROUND_INLIER_RATIO: f64 = 0.9;
+const BACKGROUND_PROFILE_RADIUS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InpaintTile {
@@ -1120,6 +1121,9 @@ struct MaskComponent {
 // https://github.com/dmMaze/BallonsTranslator/blob/4bcc635c19f6c63a902872cf77b3d554e14ed1b7/ballontranslator/modules/inpaint/base.py#L168-L200
 // Koharu uses the detected bubble polygons as those blocks. Uniform bubbles are
 // filled first; only the remaining mask is split into bounded model crops.
+// Unlike the deviation test there, a bubble passes when nearly all of its
+// background matches a flat color or a row/column gradient, so outline pixels
+// the polygon catches do not send an opaque bubble to the model.
 struct TilePlan {
     output: RgbImage,
     pending_mask: GrayImage,
@@ -1225,7 +1229,7 @@ fn fill_uniform_regions(
         if targets.is_empty() {
             continue;
         }
-        let Some(background) = region_background(output, pending_mask, region) else {
+        let Some(background) = region_background(output, pending_mask, region, &targets) else {
             continue;
         };
         for (x, y) in targets {
@@ -1391,12 +1395,18 @@ fn crop_tile_mask(mask: &GrayImage, tile: &InpaintTile) -> GrayImage {
 #[derive(Clone, Debug)]
 enum RegionBackground {
     Flat(Rgb<u8>),
+    /// One color per row, starting at the bounds' top edge.
+    Rows(Vec<Rgb<u8>>),
+    /// One color per column, starting at the bounds' left edge.
+    Columns(Vec<Rgb<u8>>),
 }
 
 impl RegionBackground {
-    fn color(&self, _bounds: [u32; 4], _x: u32, _y: u32) -> Rgb<u8> {
+    fn color(&self, bounds: [u32; 4], x: u32, y: u32) -> Rgb<u8> {
         match self {
             Self::Flat(color) => *color,
+            Self::Rows(colors) => colors[(y - bounds[1]) as usize],
+            Self::Columns(colors) => colors[(x - bounds[0]) as usize],
         }
     }
 }
@@ -1405,6 +1415,7 @@ fn region_background(
     image: &RgbImage,
     mask: &GrayImage,
     region: &FlatFillRegion,
+    targets: &[(u32, u32)],
 ) -> Option<RegionBackground> {
     let [left, top, right, bottom] = region.bounds;
     let mut samples = Vec::new();
@@ -1426,7 +1437,24 @@ fn region_background(
     }
 
     let flat = RegionBackground::Flat(median_color(samples.iter().map(|&(_, _, color)| color)));
-    (inlier_ratio(&flat, region.bounds, &samples) >= BACKGROUND_INLIER_RATIO).then_some(flat)
+    if inlier_ratio(&flat, region.bounds, &samples) >= BACKGROUND_INLIER_RATIO {
+        return Some(flat);
+    }
+    let ratio = |background: &Option<RegionBackground>| {
+        background.as_ref().map_or(0.0, |background| {
+            inlier_ratio(background, region.bounds, &samples)
+        })
+    };
+    let rows = axis_profile(&samples, targets, |_, y| y, top, bottom).map(RegionBackground::Rows);
+    let columns =
+        axis_profile(&samples, targets, |x, _| x, left, right).map(RegionBackground::Columns);
+    let (rows_ratio, columns_ratio) = (ratio(&rows), ratio(&columns));
+    let (best, best_ratio) = if columns_ratio > rows_ratio {
+        (columns, columns_ratio)
+    } else {
+        (rows, rows_ratio)
+    };
+    best.filter(|_| best_ratio >= BACKGROUND_INLIER_RATIO)
 }
 
 /// The share of samples the background predicts within the tolerance on every
@@ -1456,6 +1484,69 @@ fn median_color(colors: impl Iterator<Item = Rgb<u8>>) -> Rgb<u8> {
         }
     }
     Rgb(channels.each_mut().map(|values| median(values)))
+}
+
+/// One color for every line from `start` to `end` along the axis `line`
+/// selects. A sampled line takes the median of the samples within
+/// `BACKGROUND_PROFILE_RADIUS` lines of it, so a line with few samples cannot
+/// fit them alone; an unsampled line interpolates between its sampled
+/// neighbors. `None` when a target lies outside the sampled lines, because the
+/// profile would have to extrapolate.
+fn axis_profile(
+    samples: &[(u32, u32, Rgb<u8>)],
+    targets: &[(u32, u32)],
+    line: impl Fn(u32, u32) -> u32,
+    start: u32,
+    end: u32,
+) -> Option<Vec<Rgb<u8>>> {
+    let length = (end - start) as usize;
+    let mut lines = vec![Vec::new(); length];
+    for &(x, y, color) in samples {
+        lines[(line(x, y) - start) as usize].push(color);
+    }
+    let first = lines.iter().position(|colors| !colors.is_empty())?;
+    let last = lines.iter().rposition(|colors| !colors.is_empty())?;
+    if targets.iter().any(|&(x, y)| {
+        let index = (line(x, y) - start) as usize;
+        index < first || index > last
+    }) {
+        return None;
+    }
+
+    let known = (0..length)
+        .filter(|&index| !lines[index].is_empty())
+        .map(|index| {
+            let window = index.saturating_sub(BACKGROUND_PROFILE_RADIUS)
+                ..(index + BACKGROUND_PROFILE_RADIUS + 1).min(length);
+            (index, median_color(lines[window].iter().flatten().copied()))
+        })
+        .collect::<Vec<_>>();
+    let colors = (0..length)
+        .map(|index| {
+            let after = known.partition_point(|&(known_index, _)| known_index < index);
+            match (
+                after.checked_sub(1).map(|before| known[before]),
+                known.get(after),
+            ) {
+                (_, Some(&(known_index, color))) if known_index == index => color,
+                (Some((from_index, from)), Some(&(to_index, to))) => lerp_color(
+                    from,
+                    to,
+                    (index - from_index) as f32 / (to_index - from_index) as f32,
+                ),
+                (Some((_, color)), None) | (None, Some(&(_, color))) => color,
+                (None, None) => unreachable!("a sampled line exists"),
+            }
+        })
+        .collect();
+    Some(colors)
+}
+
+fn lerp_color(from: Rgb<u8>, to: Rgb<u8>, t: f32) -> Rgb<u8> {
+    Rgb(std::array::from_fn(|channel| {
+        let from = f32::from(from[channel]);
+        (from + (f32::from(to[channel]) - from) * t).round() as u8
+    }))
 }
 
 fn point_in_polygon(point: (f32, f32), polygon: &[(f32, f32)]) -> bool {
@@ -1920,6 +2011,97 @@ mod tests {
 
         assert_eq!(output.get_pixel(50, 50), &Rgb([250, 250, 250]));
         assert_eq!(pending_mask.get_pixel(50, 50), &Luma([0]));
+    }
+
+    fn vertical_gradient(width: u32, height: u32) -> RgbImage {
+        RgbImage::from_fn(width, height, |_, y| {
+            let value = (y * 255 / (height - 1)) as u8;
+            Rgb([value, value, value])
+        })
+    }
+
+    #[test]
+    fn a_vertical_gradient_box_is_filled_from_its_row_profile() {
+        let mut image = vertical_gradient(60, 200);
+        let expected = *image.get_pixel(30, 100);
+        let mut mask = GrayImage::new(60, 200);
+        for y in 20..180 {
+            for x in 15..45 {
+                image.put_pixel(x, y, Rgb([255, 255, 255]));
+                mask.put_pixel(x, y, Luma([u8::MAX]));
+            }
+        }
+        let mut output = image.clone();
+        let mut pending_mask = mask.clone();
+
+        fill_uniform_regions(
+            &mut output,
+            &mut pending_mask,
+            &mask,
+            &[rectangle_region([0, 0, 60, 200])],
+        );
+
+        let filled = output.get_pixel(30, 100);
+        assert!(
+            (0..3).all(|channel| filled[channel].abs_diff(expected[channel]) <= 2),
+            "filled {filled:?}, expected about {expected:?}"
+        );
+        assert_eq!(pending_mask.get_pixel(30, 100), &Luma([0]));
+    }
+
+    #[test]
+    fn a_screentone_bubble_is_left_for_the_model() {
+        let mut image = RgbImage::from_fn(100, 100, |x, y| {
+            if (x / 2 + y / 2).is_multiple_of(2) {
+                Rgb([40, 40, 40])
+            } else {
+                Rgb([220, 220, 220])
+            }
+        });
+        let mut mask = GrayImage::new(100, 100);
+        for y in 30..70 {
+            for x in 30..70 {
+                image.put_pixel(x, y, Rgb([10, 10, 10]));
+                mask.put_pixel(x, y, Luma([u8::MAX]));
+            }
+        }
+        let mut output = image.clone();
+        let mut pending_mask = mask.clone();
+
+        fill_uniform_regions(
+            &mut output,
+            &mut pending_mask,
+            &mask,
+            &[rectangle_region([10, 10, 90, 90])],
+        );
+
+        assert_eq!(output.get_pixel(50, 50), &Rgb([10, 10, 10]));
+        assert_eq!(pending_mask.get_pixel(50, 50), &Luma([u8::MAX]));
+    }
+
+    #[test]
+    fn a_gradient_is_not_extrapolated_past_its_sampled_rows() {
+        let mut image = vertical_gradient(60, 200);
+        let mut mask = GrayImage::new(60, 200);
+        // Lettering spans the full width of the bottom rows, so no row below
+        // 150 has a background sample.
+        for y in 150..200 {
+            for x in 0..60 {
+                image.put_pixel(x, y, Rgb([255, 255, 255]));
+                mask.put_pixel(x, y, Luma([u8::MAX]));
+            }
+        }
+        let mut output = image.clone();
+        let mut pending_mask = mask.clone();
+
+        fill_uniform_regions(
+            &mut output,
+            &mut pending_mask,
+            &mask,
+            &[rectangle_region([0, 0, 60, 200])],
+        );
+
+        assert_eq!(pending_mask.get_pixel(30, 170), &Luma([u8::MAX]));
     }
 
     #[test]
