@@ -753,19 +753,27 @@ impl Fonts {
         Ok(resolved)
     }
 
-    pub(crate) async fn preview(&self, family_name: &str) -> Result<FontPreview> {
-        let system = self.ensure_system().await;
+    /// Returns the pre-rendered preview image for a bundled family, if one exists.
+    pub(crate) async fn preview_image(&self, family_name: &str) -> Result<Option<Vec<u8>>> {
         let catalog = self.catalog().await?;
-        if let Some(face) = catalog.select(family_name, Attributes::default()) {
-            let path =
-                HuggingFaceFile::pinned_dataset(FONT_REPOSITORY, FONT_REVISION, &face.preview_file)
-                    .resolve()
-                    .await?;
-            return tokio::fs::read(&path)
-                .await
-                .with_context(|| format!("failed to read {}", path.display()))
-                .map(FontPreview::Webp);
+        let Some(face) = catalog.select(family_name, Attributes::default()) else {
+            return Ok(None);
+        };
+        let path =
+            HuggingFaceFile::pinned_dataset(FONT_REPOSITORY, FONT_REVISION, &face.preview_file)
+                .resolve_silent()
+                .await?;
+        tokio::fs::read(&path)
+            .await
+            .with_context(|| format!("failed to read {}", path.display()))
+            .map(Some)
+    }
+
+    pub(crate) async fn preview(&self, family_name: &str) -> Result<FontPreview> {
+        if let Some(bytes) = self.preview_image(family_name).await? {
+            return Ok(FontPreview::Webp(bytes));
         }
+        let system = self.ensure_system().await;
         tokio_rayon::spawn({
             let family_name = family_name.to_owned();
             move || {
@@ -826,7 +834,7 @@ impl Fonts {
             .get_or_try_init(|| async {
                 let path =
                     HuggingFaceFile::pinned_dataset(FONT_REPOSITORY, FONT_REVISION, FONT_INDEX)
-                        .resolve()
+                        .resolve_silent()
                         .await?;
                 let bytes = tokio::fs::read(&path)
                     .await

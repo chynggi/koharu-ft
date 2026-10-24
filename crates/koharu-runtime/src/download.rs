@@ -36,9 +36,21 @@ type DownloadClient = Arc<reqwest_middleware::ClientWithMiddleware>;
 
 static CLIENT: OnceLock<DownloadClient> = OnceLock::new();
 
+/// Whether a download is reported through the global activity stream.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Visibility {
+    /// Artifacts the user asked for: models, runtimes, and fonts.
+    Visible,
+    /// Prefetched UI assets that only need the on-disk cache, such as the font
+    /// catalog and preview images.
+    Silent,
+}
+
 struct Activity {
     id: u64,
     name: String,
+    visibility: Visibility,
+    finished: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -54,17 +66,29 @@ impl Chunk {
 }
 
 impl Activity {
-    fn start(name: String) -> Self {
+    fn start(name: String, visibility: Visibility) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let _ = EVENTS.send(Event::Started {
+        let activity = Self {
             id,
-            name: name.clone(),
+            name,
+            visibility,
+            finished: false,
+        };
+        activity.emit(Event::Started {
+            id: activity.id,
+            name: activity.name.clone(),
         });
-        Self { id, name }
+        activity
+    }
+
+    fn emit(&self, event: Event) {
+        if self.visibility == Visibility::Visible {
+            let _ = EVENTS.send(event);
+        }
     }
 
     fn progress(&self, completed: u64, total: u64) {
-        let _ = EVENTS.send(Event::Progress {
+        self.emit(Event::Progress {
             id: self.id,
             name: self.name.clone(),
             completed,
@@ -72,21 +96,34 @@ impl Activity {
         });
     }
 
-    async fn finish(self, destination: &Path, result: Result<()>) -> Result<()> {
+    async fn finish(mut self, destination: &Path, result: Result<()>) -> Result<()> {
         match result {
             Ok(()) => {
-                let _ = EVENTS.send(Event::Finished { id: self.id });
+                self.finished = true;
+                self.emit(Event::Finished { id: self.id });
                 Ok(())
             }
             Err(error) => {
-                let _ = tokio::fs::remove_file(destination).await;
-                let _ = EVENTS.send(Event::Failed {
+                self.finished = true;
+                self.emit(Event::Failed {
                     id: self.id,
-                    name: self.name,
+                    name: self.name.clone(),
                     error: error.to_string(),
                 });
+                let _ = tokio::fs::remove_file(destination).await;
                 Err(error)
             }
+        }
+    }
+}
+
+impl Drop for Activity {
+    fn drop(&mut self) {
+        // Callers own cancellation: a superseded render or a cancelled job drops
+        // the download future before it can finish. Close the activity so the
+        // event stream never leaves an entry running forever.
+        if !self.finished {
+            self.emit(Event::Cancelled { id: self.id });
         }
     }
 }
@@ -104,6 +141,9 @@ pub enum Event {
         total: u64,
     },
     Finished {
+        id: u64,
+    },
+    Cancelled {
         id: u64,
     },
     Failed {
@@ -148,7 +188,7 @@ pub(crate) async fn fetch(url: &str, destination: &Path) -> Result<()> {
     let read_timeout = Duration::from_secs(config.read_timeout.max(1));
     let max_retries = config.max_retries as usize;
     let client = client(http, max_retries);
-    let activity = Activity::start(name);
+    let activity = Activity::start(name, Visibility::Visible);
     let result = fetch_http(
         &activity,
         &client,
@@ -161,7 +201,12 @@ pub(crate) async fn fetch(url: &str, destination: &Path) -> Result<()> {
     activity.finish(destination, result).await
 }
 
-pub(crate) async fn receive<F, S, B, E>(name: &str, destination: &Path, source: F) -> Result<()>
+pub(crate) async fn receive<F, S, B, E>(
+    name: &str,
+    destination: &Path,
+    visibility: Visibility,
+    source: F,
+) -> Result<()>
 where
     F: Future<Output = Result<(Option<u64>, S)>>,
     S: futures::Stream<Item = std::result::Result<B, E>> + Unpin,
@@ -169,7 +214,7 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     let read_timeout = Duration::from_secs(network::config()?.read_timeout.max(1));
-    let activity = Activity::start(name.to_owned());
+    let activity = Activity::start(name.to_owned(), visibility);
     let result = async {
         let (total, stream) = source.await?;
         write_stream(
@@ -437,4 +482,41 @@ fn retryable(error: &anyhow::Error) -> bool {
         .find_map(|cause| cause.downcast_ref::<reqwest::Error>())
         .map(|error| error.is_body() || error.is_decode())
         .unwrap_or(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn silent_activities_emit_no_events() {
+        let mut events = subscribe();
+        while events.try_recv().is_ok() {}
+
+        let silent = Activity::start("preview.webp".to_owned(), Visibility::Silent);
+        silent.progress(1, 2);
+        silent.finish(Path::new("unused"), Ok(())).await.unwrap();
+        assert!(events.try_recv().is_err());
+
+        let visible = Activity::start("model.safetensors".to_owned(), Visibility::Visible);
+        assert!(matches!(events.try_recv(), Ok(Event::Started { .. })));
+        visible.finish(Path::new("unused"), Ok(())).await.unwrap();
+        assert!(matches!(events.try_recv(), Ok(Event::Finished { .. })));
+    }
+
+    #[tokio::test]
+    async fn cancelled_activities_emit_a_terminal_event() {
+        let mut events = subscribe();
+        while events.try_recv().is_ok() {}
+
+        let visible = Activity::start("font.otf".to_owned(), Visibility::Visible);
+        assert!(matches!(events.try_recv(), Ok(Event::Started { .. })));
+        drop(visible);
+        assert!(matches!(events.try_recv(), Ok(Event::Cancelled { .. })));
+        assert!(events.try_recv().is_err());
+
+        let silent = Activity::start("preview.webp".to_owned(), Visibility::Silent);
+        drop(silent);
+        assert!(events.try_recv().is_err());
+    }
 }

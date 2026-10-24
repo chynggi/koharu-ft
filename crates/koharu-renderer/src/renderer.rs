@@ -163,6 +163,18 @@ impl Renderer {
             .map_err(Error::FontResource)
     }
 
+    /// Returns the bundled preview image for a family, if the catalog has one.
+    ///
+    /// Callers use this before acquiring a rasterizer so cached previews do not
+    /// force GPU initialization.
+    pub async fn bundled_font_preview(&self, family_name: &str) -> Result<Option<Vec<u8>>> {
+        self.inner
+            .fonts
+            .preview_image(family_name)
+            .await
+            .map_err(Error::FontResource)
+    }
+
     pub async fn font_preview(
         &self,
         family_name: &str,

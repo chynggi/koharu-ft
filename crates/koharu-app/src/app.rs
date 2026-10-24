@@ -221,6 +221,14 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
                                     total: 0,
                                     error: None,
                                 },
+                                koharu_runtime::download::Event::Cancelled { id } => Download {
+                                    id,
+                                    state: DownloadState::Cancelled,
+                                    name: None,
+                                    completed: 0,
+                                    total: 0,
+                                    error: None,
+                                },
                                 koharu_runtime::download::Event::Failed { id, name, error } => {
                                     Download {
                                         id,
@@ -234,10 +242,16 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
                             };
                             let downloads = download_handle.state::<DownloadChannel>();
                             let mut channel = downloads.channel.lock();
-                            if let Some(current) = channel.as_ref()
-                                && current.send(download).is_err()
-                            {
-                                channel.take();
+                            match channel.as_ref() {
+                                Some(current) => {
+                                    if let Err(error) = current.send(download) {
+                                        tracing::warn!(%error, "download channel send failed");
+                                        channel.take();
+                                    }
+                                }
+                                None => {
+                                    tracing::warn!("download event arrived before the frontend subscribed");
+                                }
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {

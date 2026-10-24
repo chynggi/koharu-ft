@@ -580,7 +580,7 @@ export type Download = {
 	error: string | null,
 };
 
-export type DownloadState = "running" | "finished" | "failed";
+export type DownloadState = "running" | "finished" | "cancelled" | "failed";
 
 export type EntityId = string;
 
