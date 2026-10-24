@@ -456,7 +456,7 @@ mod tests {
     use koharu_scene::EntityId;
 
     use super::*;
-    use crate::fonts::FontSystem;
+    use crate::fonts::{FontRequest, FontSystem, Fonts};
 
     #[test]
     fn inset_keeps_layout_area_in_cells_narrower_than_the_inset() {
@@ -509,6 +509,52 @@ mod tests {
             [4.0; 4],
         );
         assert_eq!(empty.width, 0.0);
+    }
+
+    /// The cell from #1127: automatic balloon flow produced a 7 x 43 px cell, the 4 px inset
+    /// left no layout width, and rendering (and with it the whole export) failed.
+    #[tokio::test]
+    async fn balloon_cell_narrower_than_the_inset_still_renders() {
+        let family = FontSystem::new()
+            .first_font()
+            .unwrap()
+            .family_name()
+            .to_owned();
+        let descriptor = TextNodeDescriptor {
+            entity: EntityId::new(),
+            text: "Test".to_owned(),
+            language: None,
+            width: 7.0,
+            height: 43.0,
+            balloon_contour: Some(vec![(0.0, 0.0), (7.0, 0.0), (7.0, 43.0), (0.0, 43.0)]),
+            preferred_font: Some(family.clone()),
+            font_families: vec![family],
+            font_weight: None,
+            font_style: None,
+            font_size: None,
+            minimum_font_size: 9.0,
+            auto_fit: true,
+            alignment: TextAlign::Center,
+            writing_mode: WritingMode::Horizontal,
+            foreground_color: [0, 0, 0, 255],
+            stroke: None,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+            text_inset: [4.0; 4],
+            point_text: false,
+        };
+        let fonts = Fonts::new();
+        fonts
+            .prepare(&[FontRequest {
+                family: descriptor.font_families[0].clone(),
+                weight: None,
+                style: None,
+            }])
+            .await
+            .unwrap();
+        let rendered = TextRenderer::new().render_descriptor(&descriptor, &fonts);
+        assert!(rendered.is_ok(), "{:?}", rendered.err());
     }
 
     #[test]
