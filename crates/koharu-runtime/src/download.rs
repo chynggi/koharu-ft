@@ -488,10 +488,23 @@ fn retryable(error: &anyhow::Error) -> bool {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn silent_activities_emit_no_events() {
+    /// The event channel is process-global, so tests that drain it must not
+    /// observe the events another test emits.
+    static EVENTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    async fn exclusive_events() -> (
+        tokio::sync::MutexGuard<'static, ()>,
+        broadcast::Receiver<Event>,
+    ) {
+        let guard = EVENTS.lock().await;
         let mut events = subscribe();
         while events.try_recv().is_ok() {}
+        (guard, events)
+    }
+
+    #[tokio::test]
+    async fn silent_activities_emit_no_events() {
+        let (_guard, mut events) = exclusive_events().await;
 
         let silent = Activity::start("preview.webp".to_owned(), Visibility::Silent);
         silent.progress(1, 2);
@@ -506,8 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_activities_emit_a_terminal_event() {
-        let mut events = subscribe();
-        while events.try_recv().is_ok() {}
+        let (_guard, mut events) = exclusive_events().await;
 
         let visible = Activity::start("font.otf".to_owned(), Visibility::Visible);
         assert!(matches!(events.try_recv(), Ok(Event::Started { .. })));
