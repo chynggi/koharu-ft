@@ -11,6 +11,8 @@
     "downloadingFiles": "جارٍ تنزيل {{count}} من الملفات",
     "downloadingFiles_one": "جارٍ تنزيل {{count}} ملف",
     "downloadingFiles_other": "جارٍ تنزيل {{count}} من الملفات",
+    "exportFailed": "فشل التصدير.",
+    "exporting": "جارٍ التصدير",
     "modelDownload": "تنزيل النموذج",
     "pageLabel": "الصفحة {{number}}: {{label}}",
     "processing": "قيد المعالجة",
@@ -62,6 +64,8 @@
   "colorPicker": {
     "brushColor": "لون الفرشاة",
     "hexCode": "رمز اللون الست عشري",
+    "recent": "الألوان الأخيرة",
+    "recentColor": "لون حديث {{color}}",
     "sampleCanvas": "اختيار لون من اللوحة",
     "transparent": "شفاف"
   },
@@ -76,16 +80,38 @@
     "fatalTitle": "تعذّر على Koharu المتابعة",
     "tryAgain": "أعد المحاولة"
   },
+  "export": {
+    "cancel": "إلغاء",
+    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
+    "description": "تصيير الصفحات إلى ملفات صور.",
+    "formats": "التنسيقات",
+    "pattern": "نمط اسم الملف",
+    "patternError": {
+      "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
+      "token": "رمز غير معروف. استخدم {index} أو {label}.",
+      "unclosed": "قوس غير مغلق في النمط.",
+      "width": "يجب أن يكون عدد الخانات رقمًا."
+    },
+    "scope": "الصفحات",
+    "scopeAll": "كل الصفحات ({{count}})",
+    "scopeSelected": "المحدد ({{count}})",
+    "start": "تصدير",
+    "subfolders": "مجلد منفصل لكل تنسيق",
+    "title": "تصدير الصفحات"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} مرشّحات نشطة",
     "activeFilterCount_one": "{{count}} مرشّح نشط",
     "activeFilterCount_other": "{{count}} مرشّح نشط",
+    "addFavorite": "إضافة {{family}} إلى المفضلة",
+    "allFonts": "كل الخطوط",
     "allPurposes": "كل الأغراض",
     "allScripts": "كل الأنظمة الكتابية",
     "allSources": "كل المصادر",
     "allStyles": "كل الأنماط",
     "choose": "اختر خطًا",
     "clearFilters": "مسح المرشّحات",
+    "favorites": "المفضلة",
     "filter": "تصفية الخطوط",
     "filterActiveLabel": "تصفية الخطوط، {{count}} نشطة",
     "fontCount": "{{count}} خط",
@@ -95,6 +121,7 @@
     "fonts": "الخطوط",
     "noResults": "لا توجد خطوط تطابق هذا البحث",
     "purpose": "الغرض",
+    "removeFavorite": "إزالة {{family}} من المفضلة",
     "script": "النظام الكتابي",
     "scripts": {
       "arab": "العربية",
@@ -157,6 +184,22 @@
     "stopProcessing": "إيقاف المعالجة"
   },
   "inspector": {
+    "adjust": {
+      "apply": "تطبيق",
+      "brightness": "السطوع",
+      "contrast": "التباين",
+      "degrees": "الدرجات",
+      "delta": "المقدار",
+      "grayscale": "تدرج رمادي",
+      "high": "الأعلى",
+      "hue": "تدرج اللون",
+      "invalidLevels": "يجب أن تكون القيمة الدنيا أقل من العليا.",
+      "levels": "المستويات",
+      "low": "الأدنى",
+      "percent": "النسبة المئوية",
+      "singleLayer": "حدد طبقة نقطية واحدة لضبطها.",
+      "title": "نوع الضبط"
+    },
     "alignBottom": "محاذاة للأسفل",
     "alignCenter": "توسيط أفقي",
     "alignLeft": "محاذاة لليسار",
@@ -189,6 +232,53 @@
     "placement": "الموضع",
     "resetAutoFit": "إعادة إلى الملاءمة التلقائية",
     "selectPage": "اختر صفحة لعرض طبقاتها.",
+    "shape": {
+      "addStop": "إضافة نقطة توقف",
+      "dash": "متقطع",
+      "fill": "التعبئة",
+      "fillKind": {
+        "gradient": "تدرج",
+        "pattern": "نقش",
+        "solid": "مصمت"
+      },
+      "fillKindLabel": "نوع التعبئة",
+      "gradientKind": {
+        "linear": "خطي",
+        "radial": "شعاعي"
+      },
+      "gradientKindLabel": "نوع التدرج",
+      "kind": {
+        "arrow": "سهم",
+        "ellipse": "شكل بيضاوي",
+        "line": "خط",
+        "rectangle": "مستطيل"
+      },
+      "kindLabel": "نوع الشكل: {{kind}}",
+      "kindTitle": "نوع الشكل",
+      "pattern": {
+        "ignoredForStretch": "يتم تجاهل الأصل والمقياس أثناء التمديد.",
+        "originX": "الأصل X",
+        "originY": "الأصل Y",
+        "repeat": {
+          "stretch": "تمديد",
+          "tile": "تبليط"
+        },
+        "repeatLabel": "التكرار",
+        "replace": "استبدال الصورة",
+        "rotation": "الدوران",
+        "scale": "المقياس",
+        "title": "النقش",
+        "upload": "اختيار صورة"
+      },
+      "rasterize": "تحويل إلى نقطي",
+      "removeStop": "إزالة نقطة التوقف",
+      "stopColor": "لون نقطة التوقف {{index}}",
+      "stopOffset": "موضع نقطة التوقف {{index}}",
+      "stops": "نقاط التوقف",
+      "stopsTooClose": "لا توجد مساحة بين نقاط التوقف",
+      "stroke": "الحد",
+      "strokeWidth": "عرض الحد"
+    },
     "size": "الحجم",
     "source": "النص المصدر",
     "style": "النمط",
@@ -216,6 +306,7 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
+    "copySelected": "نسخ طبقات النص المحددة",
     "delete": "حذف {{name}}",
     "edit": "تعديل {{name}}",
     "empty": "لا توجد طبقات في هذه الصفحة.",
@@ -228,6 +319,7 @@
       "group": "مجموعة",
       "image": "صورة",
       "paint": "طلاء",
+      "shape": "شكل",
       "text": "نص",
       "textGroup": "مجموعة نص"
     },
@@ -237,6 +329,7 @@
     "moveUp": "نقل {{name}} لأعلى",
     "opacityLabel": "عتامة {{name}}",
     "originalArtwork": "الرسم الأصلي",
+    "pasteCopied": "لصق طبقات النص المنسوخة",
     "show": "إظهار {{name}}",
     "sourceLabel": "النص المصدر لـ {{name}}",
     "textName": "نص {{index}}",
@@ -282,6 +375,8 @@
   },
   "navigator": {
     "actionsFor": "إجراءات {{page}}",
+    "mergeAsSpread": "دمج في صفحة مزدوجة",
+    "chapterStart": "بداية الفصل",
     "delete": "حذف",
     "emptyDescription": "استورد ملفات صور أو مجلدًا لإضافة صفحات.",
     "emptyTitle": "لا توجد صفحات بعد",
@@ -291,9 +386,12 @@
     "importFolder": "مجلد…",
     "importing": "جارٍ استيراد الصفحات…",
     "importingAction": "جارٍ الاستيراد…",
+    "dropToImport": "أفلت الملفات أو المجلدات لاستيرادها",
     "layerCount": "{{count}} من الطبقات",
     "layerCount_one": "{{count}} طبقة",
     "layerCount_other": "{{count}} من الطبقات",
+    "markChapterStart": "تعيين كبداية فصل",
+    "removeChapterStart": "إزالة علامة بداية الفصل",
     "noImage": "لا توجد صورة",
     "noResults": "لا توجد صفحات تطابق هذا المرشّح.",
     "pageName": "اسم الصفحة",
@@ -338,12 +436,18 @@
   },
   "resources": {
     "cpu": "CPU",
+    "memoryScope": {
+      "device": "هذا الجهاز، كل التطبيقات",
+      "process": "Koharu فقط",
+      "system": "هذا الجهاز، ذاكرة مشتركة"
+    },
     "processUtilization": "استخدام العملية",
     "ram": "RAM",
     "summary": "RAM {{ram}}%، CPU {{cpu}}%",
     "title": "موارد النظام",
     "tooltip": "RAM {{ramUsed}} من {{ramTotal}} · CPU {{cpu}}%",
     "usedOfTotal": "{{used}} من {{total}} مستخدم",
+    "vramScoped": "{{value}} VRAM · {{scope}}",
     "vramUnavailable": "غير متاح",
     "vramValue": "{{value}} VRAM"
   },
@@ -362,6 +466,15 @@
       "title": "المظهر"
     },
     "backToEditor": "العودة إلى المحرّر",
+    "features": {
+      "title": "ميزات NeKoharu",
+      "description": "خيارات خاصة بنسخة NeKoharu.",
+      "pages": "الصفحات",
+      "mergeDeleteOriginals": "حذف الصفحات الأصلية بعد الدمج",
+      "mergeDeleteOriginalsDescription": "يزيل الصفحات المصدر بعد دمجها في صفحة مزدوجة. عند إيقافه، تبقى الصفحات الأصلية في المشروع وتنتقل طبقات النص والتنظيف فقط إلى الصفحة المزدوجة.",
+      "showPageNumbers": "إظهار أرقام الصفحات",
+      "showPageNumbersDescription": "يعرض موضع كل صفحة أسفل اسمها في شريط الصفحات."
+    },
     "generation": {
       "description": "اضبط طريقة توليد النماذج اللغوية للنص المترجم.",
       "enableReasoning": "تفعيل التفكير",
@@ -381,15 +494,118 @@
       "vision": "الرؤية",
       "visionDescription": "تزويد النموذج اللغوي بصور الصفحات أثناء الترجمة."
     },
+    "llm": {
+      "accelerator": "المسرّع",
+      "acceleratorDescription": "إعدادات التفريغ والانتباه المُمرَّرة إلى llama.cpp.",
+      "activeDevice": "يعمل على {{device}} ({{backend}}).",
+      "batchSizes": "أحجام الدفعات",
+      "batchThreads": "الدفعة",
+      "batching": "التجميع في دفعات",
+      "batchingDescription": "اترك الحقل فارغًا للإبقاء على القيمة التلقائية لـ Koharu.",
+      "context": "السياق",
+      "contextDescription": "يحدد Koharu حجم السياق من كل موجّه، وهذه الإعدادات تقيّده.",
+      "contextMode": "وضع السياق",
+      "contextModeDescription": "الوضع الديناميكي يخصص بالضبط ما تحتاجه الصفحة.",
+      "contextModes": {
+        "bounded": "ديناميكي ضمن حدود",
+        "dynamic": "ديناميكي",
+        "fixed": "ثابت"
+      },
+      "contextSize": "حجم السياق",
+      "flashAttention": "Flash attention",
+      "flashAttentionModes": {
+        "auto": "تلقائي",
+        "off": "إيقاف",
+        "on": "تشغيل"
+      },
+      "generationThreads": "التوليد",
+      "gpuLayerModes": {
+        "all": "الكل",
+        "custom": "مخصص"
+      },
+      "gpuLayers": "طبقات GPU",
+      "kvCache": "نوع ذاكرة KV المؤقتة",
+      "kvCacheKey": "المفتاح",
+      "kvCacheValue": "القيمة",
+      "layers": "الطبقات",
+      "maxOutputTokens": "الحد الأقصى لرموز الإخراج",
+      "maxOutputTokensDescription": "رفع هذه القيمة يزيد ذاكرة KV المؤقتة في كل طلب.",
+      "maximumContext": "الحد الأقصى",
+      "minimumContext": "الحد الأدنى",
+      "noGpuOffload": "لا يوجد مسرّع نشط، لذا تعمل كل الطبقات على وحدة المعالجة المركزية.",
+      "threads": "الخيوط",
+      "tokens": "الرموز"
+    },
     "loading": "جارٍ تحميل التفضيلات…",
+    "models": {
+      "add": "إضافة نموذج",
+      "addDescription": "اختر ملف .gguf يمكن للجهاز الذي يشغّل Koharu قراءته.",
+      "addLocal": "إضافة نموذج محلي",
+      "browseProjector": "اختيار ملف الإسقاط",
+      "description": "سجّل ملفات GGUF الخاصة بك واضبط طريقة تشغيل llama.cpp لها.",
+      "name": "الاسم المعروض",
+      "none": "لا توجد نماذج مسجلة",
+      "noneDescription": "أضف ملف .gguf لاستخدامه كنموذج ترجمة.",
+      "path": "مسار النموذج",
+      "pathPlaceholder": "مسار ملف .gguf على الجهاز الذي يشغّل Koharu",
+      "projector": "الإسقاط",
+      "projectorPlaceholder": "ملف mmproj .gguf اختياري للرؤية",
+      "registered": "النماذج المسجلة",
+      "registeredDescription": "تُقرأ الملفات في مكانها، ولا يعدّل Koharu أي ملف .gguf.",
+      "remove": "إزالة {{model}}",
+      "title": "النماذج المحلية"
+    },
     "pipeline": {
       "description": "اختر النماذج والخيارات المستخدمة لمعالجة كل صفحة.",
       "modelLabel": "نموذج {{stage}}",
       "options": {
         "bubbleThreshold": "عتبة الفقاعات",
+        "checkpointSource": "مصدر نقطة الحفظ",
+        "flux3": {
+          "license": "رخصة FLUX Kommunity: للاستخدام غير التجاري، والمخرجات التجارية فقط للمؤسسات التي تقل إيراداتها السنوية عن 5 ملايين دولار أمريكي.",
+          "licenseLink": "قراءة الرخصة",
+          "resources": "يحتاج إلى {{vram}} غيغابايت من VRAM، ونحو {{ram}} غيغابايت إضافية من ذاكرة النظام، وتنزيل أولي بحجم {{download}} غيغابايت.",
+          "speed": "أبطأ من FLUX.2 Klein: يتناوب المُوسِّع ونموذج الصورة على GPU في كل صفحة."
+        },
+        "format": "التنسيق",
+        "formatKind": {
+          "safeTensors": "Safetensors",
+          "torchScript": "TorchScript"
+        },
+        "maxPixels": "الحد الأقصى للبكسلات",
         "negativePrompt": "الطلب السلبي",
+        "paddingMaskCrop": "حشوة قص القناع",
         "panelThreshold": "عتبة الألواح",
+        "powerpaintEmbeddings": "مجلد تضمينات المهام",
+        "powerpaintModel": "ملف النموذج",
         "prompt": "الطلب",
+        "request": "طلب المُوسِّع",
+        "requestDescription": "يحوّل مُوسِّع الموجّهات الرسمي هذا الطلب إلى وصف كامل لكل بلاطة.",
+        "seed": "البذرة",
+        "source": {
+          "inpaintor": "نموذج الترميم",
+          "line": "نموذج الخطوط",
+          "text_encoder": "مُرمِّز النص",
+          "transformer": "Transformer",
+          "upsampler": "مُوسِّع الموجّهات",
+          "upsampler_mmproj": "إسقاط المُوسِّع",
+          "vae": "VAE"
+        },
+        "sourceDescription": "تحمّل التجاوزات نقطة حفظ من اختيارك. يقرأ FLUX.2 Klein بنيته من الملف، لذا تفشل نقطة الحفظ غير المتوافقة عند تحميل النموذج.",
+        "sourceDigest": "البصمة (BLAKE3)",
+        "sourceFilename": "الملف",
+        "sourceKind": {
+          "builtin": "مضمّن",
+          "huggingFace": "Hugging Face",
+          "localFile": "ملف محلي",
+          "url": "URL"
+        },
+        "sourcePath": "المسار",
+        "sourceRepository": "المستودع",
+        "sourceRevision": "المراجعة (تجزئة إيداع من 40 حرفًا)",
+        "sourceUrl": "URL",
+        "steps": "الخطوات",
+        "strength": "القوة",
         "textThreshold": "عتبة النص"
       },
       "processing": "المعالجة",
@@ -428,6 +644,8 @@
     },
     "tabs": {
       "appearance": "المظهر",
+      "features": "ميزات NeKoharu",
+      "models": "النماذج",
       "pipeline": "خط المعالجة",
       "providers": "المزوّدون",
       "shortcuts": "الاختصارات",
@@ -436,10 +654,14 @@
     },
     "title": "الإعدادات",
     "translation": {
+      "batching": "تجميع الطلبات",
+      "combinePages": "دمج الصفحات في طلب واحد",
+      "combinePagesDescription": "ترجمة ما يصل إلى العدد المحدد من الصفحات معًا لاتساق الأسماء والحبكة. تستخدم الطلبات متعددة الصفحات النص فقط ولا تتضمن صور الصفحات.",
       "description": "اختر أي نموذج مزوّد مهيّأ، ثم طبّق مجموعة موحّدة من خيارات الترجمة والتوليد.",
       "instructionsDescription": "إرشادات الأسماء أو النبرة أو المصطلحات أو التنسيق.",
       "instructionsLabel": "تعليمات الترجمة",
       "instructionsPlaceholder": "إرشادات اختيارية على مستوى المشروع",
+      "maxPagesPerRequest": "الحد الأقصى للصفحات في كل طلب",
       "model": "النموذج",
       "modelDescription": "تشير تسميات المزوّد إلى مكان تشغيل كل نموذج؛ وتُهيَّأ الاتصالات بشكل منفصل.",
       "modelQuantization": "تكميم النموذج",
@@ -497,6 +719,12 @@
     "zoom": "تكبير"
   },
   "tools": {
+    "brushRamp": {
+      "alongStroke": "على طول الضربة",
+      "fixedAxis": "محور ثابت",
+      "none": "بلا"
+    },
+    "brushRampTitle": "تدرج الفرشاة",
     "brushSize": "حجم الفرشاة",
     "brushSizeInput": "حجم الفرشاة",
     "brushSizePixels": "حجم الفرشاة: {{size}} بكسل",
@@ -505,10 +733,22 @@
     "decreaseBrushSize": "تقليل حجم الفرشاة",
     "draw": "فرشاة",
     "eraser": "ممحاة",
+    "fill": "تعبئة",
+    "fillColor": "لون التعبئة",
     "increaseBrushSize": "زيادة حجم الفرشاة",
+    "manual_ocr_box": "التعرف اليدوي على النص (مربع)",
+    "manual_ocr_lasso": "التعرف اليدوي على النص (لاسو)",
     "pan": "تحريك",
+    "rampAxis": {
+      "horizontal": "أفقي",
+      "vertical": "عمودي"
+    },
+    "rampAxisTitle": "المحور",
+    "rampFrom": "لون البداية",
+    "rampTo": "لون النهاية",
     "remove": "إزالة",
     "select": "تحديد",
+    "shape": "شكل",
     "text": "نص"
   },
   "updater": {

@@ -108,7 +108,7 @@ describe('interface language persistence', () => {
 
     // The shipped translations are the source of truth; a missing key here is
     // invisible at runtime because i18next echoes the key back as a string.
-    expect(languages).toHaveLength(11)
+    expect(languages).toHaveLength(12)
     for (const language of languages) {
       const source = translation(language)
       for (const key of keys) {
