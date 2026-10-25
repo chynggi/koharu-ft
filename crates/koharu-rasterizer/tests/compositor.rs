@@ -297,7 +297,7 @@ fn tiled_layers_composite_like_premultiplied_source_over() {
 #[test]
 fn vector_layer_edges_blend_partially_over_raster_layers() {
     use koharu_rasterizer::{
-        FillRule, PathElement, PreparedPath, PreparedScene, PreparedSceneCommand,
+        FillRule, PathElement, PreparedFill, PreparedPath, PreparedScene, PreparedSceneCommand,
     };
     let (width, height) = (64u32, 64u32);
     let mut blue = vec![0u8; (width * height * 4) as usize];
@@ -325,9 +325,12 @@ fn vector_layer_edges_blend_partially_over_raster_layers() {
     vector.kind = LayerKind::Text;
     vector.content = PreparedContent::Vector(PreparedScene {
         commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
-            fill: FillRule::NonZero,
             transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            color: [255, 255, 255, 255],
+            fill: Some(PreparedFill::Solid {
+                color: [255, 255, 255, 255],
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
             elements,
         })],
     });
@@ -370,7 +373,7 @@ fn vector_layer_edges_blend_partially_over_raster_layers() {
 #[test]
 fn native_readback_preserves_straight_alpha_for_transparent_layers() {
     use koharu_rasterizer::{
-        FillRule, PathElement, PreparedPath, PreparedScene, PreparedSceneCommand,
+        FillRule, PathElement, PreparedFill, PreparedPath, PreparedScene, PreparedSceneCommand,
     };
     let (width, height) = (64, 32);
     let pixels = [80, 160, 240, 128].repeat(32 * 32);
@@ -384,9 +387,12 @@ fn native_readback_preserves_straight_alpha_for_transparent_layers() {
     vector.kind = LayerKind::Text;
     vector.content = PreparedContent::Vector(PreparedScene {
         commands: vec![PreparedSceneCommand::FillPath(PreparedPath {
-            fill: FillRule::NonZero,
             transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            color: [200, 100, 50, 128],
+            fill: Some(PreparedFill::Solid {
+                color: [200, 100, 50, 128],
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
             elements: vec![
                 PathElement::MoveTo([4.25, 4.25]),
                 PathElement::LineTo([27.75, 4.25]),
