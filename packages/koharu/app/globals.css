@@ -129,6 +129,11 @@
   .startup-spinner {
     animation: koharu-startup-spin 1800ms linear infinite !important;
   }
+
+  /* A spinner reports work in progress, so it is exempt from the still interface. */
+  .animate-spin {
+    animation: var(--animate-spin) !important;
+  }
 }
 
 @layer components {
@@ -202,7 +207,8 @@
   }
 
   @layer base {
-    .startup-spinner {
+    .startup-spinner,
+    .animate-spin {
       animation: none !important;
     }
   }
