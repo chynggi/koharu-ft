@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "Adaptez votre espace de travail à la pièce sans modifier le rendu des images.",
+      "colorTheme": "Thème de couleurs",
+      "colorThemeDescription": "Choisissez la palette de l'interface. Chaque palette existe en version claire et sombre.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Océan",
+        "matcha": "Matcha"
+      },
       "interface": "Interface",
       "language": "Langue",
       "theme": "Thème",

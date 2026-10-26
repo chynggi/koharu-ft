@@ -355,7 +355,10 @@ export function CanvasWorkspace() {
     const resize = new ResizeObserver(report)
     const theme = new MutationObserver(report)
     resize.observe(element)
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-palette'],
+    })
     window.addEventListener('resize', report)
     window.visualViewport?.addEventListener('resize', report)
     return () => {

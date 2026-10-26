@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "照房间个环境调整工作区个外观，图稿个渲染方式弗变。",
+      "colorTheme": "配色主题",
+      "colorThemeDescription": "拣界面个配色。每种配色侪有浅色搭深色两个版本。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "海洋",
+        "matcha": "抹茶"
+      },
       "interface": "界面",
       "language": "语言",
       "theme": "主题",

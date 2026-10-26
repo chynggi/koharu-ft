@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "アートワークの描画には影響せず、作業環境の見た目を調整します。",
+      "colorTheme": "カラーテーマ",
+      "colorThemeDescription": "インターフェースの配色を選びます。どの配色にもライトとダークの両方があります。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "オーシャン",
+        "matcha": "抹茶"
+      },
       "interface": "インターフェース",
       "language": "言語",
       "theme": "テーマ",

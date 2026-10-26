@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "Adapta el espacio de trabajo a tu entorno sin cambiar cómo se renderiza la ilustración.",
+      "colorTheme": "Tema de color",
+      "colorThemeDescription": "Elige la paleta de la interfaz. Cada paleta tiene una versión clara y otra oscura.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Océano",
+        "matcha": "Matcha"
+      },
       "interface": "Interfaz",
       "language": "Idioma",
       "theme": "Tema",

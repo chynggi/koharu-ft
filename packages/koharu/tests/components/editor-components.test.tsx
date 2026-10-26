@@ -2614,6 +2614,7 @@ describe('greenfield editor', () => {
     expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
       mergeDeleteOriginals: false,
       showPageNumbers: true,
+      colorTheme: 'koharu',
     })
 
     await user.click(mergeDeleteOriginals)
@@ -2621,6 +2622,7 @@ describe('greenfield editor', () => {
     expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
       mergeDeleteOriginals: true,
       showPageNumbers: true,
+      colorTheme: 'koharu',
     })
 
     await user.click(screen.getByRole('switch', { name: 'Show page numbers' }))
@@ -2937,6 +2939,27 @@ describe('greenfield editor', () => {
         font_families: ['Arial'],
       }),
     )
+  })
+
+  it('applies and remembers the color theme chosen in appearance settings', async () => {
+    window.localStorage.removeItem(FORK_PREFERENCES_STORAGE_KEY)
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
+    const user = userEvent.setup()
+    useKoharuStore.setState({ settingsOpen: true })
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+
+    expect(document.documentElement.dataset.palette).toBe('koharu')
+    await user.click(screen.getByRole('radio', { name: 'AniSwipe' }))
+    expect(screen.getByRole('radio', { name: 'AniSwipe' })).toHaveAttribute('aria-checked', 'true')
+    expect(document.documentElement.dataset.palette).toBe('aniswipe')
+    expect(
+      JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? ''),
+    ).toMatchObject({ colorTheme: 'aniswipe' })
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
   })
 
   it('shows model resources in the left sidebar footer', () => {

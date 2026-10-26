@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   Boxes,
+  Check,
   Cpu,
   KeyRound,
   Keyboard,
@@ -30,6 +31,7 @@ import { ProviderPreferences } from '@/components/preferences/ProviderPreference
 import { TranslationPreferences } from '@/components/preferences/TranslationPreferences'
 import { TypesettingPreferences } from '@/components/preferences/TypesettingPreferences'
 import { refreshPreferences, refreshTranslationModels, savePreferences } from '@/lib/backend'
+import { colorThemes, useForkPreferences } from '@/lib/forkPreferences'
 import { supportedLanguages } from '@/lib/i18n'
 import { receivePreferences, useKoharuStore, type ShortcutAction } from '@/lib/store'
 import {
@@ -256,6 +258,8 @@ export function SettingsPage() {
 function AppearancePreferences() {
   const { theme, setTheme } = useTheme()
   const { t, i18n } = useTranslation()
+  const colorTheme = useForkPreferences((state) => state.preferences.colorTheme)
+  const setPreference = useForkPreferences((state) => state.setPreference)
   const themes = [
     ['light', Sun],
     ['dark', Moon],
@@ -284,6 +288,52 @@ function AppearancePreferences() {
                 onClick={() => setTheme(value)}
               >
                 <Icon className='size-3.5' /> {t(`settings.appearance.themes.${value}`)}
+              </Button>
+            ))}
+          </div>
+        </PreferenceRow>
+        <PreferenceRow
+          title={t('settings.appearance.colorTheme')}
+          description={t('settings.appearance.colorThemeDescription')}
+          align='start'
+        >
+          <div
+            role='radiogroup'
+            aria-label={t('settings.appearance.colorTheme')}
+            className='grid grid-cols-2 gap-2'
+          >
+            {colorThemes.map((id) => (
+              <Button
+                key={id}
+                type='button'
+                variant='ghost'
+                role='radio'
+                aria-checked={colorTheme === id}
+                data-active={colorTheme === id}
+                className='h-auto flex-col items-stretch gap-2 rounded-xl border border-border p-1.5 text-left hover:bg-foreground/[0.04] data-[active=true]:border-primary data-[active=true]:ring-2 data-[active=true]:ring-primary/20'
+                onClick={() => setPreference('colorTheme', id)}
+              >
+                {/* The preview carries the theme itself, so it shows the real tokens in the current mode. */}
+                <span
+                  data-palette={id}
+                  aria-hidden='true'
+                  className='grid h-16 grid-cols-[14px_1fr] grid-rows-[10px_1fr] overflow-hidden rounded-lg border border-border bg-[var(--surface-titlebar)]'
+                >
+                  <span className='col-span-2' />
+                  <span />
+                  <span className='flex flex-col gap-1.5 rounded-tl-md bg-[var(--surface-canvas)] p-2'>
+                    <span className='h-1.5 w-12 rounded-full bg-foreground/70' />
+                    <span className='h-1.5 w-8 rounded-full bg-muted-foreground/50' />
+                    <span className='mt-auto flex gap-1'>
+                      <span className='h-3 w-9 rounded-sm bg-primary' />
+                      <span className='h-3 w-6 rounded-sm bg-accent' />
+                    </span>
+                  </span>
+                </span>
+                <span className='flex items-center justify-between gap-2 px-1 pb-0.5 text-[11px] font-medium text-foreground'>
+                  <span className='truncate'>{t(`settings.appearance.colorThemes.${id}`)}</span>
+                  {colorTheme === id && <Check className='size-3.5 shrink-0 text-primary' />}
+                </span>
               </Button>
             ))}
           </div>

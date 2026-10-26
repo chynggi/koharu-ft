@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "Настройте вид рабочего пространства, не меняя отрисовку изображения.",
+      "colorTheme": "Цветовая тема",
+      "colorThemeDescription": "Выберите палитру интерфейса. У каждой палитры есть светлый и тёмный вариант.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Океан",
+        "matcha": "Матча"
+      },
       "interface": "Интерфейс",
       "language": "Язык",
       "theme": "Тема",

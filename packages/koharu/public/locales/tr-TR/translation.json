@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "Çizimin işlenişini değiştirmeden çalışma alanını ortamınıza uyarlayın.",
+      "colorTheme": "Renk teması",
+      "colorThemeDescription": "Arayüz paletini seçin. Her paletin açık ve koyu bir sürümü vardır.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Okyanus",
+        "matcha": "Matcha"
+      },
       "interface": "Arayüz",
       "language": "Dil",
       "theme": "Tema",

@@ -1,0 +1,196 @@
+/*
+ * Color themes. Koharu's own palette is the default in globals.css; each theme
+ * here overrides the same tokens for light and dark. A theme applies to the
+ * root and to any element carrying data-palette, so settings can preview every
+ * theme in place. The dark block sets every token the light block sets, so it
+ * wins on the root whatever the light selector's specificity.
+ */
+
+/* AniSwipe: ink surfaces, indigo actions, pink highlights. */
+:root[data-palette='aniswipe'],
+[data-palette='aniswipe'] {
+  --background: #fbfbfe;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2f9;
+  --secondary-foreground: #1e1b4b;
+  --muted: #f1f2f9;
+  --muted-foreground: #64748b;
+  --accent: #eef0ff;
+  --accent-foreground: #be185d;
+  --destructive: #e11d48;
+  --border: #e4e6f0;
+  --input: #d4d7e6;
+  --ring: #6366f1;
+  --surface-titlebar: #f5f5ff;
+  --surface-toolbar: #ffffff;
+  --surface-panel: #ffffff;
+  --surface-floating: #ffffff;
+  --surface-well: #f0f1f8;
+  --surface-canvas: #fbfbfe;
+  --workspace-background-rgb: 251 251 254;
+  --shadow-titlebar: 0 1px 0 rgb(67 56 202 / 0.08), 0 4px 16px rgb(67 56 202 / 0.05);
+  --shadow-floating: 0 12px 32px rgb(30 27 75 / 0.16), 0 2px 8px rgb(30 27 75 / 0.08);
+}
+
+.dark[data-palette='aniswipe'],
+.dark [data-palette='aniswipe'] {
+  --background: #08080d;
+  --foreground: #e2e8f0;
+  --card: #0c0c14;
+  --card-foreground: #e2e8f0;
+  --popover: #14141f;
+  --popover-foreground: #e2e8f0;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #14141f;
+  --secondary-foreground: #e2e8f0;
+  --muted: #14141f;
+  --muted-foreground: #94a3b8;
+  --accent: #1e1a3d;
+  --accent-foreground: #f0abfc;
+  --destructive: #fb7185;
+  --border: #1c1c29;
+  --input: #2a2a3c;
+  --ring: #818cf8;
+  --surface-titlebar: #0c0c14;
+  --surface-toolbar: #08080d;
+  --surface-panel: #0c0c14;
+  --surface-floating: #14141f;
+  --surface-well: #14141f;
+  --surface-canvas: #08080d;
+  --workspace-background-rgb: 8 8 13;
+  --shadow-titlebar: 0 1px 0 rgb(255 255 255 / 0.05), 0 4px 16px rgb(0 0 0 / 0.4);
+  --shadow-floating: 0 18px 45px -15px rgb(0 0 0 / 0.9), 0 0 24px -8px rgb(99 102 241 / 0.35);
+}
+
+/* Ocean: cool blue actions over slate. */
+:root[data-palette='ocean'],
+[data-palette='ocean'] {
+  --background: #ffffff;
+  --foreground: #0f1720;
+  --card: #ffffff;
+  --card-foreground: #0f1720;
+  --popover: #ffffff;
+  --popover-foreground: #0f1720;
+  --primary: #2b7bd6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f4f8;
+  --secondary-foreground: #142233;
+  --muted: #f2f5f8;
+  --muted-foreground: #5b6673;
+  --accent: #e9f2fd;
+  --accent-foreground: #1b569c;
+  --destructive: #c2414b;
+  --border: #e1e6ec;
+  --input: #cfd6de;
+  --ring: #2b7bd6;
+  --surface-titlebar: #f3f8fe;
+  --surface-toolbar: #ffffff;
+  --surface-panel: #ffffff;
+  --surface-floating: #ffffff;
+  --surface-well: #eff3f7;
+  --surface-canvas: #ffffff;
+  --workspace-background-rgb: 255 255 255;
+  --shadow-titlebar: 0 1px 0 rgb(27 86 156 / 0.08), 0 4px 16px rgb(27 86 156 / 0.05);
+  --shadow-floating: 0 12px 32px rgb(15 23 32 / 0.16), 0 2px 8px rgb(15 23 32 / 0.08);
+}
+
+.dark[data-palette='ocean'],
+.dark [data-palette='ocean'] {
+  --background: #04070b;
+  --foreground: #eef3f8;
+  --card: #0a0f15;
+  --card-foreground: #eef3f8;
+  --popover: #0a0f15;
+  --popover-foreground: #eef3f8;
+  --primary: #5aa9f0;
+  --primary-foreground: #04121f;
+  --secondary: #121a23;
+  --secondary-foreground: #eef3f8;
+  --muted: #121a23;
+  --muted-foreground: #9aa8b6;
+  --accent: #10243b;
+  --accent-foreground: #b9dbff;
+  --destructive: #ff8b94;
+  --border: #1f2a36;
+  --input: #344150;
+  --ring: #5aa9f0;
+  --surface-titlebar: #0a0f16;
+  --surface-toolbar: #04070b;
+  --surface-panel: #0a0f15;
+  --surface-floating: #0e141c;
+  --surface-well: #121a23;
+  --surface-canvas: #04070b;
+  --workspace-background-rgb: 4 7 11;
+  --shadow-titlebar: 0 1px 0 rgb(255 255 255 / 0.07), 0 4px 16px rgb(0 0 0 / 0.32);
+  --shadow-floating: 0 14px 34px rgb(0 0 0 / 0.52), 0 2px 8px rgb(0 0 0 / 0.35);
+}
+
+/* Matcha: muted green actions over warm neutrals. */
+:root[data-palette='matcha'],
+[data-palette='matcha'] {
+  --background: #ffffff;
+  --foreground: #131611;
+  --card: #ffffff;
+  --card-foreground: #131611;
+  --popover: #ffffff;
+  --popover-foreground: #131611;
+  --primary: #4d8a49;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f4f1;
+  --secondary-foreground: #1b2119;
+  --muted: #f3f4f1;
+  --muted-foreground: #5f665b;
+  --accent: #edf5ea;
+  --accent-foreground: #335d30;
+  --destructive: #bd3f4d;
+  --border: #e3e6e0;
+  --input: #d1d6cd;
+  --ring: #4d8a49;
+  --surface-titlebar: #f5f9f2;
+  --surface-toolbar: #ffffff;
+  --surface-panel: #ffffff;
+  --surface-floating: #ffffff;
+  --surface-well: #f0f2ed;
+  --surface-canvas: #ffffff;
+  --workspace-background-rgb: 255 255 255;
+  --shadow-titlebar: 0 1px 0 rgb(51 93 48 / 0.08), 0 4px 16px rgb(51 93 48 / 0.05);
+  --shadow-floating: 0 12px 32px rgb(19 22 17 / 0.16), 0 2px 8px rgb(19 22 17 / 0.08);
+}
+
+.dark[data-palette='matcha'],
+.dark [data-palette='matcha'] {
+  --background: #050705;
+  --foreground: #f1f4ee;
+  --card: #0b0e0a;
+  --card-foreground: #f1f4ee;
+  --popover: #0b0e0a;
+  --popover-foreground: #f1f4ee;
+  --primary: #8cc47f;
+  --primary-foreground: #0b1609;
+  --secondary: #151a14;
+  --secondary-foreground: #f1f4ee;
+  --muted: #151a14;
+  --muted-foreground: #a2ab9d;
+  --accent: #17261a;
+  --accent-foreground: #c8eabd;
+  --destructive: #ff8b94;
+  --border: #252c23;
+  --input: #3a4237;
+  --ring: #8cc47f;
+  --surface-titlebar: #0b100b;
+  --surface-toolbar: #050705;
+  --surface-panel: #0b0e0a;
+  --surface-floating: #10140f;
+  --surface-well: #151a14;
+  --surface-canvas: #050705;
+  --workspace-background-rgb: 5 7 5;
+  --shadow-titlebar: 0 1px 0 rgb(255 255 255 / 0.07), 0 4px 16px rgb(0 0 0 / 0.32);
+  --shadow-floating: 0 14px 34px rgb(0 0 0 / 0.52), 0 2px 8px rgb(0 0 0 / 0.35);
+}

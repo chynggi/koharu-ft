@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "调整工作区外观，而不改变图稿的渲染方式。",
+      "colorTheme": "配色主题",
+      "colorThemeDescription": "选择界面配色。每种配色都有浅色和深色版本。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "海洋",
+        "matcha": "抹茶"
+      },
       "interface": "界面",
       "language": "语言",
       "theme": "主题",

@@ -454,6 +454,14 @@
   "settings": {
     "appearance": {
       "description": "調整工作區外觀，而不改變圖稿的算繪方式。",
+      "colorTheme": "配色主題",
+      "colorThemeDescription": "選擇介面配色。每種配色都有淺色和深色版本。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "海洋",
+        "matcha": "抹茶"
+      },
       "interface": "介面",
       "language": "語言",
       "theme": "主題",
