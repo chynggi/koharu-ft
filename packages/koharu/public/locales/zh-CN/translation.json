@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "界面动画",
+      "animationsDescription": "让菜单和对话框淡入淡出，并平滑悬停与开关变化。遵循系统的减少动态效果设置。",
       "description": "调整工作区外观，而不改变图稿的渲染方式。",
       "colorTheme": "配色主题",
       "colorThemeDescription": "选择界面配色。每种配色都有浅色和深色版本。",

@@ -12,12 +12,14 @@ export interface ForkPreferences {
   mergeDeleteOriginals: boolean
   showPageNumbers: boolean
   colorTheme: ColorTheme
+  interfaceAnimations: boolean
 }
 
 export const forkPreferenceDefaults: ForkPreferences = {
   mergeDeleteOriginals: true,
   showPageNumbers: true,
   colorTheme: 'koharu',
+  interfaceAnimations: true,
 }
 
 interface ForkPreferencesStore {
@@ -34,15 +36,32 @@ export const useForkPreferences = create<ForkPreferencesStore>((set, get) => ({
   },
 }))
 
-// The palette lives on the root element so every surface, including the
-// canvas workspace color, reads it from CSS. Applying it on load, before the
-// first render, keeps the default palette from flashing at startup.
-applyColorTheme(useForkPreferences.getState().preferences.colorTheme)
-useForkPreferences.subscribe(({ preferences }) => applyColorTheme(preferences.colorTheme))
+// Palette and motion live on the root element so every surface, including the
+// canvas workspace color, reads them from CSS. Applying them on load, before
+// the first render, keeps the default palette from flashing at startup.
+applyAppearance()
+useForkPreferences.subscribe(applyAppearance)
 
-function applyColorTheme(theme: ColorTheme): void {
+function applyAppearance(): void {
   if (typeof document === 'undefined') return
-  document.documentElement.dataset.palette = theme
+  const { colorTheme, interfaceAnimations } = useForkPreferences.getState().preferences
+  const root = document.documentElement
+  const swapping = root.dataset.palette !== undefined && root.dataset.palette !== colorTheme
+  root.dataset.palette = colorTheme
+  if (!swapping || !interfaceAnimations) {
+    root.dataset.motion = interfaceAnimations ? 'full' : 'still'
+    return
+  }
+  // Swap the palette while still, so every surface changes at once instead of
+  // cross-fading. Motion returns two frames later, after a frame has rendered
+  // the new colors.
+  root.dataset.motion = 'still'
+  window.requestAnimationFrame(() =>
+    window.requestAnimationFrame(() => {
+      const animate = useForkPreferences.getState().preferences.interfaceAnimations
+      root.dataset.motion = animate ? 'full' : 'still'
+    }),
+  )
 }
 
 function loadForkPreferences(): ForkPreferences {
@@ -61,6 +80,7 @@ function loadForkPreferences(): ForkPreferences {
       mergeDeleteOriginals: stored.mergeDeleteOriginals !== false,
       showPageNumbers: stored.showPageNumbers !== false,
       colorTheme: colorThemes.find((theme) => theme === stored.colorTheme) ?? 'koharu',
+      interfaceAnimations: stored.interfaceAnimations !== false,
     }
   } catch {
     return { ...forkPreferenceDefaults }

@@ -124,17 +124,21 @@
   * {
     scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent;
     scrollbar-width: thin;
-    animation: none !important;
-    transition: none !important;
     scroll-behavior: auto !important;
   }
 
-  .startup-spinner {
+  /* The interface stays still unless interface animations are on. */
+  :root:not([data-motion='full']) * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  :root .startup-spinner {
     animation: koharu-startup-spin 1800ms linear infinite !important;
   }
 
   /* A spinner reports work in progress, so it is exempt from the still interface. */
-  .animate-spin {
+  :root .animate-spin {
     animation: var(--animate-spin) !important;
   }
 }
@@ -210,8 +214,8 @@
   }
 
   @layer base {
-    .startup-spinner,
-    .animate-spin {
+    :root .startup-spinner,
+    :root .animate-spin {
       animation: none !important;
     }
   }

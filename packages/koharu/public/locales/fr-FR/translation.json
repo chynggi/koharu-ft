@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Animations de l'interface",
+      "animationsDescription": "Fait apparaître les menus et les boîtes de dialogue en fondu et adoucit le survol et les interrupteurs. Respecte le réglage système de réduction des animations.",
       "description": "Adaptez votre espace de travail à la pièce sans modifier le rendu des images.",
       "colorTheme": "Thème de couleurs",
       "colorThemeDescription": "Choisissez la palette de l'interface. Chaque palette existe en version claire et sombre.",

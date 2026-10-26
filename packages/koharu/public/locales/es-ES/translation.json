@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Animaciones de la interfaz",
+      "animationsDescription": "Funde menús y diálogos y suaviza los cambios al pasar el cursor y en los interruptores. Respeta el ajuste del sistema para reducir el movimiento.",
       "description": "Adapta el espacio de trabajo a tu entorno sin cambiar cómo se renderiza la ilustración.",
       "colorTheme": "Tema de color",
       "colorThemeDescription": "Elige la paleta de la interfaz. Cada paleta tiene una versión clara y otra oscura.",

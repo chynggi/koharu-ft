@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "인터페이스 애니메이션",
+      "animationsDescription": "메뉴와 대화 상자를 페이드로 표시하고 마우스오버와 스위치 변화를 부드럽게 합니다. 시스템의 동작 줄이기 설정을 따릅니다.",
       "description": "아트워크 렌더링에는 영향을 주지 않고 작업 공간의 모습을 조정합니다.",
       "colorTheme": "색상 테마",
       "colorThemeDescription": "인터페이스 팔레트를 선택합니다. 모든 팔레트에는 라이트와 다크 버전이 있습니다.",

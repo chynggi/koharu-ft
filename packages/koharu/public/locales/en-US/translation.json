@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Interface animations",
+      "animationsDescription": "Fade menus and dialogs and ease hover and switch changes. Follows the system reduced-motion setting.",
       "description": "Match your workspace to the room without changing how artwork is rendered.",
       "colorTheme": "Color theme",
       "colorThemeDescription": "Choose the interface palette. Each palette has a light and a dark version.",

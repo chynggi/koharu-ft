@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "インターフェースのアニメーション",
+      "animationsDescription": "メニューやダイアログをフェードさせ、ホバーやスイッチの変化をなめらかにします。システムの視差効果を減らす設定に従います。",
       "description": "アートワークの描画には影響せず、作業環境の見た目を調整します。",
       "colorTheme": "カラーテーマ",
       "colorThemeDescription": "インターフェースの配色を選びます。どの配色にもライトとダークの両方があります。",

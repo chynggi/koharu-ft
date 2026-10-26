@@ -453,6 +453,8 @@
   },
   "settings": {
     "appearance": {
+      "animations": "介面動畫",
+      "animationsDescription": "讓選單與對話方塊淡入淡出，並平滑懸停與開關變化。遵循系統的減少動態效果設定。",
       "description": "調整工作區外觀，而不改變圖稿的算繪方式。",
       "colorTheme": "配色主題",
       "colorThemeDescription": "選擇介面配色。每種配色都有淺色和深色版本。",
