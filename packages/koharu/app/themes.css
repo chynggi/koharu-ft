@@ -33,7 +33,7 @@
   --surface-floating: #ffffff;
   --surface-well: #f0f1f8;
   --surface-canvas: #fbfbfe;
-  --workspace-background-rgb: 251 251 254;
+  --workspace-background-rgb: 224 225 235;
   --shadow-titlebar: 0 1px 0 rgb(67 56 202 / 0.08), 0 4px 16px rgb(67 56 202 / 0.05);
   --shadow-floating: 0 12px 32px rgb(30 27 75 / 0.16), 0 2px 8px rgb(30 27 75 / 0.08);
 }
@@ -96,7 +96,7 @@
   --surface-floating: #ffffff;
   --surface-well: #eff3f7;
   --surface-canvas: #ffffff;
-  --workspace-background-rgb: 255 255 255;
+  --workspace-background-rgb: 222 229 236;
   --shadow-titlebar: 0 1px 0 rgb(27 86 156 / 0.08), 0 4px 16px rgb(27 86 156 / 0.05);
   --shadow-floating: 0 12px 32px rgb(15 23 32 / 0.16), 0 2px 8px rgb(15 23 32 / 0.08);
 }
@@ -159,7 +159,7 @@
   --surface-floating: #ffffff;
   --surface-well: #f0f2ed;
   --surface-canvas: #ffffff;
-  --workspace-background-rgb: 255 255 255;
+  --workspace-background-rgb: 225 230 220;
   --shadow-titlebar: 0 1px 0 rgb(51 93 48 / 0.08), 0 4px 16px rgb(51 93 48 / 0.05);
   --shadow-floating: 0 12px 32px rgb(19 22 17 / 0.16), 0 2px 8px rgb(19 22 17 / 0.08);
 }

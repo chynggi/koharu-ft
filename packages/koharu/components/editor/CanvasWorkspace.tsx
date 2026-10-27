@@ -843,7 +843,7 @@ export function CanvasWorkspace() {
           tabIndex={0}
           aria-label={t('canvas.surface')}
           aria-busy={page ? canvasState.status !== 'ready' : undefined}
-          className='relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden bg-[var(--surface-canvas)] outline-none'
+          className='relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden bg-[rgb(var(--workspace-background-rgb))] outline-none'
           style={{
             cursor: page && canvasState.status === 'ready' ? canvasCursors[tool] : undefined,
           }}

@@ -32,7 +32,7 @@
   --surface-floating: #ffffff;
   --surface-well: #f2f2f2;
   --surface-canvas: #ffffff;
-  --workspace-background-rgb: 255 255 255;
+  --workspace-background-rgb: 226 226 226;
   --shadow-titlebar: 0 1px 0 rgb(125 45 59 / 0.08), 0 4px 16px rgb(125 45 59 / 0.05);
   --shadow-panel: 0 1px 2px rgb(17 17 17 / 0.06), 0 10px 28px rgb(17 17 17 / 0.06);
   --shadow-content: -1px -1px 1px rgb(17 17 17 / 0.05);
