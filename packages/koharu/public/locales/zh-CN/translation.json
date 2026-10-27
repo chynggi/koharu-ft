@@ -99,6 +99,20 @@
     "subfolders": "按格式分文件夹",
     "title": "导出页面"
   },
+  "find": {
+    "matchCase": "区分大小写",
+    "noResults": "没有译文包含此文本。",
+    "page": "第 {{number}} 页",
+    "placeholder": "在译文中查找",
+    "replace": "替换",
+    "replaceAll": "全部替换",
+    "replacePlaceholder": "替换为",
+    "searching": "正在查找…",
+    "summary": "{{pages}} 页中共 {{count}} 处",
+    "summary_one": "{{pages}} 页中共 {{count}} 处",
+    "summary_other": "{{pages}} 页中共 {{count}} 处",
+    "title": "查找"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} 个启用的筛选条件",
     "activeFilterCount_one": "{{count}} 个启用的筛选条件",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "当文本字段未获得焦点时，可以使用单键快捷键。",
       "inputLabel": "{{action}} 快捷键",
+      "nextPage": "下一页",
+      "pages": "页面",
+      "previousPage": "上一页",
       "title": "快捷键",
       "tools": "工具"
     },

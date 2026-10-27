@@ -99,6 +99,20 @@
     "subfolders": "Separate folders per format",
     "title": "Export pages"
   },
+  "find": {
+    "matchCase": "Match case",
+    "noResults": "No translation contains this text.",
+    "page": "Page {{number}}",
+    "placeholder": "Find in translations",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "replacePlaceholder": "Replace with",
+    "searching": "Searching…",
+    "summary": "{{count}} matches on {{pages}} pages",
+    "summary_one": "{{count}} match on {{pages}} page(s)",
+    "summary_other": "{{count}} matches on {{pages}} page(s)",
+    "title": "Find"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} active filters",
     "activeFilterCount_one": "{{count}} active filter",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "Single-key shortcuts are available whenever a text field is not focused.",
       "inputLabel": "{{action}} shortcut",
+      "nextPage": "Next page",
+      "pages": "Pages",
+      "previousPage": "Previous page",
       "title": "Shortcuts",
       "tools": "Tools"
     },

@@ -99,6 +99,20 @@
     "subfolders": "مجلد منفصل لكل تنسيق",
     "title": "تصدير الصفحات"
   },
+  "find": {
+    "matchCase": "مطابقة حالة الأحرف",
+    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
+    "page": "الصفحة {{number}}",
+    "placeholder": "البحث في الترجمات",
+    "replace": "استبدال",
+    "replaceAll": "استبدال الكل",
+    "replacePlaceholder": "الاستبدال بـ",
+    "searching": "جارٍ البحث…",
+    "summary": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
+    "title": "بحث"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} مرشّحات نشطة",
     "activeFilterCount_one": "{{count}} مرشّح نشط",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "تتوفّر اختصارات المفتاح الواحد عندما لا يكون حقل النص قيد التركيز.",
       "inputLabel": "اختصار {{action}}",
+      "nextPage": "الصفحة التالية",
+      "pages": "الصفحات",
+      "previousPage": "الصفحة السابقة",
       "title": "الاختصارات",
       "tools": "الأدوات"
     },

@@ -99,6 +99,20 @@
     "subfolders": "Un dossier par format",
     "title": "Exporter les pages"
   },
+  "find": {
+    "matchCase": "Respecter la casse",
+    "noResults": "Aucune traduction ne contient ce texte.",
+    "page": "Page {{number}}",
+    "placeholder": "Rechercher dans les traductions",
+    "replace": "Remplacer",
+    "replaceAll": "Tout remplacer",
+    "replacePlaceholder": "Remplacer par",
+    "searching": "Recherche…",
+    "summary": "{{count}} résultats sur {{pages}} page(s)",
+    "summary_one": "{{count}} résultat sur {{pages}} page(s)",
+    "summary_other": "{{count}} résultats sur {{pages}} page(s)",
+    "title": "Rechercher"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtres actifs",
     "activeFilterCount_one": "{{count}} filtre actif",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "Les raccourcis à une touche sont disponibles lorsqu’aucun champ de texte n’a le focus.",
       "inputLabel": "Raccourci : {{action}}",
+      "nextPage": "Page suivante",
+      "pages": "Pages",
+      "previousPage": "Page précédente",
       "title": "Raccourcis",
       "tools": "Outils"
     },

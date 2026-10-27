@@ -20,6 +20,7 @@ import { ResourceMonitor } from '@/components/editor/ResourceMonitor'
 import { usePageImportDrop } from '@/components/editor/usePageImportDrop'
 import { call } from '@/lib/backend'
 import { useForkPreferences } from '@/lib/forkPreferences'
+import { activatePage, cancelPageActivation } from '@/lib/navigation'
 import {
   pageKey,
   pagesKey,
@@ -33,11 +34,10 @@ import {
   usePages,
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { prefetchCanvasPages, showCanvasPage } from '@koharu/bridge/canvas'
+import { prefetchCanvasPages } from '@koharu/bridge/canvas'
 import {
   commands,
   type CanvasPagePreparation,
-  type Page,
   type PageImportSource,
   type PageSummary,
   type ProjectInfo,
@@ -87,7 +87,6 @@ export function PageRail() {
   const railRef = useRef<HTMLElement>(null)
   const { overDropZone, dropHandlers } = usePageImportDrop(railRef, importDropped)
   const anchor = useRef<number | null>(null)
-  const selectionRequest = useRef(0)
   const intentPrefetch = useRef<IntentPrefetchState | null>(null)
   const keyboardPageIndex = useRef<number | null>(null)
   const draggedPage = useRef<string | null>(null)
@@ -123,12 +122,21 @@ export function PageRail() {
       ),
   })
 
-  useEffect(
-    () => () => {
-      selectionRequest.current += 1
-    },
-    [],
-  )
+  // A project reopens at the page it was left on, so that page is centered
+  // once; later switches, such as a search result, scroll the rail only when
+  // the page is off screen.
+  const revealedActive = useRef<string | null>(null)
+  useEffect(() => {
+    if (!active || revealedActive.current === active) return
+    const index = visiblePages.findIndex(({ page }) => page.id === active)
+    if (index < 0) return
+    pageVirtualizer.scrollToIndex(index, {
+      align: revealedActive.current === null ? 'center' : 'auto',
+    })
+    revealedActive.current = active
+  }, [active, pageVirtualizer, visiblePages])
+
+  useEffect(() => cancelPageActivation, [])
 
   const select = useCallback(
     (index: number, additive: boolean, range: boolean) => {
@@ -149,40 +157,9 @@ export function PageRail() {
         next = [page.id]
         anchor.current = index
       }
-      const previousProject = queryClient.getQueryData<ProjectInfo | null>(projectKey)
-      const previousPage = queryClient.getQueryData<Page | null>(pageKey)
-      const prepared = queryClient.getQueryData<CanvasPagePreparation>(preparedPageKey(page.id))
-      const activated = showCanvasPage(page.id, previousProject?.revision ?? null)
-      const request = ++selectionRequest.current
-      const synchronize = () => {
-        if (selectionRequest.current !== request) return
-        if (activated && previousProject && prepared?.revision === previousProject.revision) {
-          queryClient.setQueryData(projectKey, { ...previousProject, active_page: page.id })
-          queryClient.setQueryData(pageKey, prepared.page)
-        }
-        selectPages(next)
-        selectLayers([])
-        void call(commands.selectPage, page.id)
-          .then((selection) => {
-            if (selectionRequest.current !== request) return
-            queryClient.setQueryData(projectKey, selection.project)
-            queryClient.setQueryData(pageKey, selection.page)
-          })
-          .catch(() => {
-            if (selectionRequest.current !== request) return
-            if (queryClient.getQueryData<ProjectInfo | null>(projectKey)?.active_page === page.id) {
-              queryClient.setQueryData(projectKey, previousProject)
-              queryClient.setQueryData(pageKey, previousPage)
-            }
-          })
-      }
-      if (activated) {
-        requestAnimationFrame(() => window.setTimeout(synchronize, 0))
-      } else {
-        synchronize()
-      }
+      void activatePage(page.id, next)
     },
-    [pages, selected, selectLayers, selectPages],
+    [pages, selected],
   )
 
   useEffect(() => {
@@ -191,8 +168,16 @@ export function PageRail() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const { shortcuts } = useKoharuStore.getState()
+      const key = event.key.toLowerCase()
+      const step =
+        event.key === 'ArrowLeft' || event.key === 'PageUp' || key === shortcuts.previous_page
+          ? -1
+          : event.key === 'ArrowRight' || event.key === 'PageDown' || key === shortcuts.next_page
+            ? 1
+            : 0
       if (
-        (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') ||
+        step === 0 ||
         event.defaultPrevented ||
         event.altKey ||
         event.ctrlKey ||
@@ -212,7 +197,7 @@ export function PageRail() {
         return
 
       const current = keyboardPageIndex.current ?? pages.findIndex((page) => page.id === active)
-      const next = current + (event.key === 'ArrowLeft' ? -1 : 1)
+      const next = current + step
       if (current < 0 || !pages[next]) return
 
       event.preventDefault()

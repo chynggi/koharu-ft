@@ -99,6 +99,20 @@
     "subfolders": "形式ごとにフォルダーを分ける",
     "title": "ページの書き出し"
   },
+  "find": {
+    "matchCase": "大文字と小文字を区別",
+    "noResults": "この文字列を含む翻訳はありません。",
+    "page": "{{number}} ページ",
+    "placeholder": "翻訳を検索",
+    "replace": "置換",
+    "replaceAll": "すべて置換",
+    "replacePlaceholder": "置換後の文字列",
+    "searching": "検索中…",
+    "summary": "{{pages}} ページで {{count}} 件",
+    "summary_one": "{{pages}} ページで {{count}} 件",
+    "summary_other": "{{pages}} ページで {{count}} 件",
+    "title": "検索"
+  },
   "fontPicker": {
     "activeFilterCount": "有効なフィルター: {{count}}件",
     "activeFilterCount_one": "有効なフィルター: {{count}}件",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "テキスト入力欄にフォーカスがないとき、単一キーのショートカットを使用できます。",
       "inputLabel": "{{action}}のショートカット",
+      "nextPage": "次のページ",
+      "pages": "ページ",
+      "previousPage": "前のページ",
       "title": "ショートカット",
       "tools": "ツール"
     },

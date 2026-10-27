@@ -99,6 +99,20 @@
     "subfolders": "Carpetas separadas por formato",
     "title": "Exportar páginas"
   },
+  "find": {
+    "matchCase": "Coincidir mayúsculas y minúsculas",
+    "noResults": "Ninguna traducción contiene este texto.",
+    "page": "Página {{number}}",
+    "placeholder": "Buscar en las traducciones",
+    "replace": "Reemplazar",
+    "replaceAll": "Reemplazar todo",
+    "replacePlaceholder": "Reemplazar por",
+    "searching": "Buscando…",
+    "summary": "{{count}} coincidencias en {{pages}} página(s)",
+    "summary_one": "{{count}} coincidencia en {{pages}} página(s)",
+    "summary_other": "{{count}} coincidencias en {{pages}} página(s)",
+    "title": "Buscar"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtros activos",
     "activeFilterCount_one": "{{count}} filtro activo",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "Los atajos de una tecla están disponibles cuando ningún campo de texto tiene el foco.",
       "inputLabel": "Atajo de {{action}}",
+      "nextPage": "Página siguiente",
+      "pages": "Páginas",
+      "previousPage": "Página anterior",
       "title": "Atajos",
       "tools": "Herramientas"
     },

@@ -54,7 +54,8 @@ export interface CanvasBrush {
   ramp: BrushRamp | null
 }
 export type InspectorSection = 'copy' | 'type' | 'layers'
-export type ShortcutAction = CanvasTool | 'fit'
+export type SidebarPanel = 'properties' | 'agent' | 'find'
+export type ShortcutAction = CanvasTool | 'fit' | 'previous_page' | 'next_page'
 export type Shortcuts = Record<ShortcutAction, string>
 export type PipelineScope = 'page' | 'selected-pages' | 'project'
 export const pipelineStages: readonly Stage[] = ['detection', 'ocr', 'translation', 'inpainting']
@@ -88,12 +89,14 @@ interface KoharuStore {
   processingScope: PipelineScope
   processingStages: Stage[]
   settingsOpen: boolean
+  sidebarPanel: SidebarPanel
   shortcuts: Shortcuts
   selectPages: (pages: EntityId[]) => void
   showInspector: (section: InspectorSection) => void
   setProcessingScope: (scope: PipelineScope) => void
   setProcessingStages: (stages: Stage[]) => void
   setSettingsOpen: (open: boolean) => void
+  setSidebarPanel: (panel: SidebarPanel) => void
   selectLayers: (layers: EntityId[]) => void
   setCopiedTextLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool, cleanupLayer?: EntityId) => void
@@ -120,6 +123,8 @@ export const defaultShortcuts: Shortcuts = {
   manual_ocr_lasso: 'l',
   pan: 'h',
   fit: '0',
+  previous_page: 'a',
+  next_page: 'd',
 }
 
 export const useKoharuStore = create<KoharuStore>()((set) => ({
@@ -148,12 +153,14 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   processingScope: 'selected-pages',
   processingStages: [...pipelineStages],
   settingsOpen: false,
+  sidebarPanel: 'properties',
   shortcuts: defaultShortcuts,
   selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
   showInspector: (inspector) => set({ inspector }),
   setProcessingScope: (processingScope) => set({ processingScope }),
   setProcessingStages: (processingStages) => set({ processingStages }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSidebarPanel: (sidebarPanel) => set({ sidebarPanel }),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
   setCopiedTextLayers: (copiedTextLayers) => set({ copiedTextLayers: [...copiedTextLayers] }),
   // 붓·지우개로 넘어갈 때만 cleanup 레이어를 고른다. 다른 도구는 선택을 건드리지

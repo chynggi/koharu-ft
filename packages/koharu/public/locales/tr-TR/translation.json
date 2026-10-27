@@ -99,6 +99,20 @@
     "subfolders": "Her biçim için ayrı klasör",
     "title": "Sayfaları dışa aktar"
   },
+  "find": {
+    "matchCase": "Büyük/küçük harf duyarlı",
+    "noResults": "Bu metni içeren çeviri yok.",
+    "page": "Sayfa {{number}}",
+    "placeholder": "Çevirilerde bul",
+    "replace": "Değiştir",
+    "replaceAll": "Tümünü değiştir",
+    "replacePlaceholder": "Şununla değiştir",
+    "searching": "Aranıyor…",
+    "summary": "{{pages}} sayfada {{count}} eşleşme",
+    "summary_one": "{{pages}} sayfada {{count}} eşleşme",
+    "summary_other": "{{pages}} sayfada {{count}} eşleşme",
+    "title": "Bul"
+  },
   "fontPicker": {
     "activeFilterCount": "{{count}} etkin filtre",
     "activeFilterCount_one": "{{count}} etkin filtre",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "Tek tuşlu kısayollar, bir metin alanına odaklanılmadığında kullanılabilir.",
       "inputLabel": "{{action}} kısayolu",
+      "nextPage": "Sonraki sayfa",
+      "pages": "Sayfalar",
+      "previousPage": "Önceki sayfa",
       "title": "Kısayollar",
       "tools": "Araçlar"
     },

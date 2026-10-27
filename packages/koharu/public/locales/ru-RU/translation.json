@@ -99,6 +99,20 @@
     "subfolders": "Отдельные папки для каждого формата",
     "title": "Экспорт страниц"
   },
+  "find": {
+    "matchCase": "Учитывать регистр",
+    "noResults": "Ни один перевод не содержит этот текст.",
+    "page": "Страница {{number}}",
+    "placeholder": "Искать в переводах",
+    "replace": "Заменить",
+    "replaceAll": "Заменить все",
+    "replacePlaceholder": "Заменить на",
+    "searching": "Поиск…",
+    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
+    "title": "Поиск"
+  },
   "fontPicker": {
     "activeFilterCount": "Активных фильтров: {{count}}",
     "activeFilterCount_one": "Активный фильтр: {{count}}",
@@ -649,6 +663,9 @@
     "shortcuts": {
       "description": "Одноклавишные сочетания доступны, когда поле ввода текста не в фокусе.",
       "inputLabel": "Сочетание для «{{action}}»",
+      "nextPage": "Следующая страница",
+      "pages": "Страницы",
+      "previousPage": "Предыдущая страница",
       "title": "Сочетания клавиш",
       "tools": "Инструменты"
     },

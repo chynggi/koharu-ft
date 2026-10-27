@@ -213,6 +213,20 @@ export const commands = {
 		post<null>("/layers/source-text", { layer, text }),
 	setTranslation: (layer: EntityId, text: string | null) =>
 		post<null>("/layers/translation", { layer, text }),
+	findTranslations: (query: string, matchCase: boolean) =>
+		post<TranslationMatch[]>("/layers/translation/find", { query, match_case: matchCase }),
+	replaceTranslations: (
+		query: string,
+		replacement: string,
+		matchCase: boolean,
+		layers: EntityId[] | null,
+	) =>
+		post<number>("/layers/translation/replace", {
+			query,
+			replacement,
+			match_case: matchCase,
+			layers,
+		}),
 	setTypography: (updates: TypographyUpdate[]) =>
 		post<null>("/layers/typography", { updates }),
 	setGeometry: (updates: GeometryUpdate[]) => post<null>("/layers/geometry", { updates }),
@@ -1261,6 +1275,18 @@ export type TranslationConfig = {
 	instructions: string | null,
 	combine_pages?: boolean,
 	max_pages_per_request?: number,
+};
+
+/**  A text layer whose translation contains the searched text. */
+export type TranslationMatch = {
+	page: EntityId,
+	/**  The page's position in the project, from zero. */
+	page_index: number,
+	layer: EntityId,
+	/**  The layer's whole translation. */
+	text: string,
+	/**  How many times the searched text occurs in it. */
+	count: number,
 };
 
 export type TypesettingConfig = {

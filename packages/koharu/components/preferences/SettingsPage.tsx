@@ -381,6 +381,17 @@ function ShortcutPreferences() {
   const { t } = useTranslation()
   const shortcuts = useKoharuStore((state) => state.shortcuts)
   const setShortcut = useKoharuStore((state) => state.setShortcut)
+  const row = (action: ShortcutAction) => (
+    <PreferenceRow key={action} title={t(shortcutKeys[action])}>
+      <Input
+        aria-label={t('settings.shortcuts.inputLabel', { action: t(shortcutKeys[action]) })}
+        maxLength={1}
+        value={shortcuts[action]}
+        className='ml-auto h-8 w-14 text-center text-[12px] uppercase'
+        onChange={(event) => setShortcut(action, event.currentTarget.value)}
+      />
+    </PreferenceRow>
+  )
   const actions: ShortcutAction[] = [
     'select',
     'text',
@@ -401,17 +412,10 @@ function ShortcutPreferences() {
       description={t('settings.shortcuts.description')}
     >
       <PreferenceSection title={t('settings.shortcuts.tools')}>
-        {actions.map((action) => (
-          <PreferenceRow key={action} title={t(shortcutKeys[action])}>
-            <Input
-              aria-label={t('settings.shortcuts.inputLabel', { action: t(shortcutKeys[action]) })}
-              maxLength={1}
-              value={shortcuts[action]}
-              className='ml-auto h-8 w-14 text-center text-[12px] uppercase'
-              onChange={(event) => setShortcut(action, event.currentTarget.value)}
-            />
-          </PreferenceRow>
-        ))}
+        {actions.map(row)}
+      </PreferenceSection>
+      <PreferenceSection title={t('settings.shortcuts.pages')}>
+        {(['previous_page', 'next_page'] as const).map(row)}
       </PreferenceSection>
     </PreferencePage>
   )
@@ -435,4 +439,6 @@ const shortcutKeys: Record<ShortcutAction, string> = {
   manual_ocr_lasso: 'tools.manual_ocr_lasso',
   pan: 'tools.pan',
   fit: 'canvas.fit',
+  previous_page: 'settings.shortcuts.previousPage',
+  next_page: 'settings.shortcuts.nextPage',
 }
