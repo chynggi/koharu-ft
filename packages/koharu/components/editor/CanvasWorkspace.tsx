@@ -90,6 +90,7 @@ const SHAPE_MINIMUM_DRAG = 4
 
 type Gesture =
   | { kind: 'pan'; pointer: number; start: Point; translation: [number, number] }
+  | { kind: 'brush_size'; pointer: number; start: Point; diameter: number }
   | {
       kind: 'select'
       pointer: number
@@ -295,6 +296,10 @@ export function CanvasWorkspace() {
     if (current?.kind === 'shape') {
       shapeUpdates.clear()
       canvas?.cancelShape()
+    }
+    if (current?.kind === 'brush_size') {
+      const { brush, setBrush } = useKoharuStore.getState()
+      setBrush({ ...brush, diameter: current.diameter })
     }
     if (transformActive.current) {
       transformUpdates.clear()
@@ -609,6 +614,20 @@ export function CanvasWorkspace() {
       return
     }
 
+    if (current.kind === 'brush_size') {
+      // The circle stays where the drag began and its edge follows the
+      // pointer, so the radius grows by the horizontal travel.
+      setCursor(current.start)
+      const { brush: currentBrush, camera } = useKoharuStore.getState()
+      const diameter = clamp(
+        Math.round(current.diameter + (2 * (physical.x - current.start.x)) / camera.zoom),
+        MIN_BRUSH_DIAMETER,
+        maxBrushDiameter(page.size),
+      )
+      if (diameter !== currentBrush.diameter) setBrush({ ...currentBrush, diameter })
+      return
+    }
+
     const points = samples.map((value) => clientPagePoint(value.clientX, value.clientY))
     const point = points.at(-1)!
     if (current.kind === 'select') {
@@ -893,7 +912,15 @@ export function CanvasWorkspace() {
             const point = clientPagePoint(event.clientX, event.clientY)
             setCursor(physical)
 
-            if (event.button === 1 || tool === 'pan' || spaceHeld.current) {
+            if (event.button === 0 && event.ctrlKey && event.altKey && isBrushTool(tool)) {
+              // Clip Studio's brush resize; Photoshop uses the same keys on macOS.
+              gesture.current = {
+                kind: 'brush_size',
+                pointer: event.pointerId,
+                start: physical,
+                diameter: brush.diameter,
+              }
+            } else if (event.button === 1 || tool === 'pan' || spaceHeld.current) {
               gesture.current = {
                 kind: 'pan',
                 pointer: event.pointerId,

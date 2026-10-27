@@ -599,6 +599,53 @@ describe('canvas interaction adapter', () => {
       ]),
     )
   })
+
+  it('resizes the brush with Ctrl+Alt drag instead of painting', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    const commit = vi.spyOn(commands, 'commitPaint')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, {
+      button: 0,
+      pointerId: 9,
+      clientX: 30,
+      clientY: 40,
+      ctrlKey: true,
+      altKey: true,
+    })
+    // The circle's edge follows the pointer, so 20 px of travel adds 40 px.
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 50, clientY: 90 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(88)
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 20, clientY: 40 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(28)
+    fireEvent.pointerUp(surface, { pointerId: 9, clientX: 20, clientY: 40 })
+
+    expect(useKoharuStore.getState().brush.diameter).toBe(28)
+    expect(canvas.beginStroke).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('restores the brush size when a Ctrl+Alt drag is canceled', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'eraser', brush: { diameter: 48, color: '#FFFFFF' } })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, {
+      button: 0,
+      pointerId: 10,
+      clientX: 30,
+      clientY: 40,
+      ctrlKey: true,
+      altKey: true,
+    })
+    fireEvent.pointerMove(surface, { pointerId: 10, clientX: 60, clientY: 40 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(108)
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(useKoharuStore.getState().brush.diameter).toBe(48)
+  })
+
   it.each([
     ['revision', { canvasRevision: 2 }],
     ['generation', { canvasGeneration: 2 }],
