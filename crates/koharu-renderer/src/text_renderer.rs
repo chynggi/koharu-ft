@@ -80,6 +80,32 @@ pub(crate) struct StrokeOptions {
     pub method: StrokeMethod,
     pub position: StrokePosition,
     pub join: LineJoin,
+    /// A second outline drawn immediately outside the first one's outer edge.
+    pub outer: Option<OuterStroke>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OuterStroke {
+    pub color: [u8; 4],
+    pub width_px: f32,
+}
+
+impl StrokeOptions {
+    /// The second outline, when it is wide enough and visible.
+    fn visible_outer(&self) -> Option<OuterStroke> {
+        self.outer
+            .filter(|outer| outer.width_px > 0.0 && outer.color[3] > 0)
+    }
+
+    /// How far the first outline reaches beyond the glyph edge.
+    fn outward_extent(&self) -> f64 {
+        let width = f64::from(self.width_px);
+        match (self.method, self.position) {
+            (StrokeMethod::Expansion, _) | (_, StrokePosition::Outside) => width,
+            (_, StrokePosition::Center) => width * 0.5,
+            (_, StrokePosition::Inside) => 0.0,
+        }
+    }
 }
 
 /// Paint options used when recording one laid-out text run into a Vello scene.
@@ -154,28 +180,22 @@ impl TextRenderer {
             // letters need an outside-only region to preserve their alpha instead.
             let behind_fill = stroke.position == StrokePosition::Outside && options.color[3] == 255;
             let border = contour_border(&contours, stroke, behind_fill);
-            let bounds =
+            let mut bounds =
                 (!border.is_empty()).then(|| transform.transform_rect_bbox(border.bounding_box()));
-            let command = PreparedSceneCommand::FillPath(PreparedPath {
-                transform: transform.as_coeffs(),
-                elements: border
-                    .elements()
-                    .iter()
-                    .map(|element| match *element {
-                        PathEl::MoveTo(p) => PathElement::MoveTo([p.x, p.y]),
-                        PathEl::LineTo(p) => PathElement::LineTo([p.x, p.y]),
-                        PathEl::QuadTo(..) | PathEl::CurveTo(..) => {
-                            unreachable!("polygon offsets contain only straight segments")
-                        }
-                        PathEl::ClosePath => PathElement::Close,
-                    })
-                    .collect(),
-                fill: Some(PreparedFill::Solid {
-                    color: stroke.color,
-                    rule: FillRule::NonZero,
-                }),
-                stroke: None,
-            });
+            if let Some(outer) = stroke.visible_outer() {
+                // Everything drawn over a solid outer region covers its interior, so it can be
+                // filled whole without a shared antialiased seam against the first outline.
+                let solid = options.color[3] == 255 && stroke.color[3] == 255;
+                let region = outer_border(&contours, stroke, outer, solid);
+                if !region.is_empty() {
+                    let outer_bounds = transform.transform_rect_bbox(region.bounding_box());
+                    bounds = Some(bounds.map_or(outer_bounds, |inner| inner.union(outer_bounds)));
+                    scene
+                        .commands
+                        .push(fill_command(&region, transform, outer.color));
+                }
+            }
+            let command = fill_command(&border, transform, stroke.color);
             if behind_fill && !border.is_empty() {
                 scene.commands.push(command.clone());
             }
@@ -204,6 +224,20 @@ impl TextRenderer {
             .stroke
             .filter(|stroke| stroke.width_px > 0.0 && stroke.color[3] > 0)
         {
+            if let Some(outer) = stroke.visible_outer() {
+                draw_layout(
+                    scene,
+                    resources,
+                    layout,
+                    writing_mode,
+                    options,
+                    transform,
+                    GlyphPaint {
+                        color: outer.color,
+                        dilation_px: stroke.width_px + outer.width_px,
+                    },
+                );
+            }
             draw_layout(
                 scene,
                 resources,
@@ -383,7 +417,12 @@ impl TextRenderer {
         let stroke_padding = descriptor
             .stroke
             .filter(|stroke| stroke.method == StrokeMethod::Expansion)
-            .map_or(0.0, |stroke| stroke.width_px.max(0.0));
+            .map_or(0.0, |stroke| {
+                stroke.width_px.max(0.0)
+                    + stroke
+                        .visible_outer()
+                        .map_or(0.0, |outer| outer.width_px.max(0.0))
+            });
         let mut local_bounds = Rect::new(
             f64::from(rendered_bounds.x - stroke_padding),
             f64::from(rendered_bounds.y - stroke_padding),
@@ -505,23 +544,72 @@ fn union_contours(path: &BezPath) -> ContourRegion {
     contours.simplify_shape(OverlayFillRule::NonZero)
 }
 
+/// Offset the merged glyph region by `distance` (negative shrinks it) with the stroke's joins.
+fn offset_region(contours: &ContourRegion, distance: f64, join: LineJoin) -> ContourRegion {
+    if distance == 0.0 {
+        return contours.clone();
+    }
+    let join = match join {
+        // Bound arc chord error to about 0.01 layout pixels. The offset library also
+        // clamps the angular step to its supported range.
+        LineJoin::Round => OverlayJoin::Round((8.0 * 0.01 / distance.abs()).sqrt()),
+        // i_overlay takes a minimum interior angle, rather than a miter-length ratio.
+        LineJoin::Miter => OverlayJoin::Miter(2.0 * (1.0_f64 / 4.0).asin()),
+        LineJoin::Bevel => OverlayJoin::Bevel,
+    };
+    contours.outline(
+        &OutlineStyle::new(distance)
+            .line_join(join)
+            .miter_min_turn(0.0),
+    )
+}
+
+/// The second outline, from the first outline's outer edge outward by `outer.width_px`.
+///
+/// With `solid` set, every layer drawn above it is opaque and covers the inner part, so the
+/// whole expanded region is returned to be painted underneath. Otherwise only the ring is
+/// returned, so translucent text or a translucent first outline doesn't reveal it.
+fn outer_border(
+    contours: &ContourRegion,
+    stroke: StrokeOptions,
+    outer: OuterStroke,
+    solid: bool,
+) -> BezPath {
+    let inner = stroke.outward_extent();
+    let expanded = offset_region(contours, inner + f64::from(outer.width_px), stroke.join);
+    if solid {
+        return contours_path(&expanded);
+    }
+    let edge = offset_region(contours, inner, stroke.join);
+    contours_path(&expanded.overlay(&edge, OverlayRule::Difference, OverlayFillRule::NonZero))
+}
+
+fn fill_command(region: &BezPath, transform: Affine, color: [u8; 4]) -> PreparedSceneCommand {
+    PreparedSceneCommand::FillPath(PreparedPath {
+        transform: transform.as_coeffs(),
+        elements: region
+            .elements()
+            .iter()
+            .map(|element| match *element {
+                PathEl::MoveTo(p) => PathElement::MoveTo([p.x, p.y]),
+                PathEl::LineTo(p) => PathElement::LineTo([p.x, p.y]),
+                PathEl::QuadTo(..) | PathEl::CurveTo(..) => {
+                    unreachable!("polygon offsets contain only straight segments")
+                }
+                PathEl::ClosePath => PathElement::Close,
+            })
+            .collect(),
+        fill: Some(PreparedFill::Solid {
+            color,
+            rule: FillRule::NonZero,
+        }),
+        stroke: None,
+    })
+}
+
 fn contour_border(contours: &ContourRegion, stroke: StrokeOptions, behind_fill: bool) -> BezPath {
     let width = f64::from(stroke.width_px);
-    let offset = |distance: f64| {
-        let join = match stroke.join {
-            // Bound arc chord error to about 0.01 layout pixels. The offset library also
-            // clamps the angular step to its supported range.
-            LineJoin::Round => OverlayJoin::Round((8.0 * 0.01 / distance.abs()).sqrt()),
-            // i_overlay takes a minimum interior angle, rather than a miter-length ratio.
-            LineJoin::Miter => OverlayJoin::Miter(2.0 * (1.0_f64 / 4.0).asin()),
-            LineJoin::Bevel => OverlayJoin::Bevel,
-        };
-        contours.outline(
-            &OutlineStyle::new(distance)
-                .line_join(join)
-                .miter_min_turn(0.0),
-        )
-    };
+    let offset = |distance: f64| offset_region(contours, distance, stroke.join);
     // Resolve offset self-intersections before rasterization. A single-winding filled region
     // avoids coverage accumulation from overlapping wide strokes on the flattened glyphs.
     let region = match stroke.position {
@@ -888,6 +976,7 @@ mod tests {
                             method: StrokeMethod::Contour,
                             position: StrokePosition::Outside,
                             join: LineJoin::Round,
+                            outer: None,
                         }),
                         ..TextRenderOptions::default()
                     },
@@ -943,6 +1032,141 @@ mod tests {
     }
 
     #[test]
+    fn second_outline_starts_at_the_first_outlines_outer_edge() {
+        use vello::kurbo::Point;
+        let mut raw = Rect::new(20.0, 20.0, 80.0, 80.0).to_path(0.01);
+        raw.extend(
+            Rect::new(40.0, 40.0, 60.0, 60.0)
+                .to_path(0.01)
+                .reverse_subpaths()
+                .elements()
+                .iter()
+                .copied(),
+        );
+        let contours = union_contours(&raw);
+        let outer = OuterStroke {
+            color: [0, 0, 0, 255],
+            width_px: 4.0,
+        };
+        // (position, the first outline's outward reach in px) for a 6 px first outline.
+        for (position, reach) in [
+            (StrokePosition::Outside, 6.0),
+            (StrokePosition::Center, 3.0),
+            (StrokePosition::Inside, 0.0),
+        ] {
+            let stroke = StrokeOptions {
+                color: [255; 4],
+                width_px: 6.0,
+                method: StrokeMethod::Contour,
+                position,
+                join: LineJoin::Round,
+                outer: Some(outer),
+            };
+            let ring = outer_border(&contours, stroke, outer, false);
+            let left = 20.0 - reach;
+            // Inside the second outline, on the outer and the hole side of the shape.
+            assert_ne!(
+                ring.winding(Point::new(left - 2.0, 50.0)),
+                0,
+                "{position:?}"
+            );
+            assert_ne!(
+                ring.winding(Point::new(40.0 + reach + 2.0, 50.0)),
+                0,
+                "{position:?}"
+            );
+            // Beyond it, and inside the first outline: not part of the ring.
+            assert_eq!(
+                ring.winding(Point::new(left - 4.5, 50.0)),
+                0,
+                "{position:?}"
+            );
+            assert_eq!(
+                ring.winding(Point::new(left + 0.5, 50.0)),
+                0,
+                "{position:?}"
+            );
+            assert_eq!(ring.winding(Point::new(30.0, 50.0)), 0, "{position:?}");
+            // The solid variant also covers everything inside, for painting underneath.
+            let solid = outer_border(&contours, stroke, outer, true);
+            assert_ne!(
+                solid.winding(Point::new(left - 2.0, 50.0)),
+                0,
+                "{position:?}"
+            );
+            assert_ne!(solid.winding(Point::new(30.0, 50.0)), 0, "{position:?}");
+            assert!(
+                (solid.bounding_box().x0 - (left - 4.0)).abs() < 0.02,
+                "{position:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn second_outline_is_drawn_beneath_the_first_and_widens_bounds() {
+        let font = FontSystem::new().first_font().unwrap();
+        let layout = TextLayout::new(&font)
+            .with_font_size(40.0)
+            .run("Ho")
+            .unwrap();
+        for method in [StrokeMethod::Contour, StrokeMethod::Expansion] {
+            let single = StrokeOptions {
+                color: [255; 4],
+                width_px: 3.0,
+                method,
+                position: StrokePosition::Outside,
+                join: LineJoin::Round,
+                outer: None,
+            };
+            let double = StrokeOptions {
+                outer: Some(OuterStroke {
+                    color: [255, 0, 0, 255],
+                    width_px: 5.0,
+                }),
+                ..single
+            };
+            let render = |stroke: StrokeOptions| {
+                let mut scene = PreparedScene::default();
+                let mut resources = Vec::new();
+                let bounds = TextRenderer::new()
+                    .render(
+                        &mut scene,
+                        &mut resources,
+                        &layout,
+                        WritingMode::Horizontal,
+                        &TextRenderOptions {
+                            stroke: Some(stroke),
+                            ..TextRenderOptions::default()
+                        },
+                        Affine::IDENTITY,
+                    )
+                    .unwrap();
+                (scene, bounds)
+            };
+            let (single_scene, single_bounds) = render(single);
+            let (double_scene, double_bounds) = render(double);
+            assert!(double_scene.commands.len() > single_scene.commands.len());
+            // The outer color is painted before anything else, so the rest covers its inside.
+            let first_color = match &double_scene.commands[0] {
+                PreparedSceneCommand::FillPath(PreparedPath {
+                    fill: Some(PreparedFill::Solid { color, .. }),
+                    ..
+                }) => *color,
+                PreparedSceneCommand::GlyphRun(run) => run.color,
+                other => panic!("text renders no other command: {other:?}"),
+            };
+            assert_eq!(first_color, [255, 0, 0, 255], "{method:?}");
+            if method == StrokeMethod::Contour {
+                let (single, double) = (single_bounds.unwrap(), double_bounds.unwrap());
+                assert!(
+                    (single.x0 - double.x0 - 5.0).abs() < 0.05,
+                    "{single:?} {double:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn contour_regions_preserve_positions_counters_and_corner_styles() {
         use vello::kurbo::Point;
         let mut raw = Rect::new(20.0, 20.0, 80.0, 80.0).to_path(0.01);
@@ -962,6 +1186,7 @@ mod tests {
                 method: StrokeMethod::Contour,
                 position: StrokePosition::Outside,
                 join,
+                outer: None,
             };
             for (position, outward, inward) in [
                 (StrokePosition::Outside, true, false),
@@ -1014,6 +1239,7 @@ mod tests {
                 method: StrokeMethod::Contour,
                 position: StrokePosition::Inside,
                 join: LineJoin::Round,
+                outer: None,
             },
             false,
         );
@@ -1038,6 +1264,7 @@ mod tests {
                     method: StrokeMethod::Contour,
                     position: StrokePosition::Outside,
                     join: LineJoin::Round,
+                    outer: None,
                 }),
                 ..TextRenderOptions::default()
             };
@@ -1203,6 +1430,7 @@ mod tests {
                         method: StrokeMethod::Contour,
                         position: StrokePosition::Outside,
                         join: LineJoin::Round,
+                        outer: None,
                     }),
                     ..TextRenderOptions::default()
                 },

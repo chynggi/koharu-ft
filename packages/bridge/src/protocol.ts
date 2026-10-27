@@ -1309,6 +1309,8 @@ export type Typography = {
 	stroke_method: StrokeMethod | null,
 	stroke_position: StrokePosition | null,
 	stroke_join: LineJoin | null,
+	outer_stroke_color: [number, number, number, number] | null,
+	outer_stroke_width: number | null,
 	alignment: TextAlignment | null,
 	writing_mode: WritingMode | null,
 };

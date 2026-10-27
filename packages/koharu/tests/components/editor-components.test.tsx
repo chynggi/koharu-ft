@@ -109,6 +109,8 @@ const textLayer: Layer = {
     stroke_method: null,
     stroke_position: null,
     stroke_join: null,
+    outer_stroke_color: null,
+    outer_stroke_width: null,
     alignment: 'Center',
     writing_mode: null,
   },
@@ -1751,6 +1753,85 @@ describe('greenfield editor', () => {
             stroke_color: [255, 0, 0, 255],
             stroke_width: 1.5,
           }),
+        }),
+      ]),
+    )
+  })
+
+  it('gates the second outline on the first and can enable it by width', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const setTypography = vi.spyOn(commands, 'setTypography').mockResolvedValue(null)
+    render(<Inspector />)
+
+    expect(screen.getByRole('button', { name: 'Second border color' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Second border width' })).toBeDisabled()
+
+    act(() => {
+      queryClient.setQueryData(pageKey, {
+        id: 'page',
+        label: 'Page 1',
+        size: { width: 1000, height: 1500 },
+        layers: [{ ...textLayer, typography: { ...textLayer.typography!, stroke_width: 4 } }],
+        regions: [],
+      })
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Second border width' })).toBeEnabled(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Increase second border width' }))
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({ stroke_width: 4, outer_stroke_width: 3.5 }),
+        }),
+      ]),
+    )
+  })
+
+  it('enables and clears the second outline without changing the first', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const layer = {
+      ...textLayer,
+      typography: { ...textLayer.typography!, stroke_width: 4 },
+    }
+    queryClient.setQueryData(pageKey, {
+      id: 'page',
+      label: 'Page 1',
+      size: { width: 1000, height: 1500 },
+      layers: [layer],
+      regions: [],
+    })
+    const setTypography = vi.spyOn(commands, 'setTypography').mockResolvedValue(null)
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Second border color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#FF0000' },
+    })
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({
+            stroke_color: [255, 255, 255, 255],
+            stroke_width: 4,
+            outer_stroke_color: [255, 0, 0, 255],
+            outer_stroke_width: 3,
+          }),
+        }),
+      ]),
+    )
+
+    setTypography.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Transparent' }))
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({ stroke_width: 4, outer_stroke_width: 0 }),
         }),
       ]),
     )

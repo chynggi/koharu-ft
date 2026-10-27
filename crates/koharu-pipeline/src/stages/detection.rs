@@ -418,6 +418,8 @@ fn write_region<'a>(
             stroke_method: Some(koharu_scene::StrokeMethod::Contour),
             stroke_position: None,
             stroke_join: None,
+            outer_stroke_color: None,
+            outer_stroke_width: None,
             alignment: None,
             writing_mode: inferred.map(|value| value.writing_mode),
             extensions: Default::default(),
