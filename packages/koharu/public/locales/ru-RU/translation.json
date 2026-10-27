@@ -303,7 +303,18 @@
     "unplaced": "Не размещено",
     "vertical": "Вертикально",
     "weight": "Насыщенность",
-    "width": "Ширина"
+    "width": "Ширина",
+    "outlineMethod": "Способ обводки",
+    "outlineExpansion": "Расширение",
+    "outlineContour": "Контурная обводка",
+    "outlinePosition": "Положение",
+    "outlineOutside": "Снаружи",
+    "outlineCenter": "По центру",
+    "outlineInside": "Внутри",
+    "outlineJoin": "Углы",
+    "outlineRound": "Скруглённые",
+    "outlineMiter": "Острые",
+    "outlineBevel": "Скошенные"
   },
   "languages": {
     "ar": "العربية",

@@ -67,8 +67,11 @@ import {
   type GradientSpec,
   type GradientStop,
   type Layer,
+  type LineJoin,
   type PatternSpec,
   type ShapeStyle,
+  type StrokeMethod,
+  type StrokePosition,
   type TextAlignment,
   type Typography,
   type WritingMode,
@@ -129,6 +132,9 @@ const defaultTypography: Typography = {
   color: [0, 0, 0, 255],
   stroke_color: [255, 255, 255, 255],
   stroke_width: 0,
+  stroke_method: null,
+  stroke_position: null,
+  stroke_join: null,
   alignment: null,
   writing_mode: null,
 }
@@ -142,7 +148,7 @@ export function Inspector() {
         <h2 className='text-[10px] font-semibold'>{t('inspector.type')}</h2>
       </div>
 
-      <section className='h-48 min-w-0 shrink-0 overflow-hidden border-b'>
+      <section className='min-w-0 shrink-0 border-b'>
         <TypeInspector />
       </section>
 
@@ -994,6 +1000,9 @@ function TypeInspector() {
   const strokeColor = typography.stroke_color ?? defaultTypography.stroke_color!
   const strokeEnabled = strokeWidth > 0 && strokeColor[3] > 0
   const displayedStrokeWidth = strokeWidth > 0 ? strokeWidth : 1.5
+  const strokeMethod = typography.stroke_method ?? 'expansion'
+  const strokePosition = typography.stroke_position ?? 'outside'
+  const strokeJoin = typography.stroke_join ?? 'round'
   const writingMode = typography.writing_mode ?? 'Horizontal'
   const writingModeChoice = typography.writing_mode ?? 'Auto'
   const effectiveAlignment =
@@ -1239,6 +1248,87 @@ function TypeInspector() {
                 </NumberFieldIncrement>
               </NumberFieldGroup>
             </NumberField>
+          </InspectorField>
+        </div>
+        <div className='grid min-w-0 grid-cols-2 gap-1.5'>
+          <InspectorField label={t('inspector.outlineMethod')}>
+            <Select
+              disabled={disabled}
+              value={strokeMethod}
+              onValueChange={(method) =>
+                apply((value) => ({ ...value, stroke_method: method as StrokeMethod }))
+              }
+            >
+              <SelectTrigger size='sm' aria-label={t('inspector.outlineMethod')} className='w-full'>
+                <SelectValue>
+                  {t(
+                    strokeMethod === 'contour'
+                      ? 'inspector.outlineContour'
+                      : 'inspector.outlineExpansion',
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='expansion'>{t('inspector.outlineExpansion')}</SelectItem>
+                <SelectItem value='contour'>{t('inspector.outlineContour')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </InspectorField>
+          <InspectorField label={t('inspector.outlinePosition')}>
+            <Select
+              disabled={disabled || strokeMethod !== 'contour'}
+              value={strokePosition}
+              onValueChange={(position) =>
+                apply((value) => ({ ...value, stroke_position: position as StrokePosition }))
+              }
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('inspector.outlinePosition')}
+                className='w-full'
+              >
+                <SelectValue>
+                  {t(
+                    {
+                      outside: 'inspector.outlineOutside',
+                      center: 'inspector.outlineCenter',
+                      inside: 'inspector.outlineInside',
+                    }[strokePosition],
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='outside'>{t('inspector.outlineOutside')}</SelectItem>
+                <SelectItem value='center'>{t('inspector.outlineCenter')}</SelectItem>
+                <SelectItem value='inside'>{t('inspector.outlineInside')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </InspectorField>
+          <InspectorField label={t('inspector.outlineJoin')}>
+            <Select
+              disabled={disabled || strokeMethod !== 'contour'}
+              value={strokeJoin}
+              onValueChange={(join) =>
+                apply((value) => ({ ...value, stroke_join: join as LineJoin }))
+              }
+            >
+              <SelectTrigger size='sm' aria-label={t('inspector.outlineJoin')} className='w-full'>
+                <SelectValue>
+                  {t(
+                    {
+                      round: 'inspector.outlineRound',
+                      miter: 'inspector.outlineMiter',
+                      bevel: 'inspector.outlineBevel',
+                    }[strokeJoin],
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='round'>{t('inspector.outlineRound')}</SelectItem>
+                <SelectItem value='miter'>{t('inspector.outlineMiter')}</SelectItem>
+                <SelectItem value='bevel'>{t('inspector.outlineBevel')}</SelectItem>
+              </SelectContent>
+            </Select>
           </InspectorField>
         </div>
       </div>

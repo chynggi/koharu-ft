@@ -303,7 +303,18 @@
     "unplaced": "Sin colocar",
     "vertical": "Vertical",
     "weight": "Peso",
-    "width": "Anchura"
+    "width": "Anchura",
+    "outlineMethod": "Método del borde",
+    "outlineExpansion": "Expansión",
+    "outlineContour": "Trazo de contorno",
+    "outlinePosition": "Posición",
+    "outlineOutside": "Exterior",
+    "outlineCenter": "Centro",
+    "outlineInside": "Interior",
+    "outlineJoin": "Esquinas",
+    "outlineRound": "Redondas",
+    "outlineMiter": "Puntiagudas",
+    "outlineBevel": "Biseladas"
   },
   "languages": {
     "ar": "العربية",

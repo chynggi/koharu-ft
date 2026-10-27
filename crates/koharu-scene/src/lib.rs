@@ -29,8 +29,9 @@ pub use components::{
     GradientSpec, GradientStop, Group, LanguageTag, LineCap, LineJoin, OcrAnalysis, Origin, Page,
     PageDraft, PatternRepeat, PatternSpec, Point, Project, RasterLayer, RasterLayerKind, Region,
     RegionKind, Relation, RelationKind, ShapeFill, ShapeGeometry, ShapeLayer, ShapeStyle,
-    SourceText, StrokeStyle, TextAlignment, TextContent, TextDirection, TextGroup, TextLayout,
-    TextLayoutKind, TextRole, Translation, Typography, Visibility, WritingMode,
+    SourceText, StrokeMethod, StrokePosition, StrokeStyle, TextAlignment, TextContent,
+    TextDirection, TextGroup, TextLayout, TextLayoutKind, TextRole, Translation, Typography,
+    Visibility, WritingMode,
 };
 pub use document::{AnalysisRegionRef, GroupRef, TextContentRef, TextLayerRef};
 pub use edit::{At, Edit, RemovePolicy};

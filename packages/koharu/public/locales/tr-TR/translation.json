@@ -303,7 +303,18 @@
     "unplaced": "Yerleştirilmedi",
     "vertical": "Dikey",
     "weight": "Kalınlık",
-    "width": "Genişlik"
+    "width": "Genişlik",
+    "outlineMethod": "Anahat yöntemi",
+    "outlineExpansion": "Genişletme",
+    "outlineContour": "Kontur çizgisi",
+    "outlinePosition": "Konum",
+    "outlineOutside": "Dışta",
+    "outlineCenter": "Ortada",
+    "outlineInside": "İçte",
+    "outlineJoin": "Köşeler",
+    "outlineRound": "Yuvarlak",
+    "outlineMiter": "Keskin",
+    "outlineBevel": "Pah"
   },
   "languages": {
     "ar": "العربية",

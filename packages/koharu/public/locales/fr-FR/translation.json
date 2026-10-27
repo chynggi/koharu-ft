@@ -303,7 +303,18 @@
     "unplaced": "Non placé",
     "vertical": "Vertical",
     "weight": "Graisse",
-    "width": "Largeur"
+    "width": "Largeur",
+    "outlineMethod": "Méthode du contour",
+    "outlineExpansion": "Expansion",
+    "outlineContour": "Tracé du contour",
+    "outlinePosition": "Position",
+    "outlineOutside": "Extérieur",
+    "outlineCenter": "Centre",
+    "outlineInside": "Intérieur",
+    "outlineJoin": "Angles",
+    "outlineRound": "Arrondis",
+    "outlineMiter": "Pointus",
+    "outlineBevel": "Biseautés"
   },
   "languages": {
     "ar": "العربية",

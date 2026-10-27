@@ -303,7 +303,18 @@
     "unplaced": "未配置",
     "vertical": "縦書き",
     "weight": "太さ",
-    "width": "幅"
+    "width": "幅",
+    "outlineMethod": "縁取り方式",
+    "outlineExpansion": "拡張",
+    "outlineContour": "輪郭線",
+    "outlinePosition": "位置",
+    "outlineOutside": "外側",
+    "outlineCenter": "中央",
+    "outlineInside": "内側",
+    "outlineJoin": "角の形状",
+    "outlineRound": "丸形",
+    "outlineMiter": "鋭角",
+    "outlineBevel": "面取り"
   },
   "languages": {
     "ar": "العربية",

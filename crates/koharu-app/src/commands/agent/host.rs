@@ -353,6 +353,20 @@ impl Host for KoharuHost {
                     color: arguments.color,
                     stroke_color: arguments.stroke_color,
                     stroke_width: arguments.stroke_width,
+                    stroke_method: arguments.stroke_method.map(|value| match value {
+                        AgentStrokeMethod::Expansion => koharu_scene::StrokeMethod::Expansion,
+                        AgentStrokeMethod::Contour => koharu_scene::StrokeMethod::Contour,
+                    }),
+                    stroke_position: arguments.stroke_position.map(|value| match value {
+                        AgentStrokePosition::Outside => koharu_scene::StrokePosition::Outside,
+                        AgentStrokePosition::Center => koharu_scene::StrokePosition::Center,
+                        AgentStrokePosition::Inside => koharu_scene::StrokePosition::Inside,
+                    }),
+                    stroke_join: arguments.stroke_join.map(|value| match value {
+                        AgentStrokeJoin::Round => koharu_scene::LineJoin::Round,
+                        AgentStrokeJoin::Miter => koharu_scene::LineJoin::Miter,
+                        AgentStrokeJoin::Bevel => koharu_scene::LineJoin::Bevel,
+                    }),
                     alignment: arguments.alignment.map(Into::into),
                     writing_mode: arguments.writing_mode.map(Into::into),
                 };
@@ -597,6 +611,29 @@ impl From<AgentWritingMode> for koharu_scene::WritingMode {
 }
 
 #[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokeMethod {
+    Expansion,
+    Contour,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokePosition {
+    Outside,
+    Center,
+    Inside,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokeJoin {
+    Round,
+    Miter,
+    Bevel,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SetTypography {
     element: String,
     preferred_font: Option<String>,
@@ -607,6 +644,9 @@ struct SetTypography {
     color: Option<[u8; 4]>,
     stroke_color: Option<[u8; 4]>,
     stroke_width: Option<f32>,
+    stroke_method: Option<AgentStrokeMethod>,
+    stroke_position: Option<AgentStrokePosition>,
+    stroke_join: Option<AgentStrokeJoin>,
     alignment: Option<AgentTextAlignment>,
     writing_mode: Option<AgentWritingMode>,
 }

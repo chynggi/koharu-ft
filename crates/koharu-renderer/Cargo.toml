@@ -15,6 +15,7 @@ publish.workspace = true
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 image = { workspace = true }
+i_overlay = { workspace = true }
 koharu-config = { workspace = true }
 koharu-rasterizer = { workspace = true, features = ["native"] }
 koharu-scene = { workspace = true }

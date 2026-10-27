@@ -303,7 +303,18 @@
     "unplaced": "还呒没放置",
     "vertical": "竖排",
     "weight": "字重",
-    "width": "宽度"
+    "width": "宽度",
+    "outlineMethod": "描邊方式",
+    "outlineExpansion": "擴張",
+    "outlineContour": "輪廓描邊",
+    "outlinePosition": "位置",
+    "outlineOutside": "外側",
+    "outlineCenter": "居中",
+    "outlineInside": "內側",
+    "outlineJoin": "轉角",
+    "outlineRound": "圓角",
+    "outlineMiter": "尖角",
+    "outlineBevel": "斜角"
   },
   "languages": {
     "ar": "العربية",

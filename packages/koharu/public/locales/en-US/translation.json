@@ -303,7 +303,18 @@
     "unplaced": "Unplaced",
     "vertical": "Vertical",
     "weight": "Weight",
-    "width": "Width"
+    "width": "Width",
+    "outlineMethod": "Outline method",
+    "outlineExpansion": "Expansion",
+    "outlineContour": "Contour stroke",
+    "outlinePosition": "Position",
+    "outlineOutside": "Outside",
+    "outlineCenter": "Center",
+    "outlineInside": "Inside",
+    "outlineJoin": "Corners",
+    "outlineRound": "Round",
+    "outlineMiter": "Sharp",
+    "outlineBevel": "Bevel"
   },
   "languages": {
     "ar": "العربية",

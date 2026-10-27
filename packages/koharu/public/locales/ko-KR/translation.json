@@ -303,7 +303,18 @@
     "unplaced": "배치되지 않음",
     "vertical": "세로쓰기",
     "weight": "굵기",
-    "width": "너비"
+    "width": "너비",
+    "outlineMethod": "윤곽선 방식",
+    "outlineExpansion": "확장",
+    "outlineContour": "외곽선 획",
+    "outlinePosition": "위치",
+    "outlineOutside": "바깥쪽",
+    "outlineCenter": "중앙",
+    "outlineInside": "안쪽",
+    "outlineJoin": "모서리",
+    "outlineRound": "둥글게",
+    "outlineMiter": "뾰족하게",
+    "outlineBevel": "베벨"
   },
   "languages": {
     "ar": "العربية",
