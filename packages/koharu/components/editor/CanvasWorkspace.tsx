@@ -77,6 +77,7 @@ const canvasCursors = {
   remove: 'none',
   manual_ocr_box: 'crosshair',
   manual_ocr_lasso: 'crosshair',
+  manual_ocr_clean: 'crosshair',
   pan: 'grab',
 } as const satisfies Record<CanvasTool, string | undefined>
 
@@ -109,7 +110,7 @@ type Gesture =
       shapeKind: ShapeKind
       style: ShapeStyle
     }
-  | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame }
+  | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame; clean: boolean }
   | { kind: 'lasso'; pointer: number; points: Point[] }
   | StrokeGesture
 
@@ -450,6 +451,7 @@ export function CanvasWorkspace() {
           'remove',
           'manual_ocr_box',
           'manual_ocr_lasso',
+          'manual_ocr_clean',
           'pan',
         ] as const
       ).find((action) => shortcuts[action] === lower)
@@ -767,10 +769,15 @@ export function CanvasWorkspace() {
       setDraft(null)
       const { zoom } = useKoharuStore.getState().camera
       if (frame.width < 4 / zoom || frame.height < 4 / zoom) return
-      void call(commands.manualOcr, [
+      const corners = [
         { x: frame.x, y: frame.y },
         { x: frame.x + frame.width, y: frame.y + frame.height },
-      ])
+      ]
+      if (current.clean) {
+        void call(commands.cleanManualOcr, corners).catch(() => undefined)
+        return
+      }
+      void call(commands.manualOcr, corners)
         .then((result) => {
           selectLayers([result.layer])
           return refresh(projectKey, pagesKey, pageKey)
@@ -967,13 +974,14 @@ export function CanvasWorkspace() {
               const frame = draftFrame(point, point)
               gesture.current = { kind: 'text', pointer: event.pointerId, start: point, frame }
               setDraft(frame)
-            } else if (tool === 'manual_ocr_box') {
+            } else if (tool === 'manual_ocr_box' || tool === 'manual_ocr_clean') {
               const frame = draftFrame(point, point)
               gesture.current = {
                 kind: 'manual_box',
                 pointer: event.pointerId,
                 start: point,
                 frame,
+                clean: tool === 'manual_ocr_clean',
               }
               setDraft(frame)
             } else if (tool === 'shape') {

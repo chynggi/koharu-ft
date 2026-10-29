@@ -32,6 +32,7 @@ export type CanvasTool =
   | 'remove'
   | 'manual_ocr_box'
   | 'manual_ocr_lasso'
+  | 'manual_ocr_clean'
   | 'pan'
 export const MIN_BRUSH_DIAMETER = 1
 export function maxBrushDiameter(size: PageSize): number {
@@ -121,6 +122,7 @@ export const defaultShortcuts: Shortcuts = {
   remove: 'j',
   manual_ocr_box: 'o',
   manual_ocr_lasso: 'l',
+  manual_ocr_clean: 'k',
   pan: 'h',
   fit: '0',
   previous_page: 'a',

@@ -784,6 +784,7 @@
     "fillColor": "Цвет заливки",
     "increaseBrushSize": "Увеличить размер кисти",
     "manual_ocr_box": "Ручной OCR (прямоугольник)",
+    "manual_ocr_clean": "OCR и очистка",
     "manual_ocr_lasso": "Ручной OCR (произвольная форма)",
     "pan": "Перемещение",
     "rampAxis": {

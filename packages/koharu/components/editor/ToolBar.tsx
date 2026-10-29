@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Blend,
   Brush,
+  BrushCleaning,
   Circle,
   Eraser,
   Hand,
@@ -67,6 +68,7 @@ const tools = [
   ['remove', Sparkles],
   ['manual_ocr_box', ScanText],
   ['manual_ocr_lasso', LassoSelect],
+  ['manual_ocr_clean', BrushCleaning],
   ['pan', Hand],
 ] as const satisfies ReadonlyArray<readonly [CanvasTool, typeof MousePointer2]>
 

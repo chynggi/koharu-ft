@@ -33,7 +33,7 @@ use koharu_scene::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::{StageInput, StageProcessor, finish, generation};
+use super::{StageInput, StageProcessor, finish, generation, point_in_polygon};
 use crate::{InpaintingModel, ModelCell, resources::ResourceMonitor};
 
 const PRODUCER: &str = "dev.koharu.pipeline.inpainting";
@@ -497,7 +497,7 @@ impl StageProcessor for Processor {
     }
 
     fn skip(&self, input: &StageInput) -> Result<bool> {
-        if input.inpainting_mask.is_some() {
+        if input.inpainting_mask.is_some() || input.text_box.is_some() {
             return Ok(false);
         }
         let source = AssetRole::new("source")?;
@@ -866,7 +866,7 @@ impl Model {
             }
         };
         let page = input.page;
-        let manual = input.inpainting_mask.is_some();
+        let manual = input.inpainting_mask.is_some() || input.text_box.is_some();
         let mut edit = if manual {
             input.scene.edit()
         } else {
@@ -1035,7 +1035,7 @@ async fn prepare(input: &StageInput) -> Result<InpaintInput> {
     {
         bail!("cleanup layer dimensions do not match page {page}");
     }
-    let source = if input.inpainting_mask.is_some() {
+    let source = if input.inpainting_mask.is_some() || input.text_box.is_some() {
         if let Some(cleanup) = cleanup.as_ref() {
             let mut composite = original.to_rgba8();
             image::imageops::overlay(&mut composite, cleanup, 0, 0);
@@ -1054,6 +1054,23 @@ async fn prepare(input: &StageInput) -> Result<InpaintInput> {
             bail!("inpainting mask dimensions do not match page {page}");
         }
         mask = layer;
+    } else if let Some(polygon) = input.text_box_polygon() {
+        // Detection ran on the box earlier in this job and wrote what it
+        // found to the text mask; only that text, inside the box, is cleaned.
+        if let Some(image) = input.images.get(&input.scene, page, "text-mask").await? {
+            let detected = image.to_luma8();
+            if detected.dimensions() != mask.dimensions() {
+                bail!("text-mask dimensions do not match page {page}");
+            }
+            for (x, y, pixel) in mask.enumerate_pixels_mut() {
+                if detected.get_pixel(x, y)[0] >= 127
+                    && point_in_polygon((x as f32 + 0.5, y as f32 + 0.5), &polygon)
+                {
+                    *pixel = Luma([u8::MAX]);
+                }
+            }
+        }
+        text_mask = mask.clone();
     } else {
         for role in ["text-mask", "coo-mask"] {
             if let Some(image) = input.images.get(&input.scene, page, role).await? {
@@ -1549,23 +1566,6 @@ fn lerp_color(from: Rgb<u8>, to: Rgb<u8>, t: f32) -> Rgb<u8> {
     }))
 }
 
-fn point_in_polygon(point: (f32, f32), polygon: &[(f32, f32)]) -> bool {
-    let mut inside = false;
-    let mut previous = polygon[polygon.len() - 1];
-    for &current in polygon {
-        if (current.1 > point.1) != (previous.1 > point.1) {
-            let intersection_x = (previous.0 - current.0) * (point.1 - current.1)
-                / (previous.1 - current.1)
-                + current.0;
-            if point.0 < intersection_x {
-                inside = !inside;
-            }
-        }
-        previous = current;
-    }
-    inside
-}
-
 fn polygon_edge_distance_squared(point: (f32, f32), polygon: &[(f32, f32)]) -> f32 {
     let mut minimum = f32::INFINITY;
     let mut start = polygon[polygon.len() - 1];
@@ -1676,6 +1676,7 @@ mod tests {
                 page,
                 png: encode(&DynamicImage::ImageLuma8(transient)),
             }),
+            None,
         );
 
         let prepared = prepare(&input).await.unwrap();
@@ -1903,6 +1904,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn text_box_cleans_only_detected_text_inside_the_box() {
+        let mut session = koharu_scene::Session::memory().await.unwrap();
+        let mut page = None;
+        let source = DynamicImage::new_rgb8(8, 8);
+        // Detected text both inside the box (1, 1) and outside it (6, 6); the
+        // rest of the box is artwork that must stay.
+        let mut detected = GrayImage::new(8, 8);
+        detected.put_pixel(1, 1, Luma([255]));
+        detected.put_pixel(6, 6, Luma([255]));
+        let detected = DynamicImage::ImageLuma8(detected);
+        let encode = |image: &DynamicImage| {
+            let mut bytes = Cursor::new(Vec::new());
+            image.write_to(&mut bytes, ImageFormat::Png).unwrap();
+            Arc::<[u8]>::from(bytes.into_inner())
+        };
+        let patch = session
+            .snapshot()
+            .patch(|edit| {
+                let id = edit.add_page(
+                    koharu_scene::PageDraft::new("page", 8.0, 8.0),
+                    koharu_scene::At::End,
+                )?;
+                for (role, image) in [("source", &source), ("text-mask", &detected)] {
+                    edit.set_asset(
+                        id,
+                        &AssetRole::new(role)?,
+                        AssetInput::new(
+                            encode(image),
+                            "image/png",
+                            AssetMetadata {
+                                width: Some(8),
+                                height: Some(8),
+                                attributes: BTreeMap::new(),
+                            },
+                        ),
+                    )?;
+                }
+                page = Some(id);
+                Ok(())
+            })
+            .unwrap();
+        let snapshot = session.commit(patch).await.unwrap().snapshot;
+        let page = page.unwrap();
+        let input = StageInput::new(
+            snapshot,
+            page,
+            None,
+            None,
+            Arc::new(crate::ImageCache::default()),
+            None,
+            Some(crate::TextBox {
+                page,
+                geometry: Geometry::rectangle(0.0, 0.0, 4.0, 4.0),
+            }),
+        );
+
+        let prepared = prepare(&input).await.unwrap();
+        let cleaned = prepared
+            .mask
+            .enumerate_pixels()
+            .filter(|(_, _, pixel)| pixel[0] != 0)
+            .map(|(x, y, _)| (x, y))
+            .collect::<Vec<_>>();
+        assert_eq!(cleaned, vec![(1, 1)]);
+        assert_eq!(prepared.text_mask, prepared.mask);
+    }
+
+    #[tokio::test]
     async fn automatic_inpainting_skips_committed_cleanup() {
         let mut session = koharu_scene::Session::memory().await.unwrap();
         let mut page = None;
@@ -1948,6 +2017,7 @@ mod tests {
             None,
             Arc::new(crate::ImageCache::default()),
             None,
+            None,
         );
         let manual = StageInput::new(
             snapshot,
@@ -1959,6 +2029,7 @@ mod tests {
                 page,
                 png: Arc::<[u8]>::from([]),
             }),
+            None,
         );
         let processor = Processor::new(
             InpaintingModel::LaMa(LaMaConfig::default()),

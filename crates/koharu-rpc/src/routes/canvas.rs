@@ -42,6 +42,7 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/shape/pattern/asset", post(set_shape_pattern_asset))
         .route("/canvas/shape/rasterize", post(rasterize_shapes))
         .route("/canvas/ocr/manual", post(manual_ocr))
+        .route("/canvas/ocr/clean", post(clean_manual_ocr))
         .route("/canvas/commit/paint", post(commit_paint))
         .route("/canvas/commit/erase", post(commit_erase))
         .route("/canvas/commit/transform", post(commit_transform))
@@ -292,6 +293,16 @@ async fn manual_ocr(
             app.state::<CanvasChannel>(),
         )
         .await?,
+    ))
+}
+
+async fn clean_manual_ocr(
+    State(app): State<AppState>,
+    Json(request): Json<ManualOcrRequest>,
+) -> ApiResult<Json<koharu_app::commands::processing::JobId>> {
+    Ok(Json(
+        canvas::clean_manual_ocr(request.points, app.clone(), app.state::<CurrentProject>())
+            .await?,
     ))
 }
 

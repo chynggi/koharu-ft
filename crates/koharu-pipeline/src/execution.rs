@@ -36,6 +36,7 @@ pub(crate) struct Execution<'a> {
     base: koharu_scene::Revision,
     started: Instant,
     inpainting_mask: Option<crate::InpaintingMask>,
+    text_box: Option<crate::TextBox>,
 }
 
 impl<'a> Execution<'a> {
@@ -69,6 +70,26 @@ impl<'a> Execution<'a> {
                 anyhow::anyhow!("the inpainting mask page is outside the inpainting scope"),
             ));
         }
+        if let Some(text_box) = request.text_box.as_ref() {
+            let invalid = if request.inpainting_mask.is_some() {
+                Some("a text box cannot be combined with an inpainting mask")
+            } else if !pages.contains(&text_box.page) {
+                Some("the text box page is outside the scope")
+            } else if !stages.contains(&Stage::Detection) {
+                Some("a text box needs the detection stage")
+            } else if text_box.geometry.points.len() < 3 {
+                Some("a text box needs at least three points")
+            } else {
+                None
+            };
+            if let Some(reason) = invalid {
+                return Err(PipelineError::new(
+                    ErrorKind::InvalidInput,
+                    Some(Stage::Detection),
+                    anyhow::anyhow!(reason),
+                ));
+            }
+        }
         progress::emit(
             request.progress.as_ref(),
             Progress::Started {
@@ -93,6 +114,7 @@ impl<'a> Execution<'a> {
             base,
             started,
             inpainting_mask: request.inpainting_mask,
+            text_box: request.text_box,
         })
     }
 
@@ -149,6 +171,13 @@ impl<'a> Execution<'a> {
                     self.inpainting_mask
                         .as_ref()
                         .filter(|mask| stage == Stage::Inpainting && mask.page == *page)
+                        .cloned(),
+                    self.text_box
+                        .as_ref()
+                        .filter(|text_box| {
+                            matches!(stage, Stage::Detection | Stage::Inpainting)
+                                && text_box.page == *page
+                        })
                         .cloned(),
                 )
             })

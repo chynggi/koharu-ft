@@ -784,6 +784,7 @@
     "fillColor": "Cor do preenchimento",
     "increaseBrushSize": "Aumentar tamanho do pincel",
     "manual_ocr_box": "OCR manual (retângulo)",
+    "manual_ocr_clean": "OCR e limpeza",
     "manual_ocr_lasso": "OCR manual (traço livre)",
     "pan": "Mover",
     "rampAxis": {

@@ -784,6 +784,7 @@
     "fillColor": "لون التعبئة",
     "increaseBrushSize": "زيادة حجم الفرشاة",
     "manual_ocr_box": "التعرف اليدوي على النص (مربع)",
+    "manual_ocr_clean": "التعرف على النص مع التنظيف",
     "manual_ocr_lasso": "التعرف اليدوي على النص (لاسو)",
     "pan": "تحريك",
     "rampAxis": {

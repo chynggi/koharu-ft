@@ -784,6 +784,7 @@
     "fillColor": "塗りつぶしの色",
     "increaseBrushSize": "ブラシサイズを拡大",
     "manual_ocr_box": "手動OCR（矩形）",
+    "manual_ocr_clean": "OCRとクリーン（ボックス）",
     "manual_ocr_lasso": "手動OCR（フリーハンド）",
     "pan": "移動",
     "rampAxis": {

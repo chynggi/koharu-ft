@@ -784,6 +784,7 @@
     "fillColor": "Fill color",
     "increaseBrushSize": "Increase brush size",
     "manual_ocr_box": "Manual OCR (box)",
+    "manual_ocr_clean": "OCR and clean (box)",
     "manual_ocr_lasso": "Manual OCR (lasso)",
     "pan": "Pan",
     "rampAxis": {

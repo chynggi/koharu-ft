@@ -338,6 +338,7 @@ export const commands = {
 			shapes,
 		}),
 	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
+	cleanManualOcr: (points: Point[]) => post<JobId>("/canvas/ocr/clean", { points }),
 	commitPaint: (
 		expectedRevision: Revision,
 		layer: string | null,

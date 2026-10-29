@@ -961,6 +961,25 @@ describe('canvas interaction adapter', () => {
     await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['manual']))
   })
 
+  it('reads and cleans a drawn box with the OCR and clean tool', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'manual_ocr_clean' })
+    const manual = vi.spyOn(commands, 'manualOcr')
+    const clean = vi.spyOn(commands, 'cleanManualOcr').mockResolvedValue('job')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 15, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(clean).toHaveBeenCalledOnce())
+    expect(clean).toHaveBeenCalledWith([
+      { x: 20, y: 20 },
+      { x: 130, y: 90 },
+    ])
+    expect(manual).not.toHaveBeenCalled()
+  })
+
   it('runs manual OCR on a freeform lasso and previews the drawing', async () => {
     installProject()
     useKoharuStore.setState({ tool: 'manual_ocr_lasso' })

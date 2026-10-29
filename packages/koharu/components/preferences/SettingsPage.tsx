@@ -403,6 +403,7 @@ function ShortcutPreferences() {
     'remove',
     'manual_ocr_box',
     'manual_ocr_lasso',
+    'manual_ocr_clean',
     'pan',
     'fit',
   ]
@@ -437,6 +438,7 @@ const shortcutKeys: Record<ShortcutAction, string> = {
   remove: 'tools.remove',
   manual_ocr_box: 'tools.manual_ocr_box',
   manual_ocr_lasso: 'tools.manual_ocr_lasso',
+  manual_ocr_clean: 'tools.manual_ocr_clean',
   pan: 'tools.pan',
   fit: 'canvas.fit',
   previous_page: 'settings.shortcuts.previousPage',

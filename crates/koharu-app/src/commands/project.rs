@@ -2487,7 +2487,7 @@ impl Project {
 
     /// A two-point drag is a rectangle; three or more points are a freeform
     /// polygon. Both become a single closed polygon the OCR stage can crop.
-    fn geometry_from_points(points: Vec<Point>) -> Result<SceneGeometry> {
+    pub(crate) fn geometry_from_points(points: Vec<Point>) -> Result<SceneGeometry> {
         if points
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite())

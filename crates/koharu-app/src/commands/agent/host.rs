@@ -170,6 +170,7 @@ impl KoharuHost {
             stop,
             progress: None,
             inpainting_mask: None,
+            text_box: None,
         };
         let result = self
             .handle

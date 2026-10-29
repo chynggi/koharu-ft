@@ -31,13 +31,16 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::{StageInput, StageProcessor, finish, generation};
+use super::{StageInput, StageProcessor, finish, generation, point_in_polygon};
 use crate::{DetectionModel, ModelCell};
 
 const MODEL_ID: &str = "mayocream/koharu-layout-rfdetr-seg-2xl-1152";
 const MODEL_NAME: &str = "koharu-layout-rfdetr-seg-2xl";
 const PRODUCER: &str = "dev.koharu.pipeline.detection";
 const ANGLE_SNAP_DEGREES: f32 = 3.0;
+/// Context kept around a text box crop, as a share of the box's longer side,
+/// so lettering the box edge cuts through still reads as a whole shape.
+const TEXT_BOX_CONTEXT: f32 = 0.1;
 const ANGLE_SEARCH_HALF_STEPS: i32 = 90;
 const ANGLE_SEARCH_STEP_DEGREES: f64 = 0.5;
 const TYPOGRAPHY_SAMPLE_MARGIN: f32 = 2.0;
@@ -101,6 +104,10 @@ impl StageProcessor for Processor {
     }
 
     fn skip(&self, input: &StageInput) -> Result<bool> {
+        // A text box asks to look again at the area the user drew.
+        if input.text_box.is_some() {
+            return Ok(false);
+        }
         for entity in input.scene.descendants(input.page)? {
             let id = entity.id();
             if input.contains_entity(id)?
@@ -161,8 +168,60 @@ impl Model {
             .get(&input.scene, page, "source")
             .await?
             .ok_or_else(|| anyhow!("page {page} has no source image"))?;
-        let output = self.detect(image.clone()).await?;
+        let output = match input.text_box_polygon() {
+            Some(polygon) => self.detect_in_box(image.clone(), &polygon).await?,
+            None => self.detect(image.clone()).await?,
+        };
         build_patch(&input, &image, output, &generation(PRODUCER, MODEL_ID)?).await
+    }
+
+    /// Detects inside a text box on a crop of it, where small lettering such
+    /// as SFX covers far more of the model's input than on the whole page,
+    /// then maps what it finds back onto the page. Onomatopoeia counts as text
+    /// here, since the user drew the box to read it. When nothing is found,
+    /// the box itself is the text.
+    async fn detect_in_box(
+        &self,
+        image: Arc<DynamicImage>,
+        polygon: &[(f32, f32)],
+    ) -> Result<KoharuLayoutDetections> {
+        let (width, height) = (image.width(), image.height());
+        let [left, top, right, bottom] =
+            polygon_bounds(polygon, width, height).context("the text box is outside the page")?;
+        let margin = ((right - left).max(bottom - top) as f32 * TEXT_BOX_CONTEXT).round() as u32;
+        let crop_left = left.saturating_sub(margin);
+        let crop_top = top.saturating_sub(margin);
+        let crop_right = right.saturating_add(margin).min(width);
+        let crop_bottom = bottom.saturating_add(margin).min(height);
+        let crop = Arc::new(image.crop_imm(
+            crop_left,
+            crop_top,
+            crop_right - crop_left,
+            crop_bottom - crop_top,
+        ));
+        let mut detections = self.detect(crop).await?.detections;
+        detections.retain_mut(|detection| {
+            if !matches!(detection.label.as_str(), "text" | "onomatopoeia") {
+                return false;
+            }
+            detection.label = "text".to_owned();
+            let [x0, y0, x1, y1] = &mut detection.bbox;
+            *x0 += crop_left as f32;
+            *x1 += crop_left as f32;
+            *y0 += crop_top as f32;
+            *y1 += crop_top as f32;
+            detection.mask.x += crop_left;
+            detection.mask.y += crop_top;
+            point_in_polygon(bbox_center(detection.bbox), polygon)
+        });
+        if detections.is_empty() {
+            detections.push(box_detection(polygon, [left, top, right, bottom]));
+        }
+        Ok(KoharuLayoutDetections {
+            image_width: width,
+            image_height: height,
+            detections,
+        })
     }
 
     async fn detect(&self, image: Arc<DynamicImage>) -> Result<KoharuLayoutDetections> {
@@ -219,8 +278,12 @@ async fn build_patch(
     let page = input.page;
     let mut edit = input.scene.edit_as(generation.clone());
     edit.observe_subtree(page)?;
-    remove_previous_regions(input, &mut edit, generation)
-        .context("failed to replace the previous detection regions")?;
+    // A text box only adds text; what was already read keeps its regions,
+    // content, and translations.
+    if input.text_box.is_none() {
+        remove_previous_regions(input, &mut edit, generation)
+            .context("failed to replace the previous detection regions")?;
+    }
     write_page(input, &mut edit, page, image, output, generation)
         .await
         .context("failed to write detection output")?;
@@ -275,6 +338,15 @@ async fn write_page(
     };
     if let Some(region) = input.region {
         detections.retain(|detection| intersects(detection.bbox, region));
+    }
+    if input.text_box.is_some() {
+        let existing = text_region_polygons(input)?;
+        detections.retain(|detection| {
+            let center = bbox_center(detection.bbox);
+            !existing
+                .iter()
+                .any(|polygon| point_in_polygon(center, polygon))
+        });
     }
     non_maximum_suppression(&mut detections, 0.5);
     sort_by_layout(&mut detections);
@@ -1387,7 +1459,11 @@ async fn write_mask(
     } else {
         mask_for(detections, "text", size)
     };
-    if let Some(bounds) = input.region {
+    if input.text_box.is_some() {
+        // A text box adds to the page's text mask; text it left alone keeps
+        // its pixels, inside the box as well.
+        keep_previous_mask(input, page, "text-mask", &mut mask).await?;
+    } else if let Some(bounds) = input.region {
         preserve_mask_outside_region(input, page, "text-mask", bounds, &mut mask).await?;
     }
     let mut bytes = Cursor::new(Vec::new());
@@ -1444,6 +1520,109 @@ async fn preserve_mask_outside_region(
         }
     }
     Ok(())
+}
+
+async fn keep_previous_mask(
+    input: &StageInput,
+    page: EntityId,
+    role: &str,
+    mask: &mut GrayImage,
+) -> Result<()> {
+    let Some(previous) = input.images.get(&input.scene, page, role).await? else {
+        return Ok(());
+    };
+    let previous = previous.to_luma8();
+    if previous.dimensions() != mask.dimensions() {
+        bail!("existing {role} dimensions do not match page {page}");
+    }
+    for (target, previous) in mask.iter_mut().zip(previous.as_raw()) {
+        *target = (*target).max(*previous);
+    }
+    Ok(())
+}
+
+/// The outlines of the text regions the page already has, whoever made them.
+fn text_region_polygons(input: &StageInput) -> Result<Vec<Vec<(f32, f32)>>> {
+    let mut polygons = Vec::new();
+    for entity in input.scene.descendants(input.page)? {
+        let is_text_region = entity
+            .component::<Region>()?
+            .is_some_and(|region| region.kind == TextRegion::kind());
+        if !is_text_region {
+            continue;
+        }
+        if let Some(geometry) = entity.component::<Geometry>()?
+            && geometry.points.len() >= 3
+        {
+            polygons.push(
+                geometry
+                    .points
+                    .iter()
+                    .map(|point| (point.x as f32, point.y as f32))
+                    .collect(),
+            );
+        }
+    }
+    Ok(polygons)
+}
+
+fn bbox_center([left, top, right, bottom]: [f32; 4]) -> (f32, f32) {
+    ((left + right) * 0.5, (top + bottom) * 0.5)
+}
+
+/// The pixel bounds a polygon covers on the page, or `None` when it covers
+/// none of it.
+fn polygon_bounds(polygon: &[(f32, f32)], width: u32, height: u32) -> Option<[u32; 4]> {
+    let (left, top, right, bottom) = polygon.iter().fold(
+        (
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ),
+        |(left, top, right, bottom), &(x, y)| {
+            (left.min(x), top.min(y), right.max(x), bottom.max(y))
+        },
+    );
+    let left = left.floor().clamp(0.0, width as f32) as u32;
+    let top = top.floor().clamp(0.0, height as f32) as u32;
+    let right = right.ceil().clamp(0.0, width as f32) as u32;
+    let bottom = bottom.ceil().clamp(0.0, height as f32) as u32;
+    (left < right && top < bottom).then_some([left, top, right, bottom])
+}
+
+/// The user's box as a text detection, for a box the detector found no text
+/// in. Its confidence is full: the user marked it as text.
+fn box_detection(
+    polygon: &[(f32, f32)],
+    [left, top, right, bottom]: [u32; 4],
+) -> KoharuLayoutDetection {
+    let (width, height) = (right - left, bottom - top);
+    let pixels = (0..height)
+        .flat_map(|y| (0..width).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            let center = ((left + x) as f32 + 0.5, (top + y) as f32 + 0.5);
+            if point_in_polygon(center, polygon) {
+                u8::MAX
+            } else {
+                0
+            }
+        })
+        .collect::<Vec<_>>();
+    KoharuLayoutDetection {
+        label_id: 0,
+        label: "text".to_owned(),
+        score: 1.0,
+        bbox: [left as f32, top as f32, right as f32, bottom as f32],
+        area: pixels.iter().filter(|value| **value != 0).count() as u32,
+        mask: KoharuLayoutMask {
+            x: left,
+            y: top,
+            width,
+            height,
+            pixels,
+        },
+    }
 }
 
 fn region_kind(label: &str) -> Result<RegionKind> {
@@ -1928,9 +2107,10 @@ mod tests {
     use super::{
         DIALOGUE_MASK_CONTAINMENT_THRESHOLD, DetectedRegion, DetectedText, DetectionModel,
         ImageSize, KoharuLayoutRFDetrSeg2XLConfig, MaskPixel, PageRegions, Processor, RegionOutput,
-        StageInput, StageProcessor, closed_mask_for, color_palette, generation, infer_typography,
-        layout_order, link_dialogue_regions, mask_containment, mask_for, mask_geometry,
-        non_maximum_suppression, normalize_text_color, write_region,
+        StageInput, StageProcessor, box_detection, build_patch, closed_mask_for, color_palette,
+        generation, infer_typography, layout_order, link_dialogue_regions, mask_containment,
+        mask_for, mask_geometry, non_maximum_suppression, normalize_text_color, polygon_bounds,
+        write_region,
     };
 
     #[test]
@@ -1976,6 +2156,7 @@ mod tests {
             None,
             None,
             std::sync::Arc::new(crate::ImageCache::default()),
+            None,
             None,
         );
         let processor = Processor::new(
@@ -2070,6 +2251,140 @@ mod tests {
                 .value()
                 .target,
             bubble
+        );
+    }
+
+    #[tokio::test]
+    async fn text_box_adds_only_new_text_and_keeps_what_was_read() {
+        use std::{collections::BTreeMap, io::Cursor, sync::Arc};
+
+        use image::{DynamicImage, GrayImage, ImageFormat, Luma};
+        use koharu_ml::koharu_layout_rfdetr_seg_2xl::KoharuLayoutDetections;
+        use koharu_scene::{AssetInput, AssetMetadata, AssetRole, Region, RegionSpec as _};
+
+        let mut session = Session::memory().await.unwrap();
+        let generation = generation(super::PRODUCER, super::MODEL_ID).unwrap();
+        let mut previous = GrayImage::new(100, 100);
+        previous.put_pixel(15, 15, Luma([u8::MAX]));
+        let mut bytes = Cursor::new(Vec::new());
+        DynamicImage::ImageLuma8(previous)
+            .write_to(&mut bytes, ImageFormat::Png)
+            .unwrap();
+        let mut edit = session.snapshot().edit_as(generation.clone());
+        let page = edit
+            .add_page(PageDraft::new("page", 100.0, 100.0), At::End)
+            .unwrap();
+        let existing = edit
+            .add_analysis_region::<TextRegion>(
+                page,
+                At::End,
+                &Geometry::rectangle(10.0, 10.0, 10.0, 10.0),
+                None,
+            )
+            .unwrap();
+        edit.set_asset(
+            page,
+            &AssetRole::new("text-mask").unwrap(),
+            AssetInput::new(
+                Arc::<[u8]>::from(bytes.into_inner()),
+                "image/png",
+                AssetMetadata {
+                    width: Some(100),
+                    height: Some(100),
+                    attributes: BTreeMap::new(),
+                },
+            ),
+        )
+        .unwrap();
+        let snapshot = session
+            .commit(edit.finish().unwrap())
+            .await
+            .unwrap()
+            .snapshot;
+        let input = StageInput::new(
+            snapshot,
+            page,
+            None,
+            Some(crate::Bounds {
+                x: 5.0,
+                y: 5.0,
+                width: 55.0,
+                height: 55.0,
+            }),
+            Arc::new(crate::ImageCache::default()),
+            None,
+            Some(crate::TextBox {
+                page,
+                geometry: Geometry::rectangle(5.0, 5.0, 55.0, 55.0),
+            }),
+        );
+        let processor = Processor::new(
+            DetectionModel::KoharuLayoutRFDetrSeg2XL(KoharuLayoutRFDetrSeg2XLConfig::default()),
+            koharu_ml::Device::cpu(),
+        );
+        assert!(!processor.skip(&input).unwrap());
+
+        // One find repeats the region already read; the other is new.
+        let found = |left: u32, top: u32| KoharuLayoutDetection {
+            label_id: 0,
+            label: "text".to_owned(),
+            score: 0.9,
+            bbox: [left as f32, top as f32, left as f32 + 6.0, top as f32 + 6.0],
+            area: 36,
+            mask: KoharuLayoutMask {
+                x: left,
+                y: top,
+                width: 6,
+                height: 6,
+                pixels: vec![u8::MAX; 36],
+            },
+        };
+        let output = KoharuLayoutDetections {
+            image_width: 100,
+            image_height: 100,
+            detections: vec![found(12, 12), found(42, 42)],
+        };
+        let image = DynamicImage::new_rgb8(100, 100);
+        let patch = build_patch(&input, &image, output, &generation)
+            .await
+            .unwrap();
+        let snapshot = session.commit(patch).await.unwrap().snapshot;
+
+        let text_regions = snapshot
+            .descendants(page)
+            .unwrap()
+            .filter(|entity| {
+                entity
+                    .component::<Region>()
+                    .unwrap()
+                    .is_some_and(|region| region.kind == TextRegion::kind())
+            })
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>();
+        assert_eq!(text_regions.len(), 2);
+        assert!(text_regions.contains(&existing));
+        let mask = crate::ImageCache::default()
+            .get(&snapshot, page, "text-mask")
+            .await
+            .unwrap()
+            .unwrap()
+            .to_luma8();
+        assert_eq!(mask.get_pixel(15, 15), &Luma([u8::MAX]));
+        assert_eq!(mask.get_pixel(45, 45), &Luma([u8::MAX]));
+    }
+
+    #[test]
+    fn text_box_fallback_covers_the_drawn_outline() {
+        let diamond = [(2.0, 0.0), (4.0, 2.0), (2.0, 4.0), (0.0, 2.0)];
+        let bounds = polygon_bounds(&diamond, 10, 10).unwrap();
+        assert_eq!(bounds, [0, 0, 4, 4]);
+        let fallback = box_detection(&diamond, bounds);
+        assert_eq!(fallback.label, "text");
+        assert!(fallback.mask.contains(2, 2));
+        assert!(!fallback.mask.contains(0, 0));
+        assert_eq!(
+            polygon_bounds(&[(20.0, 20.0), (30.0, 20.0), (30.0, 30.0)], 10, 10),
+            None
         );
     }
 

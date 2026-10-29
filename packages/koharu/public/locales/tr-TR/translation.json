@@ -784,6 +784,7 @@
     "fillColor": "Dolgu rengi",
     "increaseBrushSize": "Fırça boyutunu artır",
     "manual_ocr_box": "Elle OCR (dikdörtgen)",
+    "manual_ocr_clean": "OCR ve temizleme",
     "manual_ocr_lasso": "Elle OCR (serbest çizim)",
     "pan": "Kaydır",
     "rampAxis": {

@@ -784,6 +784,7 @@
     "fillColor": "填充颜色",
     "increaseBrushSize": "增大画笔大小",
     "manual_ocr_box": "手动 OCR（矩形）",
+    "manual_ocr_clean": "OCR 并清理（框选）",
     "manual_ocr_lasso": "手动 OCR（自由绘制）",
     "pan": "平移",
     "rampAxis": {

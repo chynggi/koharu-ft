@@ -24,7 +24,7 @@ pub use error::{ErrorKind, PipelineError};
 pub use pipeline::Pipeline;
 pub use progress::{Progress, ProgressSink};
 pub use report::{Committer, Report, RunStatus, StageOutput};
-pub use request::{InpaintingMask, Operation, Request, StopToken};
+pub use request::{InpaintingMask, Operation, Request, StopToken, TextBox};
 pub use resources::{
     Bytes, DeviceResources, Estimate, MeasuredSource, MemoryScope, Provenance, ResourceSnapshot,
     Tier, file_size,
