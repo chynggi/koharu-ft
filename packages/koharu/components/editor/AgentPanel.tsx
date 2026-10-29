@@ -68,17 +68,23 @@ export function AgentPanel() {
     )
   }
 
-  const codex = status.config.backend.type === 'codex'
+  const { backend } = status.config
+  const codex = backend.type === 'codex'
+  const backendName =
+    backend.type === 'codex'
+      ? t('agent.codex')
+      : (status.providers.find((provider) => provider.provider === backend.provider)?.name ??
+        backend.provider)
   const backendPicker = (
     <Select
-      value={status.config.backend.type === 'codex' ? 'codex' : status.config.backend.provider}
+      value={backend.type === 'codex' ? 'codex' : backend.provider}
       disabled={running !== null || loggingIn}
       onValueChange={(value) => {
         if (value) void selectBackend(value)
       }}
     >
       <SelectTrigger size='sm' className='w-full min-w-0' aria-label={t('agent.backend')}>
-        <SelectValue />
+        <SelectValue>{backendName}</SelectValue>
       </SelectTrigger>
       <SelectContent align='start'>
         <SelectItem value='codex'>{t('agent.codex')}</SelectItem>
