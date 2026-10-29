@@ -602,7 +602,7 @@ describe('canvas interaction adapter', () => {
 
   it('resizes the brush with Ctrl+Alt drag instead of painting', () => {
     installProject()
-    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const commit = vi.spyOn(commands, 'commitPaint')
     const surface = renderWorkspace()
 
@@ -628,7 +628,7 @@ describe('canvas interaction adapter', () => {
 
   it('restores the brush size when a Ctrl+Alt drag is canceled', () => {
     installProject()
-    useKoharuStore.setState({ tool: 'eraser', brush: { diameter: 48, color: '#FFFFFF' } })
+    useKoharuStore.setState({ tool: 'eraser', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
     const surface = renderWorkspace()
 
     fireEvent.pointerDown(surface, {
