@@ -6,7 +6,7 @@ use koharu_secrets::ExposeSecret;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image,
     display_name, prompt,
@@ -18,6 +18,16 @@ const MODELS_URL: &str = "https://api.openai.com/v1/models";
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default)]
 pub struct OpenAiConfig {}
+
+pub(super) fn chat_endpoint() -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: URL.to_owned(),
+        api_key: Some(
+            koharu_secrets::get(Provider::OpenAi.secret_key().unwrap())?
+                .context("openai API key is not configured")?,
+        ),
+    })
+}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let Some(api_key) = koharu_secrets::get(Provider::OpenAi.secret_key().unwrap())? else {

@@ -5,20 +5,10 @@ use eventsource_stream::Eventsource as _;
 use futures::StreamExt as _;
 use serde_json::Value;
 
-use crate::{Control, ToolCall};
-
-const MAX_STREAM_BYTES: usize = 16 * 1024 * 1024;
-
-pub(crate) enum Delta {
-    Text(String),
-    Reasoning(String),
-}
-
-pub(crate) struct Turn {
-    pub(crate) output: Vec<Value>,
-    pub(crate) calls: Vec<ToolCall>,
-    pub(crate) text: String,
-}
+use crate::{
+    Control, ToolCall,
+    backend::{Delta, MAX_STREAM_BYTES, Turn},
+};
 
 pub(super) async fn read<F>(
     response: reqwest::Response,
@@ -125,9 +115,9 @@ where
         })
         .collect();
     Ok(Turn {
-        output,
-        calls,
         text,
+        calls,
+        native: output,
     })
 }
 

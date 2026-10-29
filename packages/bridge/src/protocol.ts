@@ -446,9 +446,21 @@ export type Account = {
 	plan: string | null,
 };
 
+export type AgentModel = {
+	id: string,
+	name: string,
+	reasoning: Reasoning[],
+};
+
+export type AgentProvider = {
+	provider: Provider,
+	name: string,
+};
+
 export type AgentStatus = {
 	account: Account | null,
-	models: CodexModel[],
+	providers: AgentProvider[],
+	models: AgentModel[],
 	config: Config,
 	running: RunId | null,
 };
@@ -465,6 +477,12 @@ export type ArrowHead = {
 	length: number,
 	width: number,
 };
+
+/**
+ *  The service that drives the agent. A provider backend reuses the
+ *  Chat Completions endpoint and credential owned by `koharu-translator`.
+ */
+export type Backend = { type: "codex" } | { type: "provider"; provider: Provider };
 
 export type Bounds = {
 	x: number,
@@ -494,12 +512,6 @@ export type CanvasState = {
 
 export type ClaudeConfig = Record<string, never>;
 
-export type CodexModel = {
-	id: string,
-	name: string,
-	reasoning: Reasoning[],
-};
-
 /**
  *  Where one FLUX.2 Klein checkpoint is loaded from.
  * 
@@ -517,6 +529,7 @@ export type ComponentSourceConfig =
 { kind: "url"; url: string; digest: string };
 
 export type Config = {
+	backend: Backend,
 	model: string | null,
 	reasoning: Reasoning,
 };

@@ -6,13 +6,14 @@ use koharu_secrets::ExposeSecret;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image,
     display_name, prompt,
 };
 
 const RESPONSES_URL: &str = "https://api.x.ai/v1/responses";
+const CHAT_URL: &str = "https://api.x.ai/v1/chat/completions";
 const MODELS_URL: &str = "https://api.x.ai/v1/language-models";
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -47,6 +48,16 @@ pub(super) async fn translate(
         })
         .context("Grok returned no output text")?;
     Ok(prompt::translations("grok", &text, &request.segments)?)
+}
+
+pub(super) fn chat_endpoint() -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: CHAT_URL.to_owned(),
+        api_key: Some(
+            koharu_secrets::get(Provider::Grok.secret_key().unwrap())?
+                .context("grok API key is not configured")?,
+        ),
+    })
 }
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {

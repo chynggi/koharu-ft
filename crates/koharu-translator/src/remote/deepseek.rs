@@ -8,7 +8,7 @@ use koharu_secrets::ExposeSecret;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image,
     display_name, prompt,
@@ -20,6 +20,16 @@ const MODELS_URL: &str = "https://api.deepseek.com/models";
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default)]
 pub struct DeepSeekConfig {}
+
+pub(super) fn chat_endpoint() -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: URL.to_owned(),
+        api_key: Some(
+            koharu_secrets::get(Provider::DeepSeek.secret_key().unwrap())?
+                .context("deepseek API key is not configured")?,
+        ),
+    })
+}
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let Some(api_key) = koharu_secrets::get(Provider::DeepSeek.secret_key().unwrap())? else {

@@ -1,17 +1,20 @@
 'use client'
 
-import { Bot, CircleStop, LogOut, Send, Sparkles } from 'lucide-react'
+import { Bot, CircleStop, LogOut, Send, Settings, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call } from '@/lib/backend'
 import { pageKey, pagesKey, projectKey, refresh } from '@/lib/queries'
+import { useKoharuStore } from '@/lib/store'
 import {
   commands,
   type AgentStatus,
+  type Backend,
   type Config,
   type Event,
   type LoginEvent,
+  type Provider,
   type Reasoning,
   type RunId,
 } from '@koharu/bridge/protocol'
@@ -43,6 +46,7 @@ export function AgentPanel() {
   const [prompt, setPrompt] = useState('')
   const [running, setRunning] = useState<RunId | null>(null)
   const [activity, setActivity] = useState<string | null>(null)
+  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
 
   useEffect(() => {
     void call(commands.getAgentStatus)
@@ -64,31 +68,64 @@ export function AgentPanel() {
     )
   }
 
-  if (!status.account) {
+  const codex = status.config.backend.type === 'codex'
+  const backendPicker = (
+    <Select
+      value={status.config.backend.type === 'codex' ? 'codex' : status.config.backend.provider}
+      disabled={running !== null || loggingIn}
+      onValueChange={(value) => {
+        if (value) void selectBackend(value)
+      }}
+    >
+      <SelectTrigger size='sm' className='w-full min-w-0' aria-label={t('agent.backend')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align='start'>
+        <SelectItem value='codex'>{t('agent.codex')}</SelectItem>
+        {status.providers.map((provider) => (
+          <SelectItem key={provider.provider} value={provider.provider}>
+            {provider.name}
+            <Badge variant='outline' className='h-4 px-1.5 text-[9px] font-normal'>
+              {t('common.experimental')}
+            </Badge>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  if (codex && !status.account) {
     const code = loginEvent?.type === 'device_code' ? loginEvent.user_code : null
     return (
-      <div className='flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center'>
-        <div className='grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary'>
-          <Sparkles className='size-5' />
-        </div>
-        <h3 className='mt-4 text-sm font-semibold'>{t('agent.signInTitle')}</h3>
-        <p className='mt-1 max-w-64 text-[11px] leading-5 text-muted-foreground'>
-          {t('agent.signInDescription')}
-        </p>
-        {code ? (
-          <div className='mt-4 w-full max-w-64 rounded-xl border bg-muted/40 p-3'>
-            <p className='text-[10px] text-muted-foreground'>{t('agent.deviceCode')}</p>
-            <p className='mt-1 font-mono text-lg font-semibold tracking-[0.18em] select-text'>
-              {code}
-            </p>
-            <p className='mt-1 text-[10px] leading-4 text-muted-foreground'>
-              {t('agent.deviceCodeHint')}
-            </p>
+      <div className='flex min-h-0 flex-1 flex-col'>
+        <div className='shrink-0 border-b px-3 py-2.5'>{backendPicker}</div>
+        <div className='flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center'>
+          <div className='grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary'>
+            <Sparkles className='size-5' />
           </div>
-        ) : null}
-        <Button className='mt-4 w-full max-w-64' disabled={loggingIn} onClick={() => void login()}>
-          {loggingIn ? t('agent.signingIn') : t('agent.signIn')}
-        </Button>
+          <h3 className='mt-4 text-sm font-semibold'>{t('agent.signInTitle')}</h3>
+          <p className='mt-1 max-w-64 text-[11px] leading-5 text-muted-foreground'>
+            {t('agent.signInDescription')}
+          </p>
+          {code ? (
+            <div className='mt-4 w-full max-w-64 rounded-xl border bg-muted/40 p-3'>
+              <p className='text-[10px] text-muted-foreground'>{t('agent.deviceCode')}</p>
+              <p className='mt-1 font-mono text-lg font-semibold tracking-[0.18em] select-text'>
+                {code}
+              </p>
+              <p className='mt-1 text-[10px] leading-4 text-muted-foreground'>
+                {t('agent.deviceCodeHint')}
+              </p>
+            </div>
+          ) : null}
+          <Button
+            className='mt-4 w-full max-w-64'
+            disabled={loggingIn}
+            onClick={() => void login()}
+          >
+            {loggingIn ? t('agent.signingIn') : t('agent.signIn')}
+          </Button>
+        </div>
       </div>
     )
   }
@@ -96,24 +133,30 @@ export function AgentPanel() {
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
       <div className='grid shrink-0 gap-2 border-b px-3 py-2.5'>
-        <div className='flex min-w-0 items-center gap-2'>
-          <div className='min-w-0 flex-1'>
-            <p className='truncate text-[11px] font-medium'>{status.account.email ?? 'Codex'}</p>
-            <p className='truncate text-[9px] text-muted-foreground'>
-              {status.account.plan ?? t('agent.account')}
-            </p>
+        {backendPicker}
+        {codex && status.account ? (
+          <div className='flex min-w-0 items-center gap-2'>
+            <div className='min-w-0 flex-1'>
+              <p className='truncate text-[11px] font-medium'>{status.account.email ?? 'Codex'}</p>
+              <p className='truncate text-[9px] text-muted-foreground'>
+                {status.account.plan ?? t('agent.account')}
+              </p>
+            </div>
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              aria-label={t('agent.signOut')}
+              disabled={running !== null}
+              onClick={() => void logout()}
+            >
+              <LogOut />
+            </Button>
           </div>
-          <Button
-            variant='ghost'
-            size='icon-sm'
-            aria-label={t('agent.signOut')}
-            disabled={running !== null}
-            onClick={() => void logout()}
-          >
-            <LogOut />
-          </Button>
-        </div>
-        <div className='grid grid-cols-[minmax(0,1fr)_7rem] gap-1.5'>
+        ) : null}
+        <div
+          data-codex={codex || undefined}
+          className='grid grid-cols-[minmax(0,1fr)] gap-1.5 data-[codex=true]:grid-cols-[minmax(0,1fr)_7rem]'
+        >
           <Select
             value={status.config.model ?? 'automatic'}
             onValueChange={(model) => {
@@ -126,6 +169,7 @@ export function AgentPanel() {
                   ? selected.reasoning[0]
                   : status.config.reasoning
               void saveConfig({
+                ...status.config,
                 model: model === 'automatic' ? null : model,
                 reasoning,
               })
@@ -136,6 +180,10 @@ export function AgentPanel() {
             </SelectTrigger>
             <SelectContent align='start'>
               <SelectItem value='automatic'>{t('agent.automatic')}</SelectItem>
+              {status.config.model &&
+              !status.models.some((model) => model.id === status.config.model) ? (
+                <SelectItem value={status.config.model}>{status.config.model}</SelectItem>
+              ) : null}
               {status.models.map((model) => (
                 <SelectItem key={model.id} value={model.id}>
                   {model.name}
@@ -143,24 +191,36 @@ export function AgentPanel() {
               ))}
             </SelectContent>
           </Select>
-          <Select
-            value={status.config.reasoning}
-            onValueChange={(reasoning) =>
-              void saveConfig({ ...status.config, reasoning: reasoning as Reasoning })
-            }
-          >
-            <SelectTrigger size='sm' className='w-full min-w-0' aria-label={t('agent.reasoning')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align='end'>
-              {(selectedModel?.reasoning ?? [status.config.reasoning]).map((reasoning) => (
-                <SelectItem key={reasoning} value={reasoning}>
-                  {t(`agent.reasoningLevels.${reasoning}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {codex ? (
+            <Select
+              value={status.config.reasoning}
+              onValueChange={(reasoning) =>
+                void saveConfig({ ...status.config, reasoning: reasoning as Reasoning })
+              }
+            >
+              <SelectTrigger size='sm' className='w-full min-w-0' aria-label={t('agent.reasoning')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align='end'>
+                {(selectedModel?.reasoning ?? [status.config.reasoning]).map((reasoning) => (
+                  <SelectItem key={reasoning} value={reasoning}>
+                    {t(`agent.reasoningLevels.${reasoning}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
+        {!codex && status.models.length === 0 ? (
+          <div className='flex min-w-0 items-center gap-2'>
+            <p className='min-w-0 flex-1 text-[10px] leading-4 text-muted-foreground'>
+              {t('agent.noModels')}
+            </p>
+            <Button variant='outline' size='sm' onClick={() => setSettingsOpen(true)}>
+              <Settings /> {t('menu.settings')}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <ScrollArea className='min-h-0 flex-1'>
@@ -223,7 +283,7 @@ export function AgentPanel() {
               variant='outline'
               className='h-5 max-w-44 truncate px-1.5 text-[9px] font-normal'
             >
-              {selectedModel?.name ?? t('agent.automatic')}
+              {selectedModel?.name ?? status.config.model ?? t('agent.automatic')}
             </Badge>
             {running ? (
               <Button
@@ -263,6 +323,16 @@ export function AgentPanel() {
 
   async function logout() {
     setStatus(await call(commands.logoutAgent))
+    setMessages([])
+    setActivity(null)
+  }
+
+  async function selectBackend(value: string) {
+    if (!status) return
+    const backend: Backend =
+      value === 'codex' ? { type: 'codex' } : { type: 'provider', provider: value as Provider }
+    await call(commands.saveAgentConfig, { ...status.config, backend, model: null })
+    setStatus(await call(commands.getAgentStatus))
     setMessages([])
     setActivity(null)
   }

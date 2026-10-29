@@ -1,10 +1,14 @@
 ---
 title: 'Set up Koharu Agent'
-description: 'Sign in with ChatGPT and configure the integrated project assistant.'
+description: 'Choose a backend for the integrated project assistant: Codex, a hosted provider, or a local model server.'
 icon: 'robot'
 ---
 
-Koharu Agent is a Codex client inside the editor. It uses ChatGPT device-code sign-in; you do not enter an OpenAI API key for the Agent.
+Koharu Agent runs inside the editor and can be driven by **Codex** (ChatGPT device-code sign-in) or by any configured provider with a tool-calling Chat Completions endpoint: OpenAI, OpenRouter, DeepSeek, Grok, LM Studio, or an OpenAI-compatible server such as llama.cpp or Ollama.
+
+Choose the backend from the first menu at the top of the Agent panel. Switching backends starts a new conversation.
+
+## Codex
 
 <Steps>
   <Step title='Open the Agent panel'>Open a project and select **Agent** on the right.</Step>
@@ -22,18 +26,47 @@ Koharu Agent is a Codex client inside the editor. It uses ChatGPT device-code si
 
 Only one sign-in attempt can run at a time. Cancel it before starting another.
 
+## Providers and local models
+
+A provider backend uses the base URL and API key saved for that provider under **Settings**, the same ones the translation pipeline uses. Keys stay in the operating system's credential store.
+
+<Steps>
+  <Step title='Configure the provider'>
+    In **Settings**, enter the provider's API key. For **OpenAI-compatible** or **LM Studio**, set
+    the base URL of your server; the API key is optional for local servers.
+  </Step>
+  <Step title='Select it in the Agent panel'>
+    Choose the provider as the backend, then pick a model. **Automatic** uses the first model the
+    server lists. If no models appear, check the base URL and key in **Settings**.
+  </Step>
+</Steps>
+
+The model must support tool calling. To let the Agent inspect page images, use a vision model.
+
+### Run a local server
+
+- **llama.cpp**: start `llama-server` with `--jinja` so tool calls are parsed, a context of at least 16k tokens (`-c 32768`), and `--mmproj` for vision models. Use `http://localhost:8080/v1` as the OpenAI-compatible base URL.
+- **Ollama**: use `http://localhost:11434/v1` and raise the model's context length (`num_ctx`).
+- **LM Studio**: start the local server and select the **LM Studio** provider.
+
+<Warning>
+  A local server that shares the GPU with Koharu's detection, OCR, and inpainting models competes
+  for its memory, and Koharu cannot unload it. Prefer a small model, or run the server on another
+  device.
+</Warning>
+
 ## What context is shared
 
 The Agent starts with the open project's semantic state. It renders and attaches a page image only when it invokes visual page inspection; it does not automatically attach every page.
 
 <Note>
-  Agent sign-in and translation-provider credentials are separate. ChatGPT sign-in does not
-  configure the pipeline's OpenAI provider, and an OpenAI API key does not sign in the Agent.
+  Codex sign-in and provider credentials are separate. ChatGPT sign-in does not configure the OpenAI
+  provider, and an OpenAI API key does not sign in to Codex.
 </Note>
 
 ## Sign out
 
-**Sign out** cancels active work, clears the current Agent session, and removes the Codex account authorization used by Koharu. Opening or closing a project also clears the conversation. Agent configuration is saved separately from translator settings.
+With the Codex backend, **Sign out** cancels active work, clears the current Agent session, and removes the Codex account authorization used by Koharu. Opening or closing a project also clears the conversation. Agent configuration is saved separately from translator settings.
 
 <Card title='Work with a project' icon='comment' href='/agent/projects'>
   Give the Agent a precise scope, review its edits, and use project history.

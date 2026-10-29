@@ -1,11 +1,23 @@
 use anyhow::Result;
+use koharu_translator::Provider;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
 pub struct Config {
+    pub backend: Backend,
     pub model: Option<String>,
     pub reasoning: Reasoning,
+}
+
+/// The service that drives the agent. A provider backend reuses the
+/// Chat Completions endpoint and credential owned by `koharu-translator`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
+#[serde(tag = "type", content = "provider", rename_all = "snake_case")]
+pub enum Backend {
+    #[default]
+    Codex,
+    Provider(Provider),
 }
 
 impl Config {

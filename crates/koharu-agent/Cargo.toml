@@ -2,7 +2,7 @@
 name = "koharu-agent"
 version.workspace = true
 edition.workspace = true
-description = "OAuth-backed Codex agent orchestration for Koharu."
+description = "Agent orchestration for Koharu over Codex and Chat Completions providers."
 license.workspace = true
 authors.workspace = true
 readme.workspace = true
@@ -20,6 +20,7 @@ futures = { workspace = true }
 koharu-config = { workspace = true }
 koharu-runtime = { workspace = true }
 koharu-secrets = { workspace = true }
+koharu-translator = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

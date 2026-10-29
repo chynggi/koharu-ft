@@ -3,10 +3,14 @@ mod host;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context as _, Result, anyhow};
-use koharu_agent::{Account, Agent, Codex, CodexModel, Config, Control, Event, LoginEvent, RunId};
+use koharu_agent::{
+    Account, Agent, AgentModel, Backend, Codex, Config, Control, Event, LoginEvent, RunId,
+};
+use koharu_translator::Provider;
 use parking_lot::Mutex;
 use serde::Serialize;
 use specta::Type;
+use strum::VariantArray as _;
 use tauri::{AppHandle, Manager as _, State, ipc::Channel};
 use tauri_runtime_cef::CefRuntime;
 use tokio::sync::Notify;
@@ -17,9 +21,16 @@ use super::Error;
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct AgentStatus {
     pub account: Option<Account>,
-    pub models: Vec<CodexModel>,
+    pub providers: Vec<AgentProvider>,
+    pub models: Vec<AgentModel>,
     pub config: Config,
     pub running: Option<RunId>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct AgentProvider {
+    pub provider: Provider,
+    pub name: String,
 }
 
 pub struct AgentState {
@@ -40,8 +51,11 @@ impl AgentState {
     }
 
     async fn status(&self) -> Result<AgentStatus> {
+        let config = self.agent.config()?;
         let mut account = self.agent.codex().account()?;
-        let models = if account.is_some() {
+        let models = if config.backend != Backend::Codex {
+            self.agent.models().await?
+        } else if account.is_some() {
             match self.agent.models().await {
                 Ok(models) => models,
                 Err(error) => {
@@ -58,8 +72,16 @@ impl AgentState {
         };
         Ok(AgentStatus {
             account,
+            providers: Provider::VARIANTS
+                .iter()
+                .filter(|provider| provider.chat())
+                .map(|&provider| AgentProvider {
+                    provider,
+                    name: provider.name().to_owned(),
+                })
+                .collect(),
             models,
-            config: self.agent.config()?,
+            config,
             running: self.runs.lock().keys().next().copied(),
         })
     }
@@ -162,7 +184,7 @@ pub async fn run_agent(
     if prompt.is_empty() {
         return Err(anyhow!("message cannot be empty").into());
     }
-    if state.agent.codex().account()?.is_none() {
+    if state.agent.config()?.backend == Backend::Codex && state.agent.codex().account()?.is_none() {
         return Err(anyhow!("Codex is not signed in").into());
     }
     let run = RunId::new();
