@@ -250,7 +250,9 @@ pub fn run(context: tauri::Context<CefRuntime>, frontend_url: tauri::Url) -> Res
                                     }
                                 }
                                 None => {
-                                    tracing::warn!("download event arrived before the frontend subscribed");
+                                    tracing::warn!(
+                                        "download event arrived before the frontend subscribed"
+                                    );
                                 }
                             }
                         }
