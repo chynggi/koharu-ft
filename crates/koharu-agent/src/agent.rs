@@ -1,19 +1,21 @@
 use std::{fmt, sync::Arc};
 
 use anyhow::{Context as _, Result};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use specta::Type;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    Codex, CodexModel, Config, Control, Host, ToolCall,
-    codex::{Delta, Request, function_output, message, project_context},
+    AgentModel, Backend, Codex, Config, Control, Host, ToolCall,
+    backend::{Delta, Item, Prompt},
+    chat::{self, Chat},
 };
 
 const INSTRUCTIONS: &str = r#"You are Koharu Agent, operating a manga translation project inside Koharu.
-The complete current project state is supplied in a koharu_project_context block on every user turn.
+A koharu_project_context block on every user turn summarizes every page and details the active page. Call inspect_page before working on another page.
 Page images are intentionally omitted from that context. Call view_page only when visual inspection is needed, and only for relevant pages.
 Use the provided tools whenever the user asks to inspect or change the project. Never claim a change succeeded unless its tool result says it succeeded.
 All project changes are revisioned and reversible. Do not ask for permission. Do not produce a plan or expose internal steps; continue using tools until the request is complete or cannot be completed.
@@ -102,10 +104,19 @@ pub struct RunResult {
 
 pub struct Agent<H> {
     codex: Codex,
+    client: Client,
     host: Arc<H>,
     config: koharu_config::Config<Config>,
-    history: Mutex<Vec<Value>>,
+    history: Mutex<History>,
     serial: Mutex<()>,
+}
+
+/// The conversation belongs to the backend that produced it. A run on another
+/// backend starts fresh instead of replaying foreign items.
+#[derive(Default)]
+struct History {
+    backend: Backend,
+    items: Vec<Item>,
 }
 
 impl<H> Agent<H>
@@ -115,9 +126,10 @@ where
     pub fn new(codex: Codex, host: H) -> Result<Self> {
         Ok(Self {
             codex,
+            client: koharu_runtime::http_client()?,
             host: Arc::new(host),
             config: Config::load()?,
-            history: Mutex::new(Vec::new()),
+            history: Mutex::new(History::default()),
             serial: Mutex::new(()),
         })
     }
@@ -130,8 +142,11 @@ where
         Ok(self.config.read()?.clone())
     }
 
-    pub async fn models(&self) -> Result<Vec<CodexModel>> {
-        self.codex.models().await
+    pub async fn models(&self) -> Result<Vec<AgentModel>> {
+        match self.config()?.backend {
+            Backend::Codex => self.codex.models().await,
+            Backend::Provider(provider) => chat::models(provider).await,
+        }
     }
 
     pub fn save_config(&self, config: Config) -> Result<Config> {
@@ -143,7 +158,7 @@ where
     }
 
     pub async fn clear(&self) {
-        self.history.lock().await.clear();
+        self.history.lock().await.items.clear();
     }
 
     #[tracing::instrument(skip_all)]
@@ -187,25 +202,42 @@ where
         control.ensure_running()?;
         let context = self.host.context().await?;
         let config = self.config()?;
-        let models = self.codex.models().await?;
-        let model = match config.model.as_deref() {
-            Some(selected) => models
-                .iter()
-                .find(|model| model.id == selected)
-                .with_context(|| format!("configured Codex model {selected} is not available"))?,
-            None => models
-                .first()
-                .context("Codex returned no available model")?,
+        let (chat, model, reasoning) = match config.backend {
+            Backend::Codex => {
+                let models = self.codex.models().await?;
+                let model = select_model(&models, config.model.as_deref())?;
+                let reasoning =
+                    if model.reasoning.is_empty() || model.reasoning.contains(&config.reasoning) {
+                        config.reasoning
+                    } else {
+                        model.reasoning[0]
+                    };
+                (None, model.id.clone(), reasoning)
+            }
+            Backend::Provider(provider) => {
+                let chat = Chat::connect(self.client.clone(), provider)?;
+                let model = match config.model {
+                    Some(model) => model,
+                    None => select_model(&chat::models(provider).await?, None)?
+                        .id
+                        .clone(),
+                };
+                (Some(chat), model, config.reasoning)
+            }
         };
-        let reasoning = if model.reasoning.is_empty() || model.reasoning.contains(&config.reasoning)
-        {
-            config.reasoning
-        } else {
-            model.reasoning[0]
+        let clean_user = Item::User(prompt);
+        let context_message = Item::User(format!(
+            "<koharu_project_context>\n{}\n</koharu_project_context>",
+            serde_json::to_string(&context)?
+        ));
+        let base = {
+            let history = self.history.lock().await;
+            if history.backend == config.backend {
+                history.items.clone()
+            } else {
+                Vec::new()
+            }
         };
-        let clean_user = message("user", &prompt);
-        let context_message = project_context(&context)?;
-        let base = self.history.lock().await.clone();
         let mut input = base.clone();
         input.push(context_message);
         input.push(clean_user.clone());
@@ -216,26 +248,35 @@ where
 
         loop {
             control.ensure_running()?;
-            let request = Request::new(
-                model.id.clone(),
-                INSTRUCTIONS.to_owned(),
-                input.clone(),
-                tools.clone(),
+            let prompt = Prompt {
+                model: &model,
+                instructions: INSTRUCTIONS,
+                items: &input,
+                tools: &tools,
                 reasoning,
-                session.clone(),
-            );
-            let turn = self
-                .codex
-                .respond(&request, control, |event| match event {
-                    Delta::Text(delta) => publish(Event::TextDelta { run, delta }),
-                    Delta::Reasoning(delta) => publish(Event::ReasoningDelta { run, delta }),
-                })
-                .await?;
-            input.extend(turn.output.iter().cloned());
-            persisted.extend(turn.output.iter().cloned());
+                session: &session,
+            };
+            let mut delta = |event| match event {
+                Delta::Text(delta) => publish(Event::TextDelta { run, delta }),
+                Delta::Reasoning(delta) => publish(Event::ReasoningDelta { run, delta }),
+            };
+            let turn = match &chat {
+                None => self.codex.respond(&prompt, control, &mut delta).await?,
+                Some(chat) => chat.respond(&prompt, control, &mut delta).await?,
+            };
+            let assistant = Item::Assistant {
+                text: turn.text.clone(),
+                calls: turn.calls.clone(),
+                native: turn.native,
+            };
+            input.push(assistant.clone());
+            persisted.push(assistant);
 
             if turn.calls.is_empty() {
-                *self.history.lock().await = persisted;
+                *self.history.lock().await = History {
+                    backend: config.backend,
+                    items: persisted,
+                };
                 return Ok(RunResult {
                     run,
                     message: turn.text,
@@ -279,9 +320,29 @@ where
                     changed,
                     output: output.to_string(),
                 });
-                input.push(function_output(&call.call_id, &output, &images)?);
-                persisted.push(function_output(&call.call_id, &output, &[])?);
+                persisted.push(Item::ToolResult {
+                    call_id: call.call_id.clone(),
+                    output: output.clone(),
+                    images: Vec::new(),
+                });
+                input.push(Item::ToolResult {
+                    call_id: call.call_id,
+                    output,
+                    images,
+                });
             }
         }
+    }
+}
+
+fn select_model<'a>(models: &'a [AgentModel], selected: Option<&str>) -> Result<&'a AgentModel> {
+    match selected {
+        Some(selected) => models
+            .iter()
+            .find(|model| model.id == selected)
+            .with_context(|| format!("configured agent model {selected} is not available")),
+        None => models
+            .first()
+            .context("the agent backend returned no available model"),
     }
 }

@@ -13,6 +13,7 @@ mod openrouter;
 
 use anyhow::Context;
 use futures::{FutureExt, future::BoxFuture, future::join_all};
+use koharu_secrets::SecretString;
 use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::de::DeserializeOwned;
 
@@ -89,6 +90,40 @@ pub(crate) async fn translate(
         }
         Provider::Caiyun => caiyun::translate(client, &providers.caiyun, request).await,
         Provider::Local => unreachable!("local translation has its own backend"),
+    }
+}
+
+/// A Chat Completions endpoint that accepts OpenAI-style `tools`. Each provider
+/// module owns its URL and credential so agent backends reuse the keys saved in
+/// preferences.
+#[derive(Clone, Debug)]
+pub struct ChatEndpoint {
+    pub url: String,
+    pub api_key: Option<SecretString>,
+}
+
+pub fn chat_endpoint(
+    providers: &ProvidersConfig,
+    provider: Provider,
+) -> anyhow::Result<ChatEndpoint> {
+    match provider {
+        Provider::OpenAi => openai::chat_endpoint(),
+        Provider::Grok => grok::chat_endpoint(),
+        Provider::DeepSeek => deepseek::chat_endpoint(),
+        Provider::OpenAiCompatible => {
+            openai_compatible::chat_endpoint(&providers.openai_compatible)
+        }
+        Provider::OpenRouter => openrouter::chat_endpoint(),
+        Provider::LmStudio => lm_studio::chat_endpoint(&providers.lm_studio),
+        Provider::Local
+        | Provider::Gemini
+        | Provider::Claude
+        | Provider::MiniMax
+        | Provider::DeepL
+        | Provider::GoogleCloudTranslation
+        | Provider::Caiyun => {
+            anyhow::bail!("{provider} does not provide a tool-calling chat endpoint")
+        }
     }
 }
 

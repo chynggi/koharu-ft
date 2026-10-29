@@ -26,7 +26,12 @@ function RootLayout({
         className={`${notoSansCJK.variable} antialiased`}
         style={{ backgroundColor: 'transparent' }}
       >
-        <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
+        <ThemeProvider
+          attribute='class'
+          defaultTheme='system'
+          enableSystem
+          disableTransitionOnChange
+        >
           <Providers>{children}</Providers>
         </ThemeProvider>
       </body>

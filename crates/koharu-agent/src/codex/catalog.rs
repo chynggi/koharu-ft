@@ -2,14 +2,14 @@ use anyhow::{Context as _, Result, bail};
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
 
-use crate::Reasoning;
+use crate::{AgentModel, Reasoning};
 
-use super::{CodexModel, auth::Auth};
+use super::auth::Auth;
 
 const MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models?client_version=0.146.0";
 const MAX_CATALOG_BYTES: usize = 1024 * 1024;
 
-pub(super) async fn models(client: &Client, auth: &Auth) -> Result<Vec<CodexModel>> {
+pub(super) async fn models(client: &Client, auth: &Auth) -> Result<Vec<AgentModel>> {
     let mut session = auth.session().await?;
     let mut response = request(client, &session).await?;
     if response.status() == StatusCode::UNAUTHORIZED {
@@ -49,7 +49,7 @@ async fn request(client: &Client, session: &super::auth::Session) -> Result<reqw
         .await?)
 }
 
-fn parse(value: &Value) -> Option<CodexModel> {
+fn parse(value: &Value) -> Option<AgentModel> {
     let visibility = value
         .get("visibility")
         .and_then(Value::as_str)
@@ -97,7 +97,7 @@ fn parse(value: &Value) -> Option<CodexModel> {
             }
             levels
         });
-    Some(CodexModel {
+    Some(AgentModel {
         id: id.to_owned(),
         name: value
             .get("display_name")

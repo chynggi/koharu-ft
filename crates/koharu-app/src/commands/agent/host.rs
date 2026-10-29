@@ -32,7 +32,7 @@ impl KoharuHost {
         Self { handle }
     }
 
-    async fn project_context(&self) -> Result<Value> {
+    async fn pages(&self) -> Result<(Value, Value)> {
         let (project, pages) = {
             let current = self.handle.state::<CurrentProject>();
             let current = current.project.lock().await;
@@ -44,6 +44,22 @@ impl KoharuHost {
                 .collect::<Result<Vec<_>>>()?;
             (project.info(), pages)
         };
+        Ok((serde_json::to_value(project)?, serde_json::to_value(pages)?))
+    }
+
+    /// Details only the active page; other pages are summarized and read on
+    /// demand through `inspect_page`, so the context stays bounded by one page
+    /// instead of growing with the project.
+    async fn project_context(&self) -> Result<Value> {
+        let (project, pages) = self.pages().await?;
+        let pages = pages.as_array().map(Vec::as_slice).unwrap_or_default();
+        let active_page = pages
+            .iter()
+            .find(|page| page["id"] == project["active_page"])
+            .or_else(|| pages.first())
+            .cloned()
+            .map(compact);
+        let pages = pages.iter().map(page_summary).collect::<Vec<_>>();
         let preferences = Preferences::load()?;
         let fonts = self
             .handle
@@ -69,6 +85,7 @@ impl KoharuHost {
         Ok(json!({
             "project": project,
             "pages": pages,
+            "active_page": active_page,
             "configuration": {
                 "pipeline": preferences.pipeline,
                 "providers": providers,
@@ -153,6 +170,7 @@ impl KoharuHost {
             stop,
             progress: None,
             inpainting_mask: None,
+            text_box: None,
         };
         let result = self
             .handle
@@ -188,7 +206,15 @@ impl Host for KoharuHost {
                 vec![
                     definition::<InspectProject>(
                         "inspect_project",
-                        "Read the latest complete semantic project state after edits. This does not include page images.",
+                        "Read the latest project state after edits: a summary of every page and the active page in detail. This does not include page images. Geometry is given as rounded page-space bounds [left, top, right, bottom].",
+                    ),
+                    definition::<InspectPage>(
+                        "inspect_page",
+                        "Read one page's layers, text, and analysis regions. The project state details only the active page.",
+                    ),
+                    definition::<InspectGeometry>(
+                        "inspect_geometry",
+                        "Return the exact page-space polygon of each listed element. Call this only when an edit needs more than the bounds in the project state.",
                     ),
                     definition::<ViewPage>(
                         "view_page",
@@ -234,6 +260,29 @@ impl Host for KoharuHost {
             "inspect_project" => {
                 let _: InspectProject = arguments(&call)?;
                 Invocation::read(self.project_context().await?)
+            }
+            "inspect_page" => {
+                let arguments: InspectPage = arguments(&call)?;
+                let (_, pages) = self.pages().await?;
+                let page = pages
+                    .as_array()
+                    .and_then(|pages| pages.iter().find(|page| page["id"] == arguments.page))
+                    .with_context(|| format!("page {} does not exist", arguments.page))?;
+                Invocation::read(compact(page.clone()))
+            }
+            "inspect_geometry" => {
+                let arguments: InspectGeometry = arguments(&call)?;
+                let (_, pages) = self.pages().await?;
+                let mut found = serde_json::Map::new();
+                collect_geometry(&pages, &arguments.elements, &mut found);
+                if let Some(missing) = arguments
+                    .elements
+                    .iter()
+                    .find(|element| !found.contains_key(*element))
+                {
+                    bail!("element {missing} has no geometry");
+                }
+                Invocation::read(found)
             }
             "view_page" => {
                 let arguments: ViewPage = arguments(&call)?;
@@ -353,6 +402,22 @@ impl Host for KoharuHost {
                     color: arguments.color,
                     stroke_color: arguments.stroke_color,
                     stroke_width: arguments.stroke_width,
+                    stroke_method: arguments.stroke_method.map(|value| match value {
+                        AgentStrokeMethod::Expansion => koharu_scene::StrokeMethod::Expansion,
+                        AgentStrokeMethod::Contour => koharu_scene::StrokeMethod::Contour,
+                    }),
+                    stroke_position: arguments.stroke_position.map(|value| match value {
+                        AgentStrokePosition::Outside => koharu_scene::StrokePosition::Outside,
+                        AgentStrokePosition::Center => koharu_scene::StrokePosition::Center,
+                        AgentStrokePosition::Inside => koharu_scene::StrokePosition::Inside,
+                    }),
+                    stroke_join: arguments.stroke_join.map(|value| match value {
+                        AgentStrokeJoin::Round => koharu_scene::LineJoin::Round,
+                        AgentStrokeJoin::Miter => koharu_scene::LineJoin::Miter,
+                        AgentStrokeJoin::Bevel => koharu_scene::LineJoin::Bevel,
+                    }),
+                    outer_stroke_color: arguments.outer_stroke_color,
+                    outer_stroke_width: arguments.outer_stroke_width,
                     alignment: arguments.alignment.map(Into::into),
                     writing_mode: arguments.writing_mode.map(Into::into),
                 };
@@ -494,8 +559,130 @@ fn entities(values: &[String]) -> Result<Vec<EntityId>> {
     values.iter().map(|value| entity(value)).collect()
 }
 
+fn page_summary(page: &Value) -> Value {
+    let text = || {
+        page["layers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|layer| layer["type"] == "text")
+    };
+    json!({
+        "id": page["id"],
+        "label": page["label"],
+        "size": page["size"],
+        "text_layers": text().count(),
+        "translated": text()
+            .filter(|layer| !layer["content"]["translation"].is_null())
+            .count(),
+    })
+}
+
+/// Shapes a page for the model: rounded bounds instead of polygons, and no
+/// null fields, which carry no information but cost tokens on every element.
+fn compact(mut page: Value) -> Value {
+    compact_geometry(&mut page);
+    strip_nulls(&mut page);
+    page
+}
+
+fn strip_nulls(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.retain(|_, value| !value.is_null());
+            object.values_mut().for_each(strip_nulls);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_nulls),
+        _ => {}
+    }
+}
+
+/// Detection traces each bubble mask as a dense polygon, so exact geometry for
+/// every page would dominate the model's context on every turn. The context
+/// carries rounded bounds instead, and `inspect_geometry` returns exact
+/// polygons on demand.
+fn compact_geometry(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if let Some(geometry) = object.get_mut("geometry")
+                && let Some(bounds) = bounds(geometry)
+            {
+                *geometry = bounds;
+            }
+            object.values_mut().for_each(compact_geometry);
+        }
+        Value::Array(items) => items.iter_mut().for_each(compact_geometry),
+        _ => {}
+    }
+}
+
+fn bounds(geometry: &Value) -> Option<Value> {
+    let points = geometry.get("points")?.as_array()?;
+    let mut bounds = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    for point in points {
+        let (x, y) = (point.get("x")?.as_f64()?, point.get("y")?.as_f64()?);
+        bounds = [
+            bounds[0].min(x),
+            bounds[1].min(y),
+            bounds[2].max(x),
+            bounds[3].max(y),
+        ];
+    }
+    let [left, top, right, bottom] = bounds;
+    (!points.is_empty()).then(|| {
+        json!([
+            left.floor() as i64,
+            top.floor() as i64,
+            right.ceil() as i64,
+            bottom.ceil() as i64
+        ])
+    })
+}
+
+fn collect_geometry(
+    value: &Value,
+    elements: &[String],
+    found: &mut serde_json::Map<String, Value>,
+) {
+    match value {
+        Value::Object(object) => {
+            if let (Some(Value::String(id)), Some(geometry)) =
+                (object.get("id"), object.get("geometry"))
+                && !geometry.is_null()
+                && elements.contains(id)
+            {
+                found.insert(id.clone(), geometry.clone());
+            }
+            for value in object.values() {
+                collect_geometry(value, elements, found);
+            }
+        }
+        Value::Array(items) => {
+            for value in items {
+                collect_geometry(value, elements, found);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 struct InspectProject {}
+
+#[derive(Deserialize, JsonSchema)]
+struct InspectPage {
+    page: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct InspectGeometry {
+    elements: Vec<String>,
+}
 
 #[derive(Deserialize, JsonSchema)]
 struct ViewPage {
@@ -597,6 +784,29 @@ impl From<AgentWritingMode> for koharu_scene::WritingMode {
 }
 
 #[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokeMethod {
+    Expansion,
+    Contour,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokePosition {
+    Outside,
+    Center,
+    Inside,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AgentStrokeJoin {
+    Round,
+    Miter,
+    Bevel,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SetTypography {
     element: String,
     preferred_font: Option<String>,
@@ -607,6 +817,13 @@ struct SetTypography {
     color: Option<[u8; 4]>,
     stroke_color: Option<[u8; 4]>,
     stroke_width: Option<f32>,
+    stroke_method: Option<AgentStrokeMethod>,
+    stroke_position: Option<AgentStrokePosition>,
+    stroke_join: Option<AgentStrokeJoin>,
+    /// Color of a second outline outside the first.
+    outer_stroke_color: Option<[u8; 4]>,
+    /// Width of the second outline in pixels; omit or 0 for none.
+    outer_stroke_width: Option<f32>,
     alignment: Option<AgentTextAlignment>,
     writing_mode: Option<AgentWritingMode>,
 }
@@ -687,5 +904,45 @@ impl RunPipeline {
             (true, false) => Ok(Scope::Entities(entities(&self.elements)?)),
             (false, false) => bail!("pipeline scope cannot contain both pages and elements"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_carries_bounds_and_inspection_returns_polygons() {
+        let polygon = json!({ "points": [
+            { "x": 10.4, "y": 20.6 },
+            { "x": 30.2, "y": 21.0 },
+            { "x": 29.9, "y": 40.1 },
+        ] });
+        let pages = json!([{
+            "id": "page",
+            "layers": [{ "id": "text", "geometry": polygon.clone() }, { "id": "group", "geometry": null }],
+            "regions": [{ "id": "bubble", "geometry": polygon.clone() }],
+        }]);
+
+        let mut context = pages.clone();
+        compact_geometry(&mut context);
+        assert_eq!(context[0]["layers"][0]["geometry"], json!([10, 20, 31, 41]));
+        assert_eq!(context[0]["layers"][1]["geometry"], Value::Null);
+        assert_eq!(
+            context[0]["regions"][0]["geometry"],
+            json!([10, 20, 31, 41])
+        );
+
+        let page = compact(pages[0].clone());
+        assert!(page["layers"][1].get("geometry").is_none());
+        assert_eq!(
+            page_summary(&pages[0]),
+            json!({ "id": "page", "label": null, "size": null, "text_layers": 0, "translated": 0 })
+        );
+
+        let mut found = serde_json::Map::new();
+        collect_geometry(&pages, &["bubble".to_owned()], &mut found);
+        assert_eq!(found.get("bubble"), Some(&polygon));
+        assert_eq!(found.len(), 1);
     }
 }

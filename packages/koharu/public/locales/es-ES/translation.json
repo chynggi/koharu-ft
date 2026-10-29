@@ -24,16 +24,19 @@
     "account": "Cuenta de ChatGPT",
     "applying": "Aplicando cambios al proyecto…",
     "automatic": "Automático",
+    "backend": "Backend",
     "cancel": "Cancelar",
     "cancelled": "Cancelado.",
+    "codex": "Codex",
     "deviceCode": "Código de dispositivo",
     "deviceCodeHint": "Tu navegador se ha abierto. Introduce este código para autorizar a Koharu.",
     "emptyDescription": "Pide al agente que inspeccione, traduzca, edite o procese este proyecto. Solo verá las imágenes de las páginas cuando sea necesario.",
     "emptyTitle": "¿Qué debería hacer Koharu?",
     "failed": "La solicitud del agente falló.",
-    "loading": "Cargando Codex…",
+    "loading": "Cargando agente…",
     "message": "Enviar mensaje al agente de Koharu",
-    "model": "Modelo de Codex",
+    "model": "Modelo",
+    "noModels": "No se encontraron modelos. Revisa la URL base y la clave de API de este proveedor en Ajustes.",
     "placeholder": "Pide a Koharu que trabaje en este proyecto…",
     "properties": "Propiedades",
     "reasoning": "Razonamiento",
@@ -73,6 +76,7 @@
     "back": "Atrás",
     "cancel": "Cancelar",
     "clearSearch": "Borrar búsqueda",
+    "experimental": "Experimental",
     "loading": "Cargando…",
     "reset": "Restablecer"
   },
@@ -98,6 +102,20 @@
     "start": "Exportar",
     "subfolders": "Carpetas separadas por formato",
     "title": "Exportar páginas"
+  },
+  "find": {
+    "matchCase": "Coincidir mayúsculas y minúsculas",
+    "noResults": "Ninguna traducción contiene este texto.",
+    "page": "Página {{number}}",
+    "placeholder": "Buscar en las traducciones",
+    "replace": "Reemplazar",
+    "replaceAll": "Reemplazar todo",
+    "replacePlaceholder": "Reemplazar por",
+    "searching": "Buscando…",
+    "summary": "{{count}} coincidencias en {{pages}} página(s)",
+    "summary_one": "{{count}} coincidencia en {{pages}} página(s)",
+    "summary_other": "{{count}} coincidencias en {{pages}} página(s)",
+    "title": "Buscar"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtros activos",
@@ -212,6 +230,11 @@
     "border": "Contorno",
     "borderColor": "Color del contorno",
     "borderWidth": "Ancho del contorno",
+    "secondBorder": "2.º contorno",
+    "secondBorderColor": "Color del segundo contorno",
+    "secondBorderWidth": "Ancho del segundo contorno",
+    "increaseSecondBorderWidth": "Aumentar ancho del segundo contorno",
+    "decreaseSecondBorderWidth": "Reducir ancho del segundo contorno",
     "chooseFontSize": "Elegir tamaño de fuente",
     "color": "Color",
     "customFrame": "Marco personalizado",
@@ -289,7 +312,18 @@
     "unplaced": "Sin colocar",
     "vertical": "Vertical",
     "weight": "Peso",
-    "width": "Anchura"
+    "width": "Anchura",
+    "outlineMethod": "Método del borde",
+    "outlineExpansion": "Expansión",
+    "outlineContour": "Trazo de contorno",
+    "outlinePosition": "Posición",
+    "outlineOutside": "Exterior",
+    "outlineCenter": "Centro",
+    "outlineInside": "Interior",
+    "outlineJoin": "Esquinas",
+    "outlineRound": "Redondas",
+    "outlineMiter": "Puntiagudas",
+    "outlineBevel": "Biseladas"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Animaciones de la interfaz",
+      "animationsDescription": "Funde menús y diálogos y suaviza los cambios al pasar el cursor y en los interruptores. Respeta el ajuste del sistema para reducir el movimiento.",
       "description": "Adapta el espacio de trabajo a tu entorno sin cambiar cómo se renderiza la ilustración.",
+      "colorTheme": "Tema de color",
+      "colorThemeDescription": "Elige la paleta de la interfaz. Cada paleta tiene una versión clara y otra oscura.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Océano",
+        "matcha": "Matcha"
+      },
       "interface": "Interfaz",
       "language": "Idioma",
       "theme": "Tema",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "Los atajos de una tecla están disponibles cuando ningún campo de texto tiene el foco.",
       "inputLabel": "Atajo de {{action}}",
+      "nextPage": "Página siguiente",
+      "pages": "Páginas",
+      "previousPage": "Página anterior",
       "title": "Atajos",
       "tools": "Herramientas"
     },
@@ -737,6 +784,7 @@
     "fillColor": "Color de relleno",
     "increaseBrushSize": "Aumentar tamaño del pincel",
     "manual_ocr_box": "OCR manual (rectángulo)",
+    "manual_ocr_clean": "OCR y limpieza",
     "manual_ocr_lasso": "OCR manual (trazo libre)",
     "pan": "Desplazar",
     "rampAxis": {

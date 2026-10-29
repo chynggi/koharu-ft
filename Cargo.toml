@@ -56,6 +56,7 @@ tower-http = "0.6"
 tokio-stream = "0.1"
 backon = { version = "1.6.0", default-features = false, features = ["std", "tokio-sleep"] }
 imageproc = "0.27.0"
+i_overlay = "9.1.0"
 ab_glyph = "0.2.32"
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }

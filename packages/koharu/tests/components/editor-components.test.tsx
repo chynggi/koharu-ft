@@ -106,6 +106,11 @@ const textLayer: Layer = {
     color: [0, 0, 0, 255],
     stroke_color: [255, 255, 255, 255],
     stroke_width: 0,
+    stroke_method: null,
+    stroke_position: null,
+    stroke_join: null,
+    outer_stroke_color: null,
+    outer_stroke_width: null,
     alignment: 'Center',
     writing_mode: null,
   },
@@ -1753,6 +1758,85 @@ describe('greenfield editor', () => {
     )
   })
 
+  it('gates the second outline on the first and can enable it by width', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const setTypography = vi.spyOn(commands, 'setTypography').mockResolvedValue(null)
+    render(<Inspector />)
+
+    expect(screen.getByRole('button', { name: 'Second border color' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Second border width' })).toBeDisabled()
+
+    act(() => {
+      queryClient.setQueryData(pageKey, {
+        id: 'page',
+        label: 'Page 1',
+        size: { width: 1000, height: 1500 },
+        layers: [{ ...textLayer, typography: { ...textLayer.typography!, stroke_width: 4 } }],
+        regions: [],
+      })
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Second border width' })).toBeEnabled(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Increase second border width' }))
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({ stroke_width: 4, outer_stroke_width: 3.5 }),
+        }),
+      ]),
+    )
+  })
+
+  it('enables and clears the second outline without changing the first', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const layer = {
+      ...textLayer,
+      typography: { ...textLayer.typography!, stroke_width: 4 },
+    }
+    queryClient.setQueryData(pageKey, {
+      id: 'page',
+      label: 'Page 1',
+      size: { width: 1000, height: 1500 },
+      layers: [layer],
+      regions: [],
+    })
+    const setTypography = vi.spyOn(commands, 'setTypography').mockResolvedValue(null)
+    render(<Inspector />)
+
+    await user.click(screen.getByRole('button', { name: 'Second border color' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hex color code' }), {
+      target: { value: '#FF0000' },
+    })
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({
+            stroke_color: [255, 255, 255, 255],
+            stroke_width: 4,
+            outer_stroke_color: [255, 0, 0, 255],
+            outer_stroke_width: 3,
+          }),
+        }),
+      ]),
+    )
+
+    setTypography.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Transparent' }))
+    await waitFor(() =>
+      expect(setTypography).toHaveBeenCalledWith([
+        expect.objectContaining({
+          layer: 'element',
+          typography: expect.objectContaining({ stroke_width: 4, outer_stroke_width: 0 }),
+        }),
+      ]),
+    )
+  })
+
   it('only offers styles and weights available for the selected font family', async () => {
     const user = userEvent.setup()
     installProject()
@@ -2614,6 +2698,8 @@ describe('greenfield editor', () => {
     expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
       mergeDeleteOriginals: false,
       showPageNumbers: true,
+      colorTheme: 'koharu',
+      interfaceAnimations: true,
     })
 
     await user.click(mergeDeleteOriginals)
@@ -2621,6 +2707,8 @@ describe('greenfield editor', () => {
     expect(JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
       mergeDeleteOriginals: true,
       showPageNumbers: true,
+      colorTheme: 'koharu',
+      interfaceAnimations: true,
     })
 
     await user.click(screen.getByRole('switch', { name: 'Show page numbers' }))
@@ -2648,6 +2736,8 @@ describe('greenfield editor', () => {
       expect(reinitialized.getState().preferences, stored).toEqual({
         mergeDeleteOriginals,
         showPageNumbers,
+        colorTheme: 'koharu',
+        interfaceAnimations: true,
       })
     }
   })
@@ -2937,6 +3027,31 @@ describe('greenfield editor', () => {
         font_families: ['Arial'],
       }),
     )
+  })
+
+  it('applies and remembers the appearance chosen in settings', async () => {
+    window.localStorage.removeItem(FORK_PREFERENCES_STORAGE_KEY)
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
+    const user = userEvent.setup()
+    useKoharuStore.setState({ settingsOpen: true })
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+
+    expect(document.documentElement.dataset.motion).toBe('full')
+    await user.click(screen.getByRole('switch', { name: 'Interface animations' }))
+    expect(document.documentElement.dataset.motion).toBe('still')
+
+    expect(document.documentElement.dataset.palette).toBe('koharu')
+    await user.click(screen.getByRole('radio', { name: 'AniSwipe' }))
+    expect(screen.getByRole('radio', { name: 'AniSwipe' })).toHaveAttribute('aria-checked', 'true')
+    expect(document.documentElement.dataset.palette).toBe('aniswipe')
+    expect(
+      JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? ''),
+    ).toMatchObject({ colorTheme: 'aniswipe', interfaceAnimations: false })
+    useForkPreferences.setState({ preferences: { ...forkPreferenceDefaults } })
   })
 
   it('shows model resources in the left sidebar footer', () => {

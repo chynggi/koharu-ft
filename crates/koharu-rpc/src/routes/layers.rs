@@ -9,7 +9,7 @@ use tauri::Manager as _;
 
 use koharu_app::commands::canvas::CanvasChannel;
 use koharu_app::commands::editing::{self, GeometryUpdate, TypographyUpdate};
-use koharu_app::commands::project::{CurrentProject, Page};
+use koharu_app::commands::project::{CurrentProject, Page, TranslationMatch};
 
 use crate::AppState;
 use crate::error::ApiResult;
@@ -18,6 +18,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/layers/source-text", post(set_source_text))
         .route("/layers/translation", post(set_translation))
+        .route("/layers/translation/find", post(find_translations))
+        .route("/layers/translation/replace", post(replace_translations))
         .route("/layers/typography", post(set_typography))
         .route("/layers/geometry", post(set_geometry))
         .route("/layers/visibility", post(set_visibility))
@@ -68,6 +70,52 @@ async fn set_translation(
     )
     .await?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct FindTranslationsRequest {
+    query: String,
+    match_case: bool,
+}
+
+async fn find_translations(
+    State(app): State<AppState>,
+    Json(request): Json<FindTranslationsRequest>,
+) -> ApiResult<Json<Vec<TranslationMatch>>> {
+    Ok(Json(
+        editing::find_translations(
+            request.query,
+            request.match_case,
+            app.state::<CurrentProject>(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct ReplaceTranslationsRequest {
+    query: String,
+    replacement: String,
+    match_case: bool,
+    layers: Option<Vec<EntityId>>,
+}
+
+async fn replace_translations(
+    State(app): State<AppState>,
+    Json(request): Json<ReplaceTranslationsRequest>,
+) -> ApiResult<Json<u32>> {
+    Ok(Json(
+        editing::replace_translations(
+            request.query,
+            request.replacement,
+            request.match_case,
+            request.layers,
+            app.state::<koharu_desktop::Desktop>(),
+            app.state::<CurrentProject>(),
+            app.state::<CanvasChannel>(),
+        )
+        .await?,
+    ))
 }
 
 #[derive(Deserialize)]

@@ -213,6 +213,20 @@ export const commands = {
 		post<null>("/layers/source-text", { layer, text }),
 	setTranslation: (layer: EntityId, text: string | null) =>
 		post<null>("/layers/translation", { layer, text }),
+	findTranslations: (query: string, matchCase: boolean) =>
+		post<TranslationMatch[]>("/layers/translation/find", { query, match_case: matchCase }),
+	replaceTranslations: (
+		query: string,
+		replacement: string,
+		matchCase: boolean,
+		layers: EntityId[] | null,
+	) =>
+		post<number>("/layers/translation/replace", {
+			query,
+			replacement,
+			match_case: matchCase,
+			layers,
+		}),
 	setTypography: (updates: TypographyUpdate[]) =>
 		post<null>("/layers/typography", { updates }),
 	setGeometry: (updates: GeometryUpdate[]) => post<null>("/layers/geometry", { updates }),
@@ -324,6 +338,7 @@ export const commands = {
 			shapes,
 		}),
 	manualOcr: (points: Point[]) => post<ManualOcrCommit>("/canvas/ocr/manual", { points }),
+	cleanManualOcr: (points: Point[]) => post<JobId>("/canvas/ocr/clean", { points }),
 	commitPaint: (
 		expectedRevision: Revision,
 		layer: string | null,
@@ -432,9 +447,21 @@ export type Account = {
 	plan: string | null,
 };
 
+export type AgentModel = {
+	id: string,
+	name: string,
+	reasoning: Reasoning[],
+};
+
+export type AgentProvider = {
+	provider: Provider,
+	name: string,
+};
+
 export type AgentStatus = {
 	account: Account | null,
-	models: CodexModel[],
+	providers: AgentProvider[],
+	models: AgentModel[],
 	config: Config,
 	running: RunId | null,
 };
@@ -451,6 +478,12 @@ export type ArrowHead = {
 	length: number,
 	width: number,
 };
+
+/**
+ *  The service that drives the agent. A provider backend reuses the
+ *  Chat Completions endpoint and credential owned by `koharu-translator`.
+ */
+export type Backend = { type: "codex" } | { type: "provider"; provider: Provider };
 
 export type Bounds = {
 	x: number,
@@ -480,12 +513,6 @@ export type CanvasState = {
 
 export type ClaudeConfig = Record<string, never>;
 
-export type CodexModel = {
-	id: string,
-	name: string,
-	reasoning: Reasoning[],
-};
-
 /**
  *  Where one FLUX.2 Klein checkpoint is loaded from.
  * 
@@ -503,6 +530,7 @@ export type ComponentSourceConfig =
 { kind: "url"; url: string; digest: string };
 
 export type Config = {
+	backend: Backend,
 	model: string | null,
 	reasoning: Reasoning,
 };
@@ -580,7 +608,7 @@ export type Download = {
 	error: string | null,
 };
 
-export type DownloadState = "running" | "finished" | "failed";
+export type DownloadState = "running" | "finished" | "cancelled" | "failed";
 
 export type EntityId = string;
 
@@ -1230,6 +1258,10 @@ export type StartupState = {
 	canvas: CanvasState,
 };
 
+export type StrokeMethod = "expansion" | "contour";
+
+export type StrokePosition = "outside" | "center" | "inside";
+
 export type TextAlignment = "Start" | "Center" | "End" | "Justify";
 
 export type TextContent = {
@@ -1263,6 +1295,18 @@ export type TranslationConfig = {
 	max_pages_per_request?: number,
 };
 
+/**  A text layer whose translation contains the searched text. */
+export type TranslationMatch = {
+	page: EntityId,
+	/**  The page's position in the project, from zero. */
+	page_index: number,
+	layer: EntityId,
+	/**  The layer's whole translation. */
+	text: string,
+	/**  How many times the searched text occurs in it. */
+	count: number,
+};
+
 export type TypesettingConfig = {
 	font_families?: string[],
 };
@@ -1276,6 +1320,11 @@ export type Typography = {
 	color: [number, number, number, number] | null,
 	stroke_color: [number, number, number, number] | null,
 	stroke_width: number | null,
+	stroke_method: StrokeMethod | null,
+	stroke_position: StrokePosition | null,
+	stroke_join: LineJoin | null,
+	outer_stroke_color: [number, number, number, number] | null,
+	outer_stroke_width: number | null,
 	alignment: TextAlignment | null,
 	writing_mode: WritingMode | null,
 };

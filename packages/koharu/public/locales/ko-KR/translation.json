@@ -24,16 +24,19 @@
     "account": "ChatGPT 계정",
     "applying": "프로젝트 변경 사항 적용 중…",
     "automatic": "자동",
+    "backend": "백엔드",
     "cancel": "취소",
     "cancelled": "취소되었습니다.",
+    "codex": "Codex",
     "deviceCode": "기기 코드",
     "deviceCodeHint": "브라우저가 열렸습니다. 이 코드를 입력해 Koharu를 승인하세요.",
     "emptyDescription": "에이전트에게 이 프로젝트의 검사, 번역, 편집 또는 처리를 요청하세요. 페이지 이미지는 필요할 때만 확인합니다.",
     "emptyTitle": "Koharu에게 무엇을 시킬까요?",
     "failed": "에이전트 요청에 실패했습니다.",
-    "loading": "Codex 불러오는 중…",
+    "loading": "에이전트 불러오는 중…",
     "message": "Koharu 에이전트에게 메시지 보내기",
-    "model": "Codex 모델",
+    "model": "모델",
+    "noModels": "모델을 찾을 수 없습니다. 설정에서 이 공급자의 기본 URL과 API 키를 확인하세요.",
     "placeholder": "Koharu에게 이 프로젝트 작업 요청…",
     "properties": "속성",
     "reasoning": "추론",
@@ -73,6 +76,7 @@
     "back": "뒤로",
     "cancel": "취소",
     "clearSearch": "검색 지우기",
+    "experimental": "실험적",
     "loading": "불러오는 중…",
     "reset": "초기화"
   },
@@ -98,6 +102,20 @@
     "start": "내보내기",
     "subfolders": "형식별로 폴더 나누기",
     "title": "페이지 내보내기"
+  },
+  "find": {
+    "matchCase": "대소문자 구분",
+    "noResults": "이 텍스트가 포함된 번역이 없습니다.",
+    "page": "{{number}}페이지",
+    "placeholder": "번역에서 찾기",
+    "replace": "바꾸기",
+    "replaceAll": "모두 바꾸기",
+    "replacePlaceholder": "바꿀 내용",
+    "searching": "찾는 중…",
+    "summary": "{{pages}}개 페이지에서 {{count}}건",
+    "summary_one": "{{pages}}개 페이지에서 {{count}}건",
+    "summary_other": "{{pages}}개 페이지에서 {{count}}건",
+    "title": "찾기"
   },
   "fontPicker": {
     "activeFilterCount": "활성 필터 {{count}}개",
@@ -212,6 +230,11 @@
     "border": "테두리",
     "borderColor": "테두리 색상",
     "borderWidth": "테두리 너비",
+    "secondBorder": "2차 테두리",
+    "secondBorderColor": "두 번째 테두리 색상",
+    "secondBorderWidth": "두 번째 테두리 너비",
+    "increaseSecondBorderWidth": "두 번째 테두리 너비 늘리기",
+    "decreaseSecondBorderWidth": "두 번째 테두리 너비 줄이기",
     "chooseFontSize": "글꼴 크기 선택",
     "color": "색상",
     "customFrame": "사용자 지정 프레임",
@@ -289,7 +312,18 @@
     "unplaced": "배치되지 않음",
     "vertical": "세로쓰기",
     "weight": "굵기",
-    "width": "너비"
+    "width": "너비",
+    "outlineMethod": "윤곽선 방식",
+    "outlineExpansion": "확장",
+    "outlineContour": "외곽선 획",
+    "outlinePosition": "위치",
+    "outlineOutside": "바깥쪽",
+    "outlineCenter": "중앙",
+    "outlineInside": "안쪽",
+    "outlineJoin": "모서리",
+    "outlineRound": "둥글게",
+    "outlineMiter": "뾰족하게",
+    "outlineBevel": "베벨"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "인터페이스 애니메이션",
+      "animationsDescription": "메뉴와 대화 상자를 페이드로 표시하고 마우스오버와 스위치 변화를 부드럽게 합니다. 시스템의 동작 줄이기 설정을 따릅니다.",
       "description": "아트워크 렌더링에는 영향을 주지 않고 작업 공간의 모습을 조정합니다.",
+      "colorTheme": "색상 테마",
+      "colorThemeDescription": "인터페이스 팔레트를 선택합니다. 모든 팔레트에는 라이트와 다크 버전이 있습니다.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "오션",
+        "matcha": "말차"
+      },
       "interface": "인터페이스",
       "language": "언어",
       "theme": "테마",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "텍스트 필드에 포커스가 없을 때 단일 키 단축키를 사용할 수 있습니다.",
       "inputLabel": "{{action}} 단축키",
+      "nextPage": "다음 페이지",
+      "pages": "페이지",
+      "previousPage": "이전 페이지",
       "title": "단축키",
       "tools": "도구"
     },
@@ -737,6 +784,7 @@
     "fillColor": "채우기 색",
     "increaseBrushSize": "브러시 크기 늘리기",
     "manual_ocr_box": "수동 OCR (사각형)",
+    "manual_ocr_clean": "OCR 및 정리 (상자)",
     "manual_ocr_lasso": "수동 OCR (자유형)",
     "pan": "이동",
     "rampAxis": {

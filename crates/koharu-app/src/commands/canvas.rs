@@ -269,6 +269,75 @@ pub async fn manual_ocr(
     })
 }
 
+/// Manual OCR that also cleans: detection runs inside the marked area first,
+/// so each piece of lettering in it gets its own text layer and only the
+/// lettering is inpainted; an area it finds nothing in is read and cleaned
+/// whole.
+#[tauri::command]
+#[specta::specta]
+pub async fn clean_manual_ocr(
+    points: Vec<Point>,
+    handle: AppHandle<CefRuntime>,
+    project: State<'_, CurrentProject>,
+) -> Result<JobId, Error> {
+    // The area waits in the processing state for the job; refuse before
+    // leaving it there for a job that will not start.
+    if !handle.state::<Processing>().stops.lock().is_empty() {
+        return Err(anyhow!("another process is already running").into());
+    }
+    let geometry = super::project::Project::geometry_from_points(points)?;
+    let (min_x, min_y, max_x, max_y) = geometry.points.iter().fold(
+        (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ),
+        |(min_x, min_y, max_x, max_y), point| {
+            (
+                min_x.min(point.x),
+                min_y.min(point.y),
+                max_x.max(point.x),
+                max_y.max(point.y),
+            )
+        },
+    );
+    let page = project
+        .project
+        .lock()
+        .await
+        .as_ref()
+        .context("no project is open")?
+        .active_page()
+        .context("the project has no active page")?;
+    *handle.state::<Processing>().text_box.lock() =
+        Some(koharu_pipeline::TextBox { page, geometry });
+    Ok(processing::process(
+        handle.clone(),
+        koharu_pipeline::Scope::Region {
+            page,
+            bounds: koharu_pipeline::Bounds {
+                x: min_x,
+                y: min_y,
+                width: max_x - min_x,
+                height: max_y - min_y,
+            },
+        },
+        koharu_pipeline::Operation::Stages {
+            stages: vec![
+                koharu_pipeline::Stage::Detection,
+                koharu_pipeline::Stage::Ocr,
+                koharu_pipeline::Stage::Translation,
+                koharu_pipeline::Stage::Inpainting,
+            ],
+        },
+        handle.state::<CurrentProject>(),
+        handle.state::<Processing>(),
+        handle.state::<JobChannel>(),
+    )
+    .await?)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn commit_paint(

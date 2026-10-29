@@ -24,16 +24,19 @@
     "account": "ChatGPT 帳戶",
     "applying": "正在套用專案變更…",
     "automatic": "自動",
+    "backend": "後端",
     "cancel": "取消",
     "cancelled": "已取消。",
+    "codex": "Codex",
     "deviceCode": "裝置代碼",
     "deviceCodeHint": "瀏覽器已開啟。輸入此代碼以授權 Koharu。",
     "emptyDescription": "讓代理檢查、翻譯、編輯或處理此專案。它只會在需要時查看頁面影像。",
     "emptyTitle": "要讓 Koharu 做什麼？",
     "failed": "代理要求失敗。",
-    "loading": "正在載入 Codex…",
+    "loading": "正在載入代理…",
     "message": "傳送訊息給 Koharu 代理",
-    "model": "Codex 模型",
+    "model": "模型",
+    "noModels": "找不到模型。請在設定中檢查此供應商的基礎 URL 與 API 金鑰。",
     "placeholder": "讓 Koharu 處理此專案…",
     "properties": "屬性",
     "reasoning": "推理",
@@ -73,6 +76,7 @@
     "back": "返回",
     "cancel": "取消",
     "clearSearch": "清除搜尋",
+    "experimental": "實驗性",
     "loading": "正在載入…",
     "reset": "重設"
   },
@@ -98,6 +102,20 @@
     "start": "匯出",
     "subfolders": "按格式分資料夾",
     "title": "匯出頁面"
+  },
+  "find": {
+    "matchCase": "區分大小寫",
+    "noResults": "沒有譯文包含此文字。",
+    "page": "第 {{number}} 頁",
+    "placeholder": "在譯文中尋找",
+    "replace": "取代",
+    "replaceAll": "全部取代",
+    "replacePlaceholder": "取代為",
+    "searching": "正在尋找…",
+    "summary": "{{pages}} 頁中共 {{count}} 處",
+    "summary_one": "{{pages}} 頁中共 {{count}} 處",
+    "summary_other": "{{pages}} 頁中共 {{count}} 處",
+    "title": "尋找"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} 個啟用的篩選條件",
@@ -212,6 +230,11 @@
     "border": "描邊",
     "borderColor": "描邊色彩",
     "borderWidth": "描邊寬度",
+    "secondBorder": "第二描邊",
+    "secondBorderColor": "第二描邊顏色",
+    "secondBorderWidth": "第二描邊寬度",
+    "increaseSecondBorderWidth": "增加第二描邊寬度",
+    "decreaseSecondBorderWidth": "減少第二描邊寬度",
     "chooseFontSize": "選擇字型大小",
     "color": "顏色",
     "customFrame": "自訂框架",
@@ -289,7 +312,18 @@
     "unplaced": "未放置",
     "vertical": "直排",
     "weight": "字重",
-    "width": "寬度"
+    "width": "寬度",
+    "outlineMethod": "描邊方式",
+    "outlineExpansion": "擴張",
+    "outlineContour": "輪廓描邊",
+    "outlinePosition": "位置",
+    "outlineOutside": "外側",
+    "outlineCenter": "置中",
+    "outlineInside": "內側",
+    "outlineJoin": "轉角",
+    "outlineRound": "圓角",
+    "outlineMiter": "尖角",
+    "outlineBevel": "斜角"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "介面動畫",
+      "animationsDescription": "讓選單與對話方塊淡入淡出，並平滑懸停與開關變化。遵循系統的減少動態效果設定。",
       "description": "調整工作區外觀，而不改變圖稿的算繪方式。",
+      "colorTheme": "配色主題",
+      "colorThemeDescription": "選擇介面配色。每種配色都有淺色和深色版本。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "海洋",
+        "matcha": "抹茶"
+      },
       "interface": "介面",
       "language": "語言",
       "theme": "主題",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "當文字欄位未取得焦點時，可以使用單鍵快捷鍵。",
       "inputLabel": "{{action}} 快速鍵",
+      "nextPage": "下一頁",
+      "pages": "頁面",
+      "previousPage": "上一頁",
       "title": "快捷鍵",
       "tools": "工具"
     },
@@ -737,6 +784,7 @@
     "fillColor": "填色顏色",
     "increaseBrushSize": "增加筆刷大小",
     "manual_ocr_box": "手動 OCR（矩形）",
+    "manual_ocr_clean": "OCR 並清理（框選）",
     "manual_ocr_lasso": "手動 OCR（自由繪製）",
     "pan": "平移",
     "rampAxis": {

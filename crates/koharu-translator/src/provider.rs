@@ -220,6 +220,20 @@ impl Provider {
     pub const fn credential_required(self) -> bool {
         !matches!(self, Self::Local | Self::OpenAiCompatible | Self::LmStudio)
     }
+
+    /// Whether [`crate::chat_endpoint`] serves this provider.
+    #[must_use]
+    pub const fn chat(self) -> bool {
+        matches!(
+            self,
+            Self::OpenAi
+                | Self::Grok
+                | Self::DeepSeek
+                | Self::OpenAiCompatible
+                | Self::OpenRouter
+                | Self::LmStudio
+        )
+    }
 }
 
 impl ProvidersConfig {

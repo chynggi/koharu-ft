@@ -8,12 +8,21 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::{ProgressSink, Scope, Stage};
-use koharu_scene::EntityId;
+use koharu_scene::{EntityId, Geometry};
 
 #[derive(Clone, Debug)]
 pub struct InpaintingMask {
     pub page: EntityId,
     pub png: Arc<[u8]>,
+}
+
+/// An area the user drew to read and clean. Detection looks for text inside
+/// it and falls back to the whole area when it finds none; inpainting then
+/// cleans only the detected text inside it.
+#[derive(Clone, Debug)]
+pub struct TextBox {
+    pub page: EntityId,
+    pub geometry: Geometry,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Type)]
@@ -68,6 +77,7 @@ pub struct Request {
     pub stop: StopToken,
     pub progress: Option<ProgressSink>,
     pub inpainting_mask: Option<InpaintingMask>,
+    pub text_box: Option<TextBox>,
 }
 
 impl Default for Request {
@@ -78,6 +88,7 @@ impl Default for Request {
             stop: StopToken::default(),
             progress: None,
             inpainting_mask: None,
+            text_box: None,
         }
     }
 }

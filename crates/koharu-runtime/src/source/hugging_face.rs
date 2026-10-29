@@ -2,7 +2,11 @@ use std::{path::PathBuf, sync::OnceLock};
 
 use hf_hub::{HFClient, HFRepository, RepoType, repository::download::HFByteStream, split_id};
 
-use crate::{Store, download, network};
+use crate::{
+    Store,
+    download::{self, Visibility},
+    network,
+};
 
 static CLIENT: OnceLock<HFClient> = OnceLock::new();
 
@@ -59,12 +63,22 @@ impl<'a> HuggingFaceFile<'a> {
         self.path().is_file()
     }
 
-    #[tracing::instrument(skip_all)]
+    /// Resolves a user-visible artifact, reporting progress to [`download::subscribe`].
     pub async fn resolve(self) -> anyhow::Result<PathBuf> {
+        self.resolve_with(Visibility::Visible).await
+    }
+
+    /// Resolves a prefetched UI asset without emitting download activity.
+    pub async fn resolve_silent(self) -> anyhow::Result<PathBuf> {
+        self.resolve_with(Visibility::Silent).await
+    }
+
+    #[tracing::instrument(skip_all, name = "resolve")]
+    async fn resolve_with(self, visibility: Visibility) -> anyhow::Result<PathBuf> {
         Store::file(self.path(), move |stage| async move {
             let client = client()?;
             let (owner, name) = split_id(self.repository);
-            download::receive(self.filename, &stage, async {
+            download::receive(self.filename, &stage, visibility, async {
                 match self.kind {
                     RepositoryKind::Model => self.download(client.model(owner, name)).await,
                     RepositoryKind::Dataset => self.download(client.dataset(owner, name)).await,

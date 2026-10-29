@@ -152,6 +152,14 @@ fn map_download(event: koharu_runtime::download::Event) -> Download {
             total: 0,
             error: None,
         },
+        koharu_runtime::download::Event::Cancelled { id } => Download {
+            id,
+            state: DownloadState::Cancelled,
+            name: None,
+            completed: 0,
+            total: 0,
+            error: None,
+        },
         koharu_runtime::download::Event::Failed { id, name, error } => Download {
             id,
             state: DownloadState::Failed,

@@ -67,8 +67,11 @@ import {
   type GradientSpec,
   type GradientStop,
   type Layer,
+  type LineJoin,
   type PatternSpec,
   type ShapeStyle,
+  type StrokeMethod,
+  type StrokePosition,
   type TextAlignment,
   type Typography,
   type WritingMode,
@@ -129,6 +132,11 @@ const defaultTypography: Typography = {
   color: [0, 0, 0, 255],
   stroke_color: [255, 255, 255, 255],
   stroke_width: 0,
+  stroke_method: null,
+  stroke_position: null,
+  stroke_join: null,
+  outer_stroke_color: [0, 0, 0, 255],
+  outer_stroke_width: 0,
   alignment: null,
   writing_mode: null,
 }
@@ -142,7 +150,7 @@ export function Inspector() {
         <h2 className='text-[10px] font-semibold'>{t('inspector.type')}</h2>
       </div>
 
-      <section className='h-48 min-w-0 shrink-0 overflow-hidden border-b'>
+      <section className='min-w-0 shrink-0 border-b'>
         <TypeInspector />
       </section>
 
@@ -937,6 +945,7 @@ const defaultStroke: NonNullable<ShapeStyle['stroke']> = {
 function TypeInspector() {
   const { t } = useTranslation()
   const borderWidthId = useId()
+  const secondBorderWidthId = useId()
   const page = usePage().data
   const selectedIds = useKoharuStore((state) => state.selectedLayers)
   const availableFonts = useFonts().data
@@ -994,6 +1003,13 @@ function TypeInspector() {
   const strokeColor = typography.stroke_color ?? defaultTypography.stroke_color!
   const strokeEnabled = strokeWidth > 0 && strokeColor[3] > 0
   const displayedStrokeWidth = strokeWidth > 0 ? strokeWidth : 1.5
+  const strokeMethod = typography.stroke_method ?? 'expansion'
+  const strokePosition = typography.stroke_position ?? 'outside'
+  const strokeJoin = typography.stroke_join ?? 'round'
+  const outerWidth = typography.outer_stroke_width ?? 0
+  const outerColor = typography.outer_stroke_color ?? defaultTypography.outer_stroke_color!
+  const outerEnabled = strokeEnabled && outerWidth > 0 && outerColor[3] > 0
+  const displayedOuterWidth = outerWidth > 0 ? outerWidth : 3
   const writingMode = typography.writing_mode ?? 'Horizontal'
   const writingModeChoice = typography.writing_mode ?? 'Auto'
   const effectiveAlignment =
@@ -1239,6 +1255,138 @@ function TypeInspector() {
                 </NumberFieldIncrement>
               </NumberFieldGroup>
             </NumberField>
+          </InspectorField>
+        </div>
+        <div className='grid min-w-0 grid-cols-[2.75rem_minmax(5.5rem,1fr)] items-end gap-1.5'>
+          <InspectorField label={t('inspector.secondBorder')}>
+            <ColorWell
+              label={t('inspector.secondBorderColor')}
+              size='sm'
+              disabled={disabled || !strokeEnabled}
+              allowTransparent
+              value={outerEnabled ? rgbaToHex(outerColor) : null}
+              onChange={(outer_stroke_color) => {
+                apply((value) => {
+                  if (outer_stroke_color === null) {
+                    return { ...value, outer_stroke_width: 0 }
+                  }
+                  const width = value.outer_stroke_width ?? 0
+                  return {
+                    ...value,
+                    outer_stroke_color: hexToRgba(outer_stroke_color),
+                    outer_stroke_width: width > 0 ? width : 3,
+                  }
+                })
+              }}
+            />
+          </InspectorField>
+          <InspectorField label={t('inspector.width')}>
+            <NumberField
+              id={secondBorderWidthId}
+              name='second-border-width'
+              className='min-w-0'
+              disabled={disabled || !strokeEnabled}
+              value={displayedOuterWidth}
+              min={0.5}
+              max={32}
+              step={0.5}
+              onValueChange={(next) => {
+                if (next !== null && next >= 0.5 && next <= 32) {
+                  apply((value) => ({ ...value, outer_stroke_width: next }))
+                }
+              }}
+            >
+              <NumberFieldGroup>
+                <NumberFieldDecrement aria-label={t('inspector.decreaseSecondBorderWidth')}>
+                  <Minus />
+                </NumberFieldDecrement>
+                <NumberFieldInput aria-label={t('inspector.secondBorderWidth')} />
+                <NumberFieldIncrement aria-label={t('inspector.increaseSecondBorderWidth')}>
+                  <Plus />
+                </NumberFieldIncrement>
+              </NumberFieldGroup>
+            </NumberField>
+          </InspectorField>
+        </div>
+        <div className='grid min-w-0 grid-cols-2 gap-1.5'>
+          <InspectorField label={t('inspector.outlineMethod')}>
+            <Select
+              disabled={disabled}
+              value={strokeMethod}
+              onValueChange={(method) =>
+                apply((value) => ({ ...value, stroke_method: method as StrokeMethod }))
+              }
+            >
+              <SelectTrigger size='sm' aria-label={t('inspector.outlineMethod')} className='w-full'>
+                <SelectValue>
+                  {t(
+                    strokeMethod === 'contour'
+                      ? 'inspector.outlineContour'
+                      : 'inspector.outlineExpansion',
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='expansion'>{t('inspector.outlineExpansion')}</SelectItem>
+                <SelectItem value='contour'>{t('inspector.outlineContour')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </InspectorField>
+          <InspectorField label={t('inspector.outlinePosition')}>
+            <Select
+              disabled={disabled || strokeMethod !== 'contour'}
+              value={strokePosition}
+              onValueChange={(position) =>
+                apply((value) => ({ ...value, stroke_position: position as StrokePosition }))
+              }
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('inspector.outlinePosition')}
+                className='w-full'
+              >
+                <SelectValue>
+                  {t(
+                    {
+                      outside: 'inspector.outlineOutside',
+                      center: 'inspector.outlineCenter',
+                      inside: 'inspector.outlineInside',
+                    }[strokePosition],
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='outside'>{t('inspector.outlineOutside')}</SelectItem>
+                <SelectItem value='center'>{t('inspector.outlineCenter')}</SelectItem>
+                <SelectItem value='inside'>{t('inspector.outlineInside')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </InspectorField>
+          <InspectorField label={t('inspector.outlineJoin')}>
+            <Select
+              disabled={disabled || strokeMethod !== 'contour'}
+              value={strokeJoin}
+              onValueChange={(join) =>
+                apply((value) => ({ ...value, stroke_join: join as LineJoin }))
+              }
+            >
+              <SelectTrigger size='sm' aria-label={t('inspector.outlineJoin')} className='w-full'>
+                <SelectValue>
+                  {t(
+                    {
+                      round: 'inspector.outlineRound',
+                      miter: 'inspector.outlineMiter',
+                      bevel: 'inspector.outlineBevel',
+                    }[strokeJoin],
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='round'>{t('inspector.outlineRound')}</SelectItem>
+                <SelectItem value='miter'>{t('inspector.outlineMiter')}</SelectItem>
+                <SelectItem value='bevel'>{t('inspector.outlineBevel')}</SelectItem>
+              </SelectContent>
+            </Select>
           </InspectorField>
         </div>
       </div>

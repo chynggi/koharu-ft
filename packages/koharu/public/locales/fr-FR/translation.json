@@ -24,16 +24,19 @@
     "account": "Compte ChatGPT",
     "applying": "Application des modifications au projet…",
     "automatic": "Automatique",
+    "backend": "Backend",
     "cancel": "Annuler",
     "cancelled": "Annulé.",
+    "codex": "Codex",
     "deviceCode": "Code de l’appareil",
     "deviceCodeHint": "Votre navigateur s’est ouvert. Saisissez ce code pour autoriser Koharu.",
     "emptyDescription": "Demandez à l’agent d’analyser, de traduire, de modifier ou de traiter ce projet. Il ne consultera les images des pages qu’en cas de besoin.",
     "emptyTitle": "Que doit faire Koharu ?",
     "failed": "La requête de l’agent a échoué.",
-    "loading": "Chargement de Codex…",
+    "loading": "Chargement de l'agent…",
     "message": "Message à l’agent Koharu",
-    "model": "Modèle Codex",
+    "model": "Modèle",
+    "noModels": "Aucun modèle trouvé. Vérifiez l'URL de base et la clé API de ce fournisseur dans les paramètres.",
     "placeholder": "Demandez à Koharu de travailler sur ce projet…",
     "properties": "Propriétés",
     "reasoning": "Raisonnement",
@@ -73,6 +76,7 @@
     "back": "Retour",
     "cancel": "Annuler",
     "clearSearch": "Effacer la recherche",
+    "experimental": "Expérimental",
     "loading": "Chargement…",
     "reset": "Réinitialiser"
   },
@@ -98,6 +102,20 @@
     "start": "Exporter",
     "subfolders": "Un dossier par format",
     "title": "Exporter les pages"
+  },
+  "find": {
+    "matchCase": "Respecter la casse",
+    "noResults": "Aucune traduction ne contient ce texte.",
+    "page": "Page {{number}}",
+    "placeholder": "Rechercher dans les traductions",
+    "replace": "Remplacer",
+    "replaceAll": "Tout remplacer",
+    "replacePlaceholder": "Remplacer par",
+    "searching": "Recherche…",
+    "summary": "{{count}} résultats sur {{pages}} page(s)",
+    "summary_one": "{{count}} résultat sur {{pages}} page(s)",
+    "summary_other": "{{count}} résultats sur {{pages}} page(s)",
+    "title": "Rechercher"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} filtres actifs",
@@ -212,6 +230,11 @@
     "border": "Contour",
     "borderColor": "Couleur du contour",
     "borderWidth": "Épaisseur du contour",
+    "secondBorder": "2ᵉ contour",
+    "secondBorderColor": "Couleur du second contour",
+    "secondBorderWidth": "Épaisseur du second contour",
+    "increaseSecondBorderWidth": "Augmenter l’épaisseur du second contour",
+    "decreaseSecondBorderWidth": "Réduire l’épaisseur du second contour",
     "chooseFontSize": "Choisir la taille de police",
     "color": "Couleur",
     "customFrame": "Cadre personnalisé",
@@ -289,7 +312,18 @@
     "unplaced": "Non placé",
     "vertical": "Vertical",
     "weight": "Graisse",
-    "width": "Largeur"
+    "width": "Largeur",
+    "outlineMethod": "Méthode du contour",
+    "outlineExpansion": "Expansion",
+    "outlineContour": "Tracé du contour",
+    "outlinePosition": "Position",
+    "outlineOutside": "Extérieur",
+    "outlineCenter": "Centre",
+    "outlineInside": "Intérieur",
+    "outlineJoin": "Angles",
+    "outlineRound": "Arrondis",
+    "outlineMiter": "Pointus",
+    "outlineBevel": "Biseautés"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Animations de l'interface",
+      "animationsDescription": "Fait apparaître les menus et les boîtes de dialogue en fondu et adoucit le survol et les interrupteurs. Respecte le réglage système de réduction des animations.",
       "description": "Adaptez votre espace de travail à la pièce sans modifier le rendu des images.",
+      "colorTheme": "Thème de couleurs",
+      "colorThemeDescription": "Choisissez la palette de l'interface. Chaque palette existe en version claire et sombre.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Océan",
+        "matcha": "Matcha"
+      },
       "interface": "Interface",
       "language": "Langue",
       "theme": "Thème",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "Les raccourcis à une touche sont disponibles lorsqu’aucun champ de texte n’a le focus.",
       "inputLabel": "Raccourci : {{action}}",
+      "nextPage": "Page suivante",
+      "pages": "Pages",
+      "previousPage": "Page précédente",
       "title": "Raccourcis",
       "tools": "Outils"
     },
@@ -737,6 +784,7 @@
     "fillColor": "Couleur de remplissage",
     "increaseBrushSize": "Augmenter la taille du pinceau",
     "manual_ocr_box": "OCR manuel (rectangle)",
+    "manual_ocr_clean": "OCR et nettoyage",
     "manual_ocr_lasso": "OCR manuel (lasso)",
     "pan": "Déplacer",
     "rampAxis": {

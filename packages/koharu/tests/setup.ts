@@ -91,6 +91,7 @@ beforeEach(() => {
     processingScope: 'selected-pages',
     processingStages: ['detection', 'ocr', 'translation', 'inpainting'],
     settingsOpen: false,
+    sidebarPanel: 'properties',
     shortcuts: defaultShortcuts,
   })
 })

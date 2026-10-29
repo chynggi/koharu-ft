@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image,
     display_name, prompt,
@@ -100,6 +100,13 @@ pub(super) async fn translate(
         &text,
         &request.segments,
     )?)
+}
+
+pub(super) fn chat_endpoint(config: &OpenAiCompatibleConfig) -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: endpoint(config.base_url.as_ref(), "chat/completions"),
+        api_key: koharu_secrets::get(Provider::OpenAiCompatible.secret_key().unwrap())?,
+    })
 }
 
 pub(super) async fn models(client: &Client, config: &OpenAiCompatibleConfig) -> Result<Vec<Model>> {

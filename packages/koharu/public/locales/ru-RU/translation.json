@@ -24,16 +24,19 @@
     "account": "Учётная запись ChatGPT",
     "applying": "Применение изменений проекта…",
     "automatic": "Автоматически",
+    "backend": "Бэкенд",
     "cancel": "Отмена",
     "cancelled": "Отменено.",
+    "codex": "Codex",
     "deviceCode": "Код устройства",
     "deviceCodeHint": "Браузер открыт. Введите этот код, чтобы авторизовать Koharu.",
     "emptyDescription": "Попросите агента проверить, перевести, изменить или обработать проект. Он будет просматривать изображения страниц только при необходимости.",
     "emptyTitle": "Что должен сделать Koharu?",
     "failed": "Запрос агента завершился ошибкой.",
-    "loading": "Загрузка Codex…",
+    "loading": "Загрузка агента…",
     "message": "Сообщение агенту Koharu",
-    "model": "Модель Codex",
+    "model": "Модель",
+    "noModels": "Модели не найдены. Проверьте базовый URL и API-ключ этого провайдера в настройках.",
     "placeholder": "Попросите Koharu поработать над проектом…",
     "properties": "Свойства",
     "reasoning": "Рассуждение",
@@ -73,6 +76,7 @@
     "back": "Назад",
     "cancel": "Отмена",
     "clearSearch": "Очистить поиск",
+    "experimental": "Экспериментально",
     "loading": "Загрузка…",
     "reset": "Сбросить"
   },
@@ -98,6 +102,20 @@
     "start": "Экспортировать",
     "subfolders": "Отдельные папки для каждого формата",
     "title": "Экспорт страниц"
+  },
+  "find": {
+    "matchCase": "Учитывать регистр",
+    "noResults": "Ни один перевод не содержит этот текст.",
+    "page": "Страница {{number}}",
+    "placeholder": "Искать в переводах",
+    "replace": "Заменить",
+    "replaceAll": "Заменить все",
+    "replacePlaceholder": "Заменить на",
+    "searching": "Поиск…",
+    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
+    "title": "Поиск"
   },
   "fontPicker": {
     "activeFilterCount": "Активных фильтров: {{count}}",
@@ -212,6 +230,11 @@
     "border": "Обводка",
     "borderColor": "Цвет обводки",
     "borderWidth": "Ширина обводки",
+    "secondBorder": "2-я обводка",
+    "secondBorderColor": "Цвет второй обводки",
+    "secondBorderWidth": "Ширина второй обводки",
+    "increaseSecondBorderWidth": "Увеличить ширину второй обводки",
+    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
     "chooseFontSize": "Выбрать размер шрифта",
     "color": "Цвет",
     "customFrame": "Пользовательская рамка",
@@ -289,7 +312,18 @@
     "unplaced": "Не размещено",
     "vertical": "Вертикально",
     "weight": "Насыщенность",
-    "width": "Ширина"
+    "width": "Ширина",
+    "outlineMethod": "Способ обводки",
+    "outlineExpansion": "Расширение",
+    "outlineContour": "Контурная обводка",
+    "outlinePosition": "Положение",
+    "outlineOutside": "Снаружи",
+    "outlineCenter": "По центру",
+    "outlineInside": "Внутри",
+    "outlineJoin": "Углы",
+    "outlineRound": "Скруглённые",
+    "outlineMiter": "Острые",
+    "outlineBevel": "Скошенные"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Анимация интерфейса",
+      "animationsDescription": "Плавно показывает меню и диалоги и сглаживает наведение и переключатели. Учитывает системную настройку уменьшения движения.",
       "description": "Настройте вид рабочего пространства, не меняя отрисовку изображения.",
+      "colorTheme": "Цветовая тема",
+      "colorThemeDescription": "Выберите палитру интерфейса. У каждой палитры есть светлый и тёмный вариант.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Океан",
+        "matcha": "Матча"
+      },
       "interface": "Интерфейс",
       "language": "Язык",
       "theme": "Тема",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "Одноклавишные сочетания доступны, когда поле ввода текста не в фокусе.",
       "inputLabel": "Сочетание для «{{action}}»",
+      "nextPage": "Следующая страница",
+      "pages": "Страницы",
+      "previousPage": "Предыдущая страница",
       "title": "Сочетания клавиш",
       "tools": "Инструменты"
     },
@@ -737,6 +784,7 @@
     "fillColor": "Цвет заливки",
     "increaseBrushSize": "Увеличить размер кисти",
     "manual_ocr_box": "Ручной OCR (прямоугольник)",
+    "manual_ocr_clean": "OCR и очистка",
     "manual_ocr_lasso": "Ручной OCR (произвольная форма)",
     "pan": "Перемещение",
     "rampAxis": {

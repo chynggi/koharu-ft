@@ -30,12 +30,6 @@ pub(crate) enum Target {
     #[cfg(target_os = "linux")]
     #[strum(props(version = 90_500, integrated = false))]
     Gfx950,
-    #[strum(props(version = 100_100, integrated = false))]
-    Gfx1010,
-    #[strum(props(version = 100_101, integrated = false))]
-    Gfx1011,
-    #[strum(props(version = 100_102, integrated = false))]
-    Gfx1012,
     #[strum(props(version = 100_300, integrated = false))]
     Gfx1030,
     #[strum(props(version = 100_301, integrated = false))]
@@ -87,5 +81,18 @@ impl Target {
         } else {
             crate::DeviceType::Gpu
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rdna1_targets_are_excluded() {
+        assert!("gfx1010".parse::<Target>().is_err());
+        assert!("gfx1011".parse::<Target>().is_err());
+        assert!("gfx1012".parse::<Target>().is_err());
+        assert_eq!("gfx1030".parse(), Ok(Target::Gfx1030));
     }
 }

@@ -24,16 +24,19 @@
     "account": "ChatGPTアカウント",
     "applying": "プロジェクトの変更を適用中…",
     "automatic": "自動",
+    "backend": "バックエンド",
     "cancel": "キャンセル",
     "cancelled": "キャンセルしました。",
+    "codex": "Codex",
     "deviceCode": "デバイスコード",
     "deviceCodeHint": "ブラウザーが開きました。このコードを入力してKoharuを認証してください。",
     "emptyDescription": "エージェントにこのプロジェクトの確認、翻訳、編集、処理を依頼できます。ページ画像は必要な場合にのみ表示されます。",
     "emptyTitle": "Koharuに何をさせますか？",
     "failed": "エージェントのリクエストに失敗しました。",
-    "loading": "Codexを読み込み中…",
+    "loading": "エージェントを読み込み中…",
     "message": "Koharuエージェントにメッセージを送信",
-    "model": "Codexモデル",
+    "model": "モデル",
+    "noModels": "モデルが見つかりません。設定でこのプロバイダーのベース URL と API キーを確認してください。",
     "placeholder": "Koharuにこのプロジェクトの作業を依頼…",
     "properties": "プロパティ",
     "reasoning": "推論",
@@ -73,6 +76,7 @@
     "back": "戻る",
     "cancel": "キャンセル",
     "clearSearch": "検索をクリア",
+    "experimental": "試験的",
     "loading": "読み込み中…",
     "reset": "リセット"
   },
@@ -98,6 +102,20 @@
     "start": "書き出す",
     "subfolders": "形式ごとにフォルダーを分ける",
     "title": "ページの書き出し"
+  },
+  "find": {
+    "matchCase": "大文字と小文字を区別",
+    "noResults": "この文字列を含む翻訳はありません。",
+    "page": "{{number}} ページ",
+    "placeholder": "翻訳を検索",
+    "replace": "置換",
+    "replaceAll": "すべて置換",
+    "replacePlaceholder": "置換後の文字列",
+    "searching": "検索中…",
+    "summary": "{{pages}} ページで {{count}} 件",
+    "summary_one": "{{pages}} ページで {{count}} 件",
+    "summary_other": "{{pages}} ページで {{count}} 件",
+    "title": "検索"
   },
   "fontPicker": {
     "activeFilterCount": "有効なフィルター: {{count}}件",
@@ -212,6 +230,11 @@
     "border": "縁取り",
     "borderColor": "縁取りの色",
     "borderWidth": "縁取り幅",
+    "secondBorder": "2重縁取り",
+    "secondBorderColor": "外側の縁取りの色",
+    "secondBorderWidth": "外側の縁取り幅",
+    "increaseSecondBorderWidth": "外側の縁取り幅を拡大",
+    "decreaseSecondBorderWidth": "外側の縁取り幅を縮小",
     "chooseFontSize": "フォントサイズを選択",
     "color": "色",
     "customFrame": "カスタムフレーム",
@@ -289,7 +312,18 @@
     "unplaced": "未配置",
     "vertical": "縦書き",
     "weight": "太さ",
-    "width": "幅"
+    "width": "幅",
+    "outlineMethod": "縁取り方式",
+    "outlineExpansion": "拡張",
+    "outlineContour": "輪郭線",
+    "outlinePosition": "位置",
+    "outlineOutside": "外側",
+    "outlineCenter": "中央",
+    "outlineInside": "内側",
+    "outlineJoin": "角の形状",
+    "outlineRound": "丸形",
+    "outlineMiter": "鋭角",
+    "outlineBevel": "面取り"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "インターフェースのアニメーション",
+      "animationsDescription": "メニューやダイアログをフェードさせ、ホバーやスイッチの変化をなめらかにします。システムの視差効果を減らす設定に従います。",
       "description": "アートワークの描画には影響せず、作業環境の見た目を調整します。",
+      "colorTheme": "カラーテーマ",
+      "colorThemeDescription": "インターフェースの配色を選びます。どの配色にもライトとダークの両方があります。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "オーシャン",
+        "matcha": "抹茶"
+      },
       "interface": "インターフェース",
       "language": "言語",
       "theme": "テーマ",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "テキスト入力欄にフォーカスがないとき、単一キーのショートカットを使用できます。",
       "inputLabel": "{{action}}のショートカット",
+      "nextPage": "次のページ",
+      "pages": "ページ",
+      "previousPage": "前のページ",
       "title": "ショートカット",
       "tools": "ツール"
     },
@@ -737,6 +784,7 @@
     "fillColor": "塗りつぶしの色",
     "increaseBrushSize": "ブラシサイズを拡大",
     "manual_ocr_box": "手動OCR（矩形）",
+    "manual_ocr_clean": "OCRとクリーン（ボックス）",
     "manual_ocr_lasso": "手動OCR（フリーハンド）",
     "pan": "移動",
     "rampAxis": {

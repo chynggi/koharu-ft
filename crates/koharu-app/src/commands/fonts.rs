@@ -125,6 +125,9 @@ pub async fn get_font_preview(
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<FontPreviewBytes, Error> {
     let renderer = desktop.renderer();
+    if let Some(bytes) = renderer.bundled_font_preview(&family_name).await? {
+        return Ok(FontPreviewBytes(bytes));
+    }
     let rasterizer = desktop.rasterizer().await?;
     Ok(FontPreviewBytes(
         renderer.font_preview(&family_name, rasterizer).await?,

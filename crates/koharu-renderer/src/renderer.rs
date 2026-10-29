@@ -43,7 +43,7 @@ use crate::{
     images::{DecodedImage, ImageCache, decode},
     script::{is_chinese_or_japanese_text, shaping_direction_for_text},
     shape_renderer,
-    text_renderer::{StrokeOptions, TextNodeDescriptor, TextRenderer},
+    text_renderer::{OuterStroke, StrokeOptions, TextNodeDescriptor, TextRenderer},
 };
 
 const MAX_SURFACE_DIMENSION: u32 = 32_768;
@@ -159,6 +159,18 @@ impl Renderer {
         self.inner
             .fonts
             .families()
+            .await
+            .map_err(Error::FontResource)
+    }
+
+    /// Returns the bundled preview image for a family, if the catalog has one.
+    ///
+    /// Callers use this before acquiring a rasterizer so cached previews do not
+    /// force GPU initialization.
+    pub async fn bundled_font_preview(&self, family_name: &str) -> Result<Option<Vec<u8>>> {
+        self.inner
+            .fonts
+            .preview_image(family_name)
             .await
             .map_err(Error::FontResource)
     }
@@ -1747,6 +1759,22 @@ fn resolve_stroke(typography: Option<&Typography>) -> Option<StrokeOptions> {
     Some(StrokeOptions {
         color: typography.stroke_color.unwrap_or([u8::MAX; 4]),
         width_px,
+        method: typography
+            .stroke_method
+            .unwrap_or(koharu_scene::StrokeMethod::Expansion),
+        position: typography
+            .stroke_position
+            .unwrap_or(koharu_scene::StrokePosition::Outside),
+        join: typography
+            .stroke_join
+            .unwrap_or(koharu_scene::LineJoin::Round),
+        outer: typography
+            .outer_stroke_width
+            .filter(|width| *width > 0.0)
+            .map(|width_px| OuterStroke {
+                color: typography.outer_stroke_color.unwrap_or([0, 0, 0, u8::MAX]),
+                width_px,
+            }),
     })
 }
 
@@ -2008,6 +2036,11 @@ mod tests {
             color: None,
             stroke_color: None,
             stroke_width: None,
+            stroke_method: None,
+            stroke_position: None,
+            stroke_join: None,
+            outer_stroke_color: None,
+            outer_stroke_width: None,
             alignment: None,
             writing_mode: Some(koharu_scene::WritingMode::Vertical),
             extensions: BTreeMap::new(),
@@ -2044,6 +2077,11 @@ mod tests {
             color: None,
             stroke_color: None,
             stroke_width: None,
+            stroke_method: None,
+            stroke_position: None,
+            stroke_join: None,
+            outer_stroke_color: None,
+            outer_stroke_width: None,
             alignment: None,
             writing_mode: Some(koharu_scene::WritingMode::Vertical),
             extensions: BTreeMap::new(),

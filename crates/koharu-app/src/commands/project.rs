@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
     io::Cursor,
+    ops::Range,
     path::PathBuf,
     sync::Arc,
 };
@@ -44,6 +45,19 @@ pub struct ProjectInfo {
     pub active_page: Option<EntityId>,
     pub can_undo: bool,
     pub can_redo: bool,
+}
+
+/// A text layer whose translation contains the searched text.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct TranslationMatch {
+    pub page: EntityId,
+    /// The page's position in the project, from zero.
+    pub page_index: u32,
+    pub layer: EntityId,
+    /// The layer's whole translation.
+    pub text: String,
+    /// How many times the searched text occurs in it.
+    pub count: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -210,6 +224,11 @@ pub struct Typography {
     pub color: Option<[u8; 4]>,
     pub stroke_color: Option<[u8; 4]>,
     pub stroke_width: Option<f32>,
+    pub stroke_method: Option<koharu_scene::StrokeMethod>,
+    pub stroke_position: Option<koharu_scene::StrokePosition>,
+    pub stroke_join: Option<koharu_scene::LineJoin>,
+    pub outer_stroke_color: Option<[u8; 4]>,
+    pub outer_stroke_width: Option<f32>,
     pub alignment: Option<koharu_scene::TextAlignment>,
     pub writing_mode: Option<koharu_scene::WritingMode>,
 }
@@ -1032,6 +1051,11 @@ impl Project {
             color: None,
             stroke_color: None,
             stroke_width: None,
+            stroke_method: Some(koharu_scene::StrokeMethod::Contour),
+            stroke_position: None,
+            stroke_join: None,
+            outer_stroke_color: None,
+            outer_stroke_width: None,
             alignment: match kind {
                 TextLayoutKind::Point => Some(koharu_scene::TextAlignment::Start),
                 TextLayoutKind::Paragraph => None,
@@ -1088,6 +1112,86 @@ impl Project {
         self.commit(patch).await
     }
 
+    /// The text layers whose translation contains `query`, in project order.
+    pub(crate) fn find_translations(
+        &self,
+        query: &str,
+        match_case: bool,
+    ) -> Result<Vec<TranslationMatch>> {
+        let snapshot = self.snapshot();
+        let mut matches = Vec::new();
+        for (page_index, page) in snapshot.pages().enumerate() {
+            let Some(group) = page.text_group()? else {
+                continue;
+            };
+            for layer in group.text_layers()? {
+                let Some(translation) = layer.content()?.translation()? else {
+                    continue;
+                };
+                let count = find_ranges(&translation.text.value, query, match_case).len();
+                if count > 0 {
+                    matches.push(TranslationMatch {
+                        page: page.id(),
+                        page_index: u32::try_from(page_index)?,
+                        layer: layer.id(),
+                        text: translation.text.value,
+                        count: u32::try_from(count)?,
+                    });
+                }
+            }
+        }
+        Ok(matches)
+    }
+
+    /// Replaces `query` in translations, everywhere or only in `layers`, as
+    /// one undo step, and returns how many occurrences were replaced.
+    pub(crate) async fn replace_translations(
+        &mut self,
+        query: &str,
+        replacement: &str,
+        match_case: bool,
+        layers: Option<&[EntityId]>,
+    ) -> Result<(Commit, u32)> {
+        let snapshot = self.snapshot();
+        let mut updates = Vec::new();
+        let mut count = 0;
+        for found in self.find_translations(query, match_case)? {
+            if layers.is_some_and(|layers| !layers.contains(&found.layer)) {
+                continue;
+            }
+            let content = Self::text_content(&snapshot, found.layer)?;
+            let language = snapshot
+                .component::<SceneTranslation>(content)?
+                .and_then(|translation| translation.language);
+            let ranges = find_ranges(&found.text, query, match_case);
+            count += found.count;
+            updates.push((
+                found.layer,
+                content,
+                language,
+                replace_ranges(&found.text, &ranges, replacement),
+            ));
+        }
+        if updates.is_empty() {
+            bail!("no translation contains that text");
+        }
+        let patch = snapshot.patch(|edit| {
+            for (layer, content, language, text) in updates {
+                edit.promote_entity_to_user(layer)?;
+                edit.promote_entity_to_user(content)?;
+                edit.set(
+                    content,
+                    &SceneTranslation {
+                        text: Authored::user(text),
+                        language,
+                    },
+                )?;
+            }
+            Ok(())
+        })?;
+        Ok((self.commit(patch).await?, count))
+    }
+
     pub async fn set_typography(&mut self, updates: Vec<TypographyUpdate>) -> Result<Commit> {
         let snapshot = self.snapshot();
         let updates = updates
@@ -1111,6 +1215,11 @@ impl Project {
                     color: update.typography.color,
                     stroke_color: update.typography.stroke_color,
                     stroke_width: update.typography.stroke_width,
+                    stroke_method: update.typography.stroke_method,
+                    stroke_position: update.typography.stroke_position,
+                    stroke_join: update.typography.stroke_join,
+                    outer_stroke_color: update.typography.outer_stroke_color,
+                    outer_stroke_width: update.typography.outer_stroke_width,
                     alignment: update.typography.alignment,
                     writing_mode: update.typography.writing_mode,
                     extensions: Default::default(),
@@ -2241,6 +2350,11 @@ impl Project {
             color: typography.color,
             stroke_color: typography.stroke_color,
             stroke_width: typography.stroke_width,
+            stroke_method: typography.stroke_method,
+            stroke_position: typography.stroke_position,
+            stroke_join: typography.stroke_join,
+            outer_stroke_color: typography.outer_stroke_color,
+            outer_stroke_width: typography.outer_stroke_width,
             alignment: typography.alignment,
             writing_mode,
         }
@@ -2373,7 +2487,7 @@ impl Project {
 
     /// A two-point drag is a rectangle; three or more points are a freeform
     /// polygon. Both become a single closed polygon the OCR stage can crop.
-    fn geometry_from_points(points: Vec<Point>) -> Result<SceneGeometry> {
+    pub(crate) fn geometry_from_points(points: Vec<Point>) -> Result<SceneGeometry> {
         if points
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite())
@@ -2700,6 +2814,67 @@ fn blend_pixel(pixel: &mut image::Rgba<u8>, mode: RasterStrokeMode, color: [u8; 
             pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
         }
     }
+}
+
+/// The byte ranges where `query` occurs in `haystack`, left to right and
+/// without overlap. Without `match_case`, characters compare by their
+/// lowercase forms, so the match follows Unicode rather than ASCII rules.
+fn find_ranges(haystack: &str, query: &str, match_case: bool) -> Vec<Range<usize>> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    if match_case {
+        return haystack
+            .match_indices(query)
+            .map(|(start, found)| start..start + found.len())
+            .collect();
+    }
+    let query = query
+        .chars()
+        .flat_map(char::to_lowercase)
+        .collect::<Vec<_>>();
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    while let Some(next) = haystack[start..].chars().next() {
+        match folded_prefix(&haystack[start..], &query) {
+            Some(length) => {
+                ranges.push(start..start + length);
+                start += length;
+            }
+            None => start += next.len_utf8(),
+        }
+    }
+    ranges
+}
+
+/// The byte length of the start of `text` whose lowercase form is `query`.
+fn folded_prefix(text: &str, query: &[char]) -> Option<usize> {
+    let mut remaining = query;
+    for (index, character) in text.char_indices() {
+        if remaining.is_empty() {
+            return Some(index);
+        }
+        for lower in character.to_lowercase() {
+            let (first, rest) = remaining.split_first()?;
+            if *first != lower {
+                return None;
+            }
+            remaining = rest;
+        }
+    }
+    remaining.is_empty().then_some(text.len())
+}
+
+fn replace_ranges(text: &str, ranges: &[Range<usize>], replacement: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut copied = 0;
+    for range in ranges {
+        output.push_str(&text[copied..range.start]);
+        output.push_str(replacement);
+        copied = range.end;
+    }
+    output.push_str(&text[copied..]);
+    output
 }
 
 #[cfg(test)]
@@ -3266,6 +3441,11 @@ mod tests {
             color: None,
             stroke_color: None,
             stroke_width: None,
+            stroke_method: None,
+            stroke_position: None,
+            stroke_join: None,
+            outer_stroke_color: None,
+            outer_stroke_width: None,
             alignment: None,
             writing_mode: Some(WritingMode::Vertical),
             extensions: Default::default(),
@@ -3487,6 +3667,11 @@ mod tests {
                     color: None,
                     stroke_color: None,
                     stroke_width: None,
+                    stroke_method: None,
+                    stroke_position: None,
+                    stroke_join: None,
+                    outer_stroke_color: None,
+                    outer_stroke_width: None,
                     alignment: None,
                     writing_mode: Some(WritingMode::Vertical),
                     extensions: Default::default(),
@@ -3514,6 +3699,11 @@ mod tests {
                     color: Some([12, 34, 56, u8::MAX]),
                     stroke_color: None,
                     stroke_width: None,
+                    stroke_method: None,
+                    stroke_position: None,
+                    stroke_join: None,
+                    outer_stroke_color: None,
+                    outer_stroke_width: None,
                     alignment: None,
                     writing_mode: Some(WritingMode::Vertical),
                     extensions: Default::default(),
@@ -3790,6 +3980,104 @@ mod tests {
         assert!(
             end[2] > end[0],
             "the stroke end must be blue-heavy, got {end:?}"
+        );
+    }
+
+    #[test]
+    fn find_ranges_matches_with_and_without_case() {
+        assert_eq!(find_ranges("Ken and KEN", "Ken", true), vec![0..3]);
+        assert_eq!(find_ranges("Ken and KEN", "ken", false), vec![0..3, 8..11]);
+        assert_eq!(
+            find_ranges("ÉCOLE école", "école", false),
+            vec![0..6, 7..13]
+        );
+        assert_eq!(find_ranges("aaaa", "aa", false), vec![0..2, 2..4]);
+        assert!(find_ranges("anything", "", false).is_empty());
+        assert_eq!(
+            replace_ranges("Ken and KEN", &[0..3, 8..11], "Kenji"),
+            "Kenji and Kenji"
+        );
+    }
+
+    #[tokio::test]
+    async fn translations_are_found_and_replaced_across_pages_as_one_step() {
+        let mut session = Session::memory().await.unwrap();
+        let mut setup = session.snapshot().edit();
+        let first = setup
+            .add_page(PageDraft::new("first", 100.0, 100.0), At::End)
+            .unwrap();
+        let second = setup
+            .add_page(PageDraft::new("second", 100.0, 100.0), At::End)
+            .unwrap();
+        session.commit(setup.finish().unwrap()).await.unwrap();
+        let mut project = Project::new(session, "test".to_owned());
+        let frame = Frame {
+            x: 10.0,
+            y: 10.0,
+            width: 40.0,
+            height: 20.0,
+            angle_degrees: 0.0,
+        };
+        let mut layers = Vec::new();
+        for (page, text) in [(first, "Onii-chan!"), (second, "Thanks, onii-chan.")] {
+            let (_, layer) = project.add_text_box(page, frame).await.unwrap();
+            project
+                .set_translation(layer, Some(text.to_owned()))
+                .await
+                .unwrap();
+            layers.push(layer);
+        }
+
+        let found = project.find_translations("onii-chan", false).unwrap();
+        assert_eq!(
+            found
+                .iter()
+                .map(|found| (found.page_index, found.layer, found.count))
+                .collect::<Vec<_>>(),
+            vec![(0, layers[0], 1), (1, layers[1], 1)]
+        );
+        assert_eq!(
+            project.find_translations("onii-chan", true).unwrap().len(),
+            1
+        );
+
+        // Replacing one layer leaves the other alone.
+        let (commit, count) = project
+            .replace_translations("onii-chan", "big bro", false, Some(&layers[1..]))
+            .await
+            .unwrap();
+        project.record_commit(&commit);
+        assert_eq!(count, 1);
+        let text = |project: &Project, layer| {
+            project
+                .snapshot()
+                .text_layer(layer)
+                .unwrap()
+                .content()
+                .unwrap()
+                .translation()
+                .unwrap()
+                .unwrap()
+                .text
+                .value
+        };
+        assert_eq!(text(&project, layers[0]), "Onii-chan!");
+        assert_eq!(text(&project, layers[1]), "Thanks, big bro.");
+
+        // Replacing everywhere is one step that one undo reverts.
+        let (commit, count) = project
+            .replace_translations("big bro", "Kenji", true, None)
+            .await
+            .unwrap();
+        project.record_commit(&commit);
+        assert_eq!(count, 1);
+        project.undo().await.unwrap();
+        assert_eq!(text(&project, layers[1]), "Thanks, big bro.");
+        assert!(
+            project
+                .replace_translations("nobody", "x", false, None)
+                .await
+                .is_err()
         );
     }
 
@@ -4569,6 +4857,11 @@ mod tests {
                     color: None,
                     stroke_color: None,
                     stroke_width: None,
+                    stroke_method: None,
+                    stroke_position: None,
+                    stroke_join: None,
+                    outer_stroke_color: None,
+                    outer_stroke_width: None,
                     alignment: None,
                     writing_mode: None,
                 },
@@ -4595,6 +4888,11 @@ mod tests {
                     color: None,
                     stroke_color: None,
                     stroke_width: None,
+                    stroke_method: None,
+                    stroke_position: None,
+                    stroke_join: None,
+                    outer_stroke_color: None,
+                    outer_stroke_width: None,
                     alignment: None,
                     writing_mode: None,
                 },

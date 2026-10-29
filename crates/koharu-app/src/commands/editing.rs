@@ -8,7 +8,7 @@ use tauri::State;
 use super::{
     Error,
     canvas::{CanvasChannel, Point},
-    project::{CurrentProject, Page, Project, Typography},
+    project::{CurrentProject, Page, Project, TranslationMatch, Typography},
 };
 async fn synchronize_canvas(
     desktop: &Desktop,
@@ -177,6 +177,46 @@ pub async fn set_translation(
     let canvas = synchronize_canvas(&desktop, &commit, page).await?;
     canvas_channel.publish(canvas);
     Ok(())
+}
+
+/// The text layers whose translation contains `query`, in project order.
+#[tauri::command]
+#[specta::specta]
+pub async fn find_translations(
+    query: String,
+    match_case: bool,
+    project: State<'_, CurrentProject>,
+) -> Result<Vec<TranslationMatch>, Error> {
+    let project = project.project.lock().await;
+    let project = project.as_ref().context("no project is open")?;
+    Ok(project.find_translations(&query, match_case)?)
+}
+
+/// Replaces `query` in translations as one undo step, everywhere or only in
+/// `layers`, and returns how many occurrences were replaced.
+#[tauri::command]
+#[specta::specta]
+pub async fn replace_translations(
+    query: String,
+    replacement: String,
+    match_case: bool,
+    layers: Option<Vec<EntityId>>,
+    desktop: State<'_, Desktop>,
+    project: State<'_, CurrentProject>,
+    canvas_channel: State<'_, CanvasChannel>,
+) -> Result<u32, Error> {
+    let (commit, page, count) = {
+        let mut project = project.project.lock().await;
+        let project = project.as_mut().context("no project is open")?;
+        let (commit, count) = project
+            .replace_translations(&query, &replacement, match_case, layers.as_deref())
+            .await?;
+        project.record_commit(&commit);
+        (commit, project.active_page(), count)
+    };
+    let canvas = synchronize_canvas(&desktop, &commit, page).await?;
+    canvas_channel.publish(canvas);
+    Ok(count)
 }
 
 #[tauri::command]

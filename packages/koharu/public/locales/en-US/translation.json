@@ -24,16 +24,19 @@
     "account": "ChatGPT account",
     "applying": "Applying project changes...",
     "automatic": "Automatic",
+    "backend": "Backend",
     "cancel": "Cancel",
     "cancelled": "Cancelled.",
+    "codex": "Codex",
     "deviceCode": "Device code",
     "deviceCodeHint": "Your browser has opened. Enter this code to authorize Koharu.",
     "emptyDescription": "Ask the agent to inspect, translate, edit, or process this project. It will view page images only when needed.",
     "emptyTitle": "What should Koharu do?",
     "failed": "The agent request failed.",
-    "loading": "Loading Codex...",
+    "loading": "Loading agent...",
     "message": "Message Koharu Agent",
-    "model": "Codex model",
+    "model": "Model",
+    "noModels": "No models found. Check this provider's base URL and API key in Settings.",
     "placeholder": "Ask Koharu to work on this project...",
     "properties": "Properties",
     "reasoning": "Reasoning",
@@ -73,6 +76,7 @@
     "back": "Back",
     "cancel": "Cancel",
     "clearSearch": "Clear search",
+    "experimental": "Experimental",
     "loading": "Loading…",
     "reset": "Reset"
   },
@@ -98,6 +102,20 @@
     "start": "Export",
     "subfolders": "Separate folders per format",
     "title": "Export pages"
+  },
+  "find": {
+    "matchCase": "Match case",
+    "noResults": "No translation contains this text.",
+    "page": "Page {{number}}",
+    "placeholder": "Find in translations",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "replacePlaceholder": "Replace with",
+    "searching": "Searching…",
+    "summary": "{{count}} matches on {{pages}} pages",
+    "summary_one": "{{count}} match on {{pages}} page(s)",
+    "summary_other": "{{count}} matches on {{pages}} page(s)",
+    "title": "Find"
   },
   "fontPicker": {
     "activeFilterCount": "{{count}} active filters",
@@ -212,6 +230,11 @@
     "border": "Border",
     "borderColor": "Border color",
     "borderWidth": "Border width",
+    "secondBorder": "2nd border",
+    "secondBorderColor": "Second border color",
+    "secondBorderWidth": "Second border width",
+    "increaseSecondBorderWidth": "Increase second border width",
+    "decreaseSecondBorderWidth": "Decrease second border width",
     "chooseFontSize": "Choose font size",
     "color": "Color",
     "customFrame": "Custom frame",
@@ -289,7 +312,18 @@
     "unplaced": "Unplaced",
     "vertical": "Vertical",
     "weight": "Weight",
-    "width": "Width"
+    "width": "Width",
+    "outlineMethod": "Outline method",
+    "outlineExpansion": "Expansion",
+    "outlineContour": "Contour stroke",
+    "outlinePosition": "Position",
+    "outlineOutside": "Outside",
+    "outlineCenter": "Center",
+    "outlineInside": "Inside",
+    "outlineJoin": "Corners",
+    "outlineRound": "Round",
+    "outlineMiter": "Sharp",
+    "outlineBevel": "Bevel"
   },
   "languages": {
     "ar": "العربية",
@@ -453,7 +487,17 @@
   },
   "settings": {
     "appearance": {
+      "animations": "Interface animations",
+      "animationsDescription": "Fade menus and dialogs and ease hover and switch changes. Follows the system reduced-motion setting.",
       "description": "Match your workspace to the room without changing how artwork is rendered.",
+      "colorTheme": "Color theme",
+      "colorThemeDescription": "Choose the interface palette. Each palette has a light and a dark version.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Ocean",
+        "matcha": "Matcha"
+      },
       "interface": "Interface",
       "language": "Language",
       "theme": "Theme",
@@ -639,6 +683,9 @@
     "shortcuts": {
       "description": "Single-key shortcuts are available whenever a text field is not focused.",
       "inputLabel": "{{action}} shortcut",
+      "nextPage": "Next page",
+      "pages": "Pages",
+      "previousPage": "Previous page",
       "title": "Shortcuts",
       "tools": "Tools"
     },
@@ -737,6 +784,7 @@
     "fillColor": "Fill color",
     "increaseBrushSize": "Increase brush size",
     "manual_ocr_box": "Manual OCR (box)",
+    "manual_ocr_clean": "OCR and clean (box)",
     "manual_ocr_lasso": "Manual OCR (lasso)",
     "pan": "Pan",
     "rampAxis": {

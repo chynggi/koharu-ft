@@ -110,7 +110,10 @@ impl Store {
     }
 }
 
-struct Lock(File);
+struct Lock {
+    file: Option<File>,
+    path: PathBuf,
+}
 
 impl Lock {
     async fn acquire(target: &Path) -> Result<Self> {
@@ -135,7 +138,10 @@ impl Lock {
                 .open(&path)
                 .with_context(|| format!("failed to open {}", path.display()))?;
             FileExt::lock(&file).with_context(|| format!("failed to lock {}", path.display()))?;
-            Ok(Self(file))
+            Ok(Self {
+                file: Some(file),
+                path,
+            })
         })
         .await
         .context("runtime store lock task failed")?
@@ -144,7 +150,15 @@ impl Lock {
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        let _ = FileExt::unlock(&self.0);
+        if let Some(file) = self.file.take() {
+            let _ = FileExt::unlock(&file);
+        }
+        // The lock file is transport, not cache content. Removing it keeps the
+        // store from accumulating one empty file per installed artifact. On
+        // Unix a waiter that opened the same inode before the unlink can race
+        // with a fresh opener; the worst case is installing the same immutable
+        // artifact twice.
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 

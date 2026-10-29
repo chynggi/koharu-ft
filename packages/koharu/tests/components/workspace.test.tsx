@@ -599,6 +599,53 @@ describe('canvas interaction adapter', () => {
       ]),
     )
   })
+
+  it('resizes the brush with Ctrl+Alt drag instead of painting', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'draw', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
+    const commit = vi.spyOn(commands, 'commitPaint')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, {
+      button: 0,
+      pointerId: 9,
+      clientX: 30,
+      clientY: 40,
+      ctrlKey: true,
+      altKey: true,
+    })
+    // The circle's edge follows the pointer, so 20 px of travel adds 40 px.
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 50, clientY: 90 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(88)
+    fireEvent.pointerMove(surface, { pointerId: 9, clientX: 20, clientY: 40 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(28)
+    fireEvent.pointerUp(surface, { pointerId: 9, clientX: 20, clientY: 40 })
+
+    expect(useKoharuStore.getState().brush.diameter).toBe(28)
+    expect(canvas.beginStroke).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('restores the brush size when a Ctrl+Alt drag is canceled', () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'eraser', brush: { diameter: 48, color: '#FFFFFF', ramp: null } })
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, {
+      button: 0,
+      pointerId: 10,
+      clientX: 30,
+      clientY: 40,
+      ctrlKey: true,
+      altKey: true,
+    })
+    fireEvent.pointerMove(surface, { pointerId: 10, clientX: 60, clientY: 40 })
+    expect(useKoharuStore.getState().brush.diameter).toBe(108)
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(useKoharuStore.getState().brush.diameter).toBe(48)
+  })
+
   it.each([
     ['revision', { canvasRevision: 2 }],
     ['generation', { canvasGeneration: 2 }],
@@ -912,6 +959,25 @@ describe('canvas interaction adapter', () => {
       { x: 130, y: 90 },
     ])
     await waitFor(() => expect(useKoharuStore.getState().selectedLayers).toEqual(['manual']))
+  })
+
+  it('reads and cleans a drawn box with the OCR and clean tool', async () => {
+    installProject()
+    useKoharuStore.setState({ tool: 'manual_ocr_clean' })
+    const manual = vi.spyOn(commands, 'manualOcr')
+    const clean = vi.spyOn(commands, 'cleanManualOcr').mockResolvedValue('job')
+    const surface = renderWorkspace()
+
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 15, clientX: 30, clientY: 40 })
+    fireEvent.pointerMove(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+    fireEvent.pointerUp(surface, { pointerId: 15, clientX: 140, clientY: 110 })
+
+    await waitFor(() => expect(clean).toHaveBeenCalledOnce())
+    expect(clean).toHaveBeenCalledWith([
+      { x: 20, y: 20 },
+      { x: 130, y: 90 },
+    ])
+    expect(manual).not.toHaveBeenCalled()
   })
 
   it('runs manual OCR on a freeform lasso and previews the drawing', async () => {

@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image,
     display_name, prompt,
@@ -96,6 +96,13 @@ pub(super) async fn translate(
         .content
         .context("LM Studio returned no message content")?;
     Ok(prompt::translations("lm-studio", &text, &request.segments)?)
+}
+
+pub(super) fn chat_endpoint(config: &LmStudioConfig) -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: endpoint(config.base_url.as_ref(), "v1/chat/completions"),
+        api_key: koharu_secrets::get(Provider::LmStudio.secret_key().unwrap())?,
+    })
 }
 
 pub(super) async fn models(client: &Client, config: &LmStudioConfig) -> Result<Vec<Model>> {

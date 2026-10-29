@@ -9,7 +9,7 @@ use koharu_secrets::ExposeSecret;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::send_json;
+use super::{ChatEndpoint, send_json};
 use crate::{
     GenerationConfig, Model, Provider, Result, TranslationRequest, backend::encode_image, prompt,
 };
@@ -95,6 +95,16 @@ pub(super) async fn translate(
         &text,
         &request.segments,
     )?)
+}
+
+pub(super) fn chat_endpoint() -> anyhow::Result<ChatEndpoint> {
+    Ok(ChatEndpoint {
+        url: CHAT_URL.to_owned(),
+        api_key: Some(
+            koharu_secrets::get(Provider::OpenRouter.secret_key().unwrap())?
+                .context("openrouter API key is not configured")?,
+        ),
+    })
 }
 
 pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
