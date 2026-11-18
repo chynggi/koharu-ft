@@ -3,6 +3,7 @@
 import {
   commands,
   type Change,
+  type CharStyle,
   type ColorAdjust,
   type Layer,
   type LayerId,
@@ -10,10 +11,19 @@ import {
   type PageId,
   type ShapeFill,
   type Stroke,
+  type TextStyle,
   type Value,
 } from '@koharu/ipc/protocol'
 
-import { findPart, isBlockLayer, isTextLayer, walkLayers, type Move, type Part } from './document'
+import {
+  findPart,
+  isBlockLayer,
+  isTextLayer,
+  letteringOf,
+  walkLayers,
+  type Move,
+  type Part,
+} from './document'
 
 /** The panels' edits, each one undo step through the scene's own `edit`, labelled by a key the
  * History panel translates. */
@@ -89,15 +99,29 @@ export function setSourceText(layer: LayerId, text: string): Promise<Change> {
 }
 
 /** Merges `style`, a `TextStyle` patch, into each layer's lettering: a text's own style, and a
- * block's translation's, which is what it draws. */
-export function setStyle(layers: Layer[], style: Value): Promise<Change> {
+ * block's translation's, which is what it draws. A character value it sets is every character's,
+ * as Photoshop styles a selected type layer, so the characters marked with their own drop it. */
+export function setStyle(layers: Layer[], style: TextStyle): Promise<Change> {
+  const keys = Object.keys(style.chars ?? {}) as (keyof CharStyle)[]
   return edit(
     'set_style',
     layers
       .filter((layer) => isTextLayer(layer) || isBlockLayer(layer))
-      .map((layer): Op => {
+      .flatMap((layer): Op[] => {
         const patch: Value = isBlockLayer(layer) ? { translation: { style } } : { style }
-        return { op: 'update_layer', layer: layer.id, patch }
+        const restyle: Op = { op: 'update_layer', layer: layer.id, patch }
+        const spans = letteringOf(layer)?.content ?? []
+        const marked = spans.some((span) => keys.some((key) => span.attributes?.[key] != null))
+        if (!marked) return [restyle]
+        const unmarked = spans.map(({ insert, attributes }) => ({
+          insert,
+          attributes: Object.fromEntries(
+            Object.entries(attributes ?? {}).filter(
+              ([key]) => !keys.includes(key as keyof CharStyle),
+            ),
+          ),
+        }))
+        return [restyle, { op: 'set_rich_text', layer: layer.id, spans: unmarked }]
       }),
   )
 }

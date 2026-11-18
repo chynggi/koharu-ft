@@ -71,6 +71,49 @@ impl<'a, 'g> Overlay<'a, 'g> {
         self.outline(control.outline());
     }
 
+    /// What's selected while typing: the selection's colour, faint, over
+    /// each of `rects`, which `transform` takes from the text to the
+    /// viewport, under the glyphs.
+    pub fn highlight(&mut self, rects: &[Rect], transform: Affine) {
+        let tint = color(self.colors.selection).with_alpha(0.3);
+        for rect in rects {
+            self.filled(transform, tint, rect);
+        }
+    }
+
+    /// The typing caret: `line`, which `transform` takes to the viewport, a
+    /// device-independent pixel wide.
+    pub fn caret(&mut self, line: Line, transform: Affine) {
+        let selection = color(self.colors.selection);
+        self.stroked(
+            Stroke::new(self.view.scale()),
+            selection,
+            &(transform * line),
+        );
+    }
+
+    /// The input method's composition underlined, as an editor shows it:
+    /// under horizontal text and right of a vertical column, a tenth of the
+    /// line in from its box, clear of the box's own outline, and thicker
+    /// where the input method has selected.
+    pub fn composing(&mut self, rects: &[(Rect, bool)], transform: Affine, vertical: bool) {
+        let selection = color(self.colors.selection);
+        for &(rect, selected) in rects {
+            let edge = match vertical {
+                true => {
+                    let x = rect.x1 - rect.width() * 0.1;
+                    Line::new((x, rect.y0), (x, rect.y1))
+                }
+                false => {
+                    let y = rect.y1 - rect.height() * 0.1;
+                    Line::new((rect.x0, y), (rect.x1, y))
+                }
+            };
+            let width = if selected { 2.0 } else { 1.0 } * self.view.scale();
+            self.stroked(Stroke::new(width), selection, &(transform * edge));
+        }
+    }
+
     /// The page under `tint`, but where `clear` draws, which shows through:
     /// a selected mask or clean-up seen on its own, as Photoshop shows a mask
     /// in its rubylith overlay.
@@ -192,6 +235,16 @@ impl<'a, 'g> Overlay<'a, 'g> {
         let selection = color(self.colors.selection);
         self.filled(Affine::IDENTITY, selection.with_alpha(0.1), &rect);
         self.stroked(Stroke::new(self.view.scale()), selection, &rect);
+    }
+
+    /// A page path as marching ants, as Photoshop draws a selection's edge:
+    /// black dashes over white, a device pixel wide, so it shows on any page.
+    pub fn ants(&mut self, path: &BezPath) {
+        let path = self.view.to_screen() * path.clone();
+        let scale = self.view.scale();
+        let dashed = Stroke::new(scale).with_dashes(0.0, [4.0 * scale, 4.0 * scale]);
+        self.stroked(Stroke::new(scale), Color::WHITE, &path);
+        self.stroked(dashed, Color::BLACK, &path);
     }
 
     /// A page rectangle outlined in dashes, as a frame being dragged out.

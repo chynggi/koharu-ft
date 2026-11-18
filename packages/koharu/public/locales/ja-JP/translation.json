@@ -1,18 +1,4 @@
 {
-  "find": {
-    "matchCase": "大文字と小文字を区別",
-    "noResults": "この文字列を含む翻訳はありません。",
-    "page": "{{number}} ページ",
-    "placeholder": "翻訳を検索",
-    "replace": "置換",
-    "replaceAll": "すべて置換",
-    "replacePlaceholder": "置換後の文字列",
-    "searching": "検索中…",
-    "summary": "{{pages}} ページで {{count}} 件",
-    "summary_one": "{{pages}} ページで {{count}} 件",
-    "summary_other": "{{pages}} ページで {{count}} 件",
-    "title": "検索"
-  },
   "about": {
     "author": "作者",
     "description": "漫画翻訳ツール",
@@ -31,33 +17,25 @@
     "stop": "停止",
     "title": "アクティビティ"
   },
-  "adjust": {
-    "apply": "適用",
-    "brightness_contrast": "明るさ・コントラスト",
-    "brightness": "明るさ",
-    "contrast": "コントラスト",
-    "levels": "レベル補正",
-    "levelsLow": "入力の黒",
-    "levelsHigh": "入力の白",
-    "hue": "色相",
-    "grayscale": "彩度を下げる"
-  },
   "agent": {
-    "applying": "プロジェクトの変更を適用中…",
     "cancel": "キャンセル",
     "cancelled": "キャンセルしました。",
     "emptyDescription": "エージェントにこのプロジェクトの確認、翻訳、編集、処理を依頼できます。ページ画像は必要な場合にのみ表示されます。",
     "emptyTitle": "Koharuに何をさせますか？",
     "failed": "エージェントのリクエストに失敗しました。",
     "loading": "エージェントを読み込み中…",
-    "mcp": "MCPサーバー",
     "message": "Koharuエージェントにメッセージを送信",
     "model": "モデル",
+    "newChat": "新しいチャット",
     "placeholder": "Koharuにこのプロジェクトの作業を依頼…",
     "reasoning": "推論",
     "send": "送信",
     "thinking": "思考中…",
+    "thought": "{{seconds}}秒考えました",
     "title": "エージェント",
+    "toolFailed": "{{tool}} が失敗しました",
+    "used": "{{tool}} を使用しました",
+    "using": "{{tool}} を使用中",
     "working": "作業中…"
   },
   "canvas": {
@@ -65,8 +43,7 @@
     "notice": {
       "eraser_needs_raster": "消去するにはラスターレイヤーを選択してください。",
       "fill_needs_raster": "塗りつぶすにはラスターレイヤーを選択してください。"
-    },
-    "typeText": "テキストを入力"
+    }
   },
   "colorPicker": {
     "brushColor": "ブラシカラー",
@@ -108,34 +85,36 @@
     "timeout": "送信がタイムアウトしました。もう一度お試しください。",
     "title": "フィードバックを送信"
   },
+  "fill": {
+    "deselect": "選択を解除",
+    "generate": "生成",
+    "model": "塗りつぶしのモデル",
+    "prompt": "追加する内容を入力（任意）",
+    "title": "生成塗りつぶし"
+  },
   "fontPicker": {
-    "addFavorite": "{{family}}をお気に入りに追加",
-    "removeFavorite": "お気に入りから{{family}}を削除",
     "choose": "フォントを選択",
     "fontCount": "{{count}}個のフォント",
     "fontCount_one": "{{count}}個のフォント",
     "fontCount_other": "{{count}}個のフォント",
     "fonts": "フォント",
     "noResults": "この検索に一致するフォントはありません",
-    "search": "フォントを検索"
+    "search": "フォントを検索",
+    "addFavorite": "{{family}}をお気に入りに追加",
+    "removeFavorite": "お気に入りから{{family}}を削除"
   },
   "history": {
     "close": "ヒストリーを閉じる",
     "opened": "開いた状態",
     "steps": {
-      "adjust_colors": "色調補正",
-      "add_shape": "シェイプを追加",
       "add_text": "テキストを追加",
       "delete_layers": "レイヤーを削除",
       "delete_pages": "ページを削除",
       "detect": "検出",
-      "duplicate_layer": "レイヤーを複製",
       "edit_frame": "フレームを編集",
       "erase": "消去",
-      "fill": "塗りつぶし",
       "import": "ページを読み込み",
       "inpaint": "インペイント",
-      "merge_pages": "ページを結合",
       "move": "移動",
       "move_layer": "レイヤーを移動",
       "move_page": "ページを移動",
@@ -143,22 +122,25 @@
       "recognize": "OCR",
       "resize": "サイズ変更",
       "rotate": "回転",
-      "set_fill": "塗りを変更",
       "set_locked": "ロック/ロック解除",
       "set_source_text": "原文を編集",
-      "set_stroke": "線を変更",
       "set_style": "書式を変更",
       "set_text": "テキストを編集",
       "set_visibility": "表示/非表示",
       "translate": "翻訳",
       "update_layer": "レイヤーを変更",
+      "adjust_colors": "色調補正",
+      "add_shape": "シェイプを追加",
+      "duplicate_layer": "レイヤーを複製",
+      "fill": "塗りつぶし",
+      "merge_pages": "ページを結合",
+      "set_fill": "塗りを変更",
+      "set_stroke": "線を変更",
       "update_page": "ページを編集"
     },
     "title": "ヒストリー"
   },
   "inference": {
-    "currentPage": "現在のページ",
-    "currentPageDescription": "キャンバスに表示中のページだけを処理します。",
     "entireProject": "プロジェクト全体",
     "entireProjectDescription": "このプロジェクトの全ページを処理します。",
     "model": "モデル",
@@ -171,7 +153,6 @@
     "runProcessing": "処理を実行",
     "scope": "範囲",
     "scopeShort": {
-      "page": "ページ",
       "project": "プロジェクト",
       "selected-pages": "選択範囲"
     },
@@ -203,7 +184,6 @@
     "borderWidth": "縁取り幅",
     "chooseFontSize": "フォントサイズを選択",
     "decreaseBorderWidth": "縁取り幅を縮小",
-    "decreaseSecondBorderWidth": "外側の縁取り幅を縮小",
     "font": "フォント",
     "fontSize": "フォントサイズ",
     "fontStyles": {
@@ -213,8 +193,17 @@
     "fontWeight": "フォントの太さ",
     "horizontal": "横書き",
     "increaseBorderWidth": "縁取り幅を拡大",
-    "increaseSecondBorderWidth": "外側の縁取り幅を拡大",
     "opacity": "不透明度",
+    "selectPage": "ページを選択してレイヤーを確認します。",
+    "source": "原文",
+    "text": "テキスト",
+    "textColor": "文字色",
+    "textDirection": "文字方向",
+    "translation": "翻訳",
+    "type": "タイポグラフィ",
+    "vertical": "縦書き",
+    "decreaseSecondBorderWidth": "外側の縁取り幅を縮小",
+    "increaseSecondBorderWidth": "外側の縁取り幅を拡大",
     "outlineBevel": "面取り",
     "outlineCenter": "中央",
     "outlineInside": "内側",
@@ -225,15 +214,7 @@
     "outlineRound": "丸形",
     "secondBorder": "2重縁取り",
     "secondBorderColor": "外側の縁取りの色",
-    "secondBorderWidth": "外側の縁取り幅",
-    "selectPage": "ページを選択してレイヤーを確認します。",
-    "source": "原文",
-    "text": "テキスト",
-    "textColor": "文字色",
-    "textDirection": "文字方向",
-    "translation": "翻訳",
-    "type": "タイポグラフィ",
-    "vertical": "縦書き"
+    "secondBorderWidth": "外側の縁取り幅"
   },
   "languages": {
     "ar": "العربية",
@@ -284,7 +265,6 @@
     "unlocked": "ロックなし"
   },
   "menu": {
-    "adjustments": "色調補正",
     "about": "Koharuについて",
     "closeProject": "プロジェクトを閉じる",
     "delete": "選択項目を削除",
@@ -297,18 +277,15 @@
     "github": "GitHub",
     "help": "ヘルプ",
     "history": "ヒストリー",
-    "image": "イメージ",
     "import": "ページを読み込む",
-    "process": "処理",
-    "processLayers": "選択したレイヤーを処理",
-    "processPages": "選択ページを処理",
-    "processProject": "プロジェクトを処理",
     "redo": "やり直す",
-    "runPhase": "{{phase}}を実行",
     "selectAllLayers": "すべてのレイヤーを選択",
     "settings": "設定",
     "undo": "元に戻す",
-    "view": "表示"
+    "unloadModels": "モデルをアンロード",
+    "view": "表示",
+    "adjustments": "色調補正",
+    "image": "イメージ"
   },
   "model": {
     "baseUrl": "ベース URL",
@@ -325,28 +302,34 @@
   },
   "navigator": {
     "actionsFor": "{{page}}の操作",
-    "chapterStart": "章の開始",
     "delete": "削除",
+    "deleteDescription": "「{{page}}」とそのレイヤーを削除します。元に戻せます。",
+    "deleteTitle": "ページを削除しますか？",
     "emptyDescription": "画像ファイルまたはフォルダーを読み込んでページを追加します。",
     "emptyTitle": "ページがまだありません",
-    "filter": "ページを絞り込む",
     "importAction": "読み込む",
     "importFiles": "ファイル…",
     "importFolder": "フォルダー…",
     "importing": "ページを読み込み中…",
     "importingAction": "読み込み中…",
+    "noImage": "画像なし",
+    "pageNumber": "{{number}}ページ目",
+    "pages": "ページ",
+    "run": {
+      "detect": "検出",
+      "inpaint": "インペイント",
+      "recognize": "文字認識",
+      "translate": "翻訳"
+    },
+    "selected": "{{count}}件選択中",
+    "chapterStart": "章の開始",
     "mergeAsSpread": "見開きに結合",
     "mergeLeftToRight": "左から右へ",
     "mergeRightToLeft": "右から左へ",
-    "noImage": "画像なし",
-    "noResults": "このフィルターに一致するページはありません。",
     "pageName": "ページ名",
-    "pageNumber": "{{number}}ページ目",
-    "pages": "ページ",
     "rename": "名前を変更",
     "renameDescription": "このページの新しい名前を入力します。",
-    "renameTitle": "ページ名を変更",
-    "selected": "{{count}}件選択中"
+    "renameTitle": "ページ名を変更"
   },
   "outputPicker": {
     "targetLanguage": "対象言語",
@@ -375,20 +358,11 @@
     "max": "最大",
     "medium": "中",
     "minimal": "最小限",
+    "off": "オフ",
     "xhigh": "最高"
   },
   "settings": {
     "appearance": {
-      "colorTheme": "カラーテーマ",
-      "colorThemeDescription": "インターフェースの配色を選びます。どの配色にもライトとダークの両方があります。",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "オーシャン",
-        "matcha": "抹茶"
-      },
-      "animations": "インターフェースのアニメーション",
-      "animationsDescription": "メニューやダイアログをフェードさせ、ホバーやスイッチの変化をなめらかにします。システムの視差効果を減らす設定に従います。",
       "description": "アートワークの描画には影響せず、作業環境の見た目を調整します。",
       "interface": "インターフェース",
       "language": "言語",
@@ -399,7 +373,17 @@
         "light": "ライト",
         "system": "システム"
       },
-      "title": "外観"
+      "title": "外観",
+      "colorTheme": "カラーテーマ",
+      "colorThemeDescription": "インターフェースの配色を選びます。どの配色にもライトとダークの両方があります。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "オーシャン",
+        "matcha": "抹茶"
+      },
+      "animations": "インターフェースのアニメーション",
+      "animationsDescription": "メニューやダイアログをフェードさせ、ホバーやスイッチの変化をなめらかにします。システムの視差効果を減らす設定に従います。"
     },
     "backToEditor": "エディターに戻る",
     "loading": "設定を読み込み中…",
@@ -414,13 +398,6 @@
         "prompt": "プロンプト",
         "promptDescription": "生成モデルにのみ適用されます。",
         "textThreshold": "テキストしきい値"
-      },
-      "remote": {
-        "title": "処理サーバー",
-        "description": "上のすべての段階を koharu-server が動いている別のマシンで実行します。アドレスを空にするとこのマシンで実行します。",
-        "url": "サーバーのアドレス",
-        "token": "サーバーのトークン",
-        "clearToken": "サーバーのトークンを消去"
       },
       "stages": {
         "detect": {
@@ -450,6 +427,13 @@
         "targetLanguageDescription": "テキストの翻訳先言語を選択します。",
         "vision": "ビジョン",
         "visionDescription": "翻訳時にページ画像をLLMへ入力します。"
+      },
+      "remote": {
+        "title": "処理サーバー",
+        "description": "上のすべての段階を koharu-server が動いている別のマシンで実行します。アドレスを空にするとこのマシンで実行します。",
+        "url": "サーバーのアドレス",
+        "token": "サーバーのトークン",
+        "clearToken": "サーバーのトークンを消去"
       }
     },
     "providers": {
@@ -527,53 +511,35 @@
   "story": {
     "noText": "このページにはテキストがありません。",
     "sfx": "効果音",
-    "title": "ストーリー"
-  },
-  "shape": {
-    "title": "シェイプ",
-    "fill": "塗り",
-    "fillNone": "塗りなし",
-    "fillSolid": "単色",
-    "fillLinear": "線形グラデーション",
-    "fillRadial": "円形グラデーション",
-    "fillSweep": "角度グラデーション",
-    "fillPattern": "パターン",
-    "fillColor": "塗りの色",
-    "choosePattern": "画像を選択…",
-    "angle": "角度",
-    "stopColor": "分岐点 {{index}} の色",
-    "stopPosition": "分岐点 {{index}} の位置",
-    "removeStop": "分岐点 {{index}} を削除",
-    "addStop": "分岐点を追加",
-    "strokeColor": "線の色",
-    "strokeWidth": "線の幅",
-    "decrease": "{{name}}を減らす",
-    "increase": "{{name}}を増やす"
+    "title": "ストーリー",
+    "translate": "{{name}}を翻訳"
   },
   "tools": {
     "brushSize": "ブラシサイズ",
     "brushSizeInput": "ブラシサイズ",
     "brushSizePixels": "ブラシサイズ: {{size}}ピクセル",
     "brushSizeShort": "{{size}} px",
-    "bucket": "塗りつぶし",
     "color_picker": "カラーピッカー",
     "decreaseBrushSize": "ブラシサイズを縮小",
     "direct_select": "パス選択",
     "draw": "描画",
-    "ellipse": "楕円",
     "eraser": "消しゴム",
     "increaseBrushSize": "ブラシサイズを拡大",
+    "lasso": "なげなわ",
+    "marquee": "長方形選択",
     "pan": "移動",
+    "remove": "削除",
+    "select": "選択",
+    "text": "テキスト",
+    "bucket": "塗りつぶし",
+    "ellipse": "楕円",
     "ramp": "カラーランプ",
     "rampColor": "ランプの終了色",
     "rampAlong": "ランプの方向",
     "rampStroke": "ストロークに沿って",
     "rampHorizontal": "左から右",
     "rampVertical": "上から下",
-    "rectangle": "長方形",
-    "remove": "削除",
-    "select": "選択",
-    "text": "テキスト"
+    "rectangle": "長方形"
   },
   "updater": {
     "available": {
@@ -599,6 +565,52 @@
     "maximize": "最大化",
     "minimize": "最小化",
     "restore": "元のサイズに戻す"
+  },
+  "find": {
+    "matchCase": "大文字と小文字を区別",
+    "noResults": "この文字列を含む翻訳はありません。",
+    "page": "{{number}} ページ",
+    "placeholder": "翻訳を検索",
+    "replace": "置換",
+    "replaceAll": "すべて置換",
+    "replacePlaceholder": "置換後の文字列",
+    "searching": "検索中…",
+    "summary": "{{pages}} ページで {{count}} 件",
+    "summary_one": "{{pages}} ページで {{count}} 件",
+    "summary_other": "{{pages}} ページで {{count}} 件",
+    "title": "検索"
+  },
+  "adjust": {
+    "apply": "適用",
+    "brightness_contrast": "明るさ・コントラスト",
+    "brightness": "明るさ",
+    "contrast": "コントラスト",
+    "levels": "レベル補正",
+    "levelsLow": "入力の黒",
+    "levelsHigh": "入力の白",
+    "hue": "色相",
+    "grayscale": "彩度を下げる"
+  },
+  "shape": {
+    "title": "シェイプ",
+    "fill": "塗り",
+    "fillNone": "塗りなし",
+    "fillSolid": "単色",
+    "fillLinear": "線形グラデーション",
+    "fillRadial": "円形グラデーション",
+    "fillSweep": "角度グラデーション",
+    "fillPattern": "パターン",
+    "fillColor": "塗りの色",
+    "choosePattern": "画像を選択…",
+    "angle": "角度",
+    "stopColor": "分岐点 {{index}} の色",
+    "stopPosition": "分岐点 {{index}} の位置",
+    "removeStop": "分岐点 {{index}} を削除",
+    "addStop": "分岐点を追加",
+    "strokeColor": "線の色",
+    "strokeWidth": "線の幅",
+    "decrease": "{{name}}を減らす",
+    "increase": "{{name}}を増やす"
   },
   "export": {
     "cancel": "キャンセル",

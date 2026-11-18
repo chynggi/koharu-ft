@@ -146,7 +146,7 @@ describe('font favorites', () => {
 })
 
 describe('page shortcuts', () => {
-  it('uses the rail selection and leaves arrows to the focused filter', () => {
+  it('uses the rail selection and leaves arrows to a focused field', () => {
     const show = vi.spyOn(commands, 'show').mockResolvedValue(null)
     const first = { id: 'first', size: { width: 100, height: 100 }, background: null, layers: [] }
     const second = { ...first, id: 'second' }
@@ -160,12 +160,12 @@ describe('page shortcuts', () => {
     useKoharuStore.setState({ selectedPages: ['first'], selectedLayers: ['layer'] })
     render(<PageRail />)
 
-    const filter = screen.getByRole('textbox')
-    filter.focus()
-    fireEvent.keyDown(filter, { key: 'ArrowRight' })
+    const field = document.body.appendChild(document.createElement('input'))
+    field.focus()
+    fireEvent.keyDown(field, { key: 'ArrowRight' })
     expect(show).not.toHaveBeenCalled()
 
-    filter.blur()
+    field.remove()
     fireEvent.keyDown(document.body, { key: 'ArrowRight' })
     expect(show).toHaveBeenCalledWith('second')
     expect(useKoharuStore.getState().selectedPages).toEqual(['second'])

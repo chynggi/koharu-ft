@@ -15,6 +15,7 @@ use super::{
     breaks::{Break, Segment},
     fit::{Placed, PlacedLine},
     itemize::{Orientation, Run},
+    lettering::{LineMap, PlacedGlyph},
     lines,
     room::physical,
     shape::{Glyph, ShapedText, shape_run},
@@ -26,6 +27,8 @@ use crate::fonts::Font;
 pub(crate) struct TextLayout {
     /// One for each of `resolved.runs`, in order.
     pub runs: Vec<GlyphRun>,
+    /// Where each line's characters lie, for typing into it.
+    pub lines: Vec<LineMap>,
     pub resolved: ResolvedText,
     /// What the text covers, its strokes included, in its own coordinates.
     pub bounds: Rect,
@@ -63,6 +66,7 @@ pub(super) fn arrange(
     let mut hyphens = Vec::new();
     let mut bounds: Option<Rect> = None;
     let mut baseline = None;
+    let mut lines = Vec::new();
     for line in &placed.lines {
         let Some(last) = line.segments.end.checked_sub(1).map(|at| &segments[at]) else {
             continue;
@@ -75,8 +79,24 @@ pub(super) fn arrange(
         let pieces = pieces(shaped, &mut buffer, line, last, text.clone())?;
         // Trailing white space hangs past the line's end.
         let visible = text.start..last.visible_end;
-        let first = position(shaped, line, scale, used, visible, pieces, &mut glyphs);
+        let mut clusters = Vec::new();
+        let (first, start) = position(
+            shaped,
+            line,
+            scale,
+            used,
+            visible.clone(),
+            pieces,
+            (&mut glyphs, &mut clusters),
+        );
         baseline = baseline.or(first);
+        lines.push(LineMap::new(
+            text.clone(),
+            visible.end,
+            start,
+            (line.top, line.pitch),
+            clusters,
+        ));
         let line_box = physical(
             styled.vertical,
             f64::from(line.start),
@@ -104,6 +124,7 @@ pub(super) fn arrange(
     let utf16 = |at: &usize| utf16(&styled.text, *at);
     Ok(TextLayout {
         runs,
+        lines,
         resolved: ResolvedText {
             runs: text_runs,
             frame: placed.frame,
@@ -202,9 +223,11 @@ fn visual_order(pieces: Vec<Piece<'_>>) -> Vec<Piece<'_>> {
 }
 
 /// Positions a line's glyphs at `scale` into `glyphs`, `used` being its
-/// length and `visible` its text before trailing white space. Returns where
-/// its first piece stands: its baseline's y in horizontal text, and its
-/// column's centre's x in vertical text.
+/// length and `visible` its text before trailing white space, and adds each
+/// of its text's glyphs to `clusters`: its cluster offset, where it lies
+/// along the line, and whether its run is right to left. Returns where its
+/// first piece stands, its baseline's y in horizontal text and its column's
+/// centre's x in vertical text, and where its pen started along it.
 fn position(
     shaped: &ShapedText,
     line: &PlacedLine,
@@ -212,15 +235,28 @@ fn position(
     used: f32,
     visible: Range<usize>,
     pieces: Vec<Piece<'_>>,
-    glyphs: &mut Vec<Positioned>,
-) -> Option<f32> {
+    (glyphs, clusters): (&mut Vec<Positioned>, &mut Vec<PlacedGlyph>),
+) -> (Option<f32>, f32) {
     let styled = shaped.styled;
     let vertical = styled.vertical;
     let hang = visible.end;
-    let (mut pen, justify) = spacing(shaped, line, &pieces, used, visible);
+    // The line is aligned and starts without the space an opening bracket
+    // leads it with.
+    let lead = opening_space(shaped, &pieces, scale, visible.start);
+    let (pen, justify) = spacing(shaped, line, &pieces, used - lead, visible);
+    let mut pen = pen - lead;
+    let start = pen;
     let block_center = line.top + line.pitch * 0.5;
     let mut first = None;
     for (run, piece) in pieces {
+        // A hyphen ending the line is no character of the text's.
+        let text = shaped.runs.iter().any(|own| std::ptr::eq(own, run));
+        let rtl = run.level.is_rtl();
+        let mut placed = |cluster: usize, along: Range<f32>| {
+            if text {
+                clusters.push((cluster, along, rtl));
+            }
+        };
         let size = styled.spans[run.span].size * scale;
         let (ascent, descent) = shaped.font(run).extent(size);
         let baseline = line.top + (line.pitch - (ascent + descent)) * 0.5 + ascent;
@@ -240,6 +276,7 @@ fn position(
             for glyph in &piece {
                 let x = -block_center + across + glyph.x_offset * scale;
                 push(x, cell_baseline - glyph.y_offset * scale, glyph);
+                placed(glyph.cluster, pen..pen + size);
                 across += glyph.advance * scale;
             }
             pen += size;
@@ -254,12 +291,39 @@ fn position(
                 continue;
             }
             let (x_offset, y_offset) = (glyph.x_offset * scale, glyph.y_offset * scale);
+            // A mark on a column's centre line is centred across it by its
+            // ink, whichever way it stands, as JLREQ centres `！`, `？`, `…`,
+            // and dashes; its font centres its em box, which a Western `…`
+            // or a Chinese `！` inks off the middle of.
+            let ink = (vertical && centred(&styled.text, glyph.cluster, styled.chinese))
+                .then(|| shaped.font(run).ink(glyph.id, size))
+                .flatten();
+            // Chinese centres a stop along its cell too, which its font's
+            // vertical form sets in the corner.
+            let middle = styled.chinese && stop(&styled.text, glyph.cluster);
             match (vertical, sideways) {
                 (false, _) => push(pen + x_offset, baseline - y_offset, glyph),
-                (true, false) => push(-block_center + x_offset, pen - y_offset, glyph),
+                (true, false) => {
+                    let x = ink.map_or(-block_center + x_offset, |ink| {
+                        -block_center - ((ink.x0 + ink.x1) * 0.5) as f32
+                    });
+                    let y = match ink {
+                        Some(ink) if middle => {
+                            pen + glyph.advance * scale * 0.5 + ((ink.y0 + ink.y1) * 0.5) as f32
+                        }
+                        _ => pen - y_offset,
+                    };
+                    push(x, y, glyph);
+                }
                 // Turned clockwise, a glyph's up is the page's right.
-                (true, true) => push(sideways_baseline + y_offset, pen + x_offset, glyph),
+                (true, true) => {
+                    let x = ink.map_or(sideways_baseline + y_offset, |ink| {
+                        -block_center - ((ink.y0 + ink.y1) * 0.5) as f32
+                    });
+                    push(x, pen + x_offset, glyph);
+                }
             }
+            placed(glyph.cluster, pen..pen + glyph.advance * scale);
             pen += glyph.advance * scale;
             if let Some((spaces_only, extra)) = justify
                 && (!spaces_only || is_space(&styled.text, glyph.cluster))
@@ -268,7 +332,7 @@ fn position(
             }
         }
     }
-    first
+    (first, start)
 }
 
 /// Where a line's pen starts, and when the line is justified, whether only
@@ -357,6 +421,89 @@ fn runs(shaped: &ShapedText, glyphs: &[Positioned], scale: f32) -> (Vec<GlyphRun
     (glyph_runs, text_runs)
 }
 
+/// Whether the character at `offset` sits on a vertical column's centre
+/// line, as JLREQ's hyphens (cl-03), dividing punctuation (cl-04), middle
+/// dots (cl-05), and inseparable characters (cl-08) do, and as CLREQ sets
+/// Chinese's interpunct, midline ellipsis, and connector; in `chinese`, its
+/// stops too.
+///
+/// Deliberately left out: cl-08's vertical kana repeat marks, whose halves
+/// join only as their font draws them; ASCII `:`, `;`, and `~`, which JLREQ
+/// classes as Western characters (cl-27) on a sideways run's baseline; and,
+/// but in Chinese, full stops (cl-06) and commas (cl-07), which keep their
+/// fonts' vertical forms in the column's top right corner. ASCII `!` and `?`
+/// count as cl-04, since vertical text sets them upright and full width.
+fn centred(text: &str, offset: usize, chinese: bool) -> bool {
+    (chinese && stop(text, offset))
+        || text[offset..].chars().next().is_some_and(|ch| {
+            matches!(
+                ch,
+                // cl-03
+                '‐' | '〜' | '゠' | '–'
+                // cl-04
+                | '!' | '?' | '！' | '？' | '‼' | '⁇' | '⁈' | '⁉'
+                // cl-05
+                | '・' | '：' | '；'
+                // cl-08, with `―`, which JLREQ notes some systems treat as `—`
+                | '—' | '―' | '…' | '‥'
+                // CLREQ's interpunct, midline ellipsis, and connector
+                | '·' | '⋯' | '～'
+            )
+        })
+}
+
+/// The space before the ink of an opening bracket (JLREQ's cl-01) that
+/// starts a left-to-right or vertical line at `head`: JLREQ counts the
+/// bracket half an em wide with half an em of space before it, and starts
+/// every line with no space, as JIS X 4051 does, so a full-width bracket's
+/// first half em goes. A proportional bracket has none.
+fn opening_space(shaped: &ShapedText, pieces: &[Piece<'_>], scale: f32, head: usize) -> f32 {
+    let Some((run, glyphs)) = pieces.first() else {
+        return 0.0;
+    };
+    let opening = matches!(
+        shaped.styled.text[head..].chars().next(),
+        Some(
+            '‘' | '“'
+                | '('
+                | '（'
+                | '〔'
+                | '['
+                | '［'
+                | '{'
+                | '｛'
+                | '〈'
+                | '《'
+                | '「'
+                | '『'
+                | '【'
+                | '⦅'
+                | '｟'
+                | '〘'
+                | '〖'
+                | '«'
+                | '〝'
+        )
+    );
+    match glyphs.first() {
+        Some(glyph) if opening && glyph.cluster == head && !shaped.rtl_at(head) => {
+            let em = shaped.styled.spans[run.span].size * scale;
+            (glyph.advance * scale - em * 0.5).clamp(0.0, em * 0.5)
+        }
+        _ => 0.0,
+    }
+}
+
+/// Whether the character at `offset` is a full stop (cl-06) or a comma
+/// (cl-07), which Chinese sets in the middle of its cell, as CLREQ describes
+/// Taiwan and Hong Kong setting every stop mark.
+fn stop(text: &str, offset: usize) -> bool {
+    matches!(
+        text[offset..].chars().next(),
+        Some('，' | '、' | '。' | '．')
+    )
+}
+
 fn is_space(text: &str, offset: usize) -> bool {
     text[offset..]
         .chars()
@@ -410,6 +557,7 @@ mod tests {
             align: Align::Start,
             line_height: 1.2,
             hyphenation: None,
+            chinese: false,
             frame: Frame::Point,
         }
     }
@@ -465,6 +613,137 @@ mod tests {
         let pieces = line_runs(&shaped, &mut Buffer::new(), english..text.len())?;
         let (pen, _) = spacing(&shaped, &line, &pieces, 40.0, english..text.len());
         assert_eq!(pen, 0.0);
+        Ok(())
+    }
+
+    #[test]
+    fn a_mark_on_the_centre_line_centres_its_ink_across_the_column() -> Result<()> {
+        let font = [
+            "Microsoft YaHei",
+            "Yu Gothic",
+            "MS Gothic",
+            "Noto Sans CJK SC",
+            "PingFang SC",
+        ]
+        .into_iter()
+        .find_map(|family| Library::new().family(family).ok())
+        .expect("an installed CJK font");
+        let text = koharu_scene::Text {
+            content: "已…！".into(),
+            direction: koharu_scene::Direction::Vertical,
+            ..koharu_scene::Text::default()
+        };
+        let layout = crate::text::layout(&text, |_, _| Ok(vec![font.clone()]))?.expect("a layout");
+        let centre = layout.resolved.baseline;
+        // The ellipsis turns sideways and the exclamation stands upright;
+        // either way its ink sits across the column's centre line.
+        for (glyphs, run) in layout.runs.iter().zip(&layout.resolved.runs) {
+            if run.range.start == 0 {
+                continue;
+            }
+            for glyph in &glyphs.glyphs {
+                let ink = glyphs.font.ink(glyph.id, run.size).expect("a mark has ink");
+                let across = match glyphs.sideways {
+                    true => glyph.x + (ink.y0 + ink.y1) as f32 * 0.5,
+                    false => glyph.x + (ink.x0 + ink.x1) as f32 * 0.5,
+                };
+                assert!((across - centre).abs() < 0.01, "{across} against {centre}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Where each glyph of `content` in `language`, set vertically in the
+    /// renderer's default fonts, inks on the page, from the top; and the
+    /// layout.
+    fn inks(content: &str, language: &str) -> Result<(Vec<Rect>, TextLayout)> {
+        let families = crate::RendererConfig::default().font_families;
+        let text = koharu_scene::Text {
+            content: content.into(),
+            direction: koharu_scene::Direction::Vertical,
+            language: language.parse()?,
+            ..koharu_scene::Text::default()
+        };
+        let layout = crate::text::layout(&text, |style, characters| {
+            crate::fonts::chain(style, &families, characters, &text.language)
+        })?
+        .expect("a layout");
+        let mut inks = Vec::new();
+        for (glyphs, run) in layout.runs.iter().zip(&layout.resolved.runs) {
+            for glyph in &glyphs.glyphs {
+                let Some(ink) = glyphs.font.ink(glyph.id, run.size) else {
+                    continue;
+                };
+                // Font units run y up; a sideways glyph turns a quarter
+                // clockwise about its origin.
+                let (x, y) = (f64::from(glyph.x), f64::from(glyph.y));
+                inks.push(match glyphs.sideways {
+                    true => Rect::new(x + ink.y0, y + ink.x0, x + ink.y1, y + ink.x1),
+                    false => Rect::new(x + ink.x0, y - ink.y1, x + ink.x1, y - ink.y0),
+                });
+            }
+        }
+        inks.sort_by(|a, b| a.center().y.total_cmp(&b.center().y));
+        Ok((inks, layout))
+    }
+
+    #[test]
+    fn a_wave_dash_runs_down_its_column() -> Result<()> {
+        let (inks, _) = inks("吗\u{301c}？", "zh-Hans")?;
+        let wave = inks[1];
+        assert!(wave.height() > wave.width(), "{wave:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_japanese_comma_sits_in_the_top_right_of_its_cell() -> Result<()> {
+        let (inks, layout) = inks("雨、雪", "ja")?;
+        let (comma, cell) = (inks[1], &layout.lines[0].clusters[1].along);
+        let centre = layout.resolved.baseline;
+        let middle = f64::from(cell.start + cell.end) * 0.5;
+        assert!(
+            comma.center().x > f64::from(centre),
+            "{comma:?} against {centre}"
+        );
+        assert!(comma.center().y < middle, "{comma:?} against {middle}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_chinese_comma_sits_in_the_middle_of_its_cell() -> Result<()> {
+        let (inks, layout) = inks("了，哥", "zh-Hans")?;
+        let (comma, cell) = (inks[1], &layout.lines[0].clusters[1].along);
+        let centre = layout.resolved.baseline;
+        let middle = f64::from(cell.start + cell.end) * 0.5;
+        assert!(
+            (comma.center().x - f64::from(centre)).abs() < 0.01,
+            "{comma:?} against {centre}"
+        );
+        assert!(
+            (comma.center().y - middle).abs() < 0.01,
+            "{comma:?} against {middle}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_column_opening_with_a_bracket_starts_level_with_the_others() -> Result<()> {
+        let (inks, layout) = inks("能继承\n『毒师』", "zh-Hans")?;
+        // The right column's first ink, 能, and the left one's, 『.
+        let middle = inks.iter().map(|ink| ink.center().x).sum::<f64>() / inks.len() as f64;
+        let top = |right: bool| {
+            inks.iter()
+                .filter(|ink| (ink.center().x > middle) == right)
+                .map(|ink| ink.y0)
+                .fold(f64::MAX, f64::min)
+        };
+        let em = f64::from(layout.lines[0].pitch) / 1.2;
+        assert!(
+            (top(false) - top(true)).abs() < em * 0.15,
+            "{} against {}",
+            top(false),
+            top(true)
+        );
         Ok(())
     }
 

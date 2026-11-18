@@ -5,7 +5,7 @@ mod room;
 
 use icu_locale_core::{LanguageIdentifier, subtags::language};
 use koharu_scene::{
-    Align, Content, Direction, Frame, Layer, LayerId, Op, Project, Role, Transform,
+    Align, Color, Content, Direction, Frame, Layer, LayerId, Op, Project, Rgba, Role, Transform,
 };
 use kurbo::{Affine, Shape as _};
 use serde_json::{Value, json};
@@ -19,8 +19,12 @@ use crate::{Error, Result};
 /// frame's block axis. A new translation starts at the page's lettering
 /// size, the median of its texts' sources, as a letterer keeps one size for a
 /// page's dialogue and fits each balloon from it; its lines centred, as a
-/// balloon's are lettered; and with its source's outline as its stroke, the
-/// width scaled from the source's size to its own. What its style already
+/// Western balloon's are lettered, or in Japanese and Chinese started
+/// together at the top or the left, as JLREQ aligns a line to its head; and
+/// with its source's ink as its fill and outline
+/// as its stroke, the width scaled from the source's size to its own, or a
+/// sound effect without one a stroke a sixteenth of its size, unlike its
+/// fill. What its style already
 /// sets is kept. It is vertical only when its source is and `target` is
 /// Japanese or Chinese, which are written so; any other language runs
 /// horizontally, turned by the source's tilt as the source is.
@@ -59,8 +63,10 @@ pub fn placement(project: &Project, block: LayerId, target: &LanguageIdentifier)
         .map(|translation| &translation.style);
     let sized = given.and_then(|style| style.chars.size);
     let size = sized.or_else(|| lettering(&page.layers));
-    let vertical = this.source.direction == Direction::Vertical
-        && [language!("ja"), language!("zh")].contains(&target.language);
+    // Japanese and Chinese are written vertically, and their lines start
+    // together, as JLREQ aligns them to the line head.
+    let cjk = [language!("ja"), language!("zh")].contains(&target.language);
+    let vertical = this.source.direction == Direction::Vertical && cjk;
     let mut translation = json!({
         "frame": frame,
         "transform": transform,
@@ -71,16 +77,42 @@ pub fn placement(project: &Project, block: LayerId, target: &LanguageIdentifier)
         chars.insert("size".to_owned(), json!(size));
     }
     let source = &this.source.style.chars;
-    if given.and_then(|style| style.chars.stroke).is_none()
-        && let (Some(stroke), Some(width)) = (source.stroke, source.stroke_width)
+    if given.and_then(|style| style.chars.fill).is_none()
+        && let Some(fill) = source.fill
     {
-        let scale = size.zip(source.size).map_or(1.0, |(to, from)| to / from);
-        chars.insert("stroke".to_owned(), json!(stroke));
-        chars.insert("stroke_width".to_owned(), json!(width * scale));
+        chars.insert("fill".to_owned(), json!(fill));
+    }
+    if given.and_then(|style| style.chars.stroke).is_none() {
+        let outline = match (source.stroke, source.stroke_width) {
+            (Some(stroke), Some(width)) => {
+                let scale = size.zip(source.size).map_or(1.0, |(to, from)| to / from);
+                Some((stroke, width * scale))
+            }
+            // A sound effect lies on art, which an outline unlike its fill,
+            // black around a light one and white around any other, the
+            // renderer's black included, keeps it legible over.
+            _ if this.role == Role::Sfx => size.map(|size| {
+                let fill = given.and_then(|style| style.chars.fill).or(source.fill);
+                let light = fill.is_some_and(|fill| {
+                    Color::from(fill).discard_alpha().relative_luminance() > 0.5
+                });
+                let stroke = if light {
+                    [0.0, 0.0, 0.0, 1.0]
+                } else {
+                    [1.0; 4]
+                };
+                (Rgba(stroke), size / 16.0)
+            }),
+            _ => None,
+        };
+        if let Some((stroke, width)) = outline {
+            chars.insert("stroke".to_owned(), json!(stroke));
+            chars.insert("stroke_width".to_owned(), json!(width));
+        }
     }
     let mut style = json!({"chars": chars});
     if given.and_then(|style| style.align).is_none() {
-        style["align"] = json!(Align::Center);
+        style["align"] = json!(if cjk { Align::Start } else { Align::Center });
     }
     translation["style"] = style;
     Ok(Op::UpdateLayer {
@@ -285,6 +317,26 @@ mod tests {
     }
 
     #[test]
+    fn japanese_and_chinese_start_their_lines_and_others_centre_them() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let (mut session, ids) = page(
+            &dir,
+            &[
+                ("ja", None, block(20.0, "text")),
+                ("zh", None, block(120.0, "text")),
+                ("en", None, block(220.0, "text")),
+            ],
+        )?;
+        let japanese = placed(&mut session, ids[0], &langid!("ja"))?;
+        assert_eq!(japanese.style.align, Some(Align::Start));
+        let chinese = placed(&mut session, ids[1], &langid!("zh-Hans"))?;
+        assert_eq!(chinese.style.align, Some(Align::Start));
+        let english = placed(&mut session, ids[2], &langid!("en"))?;
+        assert_eq!(english.style.align, Some(Align::Center));
+        Ok(())
+    }
+
+    #[test]
     fn a_tilted_source_tilts_its_balloon_translation() -> Result<()> {
         // A source turned 10 degrees clockwise about its centre.
         let [a, b, c, d, e, f] =
@@ -323,10 +375,12 @@ mod tests {
     }
 
     #[test]
-    fn a_new_translation_is_centred_with_its_source_outline_scaled_to_its_size() -> Result<()> {
+    fn a_new_translation_is_centred_in_its_source_colours_with_the_outline_scaled_to_its_size()
+    -> Result<()> {
         let source = |x: f64, size: f64, outline: bool| {
             let mut chars = json!({"size": size});
             if outline {
+                chars["fill"] = json!([1.0, 0.0, 0.0, 1.0]);
                 chars["stroke"] = json!([1.0, 1.0, 1.0, 1.0]);
                 chars["stroke_width"] = json!(4.0);
             }
@@ -349,10 +403,48 @@ mod tests {
         let text = placed(&mut session, ids[0], &langid!("en"))?;
         assert_eq!(text.style.align, Some(Align::Center));
         assert_eq!(text.style.chars.size, Some(20.0));
+        assert_eq!(
+            text.style.chars.fill,
+            Some(koharu_scene::Rgba([1.0, 0.0, 0.0, 1.0]))
+        );
         assert_eq!(text.style.chars.stroke, Some(koharu_scene::Rgba([1.0; 4])));
         assert_eq!(text.style.chars.stroke_width, Some(2.0));
         let text = placed(&mut session, ids[1], &langid!("en"))?;
+        assert_eq!(text.style.chars.fill, None);
         assert_eq!(text.style.chars.stroke, None);
+        Ok(())
+    }
+
+    #[test]
+    fn a_sound_effect_without_an_outline_gets_a_thin_one_unlike_its_fill() -> Result<()> {
+        let source = |x: f64, role: &str, fill: [f32; 4]| {
+            json!({"kind": "block", "role": role, "source": {
+                "frame": {"box": {"bounds": {"x": x, "y": 20.0, "width": 120.0, "height": 120.0}}},
+                "style": {"chars": {"size": 32.0, "fill": fill}},
+            }})
+        };
+        let dir = tempfile::tempdir()?;
+        let (mut session, ids) = page(
+            &dir,
+            &[
+                ("dark", None, source(0.0, "sfx", [0.2, 0.2, 0.2, 1.0])),
+                ("light", None, source(130.0, "sfx", [0.97, 0.94, 0.93, 1.0])),
+                ("speech", None, source(260.0, "text", [0.2, 0.2, 0.2, 1.0])),
+            ],
+        )?;
+
+        // A sixteenth of the page's lettering size of 32.
+        let dark = placed(&mut session, ids[0], &langid!("en"))?;
+        assert_eq!(dark.style.chars.stroke, Some(koharu_scene::Rgba([1.0; 4])));
+        assert_eq!(dark.style.chars.stroke_width, Some(2.0));
+        let light = placed(&mut session, ids[1], &langid!("en"))?;
+        assert_eq!(
+            light.style.chars.stroke,
+            Some(koharu_scene::Rgba([0.0, 0.0, 0.0, 1.0]))
+        );
+        assert_eq!(light.style.chars.stroke_width, Some(2.0));
+        let speech = placed(&mut session, ids[2], &langid!("en"))?;
+        assert_eq!(speech.style.chars.stroke, None);
         Ok(())
     }
 }

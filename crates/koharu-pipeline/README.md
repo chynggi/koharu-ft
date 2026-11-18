@@ -52,12 +52,12 @@ more. Only a stage knows its models.
 |---|---|---|---|
 | detect | Koharu Layout HighRes | the scan | panels, balloons with outlines, and blocks in reading order, in place of the ones there; each block's source frame, tilt, direction, and mask |
 | recognize | Manga OCR AR | the scan inside each block's source frame, with other blocks' glyphs blanked | the source's wording and its language |
-| inpaint | LaMa | the scan, each block's mask, its balloon, and its panel | the block's clean-up under its mask; for an area, a new raster limited to it by a layer mask |
+| inpaint | LaMa | the scan, each block's mask, its balloon, and its panel; for an area, the page as drawn without its lettering | the block's clean-up under its mask; for an area, a new raster limited to it by a layer mask |
 | translate | Index-Translate 9B | the page's sources in reading order, and with vision the scan | each block's translation: wording, language, and placement |
 
 Every stage also records its C2PA action on the layers it wrote, and detection
 its scores in its own namespace. Detection records each source's size, line
-width, and outline as its stroke.
+width, ink as its fill, and outline as its stroke.
 
 There's no typesetting stage. Placement puts a translation in its room in its
 balloon, or in its source's frame when it's free or a sound effect, and fits it
@@ -65,7 +65,12 @@ balloon, or in its source's frame when it's free or a sound effect, and fits it
 
 - **Size.** A new translation starts at the page's lettering size, the median
   of its sources', as a letterer keeps one size for a page's dialogue [Manga
-  balloon basics], with its lines centred and its source's stroke.
+  balloon basics], with its lines centred, or in Japanese and Chinese
+  started together at the top or the left, as JLREQ aligns a line to its head
+  [JLREQ], and with its source's fill and stroke. A
+  sound effect whose source has no outline gets a stroke a sixteenth of its
+  size, black around a light fill and white around any other, which keeps it
+  legible over art.
 - **Direction.** It's vertical only when its source is and the target is
   Japanese or Chinese; any other language runs horizontally, turned by its
   source's tilt.
@@ -96,7 +101,7 @@ masked pixels come back.
 | Inpainter | Takes a prompt |
 |---|---|
 | LaMa, Manga Inpainting, MI-GAN | no |
-| RORem, PowerPaint, FLUX.3 Klein, MOSS-Image, Qwen-Image 2.1 | yes: an area's own, or else the settings' |
+| PowerPaint, FLUX.3 Klein, MOSS-Image, Qwen-Image 2.1 | yes: an area's own, or else the settings' |
 
 ## 4. Translation
 
@@ -113,8 +118,9 @@ model, the target, or the instructions starts a new one.
   lettering: its clean-up is hidden and it gets no translation.
 - **Vision** shows the model the scan, 1,280 pixels on its longer side, ahead
   of the texts. **Reasoning** lets it think first, and the answer is held to the
-  schema once the thinking ends. On 16 pages with Index-Translate 9B, neither
-  read better and both cost time, so both are off unless set.
+  schema once the thinking ends, at the model's own level unless set, or off.
+  On 16 pages with Index-Translate 9B, neither read better and both cost time,
+  so vision is off and reasoning the model's own unless set.
 - **The history** keeps each page's texts and answer, not its image or the
   model's reasoning, so it grows as it does without them, and a local model
   reuses it from turn to turn.
@@ -132,6 +138,10 @@ model, the target, or the instructions starts a new one.
   them, so each load sees the memory actually free. Nothing is unloaded to make
   room: a model that doesn't fit fails, naming the free memory. A model leaves
   when the settings switch away from it, when asked, or when the pipeline ends.
+  One no setting uses, which a run brought as Generative Fill's does, leaves
+  five minutes after a run last ended, as Ollama keeps a model five minutes
+  after its last request [Ollama keep_alive], so filling again doesn't load it
+  again.
 - **One call at a time** on that thread, so peak memory is every loaded model
   plus the largest working set, and running out never depends on timing. A
   local language model decodes on its own thread beside it.
@@ -157,13 +167,14 @@ is a language CLDR doesn't name in English.
 | `detector.model` | `koharu-layout-highres` |
 | `detector.text`, `onomatopoeia`, `bubble`, `panel` | the model's own thresholds |
 | `recognizer.model` | `manga-ocr-ar`, or `baberu-ocr` or `hayai-ocr` |
-| `inpainter.model` | `lama`, or `manga-inpainting`, `mi-gan`, `rorem-mixed`, `powerpaint`, `flux3-klein`, `moss-image`, or `qwen-image` |
+| `inpainter.model` | `lama`, or `manga-inpainting`, `mi-gan`, `powerpaint`, `flux3-klein`, `moss-image`, or `qwen-image` |
+| `inpainter.fill` | `flux3-klein`, or another inpainter, the one Generative Fill's bar picks and keeps, as Photoshop's Generative Fill keeps its own model [Photoshop Generative Fill] |
 | `inpainter.prompt` | asks the model to remove all text and keep everything else, for a run that brings none |
 | `translator.model` | `koharu/index-translate-9b` |
 | `translator.target` | `en` |
 | `translator.instructions` | none |
 | `translator.vision` | `false` |
-| `translator.reasoning` | the model's own |
+| `translator.reasoning` | the model's own, or `off` or an effort level, one word |
 
 Manga OCR AR is CC BY-NC-SA 4.0, so a user keeping the default is held to
 non-commercial use. Telea's port keeps OpenCV's BSD-style license, so this
@@ -174,13 +185,15 @@ crate's license is `MIT OR Apache-2.0 AND BSD-3-Clause`.
 Read in November 2026.
 
 - Adobe: [Photoshop Content-Aware Fill], [Photoshop Generative Fill]
-- [ComfyUI routes], [OpenCV inpaint], [CLDR], [Index-Translate]
+- [ComfyUI routes], [Ollama keep_alive], [OpenCV inpaint], [CLDR], [Index-Translate], [JLREQ]
 - Lettering: [Manga balloon basics]
 
 [Photoshop Content-Aware Fill]: https://helpx.adobe.com/photoshop/desktop/repair-retouch/remove-objects-fill-space/adjust-content-aware-fill-settings.html
 [Photoshop Generative Fill]: https://helpx.adobe.com/photoshop/desktop/create-open-import-images/create-images/edit-images-with-generative-fill.html
 [ComfyUI routes]: https://docs.comfy.org/development/comfyui-server/comms_routes
+[Ollama keep_alive]: https://docs.ollama.com/faq
 [OpenCV inpaint]: https://github.com/opencv/opencv/blob/fe38fc608f6acb8b68953438a62305d8318f4fcd/modules/photo/src/inpaint.cpp
 [CLDR]: https://cldr.unicode.org/
 [Index-Translate]: https://huggingface.co/IndexTeam/Index-Translate-9B
 [Manga balloon basics]: https://www.linkedin.com/pulse/manga-lettering-balloon-basics-phil-christie
+[JLREQ]: https://www.w3.org/TR/jlreq/

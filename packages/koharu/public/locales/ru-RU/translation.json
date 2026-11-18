@@ -1,18 +1,4 @@
 {
-  "find": {
-    "matchCase": "Учитывать регистр",
-    "noResults": "Ни один перевод не содержит этот текст.",
-    "page": "Страница {{number}}",
-    "placeholder": "Искать в переводах",
-    "replace": "Заменить",
-    "replaceAll": "Заменить все",
-    "replacePlaceholder": "Заменить на",
-    "searching": "Поиск…",
-    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
-    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
-    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
-    "title": "Поиск"
-  },
   "about": {
     "author": "Автор",
     "description": "Инструменты перевода манги",
@@ -31,33 +17,25 @@
     "stop": "Остановить",
     "title": "Активность"
   },
-  "adjust": {
-    "apply": "Применить",
-    "brightness_contrast": "Яркость/Контрастность",
-    "brightness": "Яркость",
-    "contrast": "Контрастность",
-    "levels": "Уровни",
-    "levelsLow": "Входной чёрный",
-    "levelsHigh": "Входной белый",
-    "hue": "Цветовой тон",
-    "grayscale": "Обесцветить"
-  },
   "agent": {
-    "applying": "Применение изменений проекта…",
     "cancel": "Отмена",
     "cancelled": "Отменено.",
     "emptyDescription": "Попросите агента проверить, перевести, изменить или обработать проект. Он будет просматривать изображения страниц только при необходимости.",
     "emptyTitle": "Что должен сделать Koharu?",
     "failed": "Запрос агента завершился ошибкой.",
     "loading": "Загрузка агента…",
-    "mcp": "MCP-сервер",
     "message": "Сообщение агенту Koharu",
     "model": "Модель",
+    "newChat": "Новый чат",
     "placeholder": "Попросите Koharu поработать над проектом…",
     "reasoning": "Рассуждение",
     "send": "Отправить",
     "thinking": "Размышление…",
+    "thought": "Размышлял {{seconds}} с",
     "title": "Агент",
+    "toolFailed": "Ошибка {{tool}}",
+    "used": "Использовал {{tool}}",
+    "using": "Использует {{tool}}",
     "working": "Работа…"
   },
   "canvas": {
@@ -65,8 +43,7 @@
     "notice": {
       "eraser_needs_raster": "Выберите растровый слой, чтобы стирать.",
       "fill_needs_raster": "Выберите растровый слой, чтобы залить."
-    },
-    "typeText": "Ввод текста"
+    }
   },
   "colorPicker": {
     "brushColor": "Цвет кисти",
@@ -108,34 +85,36 @@
     "timeout": "Время отправки истекло. Попробуйте ещё раз.",
     "title": "Отправить отзыв"
   },
+  "fill": {
+    "deselect": "Отменить выделение",
+    "generate": "Создать",
+    "model": "Модель заливки",
+    "prompt": "Опишите, что добавить (необязательно)",
+    "title": "Генеративная заливка"
+  },
   "fontPicker": {
-    "addFavorite": "Добавить {{family}} в избранное",
-    "removeFavorite": "Удалить {{family}} из избранного",
     "choose": "Выбрать шрифт",
     "fontCount": "Шрифтов: {{count}}",
     "fontCount_one": "Шрифт: {{count}}",
     "fontCount_other": "Шрифтов: {{count}}",
     "fonts": "Шрифты",
     "noResults": "Нет шрифтов, соответствующих поиску",
-    "search": "Искать шрифты"
+    "search": "Искать шрифты",
+    "addFavorite": "Добавить {{family}} в избранное",
+    "removeFavorite": "Удалить {{family}} из избранного"
   },
   "history": {
     "close": "Закрыть историю",
     "opened": "При открытии",
     "steps": {
-      "adjust_colors": "Коррекция цвета",
-      "add_shape": "Добавить фигуру",
       "add_text": "Добавление текста",
       "delete_layers": "Удаление слоёв",
       "delete_pages": "Удаление страниц",
       "detect": "Обнаружение",
-      "duplicate_layer": "Дублировать слои",
       "edit_frame": "Изменение рамки",
       "erase": "Стирание",
-      "fill": "Заливка",
       "import": "Импорт страниц",
       "inpaint": "Восстановление",
-      "merge_pages": "Объединить страницы",
       "move": "Перемещение",
       "move_layer": "Перемещение слоёв",
       "move_page": "Перемещение страницы",
@@ -143,22 +122,25 @@
       "recognize": "OCR",
       "resize": "Изменение размера",
       "rotate": "Поворот",
-      "set_fill": "Изменить заливку",
       "set_locked": "Блокировка",
       "set_source_text": "Изменение исходного текста",
-      "set_stroke": "Изменить обводку",
       "set_style": "Изменение стиля текста",
       "set_text": "Изменение текста",
       "set_visibility": "Показ или скрытие",
       "translate": "Перевод",
       "update_layer": "Изменение слоя",
+      "adjust_colors": "Коррекция цвета",
+      "add_shape": "Добавить фигуру",
+      "duplicate_layer": "Дублировать слои",
+      "fill": "Заливка",
+      "merge_pages": "Объединить страницы",
+      "set_fill": "Изменить заливку",
+      "set_stroke": "Изменить обводку",
       "update_page": "Изменить страницу"
     },
     "title": "История"
   },
   "inference": {
-    "currentPage": "Текущая страница",
-    "currentPageDescription": "Обработать только страницу на холсте.",
     "entireProject": "Весь проект",
     "entireProjectDescription": "Обработать все страницы проекта.",
     "model": "Модель",
@@ -171,7 +153,6 @@
     "runProcessing": "Запустить обработку",
     "scope": "Область",
     "scopeShort": {
-      "page": "Страница",
       "project": "Проект",
       "selected-pages": "Выбранное"
     },
@@ -203,7 +184,6 @@
     "borderWidth": "Ширина обводки",
     "chooseFontSize": "Выбрать размер шрифта",
     "decreaseBorderWidth": "Уменьшить ширину обводки",
-    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
     "font": "Шрифт",
     "fontSize": "Размер шрифта",
     "fontStyles": {
@@ -213,8 +193,17 @@
     "fontWeight": "Насыщенность шрифта",
     "horizontal": "Горизонтально",
     "increaseBorderWidth": "Увеличить ширину обводки",
-    "increaseSecondBorderWidth": "Увеличить ширину второй обводки",
     "opacity": "Непрозрачность",
+    "selectPage": "Выберите страницу для просмотра её слоёв.",
+    "source": "Исходный текст",
+    "text": "Текст",
+    "textColor": "Цвет текста",
+    "textDirection": "Направление текста",
+    "translation": "Перевод",
+    "type": "Типографика",
+    "vertical": "Вертикально",
+    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
+    "increaseSecondBorderWidth": "Увеличить ширину второй обводки",
     "outlineBevel": "Скошенные",
     "outlineCenter": "По центру",
     "outlineInside": "Внутри",
@@ -225,15 +214,7 @@
     "outlineRound": "Скруглённые",
     "secondBorder": "2-я обводка",
     "secondBorderColor": "Цвет второй обводки",
-    "secondBorderWidth": "Ширина второй обводки",
-    "selectPage": "Выберите страницу для просмотра её слоёв.",
-    "source": "Исходный текст",
-    "text": "Текст",
-    "textColor": "Цвет текста",
-    "textDirection": "Направление текста",
-    "translation": "Перевод",
-    "type": "Типографика",
-    "vertical": "Вертикально"
+    "secondBorderWidth": "Ширина второй обводки"
   },
   "languages": {
     "ar": "العربية",
@@ -284,7 +265,6 @@
     "unlocked": "Не заблокировано"
   },
   "menu": {
-    "adjustments": "Коррекция",
     "about": "О программе",
     "closeProject": "Закрыть проект",
     "delete": "Удалить выбранное",
@@ -297,18 +277,15 @@
     "github": "GitHub",
     "help": "Справка",
     "history": "История",
-    "image": "Изображение",
     "import": "Импортировать страницы",
-    "process": "Обработка",
-    "processLayers": "Обработать выбранные слои",
-    "processPages": "Обработать выбранные страницы",
-    "processProject": "Обработать проект",
     "redo": "Повторить",
-    "runPhase": "Запустить: {{phase}}",
     "selectAllLayers": "Выбрать все слои",
     "settings": "Настройки",
     "undo": "Отменить",
-    "view": "Вид"
+    "unloadModels": "Выгрузить модели",
+    "view": "Вид",
+    "adjustments": "Коррекция",
+    "image": "Изображение"
   },
   "model": {
     "baseUrl": "Базовый URL",
@@ -325,28 +302,34 @@
   },
   "navigator": {
     "actionsFor": "Действия для {{page}}",
-    "chapterStart": "Начало главы",
     "delete": "Удалить",
+    "deleteDescription": "«{{page}}» и её слои будут удалены. Это действие можно отменить.",
+    "deleteTitle": "Удалить страницу?",
     "emptyDescription": "Импортируйте изображения или папку, чтобы добавить страницы.",
     "emptyTitle": "Страниц пока нет",
-    "filter": "Фильтровать страницы",
     "importAction": "Импорт",
     "importFiles": "Файлы…",
     "importFolder": "Папка…",
     "importing": "Импорт страниц…",
     "importingAction": "Импорт…",
+    "noImage": "Нет изображения",
+    "pageNumber": "Страница {{number}}",
+    "pages": "Страницы",
+    "run": {
+      "detect": "Обнаружить",
+      "inpaint": "Восстановить",
+      "recognize": "Распознать",
+      "translate": "Перевести"
+    },
+    "selected": "Выбрано: {{count}}",
+    "chapterStart": "Начало главы",
     "mergeAsSpread": "Объединить в разворот",
     "mergeLeftToRight": "Слева направо",
     "mergeRightToLeft": "Справа налево",
-    "noImage": "Нет изображения",
-    "noResults": "Нет страниц, соответствующих фильтру.",
     "pageName": "Название страницы",
-    "pageNumber": "Страница {{number}}",
-    "pages": "Страницы",
     "rename": "Переименовать",
     "renameDescription": "Выберите новое имя для страницы.",
-    "renameTitle": "Переименовать страницу",
-    "selected": "Выбрано: {{count}}"
+    "renameTitle": "Переименовать страницу"
   },
   "outputPicker": {
     "targetLanguage": "Язык перевода",
@@ -375,20 +358,11 @@
     "max": "Максимальный",
     "medium": "Средний",
     "minimal": "Минимальный",
+    "off": "Выключено",
     "xhigh": "Очень высокий"
   },
   "settings": {
     "appearance": {
-      "colorTheme": "Цветовая тема",
-      "colorThemeDescription": "Выберите палитру интерфейса. У каждой палитры есть светлый и тёмный вариант.",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "Океан",
-        "matcha": "Матча"
-      },
-      "animations": "Анимация интерфейса",
-      "animationsDescription": "Плавно показывает меню и диалоги и сглаживает наведение и переключатели. Учитывает системную настройку уменьшения движения.",
       "description": "Настройте вид рабочего пространства, не меняя отрисовку изображения.",
       "interface": "Интерфейс",
       "language": "Язык",
@@ -399,7 +373,17 @@
         "light": "Светлая",
         "system": "Системная"
       },
-      "title": "Оформление"
+      "title": "Оформление",
+      "colorTheme": "Цветовая тема",
+      "colorThemeDescription": "Выберите палитру интерфейса. У каждой палитры есть светлый и тёмный вариант.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Океан",
+        "matcha": "Матча"
+      },
+      "animations": "Анимация интерфейса",
+      "animationsDescription": "Плавно показывает меню и диалоги и сглаживает наведение и переключатели. Учитывает системную настройку уменьшения движения."
     },
     "backToEditor": "Вернуться в редактор",
     "loading": "Загрузка настроек…",
@@ -414,13 +398,6 @@
         "prompt": "Промпт",
         "promptDescription": "Применяется только к генеративным моделям.",
         "textThreshold": "Порог текста"
-      },
-      "remote": {
-        "title": "Сервер обработки",
-        "description": "Выполнять все этапы выше на другой машине с koharu-server. Оставьте адрес пустым, чтобы выполнять здесь.",
-        "url": "Адрес сервера",
-        "token": "Токен сервера",
-        "clearToken": "Удалить токен сервера"
       },
       "stages": {
         "detect": {
@@ -450,6 +427,13 @@
         "targetLanguageDescription": "Выберите язык, на который нужно перевести текст.",
         "vision": "Изображения",
         "visionDescription": "Передаёт изображения страниц языковой модели во время перевода."
+      },
+      "remote": {
+        "title": "Сервер обработки",
+        "description": "Выполнять все этапы выше на другой машине с koharu-server. Оставьте адрес пустым, чтобы выполнять здесь.",
+        "url": "Адрес сервера",
+        "token": "Токен сервера",
+        "clearToken": "Удалить токен сервера"
       }
     },
     "providers": {
@@ -527,53 +511,35 @@
   "story": {
     "noText": "На этой странице нет текста.",
     "sfx": "Звуковой эффект",
-    "title": "Сценарий"
-  },
-  "shape": {
-    "title": "Фигура",
-    "fill": "Заливка",
-    "fillNone": "Без заливки",
-    "fillSolid": "Сплошной цвет",
-    "fillLinear": "Линейный градиент",
-    "fillRadial": "Радиальный градиент",
-    "fillSweep": "Угловой градиент",
-    "fillPattern": "Узор",
-    "fillColor": "Цвет заливки",
-    "choosePattern": "Выбрать изображение…",
-    "angle": "Угол",
-    "stopColor": "Цвет точки {{index}}",
-    "stopPosition": "Положение точки {{index}}",
-    "removeStop": "Удалить точку {{index}}",
-    "addStop": "Добавить точку",
-    "strokeColor": "Цвет обводки",
-    "strokeWidth": "Толщина обводки",
-    "decrease": "Уменьшить: {{name}}",
-    "increase": "Увеличить: {{name}}"
+    "title": "Сценарий",
+    "translate": "Перевести {{name}}"
   },
   "tools": {
     "brushSize": "Размер кисти",
     "brushSizeInput": "Размер кисти",
     "brushSizePixels": "Размер кисти: {{size}} пикс.",
     "brushSizeShort": "{{size}} пкс",
-    "bucket": "Заливка",
     "color_picker": "Пипетка",
     "decreaseBrushSize": "Уменьшить размер кисти",
     "direct_select": "Стрелка",
     "draw": "Рисование",
-    "ellipse": "Эллипс",
     "eraser": "Ластик",
     "increaseBrushSize": "Увеличить размер кисти",
+    "lasso": "Лассо",
+    "marquee": "Прямоугольная область",
     "pan": "Перемещение",
+    "remove": "Удаление",
+    "select": "Выбор",
+    "text": "Текст",
+    "bucket": "Заливка",
+    "ellipse": "Эллипс",
     "ramp": "Цветовой переход",
     "rampColor": "Конечный цвет перехода",
     "rampAlong": "Направление перехода",
     "rampStroke": "Вдоль штриха",
     "rampHorizontal": "Слева направо",
     "rampVertical": "Сверху вниз",
-    "rectangle": "Прямоугольник",
-    "remove": "Удаление",
-    "select": "Выбор",
-    "text": "Текст"
+    "rectangle": "Прямоугольник"
   },
   "updater": {
     "available": {
@@ -599,6 +565,52 @@
     "maximize": "Развернуть",
     "minimize": "Свернуть",
     "restore": "Восстановить"
+  },
+  "find": {
+    "matchCase": "Учитывать регистр",
+    "noResults": "Ни один перевод не содержит этот текст.",
+    "page": "Страница {{number}}",
+    "placeholder": "Искать в переводах",
+    "replace": "Заменить",
+    "replaceAll": "Заменить все",
+    "replacePlaceholder": "Заменить на",
+    "searching": "Поиск…",
+    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
+    "title": "Поиск"
+  },
+  "adjust": {
+    "apply": "Применить",
+    "brightness_contrast": "Яркость/Контрастность",
+    "brightness": "Яркость",
+    "contrast": "Контрастность",
+    "levels": "Уровни",
+    "levelsLow": "Входной чёрный",
+    "levelsHigh": "Входной белый",
+    "hue": "Цветовой тон",
+    "grayscale": "Обесцветить"
+  },
+  "shape": {
+    "title": "Фигура",
+    "fill": "Заливка",
+    "fillNone": "Без заливки",
+    "fillSolid": "Сплошной цвет",
+    "fillLinear": "Линейный градиент",
+    "fillRadial": "Радиальный градиент",
+    "fillSweep": "Угловой градиент",
+    "fillPattern": "Узор",
+    "fillColor": "Цвет заливки",
+    "choosePattern": "Выбрать изображение…",
+    "angle": "Угол",
+    "stopColor": "Цвет точки {{index}}",
+    "stopPosition": "Положение точки {{index}}",
+    "removeStop": "Удалить точку {{index}}",
+    "addStop": "Добавить точку",
+    "strokeColor": "Цвет обводки",
+    "strokeWidth": "Толщина обводки",
+    "decrease": "Уменьшить: {{name}}",
+    "increase": "Увеличить: {{name}}"
   },
   "export": {
     "cancel": "Отмена",

@@ -106,7 +106,7 @@ translation.
 | `content` | rich text: spans in order, each a string with its character marks; a plain string is one unmarked span | Figma `characterStyleOverrides` and `styleOverrideTable` [Figma nodes]; Clip Studio Paint colours selected letters [CSP text editing] |
 | `style` | the layer-wide character and paragraph values | Figma `TypeStyle` on the node [Figma property types]; Photoshop formats "selected characters or an entire type layer" [Photoshop characters] |
 | `frame` | none (point text), a box (paragraph text), or a closed path that the text fills; a box or path frame also has a `fit` and an `anchor` | Photoshop point type, paragraph type [Photoshop type], and text inside a shape [Photoshop text in shapes]; Figma `textAutoResize` `WIDTH_AND_HEIGHT` and `NONE` [Figma text resize]; Clip Studio Paint point text and text boxes [CSP text] and balloon text [CSP balloons] |
-| `fit` | `shrink` (the default): text that would overflow shrinks just enough to fit, down to half its set size, and past that it overflows; `none`: the set size always; `grow`, for a box only: the box keeps its inline size, and its block size follows the text, growing away from its `anchor`; `best`: the text grows or shrinks to the largest size the frame holds, down to half its set size | PowerPoint shrinks placeholder text "as you type" by default, and with fitting stopped the text "will overfill the box" [PowerPoint placeholders] [PowerPoint autofit]; Google Slides "Shrink text on overflow" and "Resize shape to fit text" [Google Slides fitting]; Keynote fits text to most text boxes by default [Keynote autosize]; Figma `HEIGHT` [Figma text resize]; InDesign Auto-Size [InDesign auto-size]; a SwiftUI minimum scale factor of 0.5 draws text "as small as half" [SwiftUI minimum scale]; Publisher's Best Fit shrinks or grows text to fill its box [Publisher copyfitting] |
+| `fit` | `shrink` (the default): text that would overflow shrinks just enough to fit, down to half its set size, and past that it overflows; `none`: the set size always; `grow`, for a box only: the box keeps its inline size, and its block size follows the text, growing away from its `anchor`; `best`: the text grows or shrinks to the largest size the frame holds, shrinking as `shrink` does down to half its set size and then on until it fits | PowerPoint shrinks placeholder text "as you type" by default, and with fitting stopped the text "will overfill the box" [PowerPoint placeholders] [PowerPoint autofit]; Google Slides "Shrink text on overflow" and "Resize shape to fit text" [Google Slides fitting]; Keynote fits text to most text boxes by default [Keynote autosize]; Figma `HEIGHT` [Figma text resize]; InDesign Auto-Size [InDesign auto-size]; a SwiftUI minimum scale factor of 0.5 draws text "as small as half" [SwiftUI minimum scale]; Publisher's Best Fit shrinks or grows text to fill its box [Publisher copyfitting] |
 | `anchor` | where the lines sit in a box or path frame along the block axis: `start` (the default), `center`, or `end` | OOXML `anchor`, top when omitted [OOXML anchor]; Figma vertical alignment [Figma text properties]; InDesign vertical justification, Top by default [InDesign alignment]; Clip Studio Paint Position in frame [CSP text frame]; CSS `align-content` on block containers [CSS align] |
 | `direction` | horizontal or vertical | Clip Studio Paint Text Direction [CSP vertical text] |
 | `language` | one BCP 47 tag; `und` when undetermined | SVG `systemLanguage` [SVG structure]; C2PA `sourceLanguage` and `targetLanguage` [C2PA actions] |
@@ -124,8 +124,12 @@ Studio Paint's line space can be "a percentage of the character size" [CSP text
 frame]. Photoshop's leading [Photoshop leading] and Figma's line height [Figma
 text properties] are the same setting; manga letterers set it tighter than
 Photoshop's 120% Auto, at the size or 1 pt more, so dialogue reads evenly
-[Manga balloon basics]. Styling with no characters selected writes `style`;
-styling selected characters writes marks.
+[Manga balloon basics]. Styling with no characters selected writes `style` and
+drops that key's marks, so every character takes it, as Photoshop styles a
+selected type layer [Photoshop type]; styling selected characters writes marks.
+A typed character takes the marks of the one before it, or the first one's at
+the start, as typing does in an editor, and spans whose marks end up alike
+join.
 
 A text holds its own values. Nothing is shared between texts, because a
 balloon's text length and size differ from its neighbours', so no one style

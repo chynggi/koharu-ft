@@ -20,8 +20,10 @@ export type AgentConfig = {
   /**  A `vendor/model` reference, as koharu-llm connects one. */
   model?: string | null
   /**
-   *  How much the model reasons before it answers, by rig's portable levels
-   *  after OpenAI's `reasoning_effort`; the model's own default when unset.
+   *  How much the model reasons before it answers: off, or one of rig's
+   *  portable levels after OpenAI's `reasoning_effort`, written as one word;
+   *  the model's own default when unset. rig refuses off for a model that
+   *  can't stop reasoning.
    */
   reasoning?: string | null
   /**  How many model calls a run makes at most. */
@@ -162,6 +164,9 @@ export type Change = {
   layers: LayerId[]
   history: History
 }
+
+/**  One of the values a character's style holds. */
+export type CharKey = 'family' | 'weight' | 'italic' | 'size' | 'fill' | 'stroke' | 'stroke_width'
 
 /**
  *  Character values; each is also a mark key on a span, and a mark wins for
@@ -325,8 +330,9 @@ export type Fit =
    */
   | 'grow'
   /**
-   *  Text grows or shrinks to the largest size the box holds, down to half
-   *  its size, as Publisher's Best Fit fills its text box.
+   *  Text grows or shrinks to the largest size the box holds, as
+   *  Publisher's Best Fit fills its text box: it shrinks as `Shrink` does
+   *  down to half its size, and then on until it fits.
    */
   | 'best'
 
@@ -449,14 +455,20 @@ export type Inpainter =
   | 'lama'
   | 'manga-inpainting'
   | 'mi-gan'
-  | 'rorem-mixed'
   | 'powerpaint'
   | 'flux3-klein'
   | 'moss-image'
   | 'qwen-image'
 
 export type InpainterConfig = {
+  /**  What cleans pages and the Remove brush's areas. */
   model?: Inpainter
+  /**
+   *  What Generative Fill's bar picks and keeps for the next fill, as
+   *  Photoshop's Generative Fill keeps its own model; a fill brings the one
+   *  its bar shows, in `model`'s place for its run.
+   */
+  fill?: Inpainter
   /**
    *  What the model is asked when a run brings no prompt of its own, as an
    *  area's can; LaMa, which takes none, ignores it.
@@ -1034,6 +1046,13 @@ export type TextStyle = {
 export type Tool =
   | 'select'
   | 'direct_select'
+  /**
+   *  Photoshop's Rectangular Marquee: marks a rectangle of the page's
+   *  pixels.
+   */
+  | 'marquee'
+  /**  Photoshop's Lasso: marks a freehand shape of the page's pixels. */
+  | 'lasso'
   | 'text'
   | 'rectangle'
   | 'ellipse'
@@ -1080,10 +1099,28 @@ export type TranslatorConfig = {
    */
   vision?: boolean
   /**
-   *  How much the model reasons before it answers, by rig's portable levels
-   *  after OpenAI's `reasoning_effort`; the model's own default when unset.
+   *  How much the model reasons before it answers: off, or one of rig's
+   *  portable levels after OpenAI's `reasoning_effort`, written as one word;
+   *  the model's own default when unset. rig refuses off for a model that
+   *  can't stop reasoning.
    */
   reasoning?: string | null
+}
+
+/**  The text being typed into, as the host shows it. */
+export type Typed = {
+  /**  The layer typed into; `None` for a new text the commit adds. */
+  layer: LayerId | null
+  /**
+   *  Each value the selected characters share, the text's style under
+   *  their marks; at a caret, the next character's.
+   */
+  chars: CharStyle
+  /**
+   *  The values the selected characters don't share, which `chars` leaves
+   *  empty.
+   */
+  mixed: CharKey[]
 }
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value }
@@ -1128,6 +1165,8 @@ export const commands = {
     invoke<RunId>('run_pipeline', { target, stages }, { headers: headers() }),
   /** Stops every run, running and queued; what they finished stays. */
   stopPipeline: () => invoke<null>('stop_pipeline', {}, { headers: headers() }),
+  /** Unloads every model the pipeline loaded once the GPU's current call ends, freeing its memory as Photoshop's Edit → Purge frees memory; each loads again when a stage next needs it. */
+  unload: () => invoke<null>('unload', {}, { headers: headers() }),
   /** What every run told so far, for an interface that loaded late. */
   getPipelineEvents: () =>
     invoke<PipelineEvent[]>('get_pipeline_events', {}, { headers: headers() }),
@@ -1135,6 +1174,8 @@ export const commands = {
   runAgent: (prompt: string, onEvent: Channel<AgentEvent>) =>
     invoke<number>('run_agent', { prompt, onEvent }, { headers: headers() }),
   stopAgent: (run: number) => invoke<null>('stop_agent', { run }, { headers: headers() }),
+  /** Starts the open project's conversation over, as a chat app's new chat does: the run going stops, and the next run begins a new conversation. */
+  resetAgent: () => invoke<null>('reset_agent', {}, { headers: headers() }),
   getPreferences: () => invoke<Preferences>('get_preferences', {}, { headers: headers() }),
   /** Saves every section, hands each to its owner, and answers them as the file holds them now. */
   savePreferences: (preferences: Preferences) =>
@@ -1184,12 +1225,20 @@ export const commands = {
   setColors: (colors: Colors) => invoke<null>('set_colors', { colors }, { headers: headers() }),
   /** Whether the Story panel shows, and the text whose entry the pointer is on, which the canvas numbers and outlines. */
   setStory: (story: Story) => invoke<null>('set_story', { story }, { headers: headers() }),
+  /** The type bar's character settings for the text being typed: the selected characters take them, or at a caret the next ones typed. */
+  styleTyping: (patch: CharStyle) =>
+    invoke<null>('style_typing', { patch }, { headers: headers() }),
   /** Fits the page in the canvas, as the fit shortcut does. */
   fit: () => invoke<null>('fit', {}, { headers: headers() }),
   /** Zooms about the canvas's centre, `zoom` CSS pixels to a page pixel, as the status bar's slider sets it. */
   setZoom: (zoom: number) => invoke<null>('set_zoom', { zoom }, { headers: headers() }),
   /** The selection the Layers panel made. */
   select: (layers: LayerId[]) => invoke<null>('select', { layers }, { headers: headers() }),
+  /** Fills the area the marquee and the lasso marked with `model` after `prompt`, or the inpainter's own prompt when there's none, as Photoshop's Generative Fill does with the model its bar shows; `None` while no area is marked. The model is this run's only, in the settings' place. */
+  fill: (prompt: string | null, model: Inpainter) =>
+    invoke<RunId | null>('fill', { prompt, model }, { headers: headers() }),
+  /** Drops the area the marquee and the lasso marked, as Photoshop's Deselect does. */
+  deselect: () => invoke<null>('deselect', {}, { headers: headers() }),
 }
 
 export const events = {
@@ -1201,8 +1250,14 @@ export const events = {
     listen<PageId | null>('page', (event) => handler(event.payload)),
   selection: (handler: (payload: LayerId[]) => void): Promise<UnlistenFn> =>
     listen<LayerId[]>('selection', (event) => handler(event.payload)),
+  selectionBounds: (handler: (payload: Bounds | null) => void): Promise<UnlistenFn> =>
+    listen<Bounds | null>('selection_bounds', (event) => handler(event.payload)),
+  area: (handler: (payload: Bounds | null) => void): Promise<UnlistenFn> =>
+    listen<Bounds | null>('area', (event) => handler(event.payload)),
   camera: (handler: (payload: Camera) => void): Promise<UnlistenFn> =>
     listen<Camera>('camera', (event) => handler(event.payload)),
+  typing: (handler: (payload: Typed | null) => void): Promise<UnlistenFn> =>
+    listen<Typed | null>('typing', (event) => handler(event.payload)),
   color: (handler: (payload: Rgba) => void): Promise<UnlistenFn> =>
     listen<Rgba>('color', (event) => handler(event.payload)),
   brushDiameter: (handler: (payload: number) => void): Promise<UnlistenFn> =>

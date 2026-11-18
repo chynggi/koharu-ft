@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 
 import type {
+  Bounds,
   ExportProgress,
   LayerId,
   Model,
@@ -16,6 +17,7 @@ import type {
   Stage,
   Tool,
   Transfer,
+  Typed,
 } from '@koharu/ipc/protocol'
 import { toast } from '@koharu/ui/components/toast'
 
@@ -27,16 +29,14 @@ export function maxBrushDiameter(size: Size): number {
   return Math.round(Math.max(size.width / 2048, 1.0) * 128)
 }
 
-export function isBrushTool(tool: CanvasTool): boolean {
-  return tool === 'draw' || tool === 'eraser' || tool === 'remove'
-}
-
 /** Each tool's key, Photoshop's for its counterpart: the Move tool's V, the Direct Selection
  * tool's A, the Type tool's T, the shape tools' U, the Brush's B, the Eraser's E, the Paint
  * Bucket's G, the Eyedropper's I, the Remove tool's J, and the Hand's H. A key two tools share goes on to the next of them. */
 export const toolKeys: Record<CanvasTool, string> = {
   select: 'v',
   direct_select: 'a',
+  marquee: 'm',
+  lasso: 'l',
   text: 't',
   rectangle: 'u',
   ellipse: 'u',
@@ -65,7 +65,7 @@ export interface Camera {
 
 /** The right pane's tabs. */
 export type Panel = 'layers' | 'story' | 'agent' | 'find'
-export type PipelineScope = 'page' | 'selected-pages' | 'project'
+export type PipelineScope = 'selected-pages' | 'project'
 export const pipelineStages: readonly Stage[] = ['detect', 'recognize', 'inpaint', 'translate']
 
 /** A pipeline run as the activity center shows it, from the pipeline's events. */
@@ -90,6 +90,13 @@ interface KoharuStore {
   /** The export writing, by its pages written; `null` when none is. */
   exporting: ExportProgress | null
   camera: Camera
+  /** Where the canvas's selection lies on the page as it's laid out, a point text's lines
+   * included. */
+  selectionBounds: Bounds | null
+  /** Where the area the canvas's marquee and lasso marked lies on the page. */
+  area: Bounds | null
+  /** The text the canvas is typing into, and its selected characters' style. */
+  typing: Typed | null
   /** The colour the canvas's picker picked last, numbered so a repeat counts. */
   picked: { color: string; serial: number } | null
   selectedLayers: LayerId[]
@@ -130,6 +137,9 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   downloads: {},
   exporting: null,
   camera: { zoom: 1, x: 0, y: 0 },
+  selectionBounds: null,
+  area: null,
+  typing: null,
   picked: null,
   selectedLayers: [],
   canvasSelection: [],
@@ -138,7 +148,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   brush: { diameter: 48, color: '#FFFFFF', ramp: null },
   panel: 'layers',
   storyHover: null,
-  processingScope: 'selected-pages',
+  processingScope: 'project',
   processingStages: [...pipelineStages],
   settingsOpen: false,
   historyOpen: false,
@@ -198,11 +208,16 @@ function fold(job: Job | undefined, event: PipelineEvent): Job {
     case 'finished':
       return { ...current, completed: current.completed + 1 }
     case 'ended':
-      return {
-        ...current,
-        state: event.outcome.kind,
-        error: event.outcome.kind === 'failed' ? event.outcome.reason : null,
-      }
+      // A failure names its own page and stage: the last started may be another page in flight.
+      return event.outcome.kind === 'failed'
+        ? {
+            ...current,
+            state: 'failed',
+            stage: event.outcome.stage,
+            page: event.outcome.page,
+            error: event.outcome.reason,
+          }
+        : { ...current, state: event.outcome.kind, error: null }
   }
 }
 

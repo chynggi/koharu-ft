@@ -1,18 +1,4 @@
 {
-  "find": {
-    "matchCase": "مطابقة حالة الأحرف",
-    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
-    "page": "الصفحة {{number}}",
-    "placeholder": "البحث في الترجمات",
-    "replace": "استبدال",
-    "replaceAll": "استبدال الكل",
-    "replacePlaceholder": "الاستبدال بـ",
-    "searching": "جارٍ البحث…",
-    "summary": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
-    "title": "بحث"
-  },
   "about": {
     "author": "المؤلف",
     "description": "أدوات ترجمة المانغا",
@@ -31,33 +17,25 @@
     "stop": "إيقاف",
     "title": "النشاط"
   },
-  "adjust": {
-    "apply": "تطبيق",
-    "brightness_contrast": "السطوع/التباين",
-    "brightness": "السطوع",
-    "contrast": "التباين",
-    "levels": "المستويات",
-    "levelsLow": "أسود الإدخال",
-    "levelsHigh": "أبيض الإدخال",
-    "hue": "تدرج اللون",
-    "grayscale": "إزالة التشبع"
-  },
   "agent": {
-    "applying": "جارٍ تطبيق تغييرات المشروع...",
     "cancel": "إلغاء",
     "cancelled": "أُلغي.",
     "emptyDescription": "اطلب من Agent فحص هذا المشروع أو ترجمته أو تعديله أو معالجته. لن يعرض صور الصفحات إلا عند الحاجة.",
     "emptyTitle": "ماذا ينبغي أن يفعل Koharu؟",
     "failed": "فشل طلب Agent.",
     "loading": "جارٍ تحميل الوكيل…",
-    "mcp": "خادم MCP",
     "message": "راسل Koharu Agent",
     "model": "النموذج",
+    "newChat": "محادثة جديدة",
     "placeholder": "اطلب من Koharu العمل على هذا المشروع...",
     "reasoning": "التفكير",
     "send": "إرسال",
     "thinking": "جارٍ التفكير...",
+    "thought": "فكّر لمدة {{seconds}} ث",
     "title": "Agent",
+    "toolFailed": "فشل {{tool}}",
+    "used": "استخدم {{tool}}",
+    "using": "يستخدم {{tool}}",
     "working": "جارٍ العمل..."
   },
   "canvas": {
@@ -65,8 +43,7 @@
     "notice": {
       "eraser_needs_raster": "حدد طبقة نقطية للمسح.",
       "fill_needs_raster": "حدد طبقة نقطية للتعبئة."
-    },
-    "typeText": "اكتب النص"
+    }
   },
   "colorPicker": {
     "brushColor": "لون الفرشاة",
@@ -108,34 +85,36 @@
     "timeout": "انتهت مهلة الإرسال. يُرجى المحاولة مرة أخرى.",
     "title": "إرسال ملاحظات"
   },
+  "fill": {
+    "deselect": "إلغاء التحديد",
+    "generate": "إنشاء",
+    "model": "نموذج التعبئة",
+    "prompt": "صِف ما تريد إضافته (اختياري)",
+    "title": "التعبئة التوليدية"
+  },
   "fontPicker": {
-    "addFavorite": "إضافة {{family}} إلى المفضلة",
-    "removeFavorite": "إزالة {{family}} من المفضلة",
     "choose": "اختر خطًا",
     "fontCount": "{{count}} خط",
     "fontCount_one": "{{count}} خط",
     "fontCount_other": "{{count}} خط",
     "fonts": "الخطوط",
     "noResults": "لا توجد خطوط تطابق هذا البحث",
-    "search": "ابحث عن خطوط"
+    "search": "ابحث عن خطوط",
+    "addFavorite": "إضافة {{family}} إلى المفضلة",
+    "removeFavorite": "إزالة {{family}} من المفضلة"
   },
   "history": {
     "close": "إغلاق السجل",
     "opened": "عند الفتح",
     "steps": {
-      "adjust_colors": "تعديل الألوان",
-      "add_shape": "إضافة شكل",
       "add_text": "إضافة نص",
       "delete_layers": "حذف الطبقات",
       "delete_pages": "حذف الصفحات",
       "detect": "الكشف",
-      "duplicate_layer": "تكرار الطبقات",
       "edit_frame": "تحرير الإطار",
       "erase": "مسح",
-      "fill": "تعبئة",
       "import": "استيراد الصفحات",
       "inpaint": "الترميم",
-      "merge_pages": "دمج الصفحات",
       "move": "نقل",
       "move_layer": "نقل الطبقات",
       "move_page": "نقل الصفحة",
@@ -143,22 +122,25 @@
       "recognize": "OCR",
       "resize": "تغيير الحجم",
       "rotate": "تدوير",
-      "set_fill": "تغيير التعبئة",
       "set_locked": "قفل أو إلغاء القفل",
       "set_source_text": "تحرير النص الأصلي",
-      "set_stroke": "تغيير الحد",
       "set_style": "تغيير نمط النص",
       "set_text": "تحرير النص",
       "set_visibility": "إظهار أو إخفاء",
       "translate": "الترجمة",
       "update_layer": "تغيير الطبقة",
+      "adjust_colors": "تعديل الألوان",
+      "add_shape": "إضافة شكل",
+      "duplicate_layer": "تكرار الطبقات",
+      "fill": "تعبئة",
+      "merge_pages": "دمج الصفحات",
+      "set_fill": "تغيير التعبئة",
+      "set_stroke": "تغيير الحد",
       "update_page": "تعديل الصفحة"
     },
     "title": "السجل"
   },
   "inference": {
-    "currentPage": "الصفحة الحالية",
-    "currentPageDescription": "معالجة الصفحة المعروضة في اللوحة فقط.",
     "entireProject": "المشروع كاملًا",
     "entireProjectDescription": "معالجة كل صفحة في هذا المشروع.",
     "model": "النموذج",
@@ -171,7 +153,6 @@
     "runProcessing": "تشغيل المعالجة",
     "scope": "النطاق",
     "scopeShort": {
-      "page": "صفحة",
       "project": "مشروع",
       "selected-pages": "التحديد"
     },
@@ -203,7 +184,6 @@
     "borderWidth": "عرض الحدود",
     "chooseFontSize": "اختر حجم الخط",
     "decreaseBorderWidth": "تقليل عرض الحدود",
-    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
     "font": "الخط",
     "fontSize": "حجم الخط",
     "fontStyles": {
@@ -213,8 +193,17 @@
     "fontWeight": "وزن الخط",
     "horizontal": "أفقي",
     "increaseBorderWidth": "زيادة عرض الحدود",
-    "increaseSecondBorderWidth": "زيادة عرض الحدود الثانية",
     "opacity": "العتامة",
+    "selectPage": "اختر صفحة لعرض طبقاتها.",
+    "source": "النص المصدر",
+    "text": "نص",
+    "textColor": "لون النص",
+    "textDirection": "اتجاه النص",
+    "translation": "الترجمة",
+    "type": "النوع",
+    "vertical": "عمودي",
+    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
+    "increaseSecondBorderWidth": "زيادة عرض الحدود الثانية",
     "outlineBevel": "مشطوفة",
     "outlineCenter": "الوسط",
     "outlineInside": "الداخل",
@@ -225,15 +214,7 @@
     "outlineRound": "مستديرة",
     "secondBorder": "الحدود 2",
     "secondBorderColor": "لون الحدود الثانية",
-    "secondBorderWidth": "عرض الحدود الثانية",
-    "selectPage": "اختر صفحة لعرض طبقاتها.",
-    "source": "النص المصدر",
-    "text": "نص",
-    "textColor": "لون النص",
-    "textDirection": "اتجاه النص",
-    "translation": "الترجمة",
-    "type": "النوع",
-    "vertical": "عمودي"
+    "secondBorderWidth": "عرض الحدود الثانية"
   },
   "languages": {
     "ar": "العربية",
@@ -284,7 +265,6 @@
     "unlocked": "غير مقفل"
   },
   "menu": {
-    "adjustments": "تعديلات",
     "about": "عن البرنامج",
     "closeProject": "إغلاق المشروع",
     "delete": "حذف المحدّد",
@@ -297,18 +277,15 @@
     "github": "GitHub",
     "help": "مساعدة",
     "history": "السجل",
-    "image": "صورة",
     "import": "استيراد الصفحات",
-    "process": "معالجة",
-    "processLayers": "معالجة الطبقات المحدّدة",
-    "processPages": "معالجة الصفحات المحدّدة",
-    "processProject": "معالجة المشروع",
     "redo": "إعادة",
-    "runPhase": "تشغيل {{phase}}",
     "selectAllLayers": "تحديد كل الطبقات",
     "settings": "الإعدادات",
     "undo": "تراجع",
-    "view": "عرض"
+    "unloadModels": "إلغاء تحميل النماذج",
+    "view": "عرض",
+    "adjustments": "تعديلات",
+    "image": "صورة"
   },
   "model": {
     "baseUrl": "عنوان URL الأساسي",
@@ -325,28 +302,34 @@
   },
   "navigator": {
     "actionsFor": "إجراءات {{page}}",
-    "chapterStart": "بداية الفصل",
     "delete": "حذف",
+    "deleteDescription": "يؤدي هذا إلى حذف «{{page}}» وطبقاتها. يمكنك التراجع عن ذلك.",
+    "deleteTitle": "حذف الصفحة؟",
     "emptyDescription": "استورد ملفات صور أو مجلدًا لإضافة صفحات.",
     "emptyTitle": "لا توجد صفحات بعد",
-    "filter": "تصفية الصفحات",
     "importAction": "استيراد",
     "importFiles": "ملفات…",
     "importFolder": "مجلد…",
     "importing": "جارٍ استيراد الصفحات…",
     "importingAction": "جارٍ الاستيراد…",
+    "noImage": "لا توجد صورة",
+    "pageNumber": "الصفحة {{number}}",
+    "pages": "الصفحات",
+    "run": {
+      "detect": "كشف",
+      "inpaint": "ترميم",
+      "recognize": "التعرّف على النص",
+      "translate": "ترجمة"
+    },
+    "selected": "{{count}} محدّد",
+    "chapterStart": "بداية الفصل",
     "mergeAsSpread": "دمج في صفحة مزدوجة",
     "mergeLeftToRight": "من اليسار إلى اليمين",
     "mergeRightToLeft": "من اليمين إلى اليسار",
-    "noImage": "لا توجد صورة",
-    "noResults": "لا توجد صفحات تطابق هذا المرشّح.",
     "pageName": "اسم الصفحة",
-    "pageNumber": "الصفحة {{number}}",
-    "pages": "الصفحات",
     "rename": "إعادة تسمية",
     "renameDescription": "اختر اسمًا جديدًا لهذه الصفحة.",
-    "renameTitle": "إعادة تسمية الصفحة",
-    "selected": "{{count}} محدّد"
+    "renameTitle": "إعادة تسمية الصفحة"
   },
   "outputPicker": {
     "targetLanguage": "اللغة المستهدفة",
@@ -375,20 +358,11 @@
     "max": "الأقصى",
     "medium": "متوسط",
     "minimal": "أدنى",
+    "off": "إيقاف",
     "xhigh": "عالٍ جدًا"
   },
   "settings": {
     "appearance": {
-      "colorTheme": "سمة الألوان",
-      "colorThemeDescription": "اختر لوحة ألوان الواجهة. لكل لوحة نسخة فاتحة وأخرى داكنة.",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "المحيط",
-        "matcha": "ماتشا"
-      },
-      "animations": "حركات الواجهة",
-      "animationsDescription": "يُظهر القوائم ومربعات الحوار بتلاشٍ تدريجي ويُنعّم تغيّرات التمرير والمفاتيح. يتبع إعداد النظام لتقليل الحركة.",
       "description": "طابق مساحة عملك مع الغرفة دون تغيير طريقة عرض الرسومات.",
       "interface": "الواجهة",
       "language": "اللغة",
@@ -399,7 +373,17 @@
         "light": "فاتح",
         "system": "النظام"
       },
-      "title": "المظهر"
+      "title": "المظهر",
+      "colorTheme": "سمة الألوان",
+      "colorThemeDescription": "اختر لوحة ألوان الواجهة. لكل لوحة نسخة فاتحة وأخرى داكنة.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "المحيط",
+        "matcha": "ماتشا"
+      },
+      "animations": "حركات الواجهة",
+      "animationsDescription": "يُظهر القوائم ومربعات الحوار بتلاشٍ تدريجي ويُنعّم تغيّرات التمرير والمفاتيح. يتبع إعداد النظام لتقليل الحركة."
     },
     "backToEditor": "العودة إلى المحرّر",
     "loading": "جارٍ تحميل التفضيلات…",
@@ -414,13 +398,6 @@
         "prompt": "الطلب",
         "promptDescription": "ينطبق على النماذج التوليدية فقط.",
         "textThreshold": "عتبة النص"
-      },
-      "remote": {
-        "title": "خادم المعالجة",
-        "description": "تشغيل جميع المراحل أعلاه على جهاز آخر يعمل عليه koharu-server. اترك العنوان فارغًا للتشغيل هنا.",
-        "url": "عنوان الخادم",
-        "token": "رمز الخادم",
-        "clearToken": "مسح رمز الخادم"
       },
       "stages": {
         "detect": {
@@ -450,6 +427,13 @@
         "targetLanguageDescription": "اختر اللغة التي تُترجم إليها النصوص.",
         "vision": "الرؤية",
         "visionDescription": "تزويد النموذج اللغوي بصور الصفحات أثناء الترجمة."
+      },
+      "remote": {
+        "title": "خادم المعالجة",
+        "description": "تشغيل جميع المراحل أعلاه على جهاز آخر يعمل عليه koharu-server. اترك العنوان فارغًا للتشغيل هنا.",
+        "url": "عنوان الخادم",
+        "token": "رمز الخادم",
+        "clearToken": "مسح رمز الخادم"
       }
     },
     "providers": {
@@ -527,53 +511,35 @@
   "story": {
     "noText": "لا يوجد نص في هذه الصفحة.",
     "sfx": "مؤثر صوتي",
-    "title": "القصة"
-  },
-  "shape": {
-    "title": "شكل",
-    "fill": "التعبئة",
-    "fillNone": "بلا تعبئة",
-    "fillSolid": "لون خالص",
-    "fillLinear": "تدرج خطي",
-    "fillRadial": "تدرج شعاعي",
-    "fillSweep": "تدرج زاوي",
-    "fillPattern": "نقش",
-    "fillColor": "لون التعبئة",
-    "choosePattern": "اختيار صورة…",
-    "angle": "الزاوية",
-    "stopColor": "لون النقطة {{index}}",
-    "stopPosition": "موضع النقطة {{index}}",
-    "removeStop": "إزالة النقطة {{index}}",
-    "addStop": "إضافة نقطة",
-    "strokeColor": "لون الحد",
-    "strokeWidth": "عرض الحد",
-    "decrease": "إنقاص {{name}}",
-    "increase": "زيادة {{name}}"
+    "title": "القصة",
+    "translate": "ترجمة {{name}}"
   },
   "tools": {
     "brushSize": "حجم الفرشاة",
     "brushSizeInput": "حجم الفرشاة",
     "brushSizePixels": "حجم الفرشاة: {{size}} بكسل",
     "brushSizeShort": "{{size}} بكسل",
-    "bucket": "دلو الطلاء",
     "color_picker": "منتقي الألوان",
     "decreaseBrushSize": "تقليل حجم الفرشاة",
     "direct_select": "التحديد المباشر",
     "draw": "فرشاة",
-    "ellipse": "قطع ناقص",
     "eraser": "ممحاة",
     "increaseBrushSize": "زيادة حجم الفرشاة",
+    "lasso": "اللاسو",
+    "marquee": "التحديد المستطيل",
     "pan": "تحريك",
+    "remove": "إزالة",
+    "select": "تحديد",
+    "text": "نص",
+    "bucket": "دلو الطلاء",
+    "ellipse": "قطع ناقص",
     "ramp": "تدرج اللون",
     "rampColor": "لون نهاية التدرج",
     "rampAlong": "اتجاه التدرج",
     "rampStroke": "على طول الضربة",
     "rampHorizontal": "من اليسار إلى اليمين",
     "rampVertical": "من الأعلى إلى الأسفل",
-    "rectangle": "مستطيل",
-    "remove": "إزالة",
-    "select": "تحديد",
-    "text": "نص"
+    "rectangle": "مستطيل"
   },
   "updater": {
     "available": {
@@ -599,6 +565,52 @@
     "maximize": "تكبير",
     "minimize": "تصغير",
     "restore": "استعادة"
+  },
+  "find": {
+    "matchCase": "مطابقة حالة الأحرف",
+    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
+    "page": "الصفحة {{number}}",
+    "placeholder": "البحث في الترجمات",
+    "replace": "استبدال",
+    "replaceAll": "استبدال الكل",
+    "replacePlaceholder": "الاستبدال بـ",
+    "searching": "جارٍ البحث…",
+    "summary": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
+    "title": "بحث"
+  },
+  "adjust": {
+    "apply": "تطبيق",
+    "brightness_contrast": "السطوع/التباين",
+    "brightness": "السطوع",
+    "contrast": "التباين",
+    "levels": "المستويات",
+    "levelsLow": "أسود الإدخال",
+    "levelsHigh": "أبيض الإدخال",
+    "hue": "تدرج اللون",
+    "grayscale": "إزالة التشبع"
+  },
+  "shape": {
+    "title": "شكل",
+    "fill": "التعبئة",
+    "fillNone": "بلا تعبئة",
+    "fillSolid": "لون خالص",
+    "fillLinear": "تدرج خطي",
+    "fillRadial": "تدرج شعاعي",
+    "fillSweep": "تدرج زاوي",
+    "fillPattern": "نقش",
+    "fillColor": "لون التعبئة",
+    "choosePattern": "اختيار صورة…",
+    "angle": "الزاوية",
+    "stopColor": "لون النقطة {{index}}",
+    "stopPosition": "موضع النقطة {{index}}",
+    "removeStop": "إزالة النقطة {{index}}",
+    "addStop": "إضافة نقطة",
+    "strokeColor": "لون الحد",
+    "strokeWidth": "عرض الحد",
+    "decrease": "إنقاص {{name}}",
+    "increase": "زيادة {{name}}"
   },
   "export": {
     "cancel": "إلغاء",

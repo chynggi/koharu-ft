@@ -17,6 +17,7 @@ use crate::{
     tools::{
         brush::{Resize, Stroke},
         direct::{Pick, Reshape},
+        mark::Mark,
         pan::Pan,
         select::Marquee,
         shape::ShapeDraft,
@@ -88,6 +89,7 @@ pub(crate) enum Gesture {
     ResizeBrush(Resize),
     Reshape(Reshape),
     Pick(Pick),
+    Mark(Mark),
 }
 
 impl Gesture {
@@ -103,6 +105,7 @@ impl Gesture {
             Self::ResizeBrush(resize) => resize.moved(cx, samples),
             Self::Reshape(reshape) => reshape.moved(samples),
             Self::Pick(pick) => pick.moved(samples),
+            Self::Mark(mark) => mark.moved(samples),
         }
         Vec::new()
     }
@@ -112,13 +115,16 @@ impl Gesture {
         match self {
             Self::Marquee(marquee) => Ok(marquee.finish(cx)),
             Self::Transform(transform) => Ok(transform.finish(cx)),
-            Self::Draft(draft) => Ok(draft.finish(cx)),
+            // The canvas types into a draft itself.
+            Self::Draft(_) => Ok(Vec::new()),
             Self::Shape(draft) => Ok(draft.finish(cx)),
             Self::Pan(_) => Ok(Vec::new()),
             Self::Stroke(stroke) => stroke.finish(cx),
             Self::ResizeBrush(resize) => Ok(resize.finish()),
             Self::Reshape(reshape) => Ok(reshape.finish()),
             Self::Pick(pick) => Ok(pick.finish(cx.view)),
+            // The canvas joins a mark to its area itself.
+            Self::Mark(_) => Ok(Vec::new()),
         }
     }
 
@@ -133,6 +139,7 @@ impl Gesture {
             Self::ResizeBrush(resize) => resize.preview(overlay),
             Self::Reshape(reshape) => reshape.preview(overlay),
             Self::Pick(pick) => pick.preview(overlay),
+            Self::Mark(mark) => mark.preview(overlay),
         }
         Ok(())
     }
@@ -148,6 +155,7 @@ impl Gesture {
             Self::Stroke(_) | Self::ResizeBrush(_) => None,
             Self::Reshape(reshape) => Some(reshape.cursor()),
             Self::Pick(_) => Some(CursorIcon::Default),
+            Self::Mark(_) => Some(CursorIcon::Crosshair),
         }
     }
 
@@ -184,6 +192,7 @@ impl Gesture {
             Self::ResizeBrush(resize) => resize.look(),
             Self::Reshape(reshape) => GestureLook::Pointer(reshape.current()),
             Self::Pick(pick) => GestureLook::Rect(pick.rect()),
+            Self::Mark(mark) => mark.look(),
         }
     }
 

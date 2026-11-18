@@ -1,8 +1,9 @@
 //! Lines fitted to a text's room: at its size when they fit, or in a best-fit
 //! frame at the largest scale above it that fits; else, as the frame allows,
 //! at the largest scale down to half that fits with whole words, then at half
-//! with a path's inset halved, then hyphenated. A word is never split without
-//! a hyphen: what still doesn't fit runs past its room whole.
+//! with a path's inset halved, then hyphenated, and a best-fit text below half
+//! as it last broke until it fits. A word is never split without a hyphen:
+//! what still doesn't fit runs past its room whole.
 
 use std::ops::{Range, RangeInclusive};
 
@@ -16,8 +17,9 @@ use super::{
     style::Styled,
 };
 
-/// The largest scale a best-fit text grows to, a bound that only text no
-/// room limits, such as one with no line height, reaches.
+/// The largest scale a best-fit text grows to, and its inverse the smallest
+/// it shrinks to, bounds that only text no room limits, such as one with no
+/// line height, or a room too small for anything, reaches.
 const CEILING: f32 = 256.0;
 
 /// Lines placed at one scale.
@@ -93,17 +95,42 @@ pub(super) fn fit(
         }
         Room::Point | Room::Box { .. } => (placed, None),
     };
-    if styled.hyphenation.is_some() {
-        let hyphens = segments(Breaking::Hyphens);
-        let hyphenated = match inset {
-            Some((outline, anchor, inset)) => {
-                in_path(styled, &hyphens, floor, outline, anchor, inset).place()
-            }
-            None => place(styled, room, &hyphens, floor),
-        };
-        if !hyphenated.overflowed {
-            return (hyphens, hyphenated);
+    let at = |segments: &[Segment], scale: f32| match inset {
+        Some((outline, anchor, inset)) => {
+            in_path(styled, segments, scale, outline, anchor, inset).place()
         }
+        None => place(styled, room, segments, scale),
+    };
+    let hyphens = match styled.hyphenation {
+        Some(_) => {
+            let hyphens = segments(Breaking::Hyphens);
+            let hyphenated = at(&hyphens, floor);
+            if !hyphenated.overflowed {
+                return (hyphens, hyphenated);
+            }
+            Some(hyphens)
+        }
+        None => None,
+    };
+    // A best-fit text has no floor of its own: as Publisher's Best Fit, it
+    // shrinks on, as it last broke, until its room holds it, as far below
+    // its size as it may grow above.
+    if fills(&styled.frame) {
+        let segments = hyphens.unwrap_or(words);
+        let sure = |scale: f32| match inset {
+            Some((outline, anchor, inset)) => {
+                let (fewest, most) =
+                    in_path(styled, &segments, scale, outline, anchor, inset).counts();
+                fewest > most
+            }
+            None => overflows(styled, room, &segments, scale),
+        };
+        let shrunk = largest_fit(
+            1.0 / CEILING,
+            |scale| sure(scale * floor),
+            |scale| at(&segments, scale * floor),
+        );
+        return (segments, shrunk);
     }
     // Nothing fits: the words run past their room whole, centred, into its
     // margin first.
@@ -363,9 +390,20 @@ struct InPath<'a> {
     scale: f32,
     outline: &'a Outline,
     anchor: Anchor,
+    /// The side along the inline axis the lines share, unless they're
+    /// centred.
+    edge: Option<Side>,
     pitch: f32,
     air: f32,
     frame: Rect,
+}
+
+/// A side of the lines along the inline axis: where `Low` lines start or
+/// `High` ones end.
+#[derive(Clone, Copy)]
+enum Side {
+    Low,
+    High,
 }
 
 fn in_path<'a>(
@@ -377,11 +415,20 @@ fn in_path<'a>(
     inset: f32,
 ) -> InPath<'a> {
     let size = segments.iter().map(|s| s.size).fold(0.0, f32::max);
+    // A right-to-left text starts its lines on the right, as arranging them
+    // does by its first paragraph's direction.
+    let rtl = !styled.vertical
+        && unicode_bidi::get_base_direction(styled.text.as_str()) == unicode_bidi::Direction::Rtl;
     InPath {
         segments,
         scale,
         outline,
         anchor,
+        edge: match (styled.align, rtl) {
+            (Align::Center, _) => None,
+            (Align::Start | Align::Justify, false) | (Align::End, true) => Some(Side::Low),
+            (Align::End, false) | (Align::Start | Align::Justify, true) => Some(Side::High),
+        },
         pitch: pitch(segments, scale, styled.line_height).max(0.01),
         air: size * scale * inset,
         frame: physical(
@@ -452,10 +499,15 @@ impl InPath<'_> {
         best
     }
 
-    /// The text in `count` lines, all centred on one axis, each as long as
-    /// the outline reaches on both sides of it all along its band widened by
-    /// the air, less the air at both ends; and what they cost. `None` when
-    /// `count` lines can't hold it.
+    /// The text in `count` lines about one axis, and what they cost. Each
+    /// line's span is where the outline holds the axis all along its band
+    /// widened by the air, less the air at both ends. A centred line takes as
+    /// much of it on both sides of the axis. Lines aligned to an edge start
+    /// together, or end together, where Photoshop starts each where the shape
+    /// does: they share the edge every span reaches, each runs from it to its
+    /// own span's far end, so a lopsided balloon's longer side holds longer
+    /// lines, and the block, as long as its longest line, is centred on the
+    /// axis as far as that allows. `None` when `count` lines can't hold it.
     fn lines(&self, count: usize) -> Option<(f32, Placed)> {
         let (bounds, pitch, air) = (self.outline.bounds, self.pitch, self.air);
         let total = pitch * count as f32;
@@ -472,18 +524,35 @@ impl InPath<'_> {
             })
             .collect();
         let axis = room::axis(&bands).unwrap_or(bounds.center().x);
-        // A band with no room on the axis holds a line of none there, so a
-        // word forced into it overflows evenly about the axis.
+        // Each line's span from start to end. A band with no room on the axis
+        // holds a line of none there, so a word forced into it overflows
+        // about the axis.
         let spans: Vec<(f32, f32)> = bands
             .iter()
             .map(|spans| {
-                room::reach(spans, axis).map_or((axis as f32, 0.0), |(start, end)| {
-                    let (start, end) = (start as f32 + air, end as f32 - air);
-                    match end > start {
-                        true => (start, end - start),
-                        false => (axis as f32, 0.0),
-                    }
-                })
+                match self.edge {
+                    None => room::reach(spans, axis),
+                    Some(_) => room::holding(spans, axis),
+                }
+                .map(|(start, end)| (start as f32 + air, end as f32 - air))
+                .filter(|(start, end)| end > start)
+                .unwrap_or((axis as f32, axis as f32))
+            })
+            .collect();
+        // The edge every span reaches, which lines aligned to it share.
+        let shared = self.edge.map(|side| {
+            let edge = match side {
+                Side::Low => spans.iter().map(|span| span.0).fold(f32::MIN, f32::max),
+                Side::High => spans.iter().map(|span| span.1).fold(f32::MAX, f32::min),
+            };
+            (side, edge)
+        });
+        let rooms: Vec<f32> = spans
+            .iter()
+            .map(|&(start, end)| match shared {
+                None => end - start,
+                Some((Side::Low, edge)) => (end - edge).max(0.0),
+                Some((Side::High, edge)) => (edge - start).max(0.0),
             })
             .collect();
         let lines = lines::break_lines(
@@ -491,17 +560,20 @@ impl InPath<'_> {
             self.scale,
             Balance::Even,
             Some(count),
-            |line| spans[line].1,
+            |line| rooms[line],
         )?;
-        // The lines' unfilled shares squared, and far more for one longer
-        // than its room, to compare line counts.
-        let cost = lines
+        let used: Vec<f32> = lines
             .lines
             .iter()
+            .map(|range| lines::length(self.segments, range.clone(), self.scale))
+            .collect();
+        // The lines' unfilled shares squared, and far more for one longer
+        // than its room, to compare line counts.
+        let cost = used
+            .iter()
             .enumerate()
-            .map(|(line, range)| {
-                let room = spans[line].1;
-                let used = lines::length(self.segments, range.clone(), self.scale);
+            .map(|(line, &used)| {
+                let room = rooms[line];
                 if used > room {
                     1e6 * (1.0 + used - room)
                 } else if room > 0.0 {
@@ -512,12 +584,40 @@ impl InPath<'_> {
                 }
             })
             .sum();
+        // Where a block sharing an edge starts: centred on the axis, unless
+        // that takes it past the shared edge or a line past its span's far
+        // end.
+        let longest = used.iter().copied().fold(0.0, f32::max);
+        let block = shared.map(|(side, edge)| {
+            let centred = axis as f32 - longest * 0.5;
+            match side {
+                Side::Low => {
+                    let latest = spans
+                        .iter()
+                        .zip(&used)
+                        .map(|(span, used)| span.1 - used)
+                        .fold(f32::MAX, f32::min);
+                    centred.min(latest).max(edge)
+                }
+                Side::High => {
+                    let earliest = spans
+                        .iter()
+                        .zip(&used)
+                        .map(|(span, used)| span.0 + used)
+                        .fold(f32::MIN, f32::max);
+                    (centred + longest).max(earliest).min(edge) - longest
+                }
+            }
+        });
         let placed = lines
             .lines
             .into_iter()
             .enumerate()
             .map(|(at, range)| {
-                let (start, room) = spans[at];
+                let (start, room) = block
+                    .map_or((spans[at].0, spans[at].1 - spans[at].0), |block| {
+                        (block, longest)
+                    });
                 line(
                     self.segments,
                     range,
@@ -619,6 +719,7 @@ mod tests {
                 align: Align::Start,
                 line_height: 1.2,
                 hyphenation: Some(Lang::English),
+                chinese: false,
                 frame,
             },
             room,
@@ -655,6 +756,103 @@ mod tests {
         let (_, placed) = fit(&styled, &room, |_| vec![word(40.0, Break::End)]);
         assert!(!placed.overflowed);
         assert!((2.45..=2.5).contains(&placed.scale), "{}", placed.scale);
+        Ok(())
+    }
+
+    #[test]
+    fn a_best_fit_text_too_big_at_half_its_size_shrinks_on_until_it_fits() -> Result<()> {
+        // Two words 60 long, with no hyphen in either, in a box 25 wide and
+        // 12 tall: at half size a word is 30 long, and on two lines the
+        // words fit up to 25 / 60 of their size.
+        let (styled, room) = in_box(25.0, 12.0, "best")?;
+        let (_, placed) = fit(&styled, &room, |_| {
+            vec![word(60.0, Break::Normal), word(60.0, Break::End)]
+        });
+        assert!(!placed.overflowed);
+        assert!((0.4..=0.417).contains(&placed.scale), "{}", placed.scale);
+        Ok(())
+    }
+
+    #[test]
+    fn lines_aligned_to_a_balloon_s_edge_start_together_inside_it() -> Result<()> {
+        // Twelve words 30 long in a circle 200 across.
+        let frame: Frame = serde_json::from_value(serde_json::json!({
+            "path": {"path": "M0 100 A100 100 0 1 0 200 100 A100 100 0 1 0 0 100 Z", "anchor": "center"}
+        }))?;
+        let styled = Styled {
+            text: String::new(),
+            spans: Vec::new(),
+            vertical: false,
+            align: Align::Start,
+            line_height: 1.2,
+            hyphenation: None,
+            chinese: false,
+            frame: frame.clone(),
+        };
+        let mut words = vec![word(30.0, Break::Normal); 11];
+        words.push(word(30.0, Break::End));
+        let (segments, placed) = fit(&styled, &Room::new(&frame, false), |_| words.clone());
+        assert!(!placed.overflowed);
+        assert!(placed.lines.len() > 2, "{}", placed.lines.len());
+        let start = placed.lines[0].start;
+        for line in &placed.lines {
+            let used = lines::length(&segments, line.segments.clone(), placed.scale);
+            // The circle's half width where the line's band is narrowest.
+            let far = (line.top - 100.0)
+                .abs()
+                .max((line.top + line.pitch - 100.0).abs());
+            let half = (100.0f32 * 100.0 - far * far).sqrt();
+            assert_eq!(line.start, start);
+            assert!(
+                start >= 100.0 - half && start + used <= 100.0 + half,
+                "{start}..{} past {half} at {}",
+                start + used,
+                line.top
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn top_aligned_columns_use_a_lopsided_balloon_s_longer_side() -> Result<()> {
+        // A balloon on page 12 of a chapter, its lower right cut away where
+        // hair crosses it: a column on the right reaches far less than one on
+        // the left. Ten characters 21 high fitted best, as a translation is.
+        let frame: Frame = serde_json::from_value(serde_json::json!({"path": {
+            "path": "M285,575 L273,577 L255,584 L237,597 L232,608 L232,828 L239,840 L256,859 L277,865 L299,863 L318,856 L315,841 L320,833 L315,825 L315,795 L324,778 L331,740 L337,719 L344,702 L349,652 L354,636 L358,617 L352,606 L358,599 L348,598 L335,586 L315,578 Z",
+            "fit": "best", "anchor": "center",
+        }}))?;
+        let styled = Styled {
+            text: String::new(),
+            spans: Vec::new(),
+            vertical: true,
+            align: Align::Start,
+            line_height: 1.2,
+            hyphenation: None,
+            chinese: true,
+            frame: frame.clone(),
+        };
+        let character = |after| Segment {
+            range: 0..0,
+            visible_end: 0,
+            advance: 21.0,
+            trailing: 0.0,
+            hyphen: 0.0,
+            after,
+            punctuation: false,
+            size: 21.0,
+        };
+        let mut characters = vec![character(Break::Normal); 9];
+        characters.push(character(Break::End));
+        let (_, placed) = fit(&styled, &Room::new(&frame, true), |_| characters.clone());
+        assert!(!placed.overflowed);
+        assert!(placed.scale >= 1.0, "{}", placed.scale);
+        assert!(
+            placed
+                .lines
+                .iter()
+                .all(|line| line.start == placed.lines[0].start)
+        );
         Ok(())
     }
 

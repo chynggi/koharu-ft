@@ -3,8 +3,9 @@
 //! needs no lock. Calls wait in a priority queue, so an interactive run goes
 //! ahead at the next call. A model loads the first time a stage asks for it and stays
 //! until the settings switch away from it, `unload` is called, or the
-//! pipeline ends. A model that fails to load beside the others loads once
-//! more alone, the others unloaded, so one that only fits by itself still
+//! pipeline ends; one no setting uses, which a run brought, stays five minutes
+//! after a run last ended. A model that fails to load beside the others loads
+//! once more alone, the others unloaded, so one that only fits by itself still
 //! runs; one that fails alone too fails, naming the memory free when it last
 //! began to load. The stages know their models; this knows only their keys.
 

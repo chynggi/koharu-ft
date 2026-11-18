@@ -266,6 +266,7 @@ mod tests {
             align: Align::Start,
             line_height: 1.2,
             hyphenation: None,
+            chinese: false,
             frame: Frame::Point,
         }
     }

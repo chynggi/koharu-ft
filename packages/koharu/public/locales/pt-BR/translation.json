@@ -1,18 +1,4 @@
 {
-  "find": {
-    "matchCase": "Diferenciar maiúsculas e minúsculas",
-    "noResults": "Nenhuma tradução contém este texto.",
-    "page": "Página {{number}}",
-    "placeholder": "Localizar nas traduções",
-    "replace": "Substituir",
-    "replaceAll": "Substituir tudo",
-    "replacePlaceholder": "Substituir por",
-    "searching": "Localizando…",
-    "summary": "{{count}} ocorrências em {{pages}} página(s)",
-    "summary_one": "{{count}} ocorrência em {{pages}} página(s)",
-    "summary_other": "{{count}} ocorrências em {{pages}} página(s)",
-    "title": "Localizar"
-  },
   "about": {
     "author": "Autor",
     "description": "Ferramentas de tradução de mangá",
@@ -31,33 +17,25 @@
     "stop": "Parar",
     "title": "Atividade"
   },
-  "adjust": {
-    "apply": "Aplicar",
-    "brightness_contrast": "Brilho/Contraste",
-    "brightness": "Brilho",
-    "contrast": "Contraste",
-    "levels": "Níveis",
-    "levelsLow": "Preto de entrada",
-    "levelsHigh": "Branco de entrada",
-    "hue": "Matiz",
-    "grayscale": "Dessaturar"
-  },
   "agent": {
-    "applying": "Aplicando alterações ao projeto…",
     "cancel": "Cancelar",
     "cancelled": "Cancelado.",
     "emptyDescription": "Peça ao agente para inspecionar, traduzir, editar ou processar este projeto. Ele verá as imagens das páginas somente quando necessário.",
     "emptyTitle": "O que o Koharu deve fazer?",
     "failed": "A solicitação do agente falhou.",
     "loading": "Carregando o agente…",
-    "mcp": "Servidor MCP",
     "message": "Enviar mensagem ao agente do Koharu",
     "model": "Modelo",
+    "newChat": "Novo chat",
     "placeholder": "Peça ao Koharu para trabalhar neste projeto…",
     "reasoning": "Raciocínio",
     "send": "Enviar",
     "thinking": "Pensando…",
+    "thought": "Pensou por {{seconds}} s",
     "title": "Agente",
+    "toolFailed": "{{tool}} falhou",
+    "used": "Usou {{tool}}",
+    "using": "Usando {{tool}}",
     "working": "Trabalhando…"
   },
   "canvas": {
@@ -65,8 +43,7 @@
     "notice": {
       "eraser_needs_raster": "Selecione uma camada raster para apagar.",
       "fill_needs_raster": "Selecione uma camada raster para preencher."
-    },
-    "typeText": "Digitar texto"
+    }
   },
   "colorPicker": {
     "brushColor": "Cor do pincel",
@@ -108,34 +85,36 @@
     "timeout": "O envio expirou. Tente novamente.",
     "title": "Enviar feedback"
   },
+  "fill": {
+    "deselect": "Desmarcar",
+    "generate": "Gerar",
+    "model": "Modelo de preenchimento",
+    "prompt": "Descreva o que adicionar (opcional)",
+    "title": "Preenchimento generativo"
+  },
   "fontPicker": {
-    "addFavorite": "Adicionar {{family}} aos favoritos",
-    "removeFavorite": "Remover {{family}} dos favoritos",
     "choose": "Escolher uma fonte",
     "fontCount": "{{count}} fontes",
     "fontCount_one": "{{count}} fonte",
     "fontCount_other": "{{count}} fontes",
     "fonts": "Fontes",
     "noResults": "Nenhuma fonte corresponde à busca",
-    "search": "Buscar fontes"
+    "search": "Buscar fontes",
+    "addFavorite": "Adicionar {{family}} aos favoritos",
+    "removeFavorite": "Remover {{family}} dos favoritos"
   },
   "history": {
     "close": "Fechar histórico",
     "opened": "Ao abrir",
     "steps": {
-      "adjust_colors": "Ajustar cores",
-      "add_shape": "Adicionar forma",
       "add_text": "Adicionar texto",
       "delete_layers": "Excluir camadas",
       "delete_pages": "Excluir páginas",
       "detect": "Detecção",
-      "duplicate_layer": "Duplicar camadas",
       "edit_frame": "Editar quadro",
       "erase": "Apagar",
-      "fill": "Preencher",
       "import": "Importar páginas",
       "inpaint": "Preenchimento",
-      "merge_pages": "Mesclar páginas",
       "move": "Mover",
       "move_layer": "Mover camadas",
       "move_page": "Mover página",
@@ -143,22 +122,25 @@
       "recognize": "OCR",
       "resize": "Redimensionar",
       "rotate": "Girar",
-      "set_fill": "Alterar preenchimento",
       "set_locked": "Bloquear ou desbloquear",
       "set_source_text": "Editar texto original",
-      "set_stroke": "Alterar traço",
       "set_style": "Alterar estilo do texto",
       "set_text": "Editar texto",
       "set_visibility": "Mostrar ou ocultar",
       "translate": "Tradução",
       "update_layer": "Alterar camada",
+      "adjust_colors": "Ajustar cores",
+      "add_shape": "Adicionar forma",
+      "duplicate_layer": "Duplicar camadas",
+      "fill": "Preencher",
+      "merge_pages": "Mesclar páginas",
+      "set_fill": "Alterar preenchimento",
+      "set_stroke": "Alterar traço",
       "update_page": "Editar página"
     },
     "title": "Histórico"
   },
   "inference": {
-    "currentPage": "Página atual",
-    "currentPageDescription": "Processa somente a página na tela.",
     "entireProject": "Projeto inteiro",
     "entireProjectDescription": "Processa todas as páginas deste projeto.",
     "model": "Modelo",
@@ -171,7 +153,6 @@
     "runProcessing": "Executar processamento",
     "scope": "Escopo",
     "scopeShort": {
-      "page": "Página",
       "project": "Projeto",
       "selected-pages": "Seleção"
     },
@@ -203,7 +184,6 @@
     "borderWidth": "Largura do contorno",
     "chooseFontSize": "Escolher tamanho da fonte",
     "decreaseBorderWidth": "Diminuir largura do contorno",
-    "decreaseSecondBorderWidth": "Diminuir largura do segundo contorno",
     "font": "Fonte",
     "fontSize": "Tamanho da fonte",
     "fontStyles": {
@@ -213,8 +193,17 @@
     "fontWeight": "Peso da fonte",
     "horizontal": "Horizontal",
     "increaseBorderWidth": "Aumentar largura do contorno",
-    "increaseSecondBorderWidth": "Aumentar largura do segundo contorno",
     "opacity": "Opacidade",
+    "selectPage": "Selecione uma página para inspecionar suas camadas.",
+    "source": "Texto original",
+    "text": "Texto",
+    "textColor": "Cor do texto",
+    "textDirection": "Direção do texto",
+    "translation": "Tradução",
+    "type": "Tipografia",
+    "vertical": "Vertical",
+    "decreaseSecondBorderWidth": "Diminuir largura do segundo contorno",
+    "increaseSecondBorderWidth": "Aumentar largura do segundo contorno",
     "outlineBevel": "Chanfrados",
     "outlineCenter": "Centro",
     "outlineInside": "Interno",
@@ -225,15 +214,7 @@
     "outlineRound": "Redondos",
     "secondBorder": "2º contorno",
     "secondBorderColor": "Cor do segundo contorno",
-    "secondBorderWidth": "Largura do segundo contorno",
-    "selectPage": "Selecione uma página para inspecionar suas camadas.",
-    "source": "Texto original",
-    "text": "Texto",
-    "textColor": "Cor do texto",
-    "textDirection": "Direção do texto",
-    "translation": "Tradução",
-    "type": "Tipografia",
-    "vertical": "Vertical"
+    "secondBorderWidth": "Largura do segundo contorno"
   },
   "languages": {
     "ar": "العربية",
@@ -284,7 +265,6 @@
     "unlocked": "Desbloqueada"
   },
   "menu": {
-    "adjustments": "Ajustes",
     "about": "Sobre",
     "closeProject": "Fechar projeto",
     "delete": "Excluir seleção",
@@ -297,18 +277,15 @@
     "github": "GitHub",
     "help": "Ajuda",
     "history": "Histórico",
-    "image": "Imagem",
     "import": "Importar páginas",
-    "process": "Processar",
-    "processLayers": "Processar camadas selecionadas",
-    "processPages": "Processar páginas selecionadas",
-    "processProject": "Processar projeto",
     "redo": "Refazer",
-    "runPhase": "Executar {{phase}}",
     "selectAllLayers": "Selecionar todas as camadas",
     "settings": "Configurações",
     "undo": "Desfazer",
-    "view": "Exibir"
+    "unloadModels": "Descarregar modelos",
+    "view": "Exibir",
+    "adjustments": "Ajustes",
+    "image": "Imagem"
   },
   "model": {
     "baseUrl": "URL base",
@@ -325,28 +302,34 @@
   },
   "navigator": {
     "actionsFor": "Ações para {{page}}",
-    "chapterStart": "Início do capítulo",
     "delete": "Excluir",
+    "deleteDescription": "Isso exclui “{{page}}” e suas camadas. Você pode desfazer.",
+    "deleteTitle": "Excluir página?",
     "emptyDescription": "Importe arquivos de imagem ou uma pasta para adicionar páginas.",
     "emptyTitle": "Ainda não há páginas",
-    "filter": "Filtrar páginas",
     "importAction": "Importar",
     "importFiles": "Arquivos…",
     "importFolder": "Pasta…",
     "importing": "Importando páginas…",
     "importingAction": "Importando…",
+    "noImage": "Sem imagem",
+    "pageNumber": "Página {{number}}",
+    "pages": "Páginas",
+    "run": {
+      "detect": "Detectar",
+      "inpaint": "Preencher",
+      "recognize": "Reconhecer",
+      "translate": "Traduzir"
+    },
+    "selected": "{{count}} selecionadas",
+    "chapterStart": "Início do capítulo",
     "mergeAsSpread": "Combinar em página dupla",
     "mergeLeftToRight": "Da esquerda para a direita",
     "mergeRightToLeft": "Da direita para a esquerda",
-    "noImage": "Sem imagem",
-    "noResults": "Nenhuma página corresponde a este filtro.",
     "pageName": "Nome da página",
-    "pageNumber": "Página {{number}}",
-    "pages": "Páginas",
     "rename": "Renomear",
     "renameDescription": "Escolha um novo nome para esta página.",
-    "renameTitle": "Renomear página",
-    "selected": "{{count}} selecionadas"
+    "renameTitle": "Renomear página"
   },
   "outputPicker": {
     "targetLanguage": "Idioma de destino",
@@ -375,20 +358,11 @@
     "max": "Máximo",
     "medium": "Médio",
     "minimal": "Mínimo",
+    "off": "Desativado",
     "xhigh": "Muito alto"
   },
   "settings": {
     "appearance": {
-      "colorTheme": "Tema de cores",
-      "colorThemeDescription": "Escolha a paleta da interface. Cada paleta tem uma versão clara e uma escura.",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "Oceano",
-        "matcha": "Matcha"
-      },
-      "animations": "Animações da interface",
-      "animationsDescription": "Esmaece menus e caixas de diálogo e suaviza mudanças ao passar o cursor e em interruptores. Respeita a configuração do sistema para reduzir movimento.",
       "description": "Adapte o espaço de trabalho ao ambiente sem alterar a renderização da arte.",
       "interface": "Interface",
       "language": "Idioma",
@@ -399,7 +373,17 @@
         "light": "Claro",
         "system": "Sistema"
       },
-      "title": "Aparência"
+      "title": "Aparência",
+      "colorTheme": "Tema de cores",
+      "colorThemeDescription": "Escolha a paleta da interface. Cada paleta tem uma versão clara e uma escura.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Oceano",
+        "matcha": "Matcha"
+      },
+      "animations": "Animações da interface",
+      "animationsDescription": "Esmaece menus e caixas de diálogo e suaviza mudanças ao passar o cursor e em interruptores. Respeita a configuração do sistema para reduzir movimento."
     },
     "backToEditor": "Voltar ao editor",
     "loading": "Carregando preferências…",
@@ -414,13 +398,6 @@
         "prompt": "Prompt",
         "promptDescription": "Aplica-se apenas a modelos generativos.",
         "textThreshold": "Limite de texto"
-      },
-      "remote": {
-        "title": "Servidor de processamento",
-        "description": "Executa todas as etapas acima em outra máquina com o koharu-server. Deixe o endereço vazio para executar aqui.",
-        "url": "Endereço do servidor",
-        "token": "Token do servidor",
-        "clearToken": "Limpar o token do servidor"
       },
       "stages": {
         "detect": {
@@ -450,6 +427,13 @@
         "targetLanguageDescription": "Escolha o idioma para o qual o texto será traduzido.",
         "vision": "Visão",
         "visionDescription": "Fornece imagens das páginas ao LLM durante a tradução."
+      },
+      "remote": {
+        "title": "Servidor de processamento",
+        "description": "Executa todas as etapas acima em outra máquina com o koharu-server. Deixe o endereço vazio para executar aqui.",
+        "url": "Endereço do servidor",
+        "token": "Token do servidor",
+        "clearToken": "Limpar o token do servidor"
       }
     },
     "providers": {
@@ -527,53 +511,35 @@
   "story": {
     "noText": "Não há texto nesta página.",
     "sfx": "Efeito sonoro",
-    "title": "História"
-  },
-  "shape": {
-    "title": "Forma",
-    "fill": "Preenchimento",
-    "fillNone": "Sem preenchimento",
-    "fillSolid": "Cor sólida",
-    "fillLinear": "Gradiente linear",
-    "fillRadial": "Gradiente radial",
-    "fillSweep": "Gradiente angular",
-    "fillPattern": "Padrão",
-    "fillColor": "Cor do preenchimento",
-    "choosePattern": "Escolher imagem…",
-    "angle": "Ângulo",
-    "stopColor": "Cor da parada {{index}}",
-    "stopPosition": "Posição da parada {{index}}",
-    "removeStop": "Remover parada {{index}}",
-    "addStop": "Adicionar parada",
-    "strokeColor": "Cor do traço",
-    "strokeWidth": "Espessura do traço",
-    "decrease": "Diminuir {{name}}",
-    "increase": "Aumentar {{name}}"
+    "title": "História",
+    "translate": "Traduzir {{name}}"
   },
   "tools": {
     "brushSize": "Tamanho do pincel",
     "brushSizeInput": "Tamanho do pincel",
     "brushSizePixels": "Tamanho do pincel: {{size}} pixels",
     "brushSizeShort": "{{size}} px",
-    "bucket": "Balde de tinta",
     "color_picker": "Seletor de cores",
     "decreaseBrushSize": "Diminuir tamanho do pincel",
     "direct_select": "Seleção direta",
     "draw": "Desenhar",
-    "ellipse": "Elipse",
     "eraser": "Borracha",
     "increaseBrushSize": "Aumentar tamanho do pincel",
+    "lasso": "Laço",
+    "marquee": "Letreiro retangular",
     "pan": "Mover",
+    "remove": "Remover",
+    "select": "Selecionar",
+    "text": "Texto",
+    "bucket": "Balde de tinta",
+    "ellipse": "Elipse",
     "ramp": "Rampa de cor",
     "rampColor": "Cor final da rampa",
     "rampAlong": "Direção da rampa",
     "rampStroke": "Ao longo do traço",
     "rampHorizontal": "Da esquerda para a direita",
     "rampVertical": "De cima para baixo",
-    "rectangle": "Retângulo",
-    "remove": "Remover",
-    "select": "Selecionar",
-    "text": "Texto"
+    "rectangle": "Retângulo"
   },
   "updater": {
     "available": {
@@ -599,6 +565,52 @@
     "maximize": "Maximizar",
     "minimize": "Minimizar",
     "restore": "Restaurar"
+  },
+  "find": {
+    "matchCase": "Diferenciar maiúsculas e minúsculas",
+    "noResults": "Nenhuma tradução contém este texto.",
+    "page": "Página {{number}}",
+    "placeholder": "Localizar nas traduções",
+    "replace": "Substituir",
+    "replaceAll": "Substituir tudo",
+    "replacePlaceholder": "Substituir por",
+    "searching": "Localizando…",
+    "summary": "{{count}} ocorrências em {{pages}} página(s)",
+    "summary_one": "{{count}} ocorrência em {{pages}} página(s)",
+    "summary_other": "{{count}} ocorrências em {{pages}} página(s)",
+    "title": "Localizar"
+  },
+  "adjust": {
+    "apply": "Aplicar",
+    "brightness_contrast": "Brilho/Contraste",
+    "brightness": "Brilho",
+    "contrast": "Contraste",
+    "levels": "Níveis",
+    "levelsLow": "Preto de entrada",
+    "levelsHigh": "Branco de entrada",
+    "hue": "Matiz",
+    "grayscale": "Dessaturar"
+  },
+  "shape": {
+    "title": "Forma",
+    "fill": "Preenchimento",
+    "fillNone": "Sem preenchimento",
+    "fillSolid": "Cor sólida",
+    "fillLinear": "Gradiente linear",
+    "fillRadial": "Gradiente radial",
+    "fillSweep": "Gradiente angular",
+    "fillPattern": "Padrão",
+    "fillColor": "Cor do preenchimento",
+    "choosePattern": "Escolher imagem…",
+    "angle": "Ângulo",
+    "stopColor": "Cor da parada {{index}}",
+    "stopPosition": "Posição da parada {{index}}",
+    "removeStop": "Remover parada {{index}}",
+    "addStop": "Adicionar parada",
+    "strokeColor": "Cor do traço",
+    "strokeWidth": "Espessura do traço",
+    "decrease": "Diminuir {{name}}",
+    "increase": "Aumentar {{name}}"
   },
   "export": {
     "cancel": "Cancelar",

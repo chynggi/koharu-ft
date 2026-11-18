@@ -11,9 +11,10 @@ mod windows;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use image::{GrayImage, Luma, RgbImage, imageops};
+use image::{DynamicImage, GrayImage, Luma, RgbImage, imageops};
 use imageproc::{distance_transform::Norm, morphology::dilate};
 use indoc::indoc;
+use koharu_renderer::Renderer;
 use koharu_scene::{Content, Layer, LayerId, Op, PageId, Project, Rect, Ref, Tile, Tiles};
 use kurbo::{BezPath, Shape as _};
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,12 @@ use crate::{Area, PipelineConfig, Stage};
 #[serde(default)]
 #[derive(specta::Type)]
 pub struct InpainterConfig {
+    /// What cleans pages and the Remove brush's areas.
     pub model: Inpainter,
+    /// What Generative Fill's bar picks and keeps for the next fill, as
+    /// Photoshop's Generative Fill keeps its own model; a fill brings the one
+    /// its bar shows, in `model`'s place for its run.
+    pub fill: Inpainter,
     /// What the model is asked when a run brings no prompt of its own, as an
     /// area's can; LaMa, which takes none, ignores it.
     pub prompt: String,
@@ -41,6 +47,9 @@ impl Default for InpainterConfig {
     fn default() -> Self {
         Self {
             model: Inpainter::default(),
+            // A fill draws what its prompt asks, which LaMa, the clean-up's
+            // default, can't.
+            fill: Inpainter::Flux3Klein,
             // The general removal FLUX.3 Klein's masked inpainting was measured
             // with on six Blue Archive pages, where it scored as one naming a
             // panel's own lettering did.
@@ -109,9 +118,11 @@ pub(crate) async fn inpaint(
     };
     let key = key(Stage::Inpaint, config).expect("an inpainter is Koharu's");
     let model = config.inpainter.model;
-    let prompt = area
-        .and_then(|area| area.prompt.clone())
-        .unwrap_or_else(|| config.inpainter.prompt.clone());
+    // An area's own prompt names its layer, as Photoshop names a Generative
+    // Fill's layer after its prompt.
+    let own = area.and_then(|area| area.prompt.clone());
+    let name = own.clone().unwrap_or_default();
+    let prompt = own.unwrap_or_else(|| config.inpainter.prompt.clone());
     let asked = prompt.clone();
     let work = task
         .inference(&[member], move |models| {
@@ -169,7 +180,7 @@ pub(crate) async fn inpaint(
                         "id": "$inpainted",
                         "page": page,
                         "index": at.layers.len(),
-                        "layer": {"kind": "raster", "attributes": {
+                        "layer": {"kind": "raster", "name": name, "attributes": {
                             "c2pa": {"inpainting": action("c2pa.created", &model, parameters)},
                         }},
                     }))?,
@@ -308,12 +319,30 @@ fn read_blocks(member: &Member) -> Result<Option<Work>> {
     }))
 }
 
-/// The painted area, all of it for the model.
+/// The painted area, all of it for the model, over its page as the app draws
+/// it but for its lettering: the clean-ups, paint, and fills already there
+/// show, as Photoshop's Remove tool samples all layers, so another stroke
+/// builds on them. Text is left out, as Clip Studio Paint's tools that refer
+/// to other layers can leave out text layers, since it changes after and
+/// would stay baked into the fill. A page without a scan has nothing to fill.
 fn read_area(member: &Member, area: &Area) -> Result<Option<Work>> {
-    let Some((_, scan)) = member.scan()? else {
-        return Ok(None);
+    let frame = {
+        let session = member.session.lock();
+        let project = session.project();
+        let Some(page) = project
+            .page(member.page)
+            .ok()
+            .filter(|page| page.background.is_some())
+        else {
+            return Ok(None);
+        };
+        let mut lettering = Vec::new();
+        letterings(&page.layers, &mut lettering);
+        Renderer::get()
+            .render(&session, member.page)?
+            .without(&lettering)
     };
-    let image = scan.to_rgb8();
+    let image = DynamicImage::ImageRgba8(frame.rasterize()?.image).to_rgb8();
     let (width, height) = image.dimensions();
     let mut mask = GrayImage::new(width, height);
     let (left, top) = (i64::from(area.rect.x), i64::from(area.rect.y));
@@ -339,6 +368,19 @@ fn read_area(member: &Member, area: &Area) -> Result<Option<Work>> {
         regions: vec![Region { rect, panel: None }],
         target: Target::Area { rect, mask: limit },
     }))
+}
+
+/// The layers in `layers` that letter the page: each text layer, and each
+/// block with a translation, which a frame leaves out but for its clean-up.
+fn letterings(layers: &[Layer], found: &mut Vec<LayerId>) {
+    for layer in layers {
+        match &layer.content {
+            Content::Text(_) => found.push(layer.id),
+            Content::Block(block) if block.translation.is_some() => found.push(layer.id),
+            _ => {}
+        }
+        letterings(&layer.children, found);
+    }
 }
 
 /// Each block of the page and where it sits.
@@ -395,4 +437,105 @@ fn rgba(image: &RgbImage, rect: Rect, alpha: impl Fn(u32, u32) -> u8) -> Vec<u8>
             [r, g, b, alpha(x, y)]
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use image::{ImageFormat, Rgb};
+    use koharu_renderer::Gpu;
+    use koharu_scene::{Edit, Hash, Session};
+    use parking_lot::Mutex;
+    use petgraph::stable_graph::NodeIndex;
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+    use crate::RunId;
+
+    /// The Remove brush fills over its page as drawn: a raster painted over
+    /// the scan shows to the model, as an earlier removal does, while a
+    /// block's translation doesn't.
+    #[test]
+    fn an_area_is_filled_over_the_page_as_drawn_without_its_lettering() {
+        if Gpu::get().is_err() {
+            eprintln!("skipped without a GPU");
+            return;
+        }
+        // A white scan; a black square on its left, and a translation in
+        // black on its right.
+        let mut scan = Vec::new();
+        RgbImage::from_pixel(128, 64, Rgb([255; 3]))
+            .write_to(&mut Cursor::new(&mut scan), ImageFormat::Png)
+            .expect("a PNG");
+        let black = [0u8, 0, 0, 255].repeat(48 * 48);
+        let ops = vec![
+            json!({"op": "add_page", "id": "$page", "index": 0, "background": Hash::of(&scan)}),
+            json!({"op": "add_layer", "id": "$paint", "page": "$page", "index": 0, "layer": {"kind": "raster"}}),
+            json!({"op": "write_pixels", "layer": "$paint", "rect": {"x": 8, "y": 8, "width": 48, "height": 48},
+                "pixels": black}),
+            json!({"op": "add_layer", "page": "$page", "index": 1, "layer": {
+                "kind": "block", "source": {"content": "やあ"}, "translation": {
+                    "content": "HH",
+                    "style": {"chars": {"family": "Arial", "size": 48.0}},
+                    "frame": {"box": {"bounds": {"x": 0, "y": 0, "width": 64, "height": 64}, "fit": "none"}},
+                    "transform": [[1.0, 0.0, 64.0], [0.0, 1.0, 0.0]],
+                },
+            }}),
+        ];
+        let mut ops: Vec<Op> = ops
+            .into_iter()
+            .map(|op| serde_json::from_value(op).expect("an op"))
+            .collect();
+        ops.insert(0, Op::AddFile { bytes: scan });
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+        let change = session
+            .apply(Edit {
+                label: "test".to_owned(),
+                ops,
+            })
+            .expect("an edit");
+        let page = change.pages.added[0];
+        let dark = |image: &RgbImage, left: u32| {
+            (left..left + 64)
+                .flat_map(|x| (0..64).map(move |y| (x, y)))
+                .filter(|&(x, y)| image.get_pixel(x, y).0[0] < 128)
+                .count()
+        };
+        let drawn = DynamicImage::ImageRgba8(
+            Renderer::get()
+                .render(&session, page)
+                .and_then(|frame| frame.rasterize())
+                .expect("the page drawn")
+                .image,
+        )
+        .to_rgb8();
+        assert!(dark(&drawn, 64) > 100, "the translation draws");
+
+        let member = Member {
+            run: RunId(0),
+            job: NodeIndex::new(0),
+            page,
+            index: 0,
+            blocks: None,
+            session: Arc::new(Mutex::new(session)),
+            cancel: CancellationToken::new(),
+        };
+        let area = Area {
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 128,
+                height: 64,
+            },
+            pixels: vec![255; 128 * 64],
+        };
+        let work = read_area(&member, &area)
+            .expect("the area read")
+            .expect("work on a page with a scan");
+        assert_eq!(work.image.get_pixel(32, 32).0, [0; 3], "the paint shows");
+        assert_eq!(dark(&work.image, 64), 0, "the translation is left out");
+    }
 }

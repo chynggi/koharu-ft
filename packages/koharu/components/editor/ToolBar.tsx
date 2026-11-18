@@ -4,16 +4,18 @@ import {
   Blend,
   Brush,
   Circle,
+  createLucideIcon,
   Eraser,
   Hand,
+  Lasso,
   Minus,
   MousePointer2,
   PaintBucket,
   Pipette,
   Plus,
-  Sparkles,
   SplinePointer,
   Square,
+  SquareDashed,
   Type,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -21,7 +23,6 @@ import { useTranslation } from 'react-i18next'
 import { ColorWell } from '@/components/controls/ColorWell'
 import { usePage } from '@/lib/queries'
 import {
-  isBrushTool,
   maxBrushDiameter,
   MIN_BRUSH_DIAMETER,
   toolKeys,
@@ -53,9 +54,38 @@ import {
 import { Slider } from '@koharu/ui/components/slider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 
+/** Photoshop's Remove tool icon, the Spot Healing Brush's band-aid across the corner with a
+ * sparkle, drawn from Lucide's band-aid and its sparkles' plus. */
+const Remove = createLucideIcon('remove-tool', [
+  [
+    'rect',
+    {
+      x: '5',
+      y: '9',
+      width: '17',
+      height: '9',
+      rx: '2',
+      transform: 'rotate(-45 13.5 13.5)',
+      key: 'band',
+    },
+  ],
+  ['path', { d: 'M10.5 9v9M16.5 9v9', transform: 'rotate(-45 13.5 13.5)', key: 'pad' }],
+  [
+    'path',
+    {
+      d: 'M12.5 12.5h.01M14.5 12.5h.01M12.5 14.5h.01M14.5 14.5h.01',
+      transform: 'rotate(-45 13.5 13.5)',
+      key: 'holes',
+    },
+  ],
+  ['path', { d: 'M5 1.5v5M2.5 4h5', key: 'sparkle' }],
+])
+
 const tools = [
   ['select', MousePointer2],
   ['direct_select', SplinePointer],
+  ['marquee', SquareDashed],
+  ['lasso', Lasso],
   ['text', Type],
   ['rectangle', Square],
   ['ellipse', Circle],
@@ -63,7 +93,7 @@ const tools = [
   ['eraser', Eraser],
   ['bucket', PaintBucket],
   ['color_picker', Pipette],
-  ['remove', Sparkles],
+  ['remove', Remove],
   ['pan', Hand],
 ] as const satisfies ReadonlyArray<readonly [CanvasTool, typeof MousePointer2]>
 
@@ -74,11 +104,6 @@ export function ToolBar() {
   const brush = useKoharuStore((state) => state.brush)
   const setTool = useKoharuStore((state) => state.setTool)
   const setBrush = useKoharuStore((state) => state.setBrush)
-  const hasBrush = isBrushTool(active)
-  // The shape tools and the bucket fill with the brush colour, as Photoshop's with the
-  // foreground colour.
-  const colored =
-    active === 'draw' || active === 'rectangle' || active === 'ellipse' || active === 'bucket'
 
   return (
     <aside className='absolute top-3 left-3 z-20 flex w-11 flex-col rounded-2xl border border-border bg-[var(--surface-floating)] p-1 shadow-[var(--shadow-toolrail)]'>
@@ -112,20 +137,14 @@ export function ToolBar() {
         ))}
       </div>
 
-      {(hasBrush || colored) && (
-        <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
-          {colored && (
-            <ColorWell value={brush.color} onChange={(color) => setBrush({ ...brush, color })} />
-          )}
-          {active === 'draw' && <RampControl />}
-          {hasBrush && (
-            <BrushSize
-              value={brush.diameter}
-              onChange={(diameter) => setBrush({ ...brush, diameter })}
-            />
-          )}
-        </div>
-      )}
+      <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
+        <ColorWell value={brush.color} onChange={(color) => setBrush({ ...brush, color })} />
+        {active === 'draw' && <RampControl />}
+        <BrushSize
+          value={brush.diameter}
+          onChange={(diameter) => setBrush({ ...brush, diameter })}
+        />
+      </div>
     </aside>
   )
 }
@@ -222,6 +241,9 @@ function BrushSize({ value, onChange }: { value: number; onChange: (value: numbe
   const roundedValue = Math.round(value)
   const page = usePage().data
   const maxSize = maxBrushDiameter(page?.size ?? { width: 2048, height: 2048 })
+  // Photoshop's brush picker shows the tip over its size; the tip grows with the size, up to
+  // its box at the page's largest brush.
+  const tip = clamp(2 + (16 * value) / maxSize, 2, 18)
 
   return (
     <Popover>
@@ -235,10 +257,13 @@ function BrushSize({ value, onChange }: { value: number; onChange: (value: numbe
                   variant='ghost'
                   size='icon'
                   aria-label={t('tools.brushSizePixels', { size: roundedValue })}
-                  className='size-8 rounded-xl font-sans text-[11px] leading-none font-medium tracking-[-0.02em] text-muted-foreground tabular-nums hover:bg-foreground/[0.06] hover:text-foreground'
+                  className='h-auto w-8 flex-col gap-1 rounded-lg py-1.5 font-sans text-[11px] leading-none font-medium tracking-[-0.02em] text-muted-foreground tabular-nums hover:bg-foreground/[0.06] hover:text-foreground'
                 />
               }
             >
+              <span className='grid size-[18px] place-items-center'>
+                <span className='rounded-full bg-current' style={{ width: tip, height: tip }} />
+              </span>
               {roundedValue}
             </TooltipTrigger>
           }

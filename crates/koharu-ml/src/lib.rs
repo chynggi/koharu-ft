@@ -16,6 +16,5 @@ pub mod mi_gan;
 pub mod moss_image;
 pub mod powerpaint;
 pub mod qwen_image;
-pub mod rorem_mixed;
 
 pub use koharu_runtime::Device;

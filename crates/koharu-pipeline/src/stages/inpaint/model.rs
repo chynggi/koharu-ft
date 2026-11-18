@@ -7,7 +7,6 @@ use koharu_ml::{
     moss_image::{self, MossImage},
     powerpaint::PowerPaint,
     qwen_image::{self, QwenImage},
-    rorem_mixed::{self, RoremMixed},
 };
 use koharu_runtime::Device;
 use serde::{Deserialize, Serialize};
@@ -27,8 +26,6 @@ pub enum Inpainter {
     MangaInpainting,
     #[strum(to_string = "MI-GAN")]
     MiGan,
-    #[strum(to_string = "RORem")]
-    RoremMixed,
     #[strum(to_string = "PowerPaint")]
     #[serde(rename = "powerpaint")]
     PowerPaint,
@@ -103,25 +100,6 @@ impl Inpaint for MiGan {
         _: &str,
     ) -> anyhow::Result<RgbImage> {
         MiGan::inference(self, image, mask)
-    }
-}
-
-impl Inpaint for RoremMixed {
-    fn inference(
-        &self,
-        image: &RgbImage,
-        mask: &GrayImage,
-        prompt: &str,
-    ) -> anyhow::Result<RgbImage> {
-        let options = rorem_mixed::Options::default();
-        let redrawn = RoremMixed::inference(
-            self,
-            prompt,
-            &DynamicImage::ImageRgb8(image.clone()),
-            mask,
-            &options,
-        )?;
-        Ok(fitted(redrawn, image))
     }
 }
 
@@ -210,7 +188,6 @@ pub(super) async fn load(model: Inpainter, device: &'static Device) -> anyhow::R
         Inpainter::Lama => Box::new(Lama::load(device).await?),
         Inpainter::MangaInpainting => Box::new(MangaInpainting::load(device).await?),
         Inpainter::MiGan => Box::new(MiGan::load(device).await?),
-        Inpainter::RoremMixed => Box::new(RoremMixed::load(device).await?),
         Inpainter::PowerPaint => Box::new(PowerPaint::load(device).await?),
         Inpainter::Flux3Klein => Box::new(Flux3Klein::load(device).await?),
         Inpainter::MossImage => Box::new(MossImage::load(device).await?),

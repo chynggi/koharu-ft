@@ -336,7 +336,6 @@ function TranslatorModel({
         <ModelPicker
           value={value}
           models={models}
-          onBack={() => setOpen(false)}
           onSelect={(reference) => {
             onChange(reference)
             setOpen(false)

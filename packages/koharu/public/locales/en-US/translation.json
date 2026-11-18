@@ -1,18 +1,4 @@
 {
-  "find": {
-    "matchCase": "Match case",
-    "noResults": "No translation contains this text.",
-    "page": "Page {{number}}",
-    "placeholder": "Find in translations",
-    "replace": "Replace",
-    "replaceAll": "Replace all",
-    "replacePlaceholder": "Replace with",
-    "searching": "Searching…",
-    "summary": "{{count}} matches on {{pages}} pages",
-    "summary_one": "{{count}} match on {{pages}} page(s)",
-    "summary_other": "{{count}} matches on {{pages}} page(s)",
-    "title": "Find"
-  },
   "about": {
     "author": "Author",
     "description": "Manga translation tools",
@@ -31,33 +17,25 @@
     "stop": "Stop",
     "title": "Activity"
   },
-  "adjust": {
-    "apply": "Apply",
-    "brightness_contrast": "Brightness/Contrast",
-    "brightness": "Brightness",
-    "contrast": "Contrast",
-    "levels": "Levels",
-    "levelsLow": "Input black",
-    "levelsHigh": "Input white",
-    "hue": "Hue",
-    "grayscale": "Desaturate"
-  },
   "agent": {
-    "applying": "Applying project changes...",
     "cancel": "Cancel",
     "cancelled": "Cancelled.",
     "emptyDescription": "Ask the agent to inspect, translate, edit, or process this project. It will view page images only when needed.",
     "emptyTitle": "What should Koharu do?",
     "failed": "The agent request failed.",
     "loading": "Loading agent…",
-    "mcp": "MCP server",
     "message": "Message Koharu Agent",
     "model": "Model",
+    "newChat": "New chat",
     "placeholder": "Ask Koharu to work on this project...",
     "reasoning": "Reasoning",
     "send": "Send",
     "thinking": "Thinking...",
+    "thought": "Thought for {{seconds}}s",
     "title": "Agent",
+    "toolFailed": "{{tool}} failed",
+    "used": "Used {{tool}}",
+    "using": "Using {{tool}}",
     "working": "Working..."
   },
   "canvas": {
@@ -65,8 +43,7 @@
     "notice": {
       "eraser_needs_raster": "Select a raster layer to erase.",
       "fill_needs_raster": "Select a raster layer to fill."
-    },
-    "typeText": "Type text"
+    }
   },
   "colorPicker": {
     "brushColor": "Brush color",
@@ -108,34 +85,36 @@
     "timeout": "Sending timed out. Please try again.",
     "title": "Send Feedback"
   },
+  "fill": {
+    "deselect": "Deselect",
+    "generate": "Generate",
+    "model": "Fill model",
+    "prompt": "Describe what to add (optional)",
+    "title": "Generative Fill"
+  },
   "fontPicker": {
-    "addFavorite": "Add {{family}} to favorites",
-    "removeFavorite": "Remove {{family}} from favorites",
     "choose": "Choose a font",
     "fontCount": "{{count}} fonts",
     "fontCount_one": "{{count}} font",
     "fontCount_other": "{{count}} fonts",
     "fonts": "Fonts",
     "noResults": "No fonts match this search",
-    "search": "Search fonts"
+    "search": "Search fonts",
+    "addFavorite": "Add {{family}} to favorites",
+    "removeFavorite": "Remove {{family}} from favorites"
   },
   "history": {
     "close": "Close history",
     "opened": "Opened",
     "steps": {
-      "adjust_colors": "Adjust colors",
-      "add_shape": "Add shape",
       "add_text": "Add text",
       "delete_layers": "Delete layers",
       "delete_pages": "Delete pages",
       "detect": "Detection",
-      "duplicate_layer": "Duplicate layers",
       "edit_frame": "Edit frame",
       "erase": "Erase",
-      "fill": "Fill",
       "import": "Import pages",
       "inpaint": "Inpainting",
-      "merge_pages": "Merge pages",
       "move": "Move",
       "move_layer": "Move layers",
       "move_page": "Move page",
@@ -143,22 +122,25 @@
       "recognize": "OCR",
       "resize": "Resize",
       "rotate": "Rotate",
-      "set_fill": "Change fill",
       "set_locked": "Lock or unlock",
       "set_source_text": "Edit source text",
-      "set_stroke": "Change stroke",
       "set_style": "Change type",
       "set_text": "Edit text",
       "set_visibility": "Show or hide",
       "translate": "Translation",
       "update_layer": "Change layer",
+      "adjust_colors": "Adjust colors",
+      "add_shape": "Add shape",
+      "duplicate_layer": "Duplicate layers",
+      "fill": "Fill",
+      "merge_pages": "Merge pages",
+      "set_fill": "Change fill",
+      "set_stroke": "Change stroke",
       "update_page": "Edit page"
     },
     "title": "History"
   },
   "inference": {
-    "currentPage": "Current page",
-    "currentPageDescription": "Process only the page in the canvas.",
     "entireProject": "Entire project",
     "entireProjectDescription": "Process every page in this project.",
     "model": "Model",
@@ -171,7 +153,6 @@
     "runProcessing": "Run processing",
     "scope": "Scope",
     "scopeShort": {
-      "page": "Page",
       "project": "Project",
       "selected-pages": "Selection"
     },
@@ -203,7 +184,6 @@
     "borderWidth": "Border width",
     "chooseFontSize": "Choose font size",
     "decreaseBorderWidth": "Decrease border width",
-    "decreaseSecondBorderWidth": "Decrease second border width",
     "font": "Font",
     "fontSize": "Font size",
     "fontStyles": {
@@ -213,8 +193,17 @@
     "fontWeight": "Font weight",
     "horizontal": "Horizontal",
     "increaseBorderWidth": "Increase border width",
-    "increaseSecondBorderWidth": "Increase second border width",
     "opacity": "Opacity",
+    "selectPage": "Select a page to inspect its layers.",
+    "source": "Source text",
+    "text": "Text",
+    "textColor": "Text color",
+    "textDirection": "Text direction",
+    "translation": "Translation",
+    "type": "Type",
+    "vertical": "Vertical",
+    "decreaseSecondBorderWidth": "Decrease second border width",
+    "increaseSecondBorderWidth": "Increase second border width",
     "outlineBevel": "Bevel",
     "outlineCenter": "Center",
     "outlineInside": "Inside",
@@ -225,15 +214,7 @@
     "outlineRound": "Round",
     "secondBorder": "2nd border",
     "secondBorderColor": "Second border color",
-    "secondBorderWidth": "Second border width",
-    "selectPage": "Select a page to inspect its layers.",
-    "source": "Source text",
-    "text": "Text",
-    "textColor": "Text color",
-    "textDirection": "Text direction",
-    "translation": "Translation",
-    "type": "Type",
-    "vertical": "Vertical"
+    "secondBorderWidth": "Second border width"
   },
   "languages": {
     "ar": "العربية",
@@ -284,7 +265,6 @@
     "unlocked": "Unlocked"
   },
   "menu": {
-    "adjustments": "Adjustments",
     "about": "About",
     "closeProject": "Close Project",
     "delete": "Delete Selected",
@@ -297,18 +277,15 @@
     "github": "GitHub",
     "help": "Help",
     "history": "History",
-    "image": "Image",
     "import": "Import Pages",
-    "process": "Process",
-    "processLayers": "Process Selected Layers",
-    "processPages": "Process Selected Pages",
-    "processProject": "Process Project",
     "redo": "Redo",
-    "runPhase": "Run {{phase}}",
     "selectAllLayers": "Select All Layers",
     "settings": "Settings",
     "undo": "Undo",
-    "view": "View"
+    "unloadModels": "Unload Models",
+    "view": "View",
+    "adjustments": "Adjustments",
+    "image": "Image"
   },
   "model": {
     "baseUrl": "Base URL",
@@ -325,28 +302,34 @@
   },
   "navigator": {
     "actionsFor": "Actions for {{page}}",
-    "chapterStart": "Chapter start",
     "delete": "Delete",
+    "deleteDescription": "This deletes “{{page}}” and its layers. You can undo it.",
+    "deleteTitle": "Delete page?",
     "emptyDescription": "Import image files or a folder to add pages.",
     "emptyTitle": "No pages yet",
-    "filter": "Filter pages",
     "importAction": "Import",
     "importFiles": "Files…",
     "importFolder": "Folder…",
     "importing": "Importing pages…",
     "importingAction": "Importing…",
+    "noImage": "No image",
+    "pageNumber": "Page {{number}}",
+    "pages": "Pages",
+    "run": {
+      "detect": "Detect",
+      "inpaint": "Inpaint",
+      "recognize": "Recognize",
+      "translate": "Translate"
+    },
+    "selected": "{{count}} selected",
+    "chapterStart": "Chapter start",
     "mergeAsSpread": "Merge into spread",
     "mergeLeftToRight": "Left to right",
     "mergeRightToLeft": "Right to left",
-    "noImage": "No image",
-    "noResults": "No pages match this filter.",
     "pageName": "Page name",
-    "pageNumber": "Page {{number}}",
-    "pages": "Pages",
     "rename": "Rename",
     "renameDescription": "Choose a new name for this page.",
-    "renameTitle": "Rename page",
-    "selected": "{{count}} selected"
+    "renameTitle": "Rename page"
   },
   "outputPicker": {
     "targetLanguage": "Target language",
@@ -375,20 +358,11 @@
     "max": "Max",
     "medium": "Medium",
     "minimal": "Minimal",
+    "off": "Off",
     "xhigh": "Extra high"
   },
   "settings": {
     "appearance": {
-      "colorTheme": "Color theme",
-      "colorThemeDescription": "Choose the interface palette. Each palette has a light and a dark version.",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "Ocean",
-        "matcha": "Matcha"
-      },
-      "animations": "Interface animations",
-      "animationsDescription": "Fade menus and dialogs and ease hover and switch changes. Follows the system reduced-motion setting.",
       "description": "Match your workspace to the room without changing how artwork is rendered.",
       "interface": "Interface",
       "language": "Language",
@@ -399,7 +373,17 @@
         "light": "Light",
         "system": "System"
       },
-      "title": "Appearance"
+      "title": "Appearance",
+      "colorTheme": "Color theme",
+      "colorThemeDescription": "Choose the interface palette. Each palette has a light and a dark version.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Ocean",
+        "matcha": "Matcha"
+      },
+      "animations": "Interface animations",
+      "animationsDescription": "Fade menus and dialogs and ease hover and switch changes. Follows the system reduced-motion setting."
     },
     "backToEditor": "Back to editor",
     "loading": "Loading preferences…",
@@ -414,13 +398,6 @@
         "prompt": "Prompt",
         "promptDescription": "Applies only to generative models.",
         "textThreshold": "Text threshold"
-      },
-      "remote": {
-        "title": "Processing server",
-        "description": "Run every stage above on another machine running koharu-server. Leave the address empty to run here.",
-        "url": "Server address",
-        "token": "Server token",
-        "clearToken": "Clear the server token"
       },
       "stages": {
         "detect": {
@@ -450,6 +427,13 @@
         "targetLanguageDescription": "Choose the language to translate text into.",
         "vision": "Vision",
         "visionDescription": "Feed page images to the LLM during translation."
+      },
+      "remote": {
+        "title": "Processing server",
+        "description": "Run every stage above on another machine running koharu-server. Leave the address empty to run here.",
+        "url": "Server address",
+        "token": "Server token",
+        "clearToken": "Clear the server token"
       }
     },
     "providers": {
@@ -527,53 +511,35 @@
   "story": {
     "noText": "No text on this page.",
     "sfx": "Sound effect",
-    "title": "Story"
-  },
-  "shape": {
-    "title": "Shape",
-    "fill": "Fill",
-    "fillNone": "No fill",
-    "fillSolid": "Solid color",
-    "fillLinear": "Linear gradient",
-    "fillRadial": "Radial gradient",
-    "fillSweep": "Angle gradient",
-    "fillPattern": "Pattern",
-    "fillColor": "Fill color",
-    "choosePattern": "Choose image…",
-    "angle": "Angle",
-    "stopColor": "Stop {{index}} color",
-    "stopPosition": "Stop {{index}} position",
-    "removeStop": "Remove stop {{index}}",
-    "addStop": "Add stop",
-    "strokeColor": "Stroke color",
-    "strokeWidth": "Stroke width",
-    "decrease": "Decrease {{name}}",
-    "increase": "Increase {{name}}"
+    "title": "Story",
+    "translate": "Translate {{name}}"
   },
   "tools": {
     "brushSize": "Brush size",
     "brushSizeInput": "Brush size",
     "brushSizePixels": "Brush size: {{size}} pixels",
     "brushSizeShort": "{{size}} px",
-    "bucket": "Paint Bucket",
     "color_picker": "Color picker",
     "decreaseBrushSize": "Decrease brush size",
     "direct_select": "Direct Selection",
     "draw": "Brush",
-    "ellipse": "Ellipse",
     "eraser": "Eraser",
     "increaseBrushSize": "Increase brush size",
+    "lasso": "Lasso",
+    "marquee": "Rectangular Marquee",
     "pan": "Pan",
+    "remove": "Remove",
+    "select": "Select",
+    "text": "Text",
+    "bucket": "Paint Bucket",
+    "ellipse": "Ellipse",
     "ramp": "Color ramp",
     "rampColor": "Ramp end color",
     "rampAlong": "Ramp direction",
     "rampStroke": "Along the stroke",
     "rampHorizontal": "Left to right",
     "rampVertical": "Top to bottom",
-    "rectangle": "Rectangle",
-    "remove": "Remove",
-    "select": "Select",
-    "text": "Text"
+    "rectangle": "Rectangle"
   },
   "updater": {
     "available": {
@@ -599,6 +565,52 @@
     "maximize": "Maximize",
     "minimize": "Minimize",
     "restore": "Restore"
+  },
+  "find": {
+    "matchCase": "Match case",
+    "noResults": "No translation contains this text.",
+    "page": "Page {{number}}",
+    "placeholder": "Find in translations",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "replacePlaceholder": "Replace with",
+    "searching": "Searching…",
+    "summary": "{{count}} matches on {{pages}} pages",
+    "summary_one": "{{count}} match on {{pages}} page(s)",
+    "summary_other": "{{count}} matches on {{pages}} page(s)",
+    "title": "Find"
+  },
+  "adjust": {
+    "apply": "Apply",
+    "brightness_contrast": "Brightness/Contrast",
+    "brightness": "Brightness",
+    "contrast": "Contrast",
+    "levels": "Levels",
+    "levelsLow": "Input black",
+    "levelsHigh": "Input white",
+    "hue": "Hue",
+    "grayscale": "Desaturate"
+  },
+  "shape": {
+    "title": "Shape",
+    "fill": "Fill",
+    "fillNone": "No fill",
+    "fillSolid": "Solid color",
+    "fillLinear": "Linear gradient",
+    "fillRadial": "Radial gradient",
+    "fillSweep": "Angle gradient",
+    "fillPattern": "Pattern",
+    "fillColor": "Fill color",
+    "choosePattern": "Choose image…",
+    "angle": "Angle",
+    "stopColor": "Stop {{index}} color",
+    "stopPosition": "Stop {{index}} position",
+    "removeStop": "Remove stop {{index}}",
+    "addStop": "Add stop",
+    "strokeColor": "Stroke color",
+    "strokeWidth": "Stroke width",
+    "decrease": "Decrease {{name}}",
+    "increase": "Increase {{name}}"
   },
   "export": {
     "cancel": "Cancel",

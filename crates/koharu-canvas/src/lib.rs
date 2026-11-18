@@ -1,6 +1,7 @@
 //! The page viewport: draws a page with the renderer and turns window-space
 //! pointer events into edits for the host to apply.
 
+mod area;
 mod canvas;
 mod control;
 mod draw;
@@ -12,6 +13,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 mod tools;
+mod typing;
 mod view;
 
 pub use canvas::Canvas;
@@ -19,4 +21,5 @@ pub use effect::{Effect, Notice};
 pub use kurbo::{Point, Rect, Size, TranslateScale, Vec2};
 pub use settings::{Brush, Colors, Ramp, RampAlong, Story, Tool};
 pub use snapshot::Snapshot;
+pub use typing::{CharKey, Typed};
 pub use view::Camera;

@@ -19,19 +19,37 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Pencil,
-  Search,
   Settings,
-  Trash2,
 } from 'lucide-react'
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call, dispatch } from '@/lib/backend'
 import { useImportPages, usePage, useProject } from '@/lib/queries'
 import { deletePages, mergePages, movePage, updatePage } from '@/lib/scene'
-import { useKoharuStore } from '@/lib/store'
-import { commands, type ImportSource, type PageSummary } from '@koharu/ipc/protocol'
+import { pipelineStages, useKoharuStore } from '@/lib/store'
+import { commands, type ImportSource, type PageSummary, type Stage } from '@koharu/ipc/protocol'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@koharu/ui/components/alert-dialog'
 import { Button } from '@koharu/ui/components/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@koharu/ui/components/context-menu'
 import {
   Dialog,
   DialogContent,
@@ -44,6 +62,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -71,29 +90,17 @@ export function PageRail() {
   // A page being dragged, and the place of the page it's over.
   const [dragged, setDragged] = useState<{ page: string; target: number | null } | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
-  const [query, setQuery] = useState('')
+  // The page Delete asks about, kept while its dialog closes so the dialog still names it.
+  const [pageToDelete, setPageToDelete] = useState<{ page: string; number: number } | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [renaming, setRenaming] = useState<{ page: string; name: string; chapter: string } | null>(
     null,
   )
-  const normalized = query.trim().toLowerCase()
-  const visiblePages = useMemo(
-    () =>
-      pages
-        .map((page, index) => ({ page, index }))
-        .filter(
-          ({ page, index }) =>
-            !normalized ||
-            String(index + 1).includes(normalized) ||
-            page.name.toLowerCase().includes(normalized) ||
-            (page.chapter ?? '').toLowerCase().includes(normalized),
-        ),
-    [normalized, pages],
-  )
   const pageList = useRef<HTMLDivElement>(null)
   const pageVirtualizer = useVirtualizer({
-    count: visiblePages.length,
+    count: pages.length,
     getScrollElement: () => pageList.current,
-    getItemKey: (index) => visiblePages[index]?.page.id ?? index,
+    getItemKey: (index) => pages[index]?.id ?? index,
     estimateSize: () => 72,
     gap: 2,
     overscan: 6,
@@ -155,8 +162,7 @@ export function PageRail() {
     if (from < 0 || !pages[next]) return
     event.preventDefault()
     select(next, false, false)
-    const row = visiblePages.findIndex(({ index }) => index === next)
-    if (row >= 0) pageVirtualizer.scrollToIndex(row, { align: 'auto' })
+    pageVirtualizer.scrollToIndex(next, { align: 'auto' })
   })
 
   useEffect(() => {
@@ -224,21 +230,6 @@ export function PageRail() {
           )}
         </header>
 
-        {pages.length > 0 && (
-          <div className='border-b px-2 py-1.5'>
-            <label className='flex h-6 items-center gap-1.5 rounded-md border border-input bg-background/70 px-1.5'>
-              <Search className='size-3 text-muted-foreground' />
-              <Input
-                value={query}
-                aria-label={t('navigator.filter')}
-                placeholder={t('navigator.filter')}
-                className='h-5 min-w-0 border-0 bg-transparent p-0 text-[11px] shadow-none focus-visible:ring-0 md:text-[11px]'
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </label>
-          </div>
-        )}
-
         {pages.length === 0 ? (
           <div className='flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center'>
             <p className='text-[11px] font-medium'>{t('navigator.emptyTitle')}</p>
@@ -248,10 +239,6 @@ export function PageRail() {
             <div className='mt-3'>
               <PageImportMenu importing={importing} onImport={importPages} />
             </div>
-          </div>
-        ) : visiblePages.length === 0 ? (
-          <div className='grid flex-1 place-items-center px-4 text-center text-[10px] text-muted-foreground'>
-            {t('navigator.noResults')}
           </div>
         ) : (
           <DndContext
@@ -282,9 +269,9 @@ export function PageRail() {
                 style={{ height: pageVirtualizer.getTotalSize() }}
               >
                 {pageVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const item = visiblePages[virtualRow.index]
-                  if (!item) return null
-                  const { page, index } = item
+                  const page = pages[virtualRow.index]
+                  if (!page) return null
+                  const index = virtualRow.index
                   return (
                     <div
                       key={virtualRow.key}
@@ -301,7 +288,15 @@ export function PageRail() {
                         dragged={dragged?.page === page.id}
                         target={dragged !== null && dragged.target === index}
                         onSelect={(additive, range) => select(index, additive, range)}
-                        onDelete={() => deletePage(page.id)}
+                        onRun={(stage) =>
+                          void call(commands.runPipeline, { pages: [page.id] }, [stage]).catch(
+                            () => undefined,
+                          )
+                        }
+                        onDelete={() => {
+                          setPageToDelete({ page: page.id, number: index + 1 })
+                          setConfirmingDelete(true)
+                        }}
                         canMerge={selected.length > 1 && selected.includes(page.id)}
                         onMerge={merge}
                         onRename={() =>
@@ -340,6 +335,30 @@ export function PageRail() {
           </Tooltip>
         </div>
       </aside>
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('navigator.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('navigator.deleteDescription', {
+                page: t('navigator.pageNumber', { number: pageToDelete?.number }),
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              onClick={() => {
+                setConfirmingDelete(false)
+                if (pageToDelete !== null) deletePage(pageToDelete.page)
+              }}
+            >
+              {t('navigator.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
         <DialogContent className='sm:max-w-sm'>
           <form
@@ -453,6 +472,7 @@ function PageItem({
   dragged,
   target,
   onSelect,
+  onRun,
   onDelete,
   canMerge,
   onMerge,
@@ -468,6 +488,7 @@ function PageItem({
   dragged: boolean
   target: boolean
   onSelect: (additive: boolean, range: boolean) => void
+  onRun: (stage: Stage) => void
   onDelete: () => void
   /** Whether this page is one of several selected pages a spread can join. */
   canMerge: boolean
@@ -483,101 +504,184 @@ function PageItem({
   const { onPointerDown, ...listeners } = handle.listeners ?? {}
 
   return (
-    <article
-      ref={(element) => {
-        handle.setNodeRef(element)
-        setNodeRef(element)
-      }}
-      {...listeners}
-      onPointerDown={(event) => {
-        if (!(event.target as HTMLElement).closest('button,[role="menuitem"]')) {
-          onPointerDown?.(event)
-        }
-      }}
-      data-page={page.id}
-      data-page-index={index}
-      data-active={active}
-      data-selected={selected}
-      className={cn(
-        'group grid cursor-default grid-cols-[48px_minmax(0,1fr)] gap-2.5 rounded-xl p-1.5 transition-colors select-none',
-        active
-          ? 'bg-primary/[0.09] hover:bg-primary/[0.09]'
-          : selected
-            ? 'bg-foreground/[0.06] hover:bg-foreground/[0.08]'
-            : 'hover:bg-foreground/[0.045]',
-        dragged && 'opacity-50',
-        target && !dragged && 'ring-2 ring-primary/60',
-      )}
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
-        onSelect(event.ctrlKey || event.metaKey, event.shiftKey)
-      }}
-      onDoubleClick={(event) => {
-        if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
-        onRename()
-      }}
-    >
-      <div className='grid h-16 w-12 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]'>
-        {page.background ? (
-          <PageThumbnail page={page.id} version={revision ?? page.background.file} label={name} />
-        ) : (
-          <span className='text-[9px] text-muted-foreground'>{t('navigator.noImage')}</span>
-        )}
-      </div>
-      <div className='min-w-0 py-0.5'>
-        <div className='flex items-start gap-1'>
-          <span className='min-w-0 flex-1 truncate text-[10px] font-medium'>{name}</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant='ghost'
-                  size='icon-xs'
-                  aria-label={t('navigator.actionsFor', { page: name })}
-                  className='-mt-1 shrink-0 opacity-0 shadow-none group-hover:opacity-100 aria-expanded:opacity-100'
+    // A right-click on the page opens the menu its button does.
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <article
+          ref={(element) => {
+            handle.setNodeRef(element)
+            setNodeRef(element)
+          }}
+          {...listeners}
+          onPointerDown={(event) => {
+            if (!(event.target as HTMLElement).closest('button,[role="menuitem"]')) {
+              onPointerDown?.(event)
+            }
+          }}
+          data-page={page.id}
+          data-page-index={index}
+          data-active={active}
+          data-selected={selected}
+          className={cn(
+            'group grid cursor-default grid-cols-[48px_minmax(0,1fr)] gap-2.5 rounded-xl p-1.5 transition-colors select-none',
+            active
+              ? 'bg-primary/[0.09] hover:bg-primary/[0.09]'
+              : selected
+                ? 'bg-foreground/[0.06] hover:bg-foreground/[0.08]'
+                : 'hover:bg-foreground/[0.045]',
+            dragged && 'opacity-50',
+            target && !dragged && 'ring-2 ring-primary/60',
+          )}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
+            onSelect(event.ctrlKey || event.metaKey, event.shiftKey)
+          }}
+          onDoubleClick={(event) => {
+            if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
+            onRename()
+          }}
+        >
+          <div className='grid h-16 w-12 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]'>
+            {page.background ? (
+              <PageThumbnail
+                page={page.id}
+                version={revision ?? page.background.file}
+                label={name}
+              />
+            ) : (
+              <span className='text-[9px] text-muted-foreground'>{t('navigator.noImage')}</span>
+            )}
+          </div>
+          <div className='min-w-0 py-0.5'>
+            <div className='flex items-start gap-1'>
+              <span className='min-w-0 flex-1 truncate text-[10px] font-medium'>{name}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant='ghost'
+                      size='icon-xs'
+                      aria-label={t('navigator.actionsFor', { page: name })}
+                      className='-mt-1 shrink-0 opacity-0 shadow-none group-hover:opacity-100 aria-expanded:opacity-100'
+                    />
+                  }
+                >
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='end' className={pageMenu}>
+                  <PageActions
+                    Item={DropdownMenuItem}
+                    Separator={DropdownMenuSeparator}
+                    Sub={DropdownMenuSub}
+                    SubTrigger={DropdownMenuSubTrigger}
+                    SubContent={DropdownMenuSubContent}
+                    canMerge={canMerge}
+                    onRun={onRun}
+                    onRename={onRename}
+                    onMerge={onMerge}
+                    onDelete={onDelete}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {page.chapter && (
+              <p
+                className='mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-primary'
+                title={t('navigator.chapterStart')}
+              >
+                <BookmarkIcon
+                  className='size-2.5 shrink-0'
+                  aria-label={t('navigator.chapterStart')}
                 />
-              }
-            >
-              <MoreHorizontal />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='end'>
-              <DropdownMenuItem onClick={onRename}>
-                <Pencil /> {t('navigator.rename')}
-              </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={!canMerge}>
-                  <Columns2 /> {t('navigator.mergeAsSpread')}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => onMerge(true)}>
-                    {t('navigator.mergeRightToLeft')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onMerge(false)}>
-                    {t('navigator.mergeLeftToRight')}
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuItem variant='destructive' onClick={onDelete}>
-                <Trash2 /> {t('navigator.delete')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {page.chapter && (
-          <p
-            className='mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-primary'
-            title={t('navigator.chapterStart')}
-          >
-            <BookmarkIcon className='size-2.5 shrink-0' aria-label={t('navigator.chapterStart')} />
-            <span className='truncate'>{page.chapter}</span>
-          </p>
-        )}
-        <p className='mt-1 truncate text-[9px] text-muted-foreground tabular-nums'>
-          {page.name ? `${number} · ` : ''}
-          {page.size.width} × {page.size.height}
-        </p>
-      </div>
-    </article>
+                <span className='truncate'>{page.chapter}</span>
+              </p>
+            )}
+            <p className='mt-1 truncate text-[9px] text-muted-foreground tabular-nums'>
+              {page.name ? `${number} · ` : ''}
+              {page.size.width} × {page.size.height}
+            </p>
+          </div>
+        </article>
+      </ContextMenuTrigger>
+      <ContextMenuContent className={pageMenu}>
+        <PageActions
+          Item={ContextMenuItem}
+          Separator={ContextMenuSeparator}
+          Sub={ContextMenuSub}
+          SubTrigger={ContextMenuSubTrigger}
+          SubContent={ContextMenuSubContent}
+          canMerge={canMerge}
+          onRun={onRun}
+          onRename={onRename}
+          onMerge={onMerge}
+          onDelete={onDelete}
+        />
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+/** A compact menu, as the rail's import menu is. */
+const pageMenu = 'w-auto min-w-20 border border-border/50 p-0.5 shadow-sm ring-0'
+const pageMenuItem =
+  'min-h-7 gap-1 px-1.5 py-0.5 text-[11px] [&_svg:not([class*="size-"])]:size-3.5'
+
+/** A page's actions, as the items of the menu `Item` and `Separator` belong to: each pipeline
+ * stage on the page alone, in the pipeline's order, then renaming it, joining the selected
+ * pages as a spread, and deleting it. */
+function PageActions({
+  Item,
+  Separator,
+  Sub,
+  SubTrigger,
+  SubContent,
+  canMerge,
+  onRun,
+  onRename,
+  onMerge,
+  onDelete,
+}: {
+  Item: typeof DropdownMenuItem | typeof ContextMenuItem
+  Separator: typeof DropdownMenuSeparator | typeof ContextMenuSeparator
+  Sub: typeof DropdownMenuSub | typeof ContextMenuSub
+  SubTrigger: typeof DropdownMenuSubTrigger | typeof ContextMenuSubTrigger
+  SubContent: typeof DropdownMenuSubContent | typeof ContextMenuSubContent
+  canMerge: boolean
+  onRun: (stage: Stage) => void
+  onRename: () => void
+  onMerge: (rtl: boolean) => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {pipelineStages.map((stage) => (
+        <Item key={stage} className={pageMenuItem} onClick={() => onRun(stage)}>
+          {t(`navigator.run.${stage}`)}
+        </Item>
+      ))}
+      <Separator />
+      <Item className={pageMenuItem} onClick={onRename}>
+        <Pencil /> {t('navigator.rename')}
+      </Item>
+      <Sub>
+        <SubTrigger className={pageMenuItem} disabled={!canMerge}>
+          <Columns2 /> {t('navigator.mergeAsSpread')}
+        </SubTrigger>
+        <SubContent className={pageMenu}>
+          <Item className={pageMenuItem} onClick={() => onMerge(true)}>
+            {t('navigator.mergeRightToLeft')}
+          </Item>
+          <Item className={pageMenuItem} onClick={() => onMerge(false)}>
+            {t('navigator.mergeLeftToRight')}
+          </Item>
+        </SubContent>
+      </Sub>
+      <Separator />
+      <Item variant='destructive' className={pageMenuItem} onClick={onDelete}>
+        {t('navigator.delete')}
+      </Item>
+    </>
   )
 }
 

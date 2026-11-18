@@ -18,7 +18,6 @@ export const inpainters: Record<Inpainter, string> = {
   lama: 'LaMa',
   'manga-inpainting': 'Manga Inpainting',
   'mi-gan': 'MI-GAN',
-  'rorem-mixed': 'RORem',
   powerpaint: 'PowerPaint',
   'flux3-klein': 'FLUX.3 Klein',
   'moss-image': 'MOSS-Image',

@@ -312,6 +312,7 @@ mod tests {
             align: Align::Start,
             line_height: 1.2,
             hyphenation: None,
+            chinese: false,
             frame: Frame::Point,
         }
     }
@@ -374,6 +375,7 @@ mod tests {
         // A kerning pair, A and V, crosses its hyphenation point: car-a-van.
         let styled = Styled {
             hyphenation: Some(Lang::English),
+            chinese: false,
             ..styled("CARAVAN")
         };
         let shaped = ShapedText::new(&styled)?;

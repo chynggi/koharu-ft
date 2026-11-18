@@ -7,14 +7,15 @@ use std::{
     cell::RefCell,
     collections::{HashMap, hash_map::Entry},
     sync::Arc,
+    time::Instant,
 };
 
 use anyhow::Context as _;
 use cursor_icon::CursorIcon;
 use image::RgbaImage;
-use koharu_renderer::{Drawing, Gpu, Label};
-use koharu_scene::{LayerId, Rgba, Session};
-use kurbo::{Affine, Point, Rect, Size, TranslateScale, Vec2};
+use koharu_renderer::{Drawing, Gpu, Label, Renderer};
+use koharu_scene::{CharStyle, Content, Layer, LayerId, PageId, Rgba, Session, Text};
+use kurbo::{Affine, Point, Rect, Shape as _, Size, TranslateScale, Vec2};
 use parking_lot::Mutex;
 use ui_events::keyboard::{Code, Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{
@@ -25,20 +26,28 @@ use vello_gpu::peniko::Color;
 
 use crate::{
     Brush, Camera, Colors, Effect, Story, Tool,
-    control::Control,
+    area::Area,
+    control::{Control, REACH},
     draw::{Target, color, overlay::Overlay},
     gesture::{Context, Gesture, GestureLook, Press},
     selection::Selection,
     snapshot::{Part, Snapshot},
     tools::{self, pan::Pan, text::Draft},
+    typing::{Keyed, Typed, Typing},
     view::{Sample, View},
 };
+
+/// How near a press, in device-independent pixels, still lands on the text
+/// being typed.
+const TYPING_SLACK: f64 = 4.0;
 
 /// The page viewport over one open project. It reads the project, never
 /// writes it: every change leaves as an `Effect::Edit` for the host.
 pub struct Canvas {
     gpu: &'static Gpu,
     session: Arc<Mutex<Session>>,
+    /// Lays out the text being typed, as the host's renders lay it out.
+    renderer: Renderer,
     view: View,
     colors: Colors,
     snapshot: Option<Snapshot>,
@@ -49,7 +58,14 @@ pub struct Canvas {
     /// effect's, until the colours change.
     numbers: RefCell<HashMap<(usize, bool), Label>>,
     selection: Selection,
+    /// What the marquee and the lasso marked of the page's pixels, as
+    /// Photoshop's selection; another page drops it.
+    area: Option<Area>,
+    /// Bumped whenever the area changes.
+    marked: u64,
     gesture: Option<Active>,
+    /// The text being typed into, as Photoshop's Type tool types.
+    typing: Option<Typing>,
     /// The pointer's last place, while it's over the canvas.
     pointer: Option<Sample>,
     /// The key whose press the canvas took, until it's released.
@@ -82,9 +98,13 @@ struct Look {
     selection: Vec<LayerId>,
     hover: Option<LayerId>,
     anchors: Vec<usize>,
+    /// A count every change of the area bumps.
+    area: u64,
     /// Where the brush's ring is, in the viewport.
     ring: Option<Point>,
     gesture: GestureLook,
+    /// The typing session's changes, and whether its caret shows.
+    typing: Option<(u64, bool)>,
 }
 
 /// A gesture, and the pointer that owns it.
@@ -94,10 +114,11 @@ struct Active {
 }
 
 impl Canvas {
-    pub fn new(gpu: &'static Gpu, session: Arc<Mutex<Session>>) -> Self {
+    pub fn new(gpu: &'static Gpu, session: Arc<Mutex<Session>>, renderer: Renderer) -> Self {
         Self {
             gpu,
             session,
+            renderer,
             view: View::default(),
             colors: Colors::default(),
             snapshot: None,
@@ -106,7 +127,10 @@ impl Canvas {
             story: Story::default(),
             numbers: RefCell::new(HashMap::new()),
             selection: Selection::default(),
+            area: None,
+            marked: 0,
             gesture: None,
+            typing: None,
             pointer: None,
             held: None,
             generation: 0,
@@ -137,6 +161,27 @@ impl Canvas {
             .snapshot
             .as_ref()
             .is_none_or(|old| old.page().id != snapshot.page().id);
+        // Typing keeps what's typed across another change, such as the type
+        // bar's paragraph settings, with the text's frame, place, and style
+        // as that change left them; it stops once its text is gone.
+        let typed = self.typing.as_ref().map(Typing::target);
+        match typed {
+            Some(_) if other => self.typing = None,
+            Some(Some(layer)) => match typable(&snapshot.page().layers, layer) {
+                Some((text, _)) => {
+                    if let Some(typing) = &mut self.typing
+                        && typing.rebase(&text).is_err()
+                    {
+                        self.typing = None;
+                    }
+                }
+                None => self.typing = None,
+            },
+            _ => {}
+        }
+        if other {
+            self.deselect();
+        }
         self.snapshot = Some(snapshot);
         self.generation += 1;
         self.view.set_page(self.page_size(), other);
@@ -178,10 +223,13 @@ impl Canvas {
         self.view.fit()
     }
 
-    /// The tool the host picked. A gesture in progress is cancelled.
-    pub fn set_tool(&mut self, tool: Tool) {
+    /// The tool the host picked. A gesture in progress is cancelled, and
+    /// typing is committed, as Photoshop commits type on another tool;
+    /// returns what that commit does.
+    pub fn set_tool(&mut self, tool: Tool) -> Vec<Effect> {
         self.cancel();
         self.tool = tool;
+        self.finish_typing()
     }
 
     pub fn tool(&self) -> Tool {
@@ -193,43 +241,185 @@ impl Canvas {
     }
 
     /// The selection the host made, such as the Layers panel's. A gesture
-    /// in progress is cancelled.
-    pub fn select(&mut self, layers: Vec<LayerId>) {
+    /// in progress is cancelled, and typing into another layer is committed;
+    /// returns what that commit does.
+    pub fn select(&mut self, layers: Vec<LayerId>) -> Vec<Effect> {
         self.cancel();
+        let typed = self.typing.as_ref().map(Typing::target);
+        let effects = match typed {
+            Some(Some(layer)) if layers == [layer] => Vec::new(),
+            Some(_) => self.finish_typing(),
+            None => Vec::new(),
+        };
         self.selection.set(layers);
+        effects
     }
 
     pub fn selection(&self) -> &[LayerId] {
         self.selection.ids()
     }
 
+    /// Where the selection lies on the page, in page pixels, which the host
+    /// places its own controls beside: its layers as they're laid out, a
+    /// point text's lines included, and the handles drawn on them as far as
+    /// a pointer reaches them, so the host's controls keep off those; `None`
+    /// while nothing selected shows. While typing, the text as typed.
+    pub fn selection_bounds(&self) -> Option<Rect> {
+        if let Some(typing) = &self.typing {
+            return Some(
+                typing
+                    .transform()
+                    .transform_rect_bbox(typing.lettering().bounds()),
+            );
+        }
+        let reach = self.view.page_length(REACH);
+        self.snapshot
+            .as_ref()?
+            .controls()
+            .iter()
+            .filter(|control| self.selection.contains(control.layer))
+            .map(|control| {
+                control
+                    .handles()
+                    .into_iter()
+                    .map(|handle| control.handle_point(handle, &self.view))
+                    .fold(control.outline().bounding_box(), |bounds, point| {
+                        bounds.union(Rect::from_center_size(point, (2.0 * reach, 2.0 * reach)))
+                    })
+            })
+            .reduce(|all, bounds| all.union(bounds))
+    }
+
+    /// Where the area the marquee and the lasso marked lies on the page, in
+    /// page pixels, which the host places its fill's controls beside; `None`
+    /// while there's none.
+    pub fn area_bounds(&self) -> Option<Rect> {
+        self.area.as_ref().map(Area::bounds)
+    }
+
+    /// The area for the host to fill, as Photoshop's Generative Fill fills a
+    /// selection: its page, its bounds, and its coverage over them, a byte a
+    /// pixel. The area stays, to fill again.
+    pub fn area(&self) -> Option<(PageId, koharu_scene::Rect, Vec<u8>)> {
+        let (rect, mask) = self.area.as_ref()?.cropped();
+        Some((self.snapshot.as_ref()?.page().id, rect, mask))
+    }
+
+    /// Drops the area, as Photoshop's Deselect does.
+    pub fn deselect(&mut self) {
+        if self.area.take().is_some() {
+            self.marked += 1;
+        }
+    }
+
+    pub fn is_typing(&self) -> bool {
+        self.typing.is_some()
+    }
+
+    /// The text being typed into, for the host's type bar; `None` when
+    /// nothing is.
+    pub fn typing(&self) -> Option<Typed> {
+        self.typing.as_ref().map(Typing::typed)
+    }
+
+    /// Styles what's selected while typing with `patch`'s values, or holds
+    /// them for what's typed next at a caret.
+    pub fn style_typing(&mut self, patch: &CharStyle) -> anyhow::Result<()> {
+        match &mut self.typing {
+            Some(typing) => typing.style(patch),
+            None => Ok(()),
+        }
+    }
+
+    /// The input method's composition while typing, `selected` being the
+    /// part it has selected; empty when it stops composing.
+    pub fn compose(&mut self, text: &str, selected: Option<(usize, usize)>) -> anyhow::Result<()> {
+        let selected = selected.map(|(start, end)| start..end);
+        match &mut self.typing {
+            Some(typing) => typing.compose(text, selected),
+            None => Ok(()),
+        }
+    }
+
+    /// Types `text` while typing, as the input method commits it or a paste
+    /// does.
+    pub fn insert(&mut self, text: &str) -> anyhow::Result<()> {
+        match &mut self.typing {
+            Some(typing) => typing.insert(text),
+            None => Ok(()),
+        }
+    }
+
+    /// Where the caret is while typing, in the window's physical pixels,
+    /// for the input method's candidate window.
+    pub fn caret_area(&self) -> Option<Rect> {
+        let typing = self.typing.as_ref()?;
+        let to_window = Affine::translate(self.view.viewport().origin().to_vec2())
+            * self.view.to_screen()
+            * typing.transform();
+        let caret = typing.caret();
+        Some(Rect::from_points(
+            to_window * caret.p0,
+            to_window * caret.p1,
+        ))
+    }
+
+    /// Commits typing, as leaving the text does: the step that keeps it,
+    /// none when nothing changed.
+    pub fn finish_typing(&mut self) -> Vec<Effect> {
+        let effects = self.commit_typing();
+        self.apply(effects)
+    }
+
+    /// Typing's commit, unapplied, for a press to answer with what else it
+    /// does.
+    fn commit_typing(&mut self) -> Vec<Effect> {
+        let (Some(typing), Some(snapshot)) = (self.typing.take(), &self.snapshot) else {
+            return Vec::new();
+        };
+        typing.commit(snapshot.page())
+    }
+
     /// A key the host passes while the canvas holds the keyboard, after a
     /// press on it, as Photoshop's document window takes the keys once
     /// clicked: what it does, or `None` for a key the canvas leaves to the
-    /// host. Delete and Backspace remove the direct selection tool's picked
-    /// anchors, and the arrows move the select tool's selection a pixel, ten
-    /// with Shift, as Photoshop's Move tool nudges. A key whose press it took
-    /// is its own until released, its repeats included, so a held key never
-    /// reaches the host halfway; a held arrow nudges on each repeat.
-    pub fn key(&mut self, event: &KeyboardEvent) -> Option<Vec<Effect>> {
+    /// host. While typing, the text takes its keys, repeats included.
+    /// Otherwise Delete and Backspace remove the direct selection tool's
+    /// picked anchors, and the arrows move the select tool's selection a
+    /// pixel, ten with Shift, as Photoshop's Move tool nudges. A key whose
+    /// press it took is its own until released, its repeats included, so a
+    /// held key never reaches the host halfway; a held arrow nudges on each
+    /// repeat.
+    pub fn key(&mut self, event: &KeyboardEvent) -> anyhow::Result<Option<Vec<Effect>>> {
+        if let Some(typing) = &mut self.typing {
+            return Ok(match typing.key(event)? {
+                Keyed::Taken(effects) => Some(effects),
+                Keyed::Commit => Some(self.finish_typing()),
+                Keyed::Cancel => {
+                    self.typing = None;
+                    Some(Vec::new())
+                }
+                Keyed::Pass => None,
+            });
+        }
         if self.held == Some(event.code) {
             if event.state == KeyState::Up {
                 self.held = None;
-                return Some(Vec::new());
+                return Ok(Some(Vec::new()));
             }
-            return Some(self.nudge(event).unwrap_or_default());
+            return Ok(Some(self.nudge(event).unwrap_or_default()));
         }
         if event.state != KeyState::Down {
-            return None;
+            return Ok(None);
         }
         let effects = match event.key {
-            Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.delete_anchors()?,
+            Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.delete_anchors(),
             Key::Named(
                 NamedKey::ArrowLeft
                 | NamedKey::ArrowRight
                 | NamedKey::ArrowUp
                 | NamedKey::ArrowDown,
-            ) => self.nudge(event)?,
+            ) => self.nudge(event),
             Key::Named(NamedKey::Escape)
                 if matches!(
                     self.gesture.as_ref().map(|active| &active.gesture),
@@ -237,12 +427,14 @@ impl Canvas {
                 ) =>
             {
                 self.cancel();
-                Vec::new()
+                Some(Vec::new())
             }
-            _ => return None,
+            _ => None,
         };
-        self.held = Some(event.code);
-        Some(effects)
+        if effects.is_some() {
+            self.held = Some(event.code);
+        }
+        Ok(effects)
     }
 
     /// Removes the direct selection tool's picked anchors from the selected
@@ -290,6 +482,12 @@ impl Canvas {
     pub fn cursor(&self) -> Option<CursorIcon> {
         if let Some(active) = &self.gesture {
             return active.gesture.cursor();
+        }
+        if let (Some(typing), Some(sample)) = (&self.typing, self.pointer)
+            && (typing.dragging.is_some()
+                || typing.covers(sample.page, self.view.page_length(TYPING_SLACK)))
+        {
+            return Some(CursorIcon::Text);
         }
         let handle = match (self.tool, self.pointer, self.context()) {
             (Tool::Select, Some(sample), Some(cx)) => {
@@ -395,9 +593,35 @@ impl Canvas {
             Some(_) => return Ok(Vec::new()),
             None => {}
         }
+        let primary = button == Some(PointerButton::Primary);
+        let mut effects = Vec::new();
+        if primary && let Some(typing) = &mut self.typing {
+            // A press on the text puts its caret; one away commits it and
+            // goes on as a press, as Photoshop's Type tool does.
+            if typing.covers(sample.page, self.view.page_length(TYPING_SLACK)) {
+                typing.press(sample.page, sample.modifiers.shift(), sample.clicks);
+                typing.dragging = Some(pointer);
+                return Ok(Vec::new());
+            }
+            effects = self.commit_typing();
+        }
         let Some(cx) = self.context() else {
-            return Ok(Vec::new());
+            return Ok(effects);
         };
+        // The Type tool types into the text it's pressed on, as a double
+        // click with the select tool does.
+        let types = self.tool == Tool::Text || (self.tool == Tool::Select && sample.clicks >= 2);
+        if let Some((layer, text, untranslated)) = (primary && types)
+            .then(|| text_at(&cx, sample.page))
+            .flatten()
+        {
+            let mut typing = Typing::layer(&self.renderer, layer, &text, untranslated)?;
+            typing.press(sample.page, false, 1);
+            typing.dragging = Some(pointer);
+            self.typing = Some(typing);
+            effects.push(Effect::Selection(vec![layer]));
+            return Ok(effects);
+        }
         let press = match (self.tool, button) {
             // The middle button pans whatever the tool, as the pan tool
             // does, and the host's Space held picks it.
@@ -406,6 +630,9 @@ impl Canvas {
             }
             (Tool::Select, Some(PointerButton::Primary)) => tools::select::press(&cx, sample),
             (Tool::DirectSelect, Some(PointerButton::Primary)) => tools::direct::press(&cx, sample),
+            (Tool::Marquee | Tool::Lasso, Some(PointerButton::Primary)) => {
+                tools::mark::press(&cx, sample)
+            }
             (Tool::Text, Some(PointerButton::Primary)) => {
                 Press::starts(Gesture::Draft(Draft::new(sample)))
             }
@@ -429,7 +656,8 @@ impl Canvas {
         if let Some(anchors) = press.anchors {
             self.selection.set_anchors(anchors);
         }
-        Ok(press.effects)
+        effects.extend(press.effects);
+        Ok(effects)
     }
 
     /// The pointer passed through `samples`, oldest first.
@@ -438,6 +666,12 @@ impl Canvas {
             return Vec::new();
         };
         self.pointer = Some(last);
+        if let Some(typing) = &mut self.typing
+            && typing.dragging == Some(pointer)
+        {
+            typing.drag(last.page);
+            return Vec::new();
+        }
         match self.gesture.take() {
             Some(mut active) if active.pointer == pointer => {
                 let effects = match self.context() {
@@ -464,6 +698,12 @@ impl Canvas {
     }
 
     fn up(&mut self, pointer: u64, sample: Sample) -> anyhow::Result<Vec<Effect>> {
+        if let Some(typing) = &mut self.typing
+            && typing.dragging == Some(pointer)
+        {
+            typing.dragging = None;
+            return Ok(Vec::new());
+        }
         if self
             .gesture
             .as_ref()
@@ -479,6 +719,20 @@ impl Canvas {
             return Ok(Vec::new());
         };
         let mut effects = active.gesture.moved(&cx, &[sample]);
+        // A text drafted with the Type tool is typed into at once, with
+        // nothing selected; committing adds it, selected.
+        if let Gesture::Draft(draft) = &active.gesture {
+            let text = draft.text(&cx);
+            self.typing = Some(Typing::new_text(&self.renderer, text)?);
+            effects.push(Effect::Selection(Vec::new()));
+            return Ok(effects);
+        }
+        if let Gesture::Mark(mark) = &active.gesture {
+            let (shape, size) = (mark.shape(), cx.snapshot.size());
+            self.area = Area::marked(self.area.take(), &shape, mark.mode, size);
+            self.marked += 1;
+            return Ok(effects);
+        }
         let picked = active.gesture.picked();
         effects.extend(active.gesture.finish(&cx)?);
         if let Some(anchors) = picked {
@@ -558,11 +812,16 @@ impl Canvas {
             selection: self.selection.ids().to_vec(),
             hover: self.selection.hover(),
             anchors: self.selection.anchors().to_vec(),
+            area: self.marked,
             ring: self
                 .pointer
                 .filter(|_| self.tool.is_brush())
                 .map(|sample| sample.screen),
             gesture: gesture.map_or(GestureLook::None, Gesture::look),
+            typing: self
+                .typing
+                .as_ref()
+                .map(|typing| (typing.version(), typing.caret_shows(Instant::now()))),
         }
     }
 
@@ -596,8 +855,10 @@ impl Canvas {
         let Some(cx) = self.context() else {
             return Ok(());
         };
+        let gesture = self.gesture.as_ref().map(|active| &active.gesture);
+        let dragged = gesture.map(Gesture::dragged).unwrap_or_default();
         if self.story.shown {
-            self.story(&cx, &mut overlay)?;
+            self.story(&cx, &dragged, &mut overlay)?;
         }
         // A selected clean-up or mask is seen on its own in place of its
         // bounds: a mask as Photoshop's rubylith, half red over what it
@@ -621,7 +882,11 @@ impl Canvas {
             overlay.isolate(cx.snapshot.size().to_rect(), tint, clear.as_ref())?;
         }
         let isolated = part.map(|(id, _)| id);
-        let gesture = self.gesture.as_ref().map(|active| &active.gesture);
+        // The text typed into shows as typed, not as the page last drew it.
+        let typed = self.typing.as_ref().and_then(Typing::target);
+        if let Some(area) = &self.area {
+            overlay.ants(area.edge());
+        }
         if let Some(gesture) = gesture {
             gesture.preview(&cx, &mut overlay)?;
         }
@@ -629,19 +894,20 @@ impl Canvas {
             .selection
             .ids()
             .iter()
-            .filter(|&&id| Some(id) != isolated)
+            .filter(|&&id| Some(id) != isolated && Some(id) != typed)
         {
             if let Some(path) = cx.snapshot.outline(id) {
                 overlay.outline(path);
             }
         }
-        let dragged = gesture.map(Gesture::dragged).unwrap_or_default();
         let selected: Vec<&Control> = cx
             .snapshot
             .controls()
             .iter()
             .filter(|control| {
-                self.selection.contains(control.layer) && Some(control.layer) != isolated
+                self.selection.contains(control.layer)
+                    && Some(control.layer) != isolated
+                    && Some(control.layer) != typed
             })
             .map(|control| {
                 dragged
@@ -673,6 +939,16 @@ impl Canvas {
         } else if let [control] = selected[..] {
             overlay.handles(control);
         }
+        if let Some(typing) = &self.typing {
+            let transform = typing.transform();
+            let bounds = transform * typing.lettering().bounds().to_path(0.1);
+            overlay.outline(&bounds);
+            let to_screen = self.view.to_screen() * transform;
+            overlay.composing(&typing.composing(), to_screen, typing.vertical());
+            if typing.caret_shows(Instant::now()) {
+                overlay.caret(typing.caret(), to_screen);
+            }
+        }
         if self.tool.is_brush()
             && !matches!(gesture, Some(Gesture::ResizeBrush(_)))
             && let Some(sample) = self.pointer
@@ -683,11 +959,18 @@ impl Canvas {
     }
 
     /// Each text's frame and its number in the scene's reading order, under
-    /// the selection's handles, so they never take a handle's place.
-    fn story(&self, cx: &Context, overlay: &mut Overlay) -> anyhow::Result<()> {
+    /// the selection's handles, so they never take a handle's place; a text
+    /// being dragged has them where the drag puts it, as its handles do.
+    fn story(
+        &self,
+        cx: &Context,
+        dragged: &[Control],
+        overlay: &mut Overlay,
+    ) -> anyhow::Result<()> {
         let mut numbers = self.numbers.borrow_mut();
         for (index, &(layer, sfx)) in cx.snapshot.story().iter().enumerate() {
-            let Some(control) = cx.snapshot.control(layer) else {
+            let control = dragged.iter().find(|moved| moved.layer == layer);
+            let Some(control) = control.or_else(|| cx.snapshot.control(layer)) else {
                 continue;
             };
             overlay.story_frame(control, self.story.hovered == Some(layer));
@@ -716,21 +999,58 @@ impl Canvas {
     }
 
     /// The page as the viewport shows it, without the layers a gesture
-    /// lifts.
+    /// lifts; while typing, without the text typed into, which draws as
+    /// typed over its selection's highlight.
     fn page(&self, drawing: &mut Drawing) -> anyhow::Result<()> {
         let Some(snapshot) = &self.snapshot else {
             return Ok(());
         };
+        let typed = self
+            .typing
+            .as_ref()
+            .and_then(Typing::target)
+            .map(|layer| snapshot.frame().without(&[layer]));
         let frame = self
             .gesture
             .as_ref()
             .and_then(|active| active.gesture.under())
+            .or(typed.as_ref())
             .unwrap_or(snapshot.frame());
-        frame.paint(self.view.to_screen(), self.view.size().to_rect(), drawing)
+        frame.paint(self.view.to_screen(), self.view.size().to_rect(), drawing)?;
+        if let Some(typing) = &self.typing {
+            let transform = self.view.to_screen() * typing.transform();
+            Overlay::new(drawing, &self.view, self.colors)
+                .highlight(&typing.highlight(), transform);
+            typing.lettering().draw(drawing, transform)?;
+        }
+        Ok(())
     }
 }
 
 /// A pointer's id, 0 for one that has none.
 fn id(pointer: &PointerInfo) -> u64 {
     pointer.pointer_id.map_or(0, |id| id.get_inner().get())
+}
+
+/// The text a press at `page` types into: the topmost text or block it
+/// picks, with what `typable` gives for it.
+fn text_at(cx: &Context, page: Point) -> Option<(LayerId, Text, bool)> {
+    let layer = cx.snapshot.hit(page)?.layer;
+    let (text, untranslated) = typable(&cx.snapshot.page().layers, layer)?;
+    Some((layer, text, untranslated))
+}
+
+/// `layer`'s text as typing takes it: a text layer's, or a block's
+/// translation, and its source, standing in, when it has none, which the
+/// flag says.
+fn typable(layers: &[Layer], layer: LayerId) -> Option<(Text, bool)> {
+    layers.iter().find_map(|found| match &found.content {
+        _ if found.id != layer => typable(&found.children, layer),
+        Content::Text(text) => Some(((**text).clone(), false)),
+        Content::Block(block) => Some(match &block.translation {
+            Some(translation) => (translation.clone(), false),
+            None => (block.source.clone(), true),
+        }),
+        _ => None,
+    })
 }

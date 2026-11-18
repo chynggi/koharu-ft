@@ -15,18 +15,16 @@ import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call, dispatch } from '@/lib/backend'
 import { useImportPages, usePage, useProject } from '@/lib/queries'
 import { adjustable, adjustColors, deleteSelection } from '@/lib/scene'
-import { pipelineStages, useKoharuStore } from '@/lib/store'
+import { useKoharuStore } from '@/lib/store'
 import {
   commands,
   type ExportOptions,
   type ExportProgress,
   type PageId,
-  type Stage,
-  type Target,
 } from '@koharu/ipc/protocol'
 import {
   Menubar,
-  MenubarCheckboxItem,
+  MenubarCheckboxItem as UiMenubarCheckboxItem,
   MenubarContent as UiMenubarContent,
   MenubarItem as UiMenubarItem,
   MenubarMenu,
@@ -70,8 +68,6 @@ export function TitleBar() {
       .finally(() => setExporting(null))
   }
 
-  const run = (target: Target, stages: Stage[] = [...pipelineStages]) =>
-    void call(commands.runPipeline, target, stages).catch(() => undefined)
   const psdLabels = {
     background: t('psd.background'),
     cleanup: t('psd.cleanup'),
@@ -211,6 +207,11 @@ export function TitleBar() {
                 {t('menu.delete')}
                 <MenubarShortcut>Del</MenubarShortcut>
               </MenubarItem>
+              <MenubarSeparator />
+              {/* Frees the GPU, as Photoshop's Edit → Purge frees memory. */}
+              <MenubarItem onClick={() => dispatch(commands.unload)}>
+                {t('menu.unloadModels')}
+              </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
 
@@ -238,39 +239,6 @@ export function TitleBar() {
           </MenubarMenu>
 
           <MenubarMenu>
-            <MenubarTrigger>{t('menu.process')}</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem disabled={!project || pages.length === 0} onClick={() => run('project')}>
-                {t('menu.processProject')}
-              </MenubarItem>
-              <MenubarItem
-                disabled={selectedPages.length === 0}
-                onClick={() => run({ pages: selectedPages })}
-              >
-                {t('menu.processPages')}
-              </MenubarItem>
-              <MenubarItem
-                disabled={selectedLayers.length === 0}
-                onClick={() => run({ blocks: selectedLayers }, ['recognize', 'translate'])}
-              >
-                {t('menu.processLayers')}
-              </MenubarItem>
-              <MenubarSeparator />
-              {pipelineStages.map((stage, index) => (
-                <MenubarItem
-                  key={stage}
-                  disabled={!project || pages.length === 0}
-                  onClick={() => run('project', pipelineStages.slice(0, index + 1))}
-                >
-                  {t('menu.runPhase', {
-                    phase: t(`phase.${stage}`),
-                  })}
-                </MenubarItem>
-              ))}
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
             <MenubarTrigger>{t('menu.view')}</MenubarTrigger>
             <MenubarContent>
               <MenubarItem disabled={!page} onClick={() => dispatch(commands.fit)}>
@@ -282,7 +250,6 @@ export function TitleBar() {
                 checked={historyOpen}
                 onCheckedChange={setHistoryOpen}
                 closeOnClick
-                className='min-h-8 text-xs'
               >
                 {t('menu.history')}
               </MenubarCheckboxItem>
@@ -366,6 +333,22 @@ function MenubarItem({ className, ...props }: ComponentProps<typeof UiMenubarIte
     <UiMenubarItem
       className={cn(
         "min-h-8 gap-1.5 px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+/** Its text in line with the other items', and its check where their shortcuts go. */
+function MenubarCheckboxItem({
+  className,
+  ...props
+}: ComponentProps<typeof UiMenubarCheckboxItem>) {
+  return (
+    <UiMenubarCheckboxItem
+      className={cn(
+        'min-h-8 pr-7 pl-2 text-xs [&>span:first-child]:right-2 [&>span:first-child]:left-auto',
         className,
       )}
       {...props}

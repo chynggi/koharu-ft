@@ -13,6 +13,11 @@ pub enum Tool {
     #[default]
     Select,
     DirectSelect,
+    /// Photoshop's Rectangular Marquee: marks a rectangle of the page's
+    /// pixels.
+    Marquee,
+    /// Photoshop's Lasso: marks a freehand shape of the page's pixels.
+    Lasso,
     Text,
     Rectangle,
     Ellipse,
@@ -38,7 +43,9 @@ impl Tool {
             Self::Text => Some(CursorIcon::Text),
             Self::Rectangle | Self::Ellipse => Some(CursorIcon::Crosshair),
             Self::Draw | Self::Eraser | Self::Remove => None,
-            Self::Bucket | Self::ColorPicker => Some(CursorIcon::Crosshair),
+            Self::Bucket | Self::Marquee | Self::Lasso | Self::ColorPicker => {
+                Some(CursorIcon::Crosshair)
+            }
             Self::Pan => Some(CursorIcon::Grab),
         }
     }
