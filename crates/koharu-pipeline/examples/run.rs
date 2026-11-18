@@ -14,7 +14,7 @@ use clap::Parser;
 use image::{Rgba, RgbaImage};
 use koharu_llm::rig::completion::Effort;
 use koharu_pipeline::{
-    Event, Inpainter, Outcome, Pipeline, PipelineConfig, Request, Stage, Target,
+    Event, Inpainter, Outcome, Pipeline, PipelineConfig, RemoteConfig, Request, Stage, Target,
 };
 use koharu_renderer::{Renderer, RendererConfig};
 use koharu_scene::{Content, Edit, Hash, Op, Session, Tile};
@@ -55,6 +55,11 @@ struct Cli {
     /// How much the translation model reasons: minimal, low, medium, high.
     #[arg(long, value_parser = parse::<Effort>)]
     reasoning: Option<Effort>,
+
+    /// Runs on a koharu-server at this address, as the app does with a
+    /// processing server set.
+    #[arg(long, value_name = "URL")]
+    remote: Option<String>,
 
     /// Where the project and the pages it makes go.
     #[arg(short, long, value_name = "DIR")]
@@ -108,6 +113,7 @@ async fn main() -> Result<()> {
     if let Some(inpainter) = cli.inpainter {
         config.inpainter.model = inpainter;
     }
+    config.remote = cli.remote.map(|url| RemoteConfig { url });
     config.translator.vision = cli.vision;
     config.translator.reasoning = cli.reasoning.map(Into::into);
     let pipeline = Pipeline::new(config);

@@ -28,9 +28,10 @@ const REPOSITORY: Repository = Repository::model(
     "4104236baefdb2a1dd0f32812d8edbbfc4efd164",
 );
 
-/// `pad_mod` and `min_size`: the image is padded to a multiple of 8, at
-/// least 512 a side.
-const MODULO: u32 = 8;
+/// `pad_mod` and `min_size`: the image is padded to at least 512 a side.
+/// IOPaint pads to a multiple of 8; stable-diffusion.cpp rounds a Stable
+/// Diffusion 1 size to a multiple of 64 itself, so this pads to that.
+const MODULO: u32 = 64;
 const MINIMUM: u32 = 512;
 /// IOPaint's `InpaintRequest` defaults.
 const STEPS: u32 = 50;
