@@ -29,6 +29,7 @@ impl Host {
         let brush = Brush {
             diameter: 24.0,
             color: Rgba([0.9, 0.1, 0.2, 1.0]),
+            ramp: None,
         };
         let mut host = Self {
             renderer,

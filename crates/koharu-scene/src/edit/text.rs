@@ -36,6 +36,46 @@ impl Run<'_, '_> {
         self.write_text(op, layer, |old| text::replace_keeping_marks(old, new))
     }
 
+    pub(super) fn replace_text(
+        &mut self,
+        op: usize,
+        search: &str,
+        replacement: &str,
+        match_case: bool,
+        selected: Option<&[crate::LayerId]>,
+    ) -> Result<()> {
+        let expression = crate::query::expression(search, match_case)?;
+        if let Some(selected) = selected {
+            for &id in selected {
+                self.project.layer(id)?;
+            }
+        }
+        let mut updates = Vec::new();
+        for page in self.project.pages() {
+            for layer in self.project.layers_of(page.id)? {
+                if selected.is_some_and(|selected| !selected.contains(&layer.id)) {
+                    continue;
+                }
+                let text = match &layer.content {
+                    Content::Text(text) => Some(text.as_ref()),
+                    Content::Block(block) => block.translation.as_ref(),
+                    _ => None,
+                };
+                if let Some(text) = text {
+                    let old = text.content.text();
+                    let new = expression.replace_all(&old, regex::NoExpand(replacement));
+                    if new != old {
+                        updates.push((layer.id, new.into_owned()));
+                    }
+                }
+            }
+        }
+        for (id, new) in updates {
+            self.set_text(op, &id.into(), &new)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn set_rich_text(&mut self, op: usize, layer: &Ref, spans: &[Span]) -> Result<()> {
         self.write_text(op, layer, |_| text::joined(spans.iter().cloned()))
     }

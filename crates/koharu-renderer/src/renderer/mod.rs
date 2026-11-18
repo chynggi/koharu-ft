@@ -142,7 +142,7 @@ impl Renderer {
                 .text(layer.id, text)?
                 .map(|content| (content, Affine::from(text.transform))),
             SceneContent::Shape(shape) => self
-                .shape(shape)?
+                .shape(session, shape)?
                 .map(|content| (content, Affine::IDENTITY)),
             SceneContent::Image(image) => self
                 .image(session, image.file)?

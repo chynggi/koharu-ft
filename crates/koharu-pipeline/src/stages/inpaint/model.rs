@@ -2,7 +2,10 @@ use image::{DynamicImage, GrayImage, RgbImage, imageops};
 use koharu_ml::{
     flux3_klein::{self, Flux3Klein},
     lama::{self, Lama},
+    manga_inpainting::{self, MangaInpainting},
+    mi_gan::MiGan,
     moss_image::{self, MossImage},
+    powerpaint::PowerPaint,
     qwen_image::{self, QwenImage},
     rorem_mixed::{self, RoremMixed},
 };
@@ -20,8 +23,15 @@ pub enum Inpainter {
     #[default]
     #[strum(to_string = "LaMa")]
     Lama,
+    #[strum(to_string = "Manga Inpainting")]
+    MangaInpainting,
+    #[strum(to_string = "MI-GAN")]
+    MiGan,
     #[strum(to_string = "RORem")]
     RoremMixed,
+    #[strum(to_string = "PowerPaint")]
+    #[serde(rename = "powerpaint")]
+    PowerPaint,
     #[strum(to_string = "FLUX.3 Klein")]
     Flux3Klein,
     #[strum(to_string = "MOSS-Image")]
@@ -66,6 +76,36 @@ impl Inpaint for Lama {
     }
 }
 
+impl Inpaint for MangaInpainting {
+    fn inference(
+        &self,
+        image: &RgbImage,
+        mask: &GrayImage,
+        // It takes no prompt.
+        _: &str,
+    ) -> anyhow::Result<RgbImage> {
+        MangaInpainting::inference(self, image, mask)
+    }
+
+    /// Past it the model crops around each masked region and runs once for
+    /// each.
+    fn pass(&self) -> u32 {
+        manga_inpainting::WHOLE
+    }
+}
+
+impl Inpaint for MiGan {
+    fn inference(
+        &self,
+        image: &RgbImage,
+        mask: &GrayImage,
+        // It takes no prompt.
+        _: &str,
+    ) -> anyhow::Result<RgbImage> {
+        MiGan::inference(self, image, mask)
+    }
+}
+
 impl Inpaint for RoremMixed {
     fn inference(
         &self,
@@ -82,6 +122,17 @@ impl Inpaint for RoremMixed {
             &options,
         )?;
         Ok(fitted(redrawn, image))
+    }
+}
+
+impl Inpaint for PowerPaint {
+    fn inference(
+        &self,
+        image: &RgbImage,
+        mask: &GrayImage,
+        prompt: &str,
+    ) -> anyhow::Result<RgbImage> {
+        PowerPaint::inference(self, image, mask, prompt)
     }
 }
 
@@ -157,7 +208,10 @@ fn fitted(redrawn: RgbImage, image: &RgbImage) -> RgbImage {
 pub(super) async fn load(model: Inpainter, device: &'static Device) -> anyhow::Result<Model> {
     Ok(match model {
         Inpainter::Lama => Box::new(Lama::load(device).await?),
+        Inpainter::MangaInpainting => Box::new(MangaInpainting::load(device).await?),
+        Inpainter::MiGan => Box::new(MiGan::load(device).await?),
         Inpainter::RoremMixed => Box::new(RoremMixed::load(device).await?),
+        Inpainter::PowerPaint => Box::new(PowerPaint::load(device).await?),
         Inpainter::Flux3Klein => Box::new(Flux3Klein::load(device).await?),
         Inpainter::MossImage => Box::new(MossImage::load(device).await?),
         Inpainter::QwenImage => Box::new(QwenImage::load(device).await?),

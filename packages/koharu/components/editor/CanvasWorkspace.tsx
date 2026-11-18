@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useColorSampling } from '@/components/controls/ColorSampling'
 import { CanvasCommandBar } from '@/components/editor/CanvasCommandBar'
 import { HistoryWindow } from '@/components/editor/HistoryWindow'
+import { ShapeBar } from '@/components/editor/ShapeBar'
 import { StatusBar } from '@/components/editor/StatusBar'
 import { ToolBar } from '@/components/editor/ToolBar'
 import { TypeBar } from '@/components/editor/TypeBar'
@@ -13,9 +14,16 @@ import { call, dispatch } from '@/lib/backend'
 import { findLayer, isBlockLayer, isTextLayer, plainText } from '@/lib/document'
 import { cssBox, textBounds } from '@/lib/geometry'
 import { usePage } from '@/lib/queries'
-import { deleteSelection, setText } from '@/lib/scene'
+import { copiedLayers, deleteSelection, duplicateLayers, setText } from '@/lib/scene'
 import { hexToRgba, toolKeys, useKoharuStore, type CanvasTool } from '@/lib/store'
-import { commands, type Layer, type Rgba, type Text } from '@koharu/ipc/protocol'
+import {
+  commands,
+  type Layer,
+  type LayerId,
+  type PageId,
+  type Rgba,
+  type Text,
+} from '@koharu/ipc/protocol'
 
 /** The canvas's place in the window. The native canvas draws the page under the web interface
  * wherever this element and its ancestors paint nothing, and takes the pointer there; the
@@ -28,6 +36,8 @@ export function CanvasWorkspace() {
   const brush = useKoharuStore((state) => state.brush)
   const selected = useKoharuStore((state) => state.selectedLayers)
   const colorSampling = useColorSampling()
+  /** The layers Ctrl+C took, which Ctrl+V copies onto the page shown. */
+  const clipboard = useRef<{ page: PageId; layers: LayerId[] } | null>(null)
 
   useEffect(() => {
     const element = surface.current
@@ -64,6 +74,7 @@ export function CanvasWorkspace() {
       dispatch(commands.setBrush, {
         diameter: brush.diameter,
         color: hexToRgba(brush.color),
+        ramp: brush.ramp && { to: hexToRgba(brush.ramp.to), along: brush.ramp.along },
       }),
     [brush],
   )
@@ -71,12 +82,15 @@ export function CanvasWorkspace() {
   useEffect(() => {
     const send = () =>
       dispatch(commands.setColors, {
-        workspace: cssColor('--surface-canvas'),
+        workspace: cssColor('--workspace-background'),
         selection: cssColor('--canvas-selection'),
       })
     send()
     const theme = new MutationObserver(send)
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-palette'],
+    })
     return () => theme.disconnect()
   }, [])
 
@@ -126,6 +140,33 @@ export function CanvasWorkspace() {
         state.selectLayers(page.layers.map((layer) => layer.id))
         return
       }
+      if (command && event.key.toLowerCase() === 'c' && page) {
+        const layers = copiedLayers(state.selectedLayers, page.layers)
+        if (!layers.length) return
+        event.preventDefault()
+        clipboard.current = { page: page.id, layers }
+        return
+      }
+      // A paste onto the page copied from lands above each original, as Photoshop's Duplicate
+      // Layer (Ctrl+J) does; onto another page, at its top.
+      const copy = (layers: LayerId[], onto: PageId | null) => {
+        void call(duplicateLayers, layers, onto)
+          .then((copies) => useKoharuStore.getState().selectLayers(copies))
+          .catch(() => undefined)
+      }
+      if (command && event.key.toLowerCase() === 'v' && page && clipboard.current) {
+        event.preventDefault()
+        const { page: from, layers } = clipboard.current
+        copy(layers, from === page.id ? null : page.id)
+        return
+      }
+      if (command && event.key.toLowerCase() === 'j' && page) {
+        const layers = copiedLayers(state.selectedLayers, page.layers)
+        if (!layers.length) return
+        event.preventDefault()
+        copy(layers, null)
+        return
+      }
       if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedLayers.length) {
         event.preventDefault()
         dispatch(deleteSelection, state.selectedLayers, page?.layers ?? [])
@@ -144,7 +185,8 @@ export function CanvasWorkspace() {
       }
       if (command || event.altKey) return
       const key = event.key.toLowerCase()
-      const next = (Object.keys(toolKeys) as CanvasTool[]).find((tool) => toolKeys[tool] === key)
+      const keyed = (Object.keys(toolKeys) as CanvasTool[]).filter((tool) => toolKeys[tool] === key)
+      const next = keyed[(keyed.indexOf(state.tool) + 1) % keyed.length]
       if (next) state.setTool(next)
     }
 
@@ -190,6 +232,7 @@ export function CanvasWorkspace() {
             <TextBox key={typed.id} layer={typed} />
           )}
           {page && <TypeBar />}
+          {page && <ShapeBar />}
           {page && <HistoryWindow />}
           {!page && (
             <div className='pointer-events-none absolute inset-0 grid place-items-center'>

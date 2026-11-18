@@ -20,13 +20,30 @@ pub(crate) fn draw(
     strokes: bool,
 ) -> Result<()> {
     drawing.scene.set_transform(transform);
-    let passes: &[bool] = if strokes { &[true, false] } else { &[false] };
-    for &stroking in passes {
+    let passes: &[u8] = if strokes { &[0, 1, 2] } else { &[2] };
+    for &pass in passes {
         for (glyphs, run) in layout.runs.iter().zip(&layout.resolved.runs) {
-            let (paint, width, join) = match (stroking, run.stroke) {
-                (true, Some((color, width))) => (color, f64::from(width), Join::Round),
-                (true, None) => continue,
-                (false, _) => (run.fill, 0.0, Join::Miter),
+            let width = run.stroke.map_or(0.0, |(_, width)| f64::from(width));
+            let outside = match run.stroke_position {
+                koharu_scene::StrokePosition::Outside => width,
+                koharu_scene::StrokePosition::Center => width / 2.0,
+                koharu_scene::StrokePosition::Inside => 0.0,
+            };
+            let (paint, expansion) = match pass {
+                0 => match run.outer_stroke {
+                    Some((color, width)) => (color, outside + f64::from(width)),
+                    None => continue,
+                },
+                1 => match run.stroke {
+                    Some((color, _)) => (color, outside),
+                    None => continue,
+                },
+                _ => (run.fill, if strokes { outside - width } else { 0.0 }),
+            };
+            let join = match run.stroke_join {
+                koharu_scene::StrokeJoin::Round => Join::Round,
+                koharu_scene::StrokeJoin::Miter => Join::Miter,
+                koharu_scene::StrokeJoin::Bevel => Join::Bevel,
             };
             let font = &glyphs.font;
             // A synthetic bold grows each side by a fiftieth of the size.
@@ -54,7 +71,8 @@ pub(crate) fn draw(
                 font,
                 run.size,
                 turn,
-                FontEmbolden::new(Diagonal2::new(bold + width, bold + width)).with_join(join),
+                FontEmbolden::new(Diagonal2::new(bold + expansion, bold + expansion))
+                    .with_join(join),
                 &glyphs.glyphs,
             )?;
         }

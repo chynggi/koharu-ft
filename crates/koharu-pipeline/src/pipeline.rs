@@ -9,10 +9,12 @@ use std::{
 use koharu_scene::{ProjectId, Session};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     Error, Event, PipelineConfig, Request, Result, RunId,
     event::Events,
+    remote,
     scheduler::{Command, Plan, Run, Scheduler},
 };
 
@@ -27,6 +29,8 @@ struct Shared {
     events: Events,
     commands: mpsc::UnboundedSender<Command>,
     next: AtomicU64,
+    /// Stops the remote runs going on, and is replaced once it has.
+    remote: Mutex<CancellationToken>,
 }
 
 impl Pipeline {
@@ -42,6 +46,7 @@ impl Pipeline {
             events,
             commands,
             next: AtomicU64::new(0),
+            remote: Mutex::new(CancellationToken::new()),
         }))
     }
 
@@ -72,6 +77,25 @@ impl Pipeline {
             run: id,
             steps: plan.pages() * request.stages.len(),
         });
+        if let Some(remote) = config.remote.clone() {
+            let request = Request {
+                config: Some(PipelineConfig {
+                    remote: None,
+                    ..config
+                }),
+                ..request
+            };
+            tokio::spawn(remote::run(
+                remote,
+                session,
+                plan.page_ids(),
+                request,
+                id,
+                self.0.events.clone(),
+                self.0.remote.lock().child_token(),
+            ));
+            return Ok(id);
+        }
         let run = Run::new(id, session, project.id(), config, plan, &request.stages);
         self.send(Command::Run(run));
         Ok(id)
@@ -99,6 +123,7 @@ impl Pipeline {
     /// nothing more is written; a model call on the GPU finishes, but a
     /// local translation stops at its next token.
     pub fn stop(&self) {
+        std::mem::take(&mut *self.0.remote.lock()).cancel();
         self.send(Command::Stop);
     }
 

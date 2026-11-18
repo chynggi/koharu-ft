@@ -1,6 +1,7 @@
 'use client'
 
 import * as Sentry from '@sentry/nextjs'
+import { Channel } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { FilePlus2, FolderOpen, LoaderCircle, Settings } from 'lucide-react'
 import Image from 'next/image'
@@ -8,12 +9,21 @@ import { useState, type ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AboutDialog } from '@/components/app/AboutDialog'
+import { AdjustDialog, type Adjustment } from '@/components/app/AdjustDialog'
+import { ExportDialog } from '@/components/app/ExportDialog'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call, dispatch } from '@/lib/backend'
-import { useCommand, useImportPages, usePage, useProject } from '@/lib/queries'
-import { deleteSelection } from '@/lib/scene'
+import { useImportPages, usePage, useProject } from '@/lib/queries'
+import { adjustable, adjustColors, deleteSelection } from '@/lib/scene'
 import { pipelineStages, useKoharuStore } from '@/lib/store'
-import { commands, type Stage, type Target } from '@koharu/ipc/protocol'
+import {
+  commands,
+  type ExportOptions,
+  type ExportProgress,
+  type PageId,
+  type Stage,
+  type Target,
+} from '@koharu/ipc/protocol'
 import {
   Menubar,
   MenubarCheckboxItem,
@@ -32,6 +42,8 @@ import { cn } from '@koharu/ui/lib/utils'
 export function TitleBar() {
   const { t } = useTranslation()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [adjusting, setAdjusting] = useState<Adjustment | null>(null)
   const macOS = useMacOS()
   const project = useProject().data
   const pageQuery = usePage(Boolean(project))
@@ -44,13 +56,19 @@ export function TitleBar() {
   const selectedPages = useKoharuStore((state) => state.selectedPages)
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
+  const pictures = page ? adjustable(selectedLayers, page.layers) : []
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const { importPages, importing } = useImportPages()
-  const { run: exportProject, busy: exporting } = useCommand(
-    ['export-project'],
-    commands.export,
-    'menu.export',
-  )
+  const exporting = useKoharuStore((state) => state.exporting !== null)
+  const setExporting = useKoharuStore((state) => state.setExporting)
+  const exportProject = (chosen: PageId[], options: ExportOptions) => {
+    setExporting({ completed: 0, total: chosen.length })
+    const progress = new Channel<ExportProgress>()
+    progress.onmessage = setExporting
+    void call(commands.export, chosen, options, psdLabels, progress)
+      .catch(() => undefined)
+      .finally(() => setExporting(null))
+  }
 
   const run = (target: Target, stages: Stage[] = [...pipelineStages]) =>
     void call(commands.runPipeline, target, stages).catch(() => undefined)
@@ -140,27 +158,14 @@ export function TitleBar() {
                   </MenubarItem>
                 </MenubarSubContent>
               </MenubarSub>
-              <MenubarSub>
-                <MenubarSubTrigger
-                  disabled={!project || pages.length === 0 || exporting}
-                  aria-busy={exporting}
-                  className='min-h-8 gap-1.5 px-2 py-1 text-xs'
-                >
-                  {exporting && <LoaderCircle className='animate-spin' aria-hidden='true' />}
-                  {t('menu.export')}
-                </MenubarSubTrigger>
-                <MenubarSubContent className='min-w-40 p-1'>
-                  {(['png', 'psd', 'cbz'] as const).map((format) => (
-                    <MenubarItem
-                      key={format}
-                      disabled={exporting}
-                      onClick={() => exportProject(format, psdLabels)}
-                    >
-                      {format.toUpperCase()}…
-                    </MenubarItem>
-                  ))}
-                </MenubarSubContent>
-              </MenubarSub>
+              <MenubarItem
+                disabled={!project || pages.length === 0 || exporting}
+                aria-busy={exporting}
+                onClick={() => setExportOpen(true)}
+              >
+                {exporting && <LoaderCircle className='animate-spin' aria-hidden='true' />}
+                {t('menu.export')}…
+              </MenubarItem>
               <MenubarSeparator />
               <MenubarItem disabled={!project} onClick={closeProject}>
                 {t('menu.closeProject')}
@@ -206,6 +211,29 @@ export function TitleBar() {
                 {t('menu.delete')}
                 <MenubarShortcut>Del</MenubarShortcut>
               </MenubarItem>
+            </MenubarContent>
+          </MenubarMenu>
+
+          <MenubarMenu>
+            <MenubarTrigger>{t('menu.image')}</MenubarTrigger>
+            <MenubarContent>
+              <MenubarSub>
+                <MenubarSubTrigger disabled={pictures.length === 0}>
+                  {t('menu.adjustments')}
+                </MenubarSubTrigger>
+                <MenubarSubContent className='min-w-44 p-1'>
+                  {(['brightness_contrast', 'levels', 'hue'] as const).map((adjustment) => (
+                    <MenubarItem key={adjustment} onClick={() => setAdjusting(adjustment)}>
+                      {t(`adjust.${adjustment}`)}…
+                    </MenubarItem>
+                  ))}
+                  <MenubarItem
+                    onClick={() => dispatch(adjustColors, pictures, [{ kind: 'grayscale' }])}
+                  >
+                    {t('adjust.grayscale')}
+                  </MenubarItem>
+                </MenubarSubContent>
+              </MenubarSub>
             </MenubarContent>
           </MenubarMenu>
 
@@ -305,6 +333,14 @@ export function TitleBar() {
         {!macOS && <WindowControls />}
       </header>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <AdjustDialog adjustment={adjusting} layers={pictures} onClose={() => setAdjusting(null)} />
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        pages={pages.map((page) => page.id)}
+        selected={selectedPages}
+        onStart={exportProject}
+      />
     </>
   )
 }

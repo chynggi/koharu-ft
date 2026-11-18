@@ -7,7 +7,9 @@ mod pixels;
 mod schema;
 mod text;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+
+pub use pixels::ColorAdjust;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -16,7 +18,7 @@ use specta::Type;
 
 use crate::{
     Background, Content, Created, Error, Hash, Layer, LayerId, NewLayer, PageId, Project, Rect,
-    Ref, Result, Size, Span, Text, Transform, Uuid, store::Tx,
+    Ref, Result, Shape, Size, Span, Text, Transform, Uuid, store::Tx,
 };
 
 /// Where an op found a layer: its page and its path there. It holds only
@@ -62,6 +64,19 @@ pub enum Op {
         #[serde(default)]
         background: Option<Hash>,
     },
+    /// Merge-patch a page's `name` and `chapter`.
+    UpdatePage { page: Ref, patch: Value },
+    /// Join two or more pages, taken in project order, side by side into a
+    /// new spread where the first of them was: right to left when `rtl`,
+    /// tops aligned. Their visible backgrounds become its background and
+    /// copies of their layers move with them; the originals go unless
+    /// `keep_originals`.
+    MergePages {
+        pages: Vec<Ref>,
+        rtl: bool,
+        #[serde(default)]
+        keep_originals: bool,
+    },
     /// Set or clear a page's background. A new file must be an image of the
     /// page's size.
     SetBackground {
@@ -85,11 +100,14 @@ pub enum Op {
     },
     /// Copy a layer with everything inside it, its pixels, text, and
     /// attributes. The copy goes just above the original unless `index` says
-    /// where.
+    /// where; with `page`, it goes at the top level of that page, at its top
+    /// unless `index` says where.
     DuplicateLayer {
         layer: Ref,
         #[serde(default)]
         id: Option<Ref>,
+        #[serde(default)]
+        page: Option<Ref>,
         #[serde(default)]
         index: Option<usize>,
     },
@@ -120,6 +138,16 @@ pub enum Op {
     /// Replace a text layer's text, or a block's translation, adding one if
     /// the block has none. Styling on unchanged characters is kept.
     SetText { layer: Ref, text: String },
+    /// Replace every literal match in translations and text layers as one edit.
+    ReplaceText {
+        text: String,
+        replacement: String,
+        #[serde(default)]
+        match_case: bool,
+        /// None selects the whole project.
+        #[serde(default)]
+        layers: Option<Vec<LayerId>>,
+    },
     /// Replace a text's spans, from the rich editor.
     #[schemars(skip)]
     SetRichText { layer: Ref, spans: Vec<Span> },
@@ -145,6 +173,17 @@ pub enum Op {
     /// Add an imported file, stored once by its content hash.
     #[schemars(skip)]
     AddFile { bytes: Vec<u8> },
+    /// Adjust the colours of a raster's or a block's `cleanup` pixels.
+    AdjustColors { layer: Ref, adjust: ColorAdjust },
+}
+
+/// An edit as it was applied, with the ids it made, in the order it made
+/// them: replayed on the project it was applied to, it makes the same project,
+/// as a remote run's edits do on the desktop's copy of the pages it ran on.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Applied {
+    pub edit: Edit,
+    pub ids: Vec<Uuid>,
 }
 
 pub(crate) struct Run<'a, 'c> {
@@ -152,28 +191,73 @@ pub(crate) struct Run<'a, 'c> {
     pub tx: &'a Tx<'c>,
     labels: HashMap<String, Uuid>,
     pub created: Vec<Created>,
+    /// The ids a replay hands out in turn; `None` makes fresh ones.
+    given: Option<VecDeque<Uuid>>,
+    /// Every id the run made, in order.
+    made: Vec<Uuid>,
+}
+
+/// What a run leaves: the project, what it created, and the ids it made.
+pub(crate) struct Ran {
+    pub project: Project,
+    pub created: Vec<Created>,
+    pub made: Vec<Uuid>,
 }
 
 /// Runs `edit` on a copy of `project`, inside the caller's transaction, which
-/// holds what blobs the ops write.
-pub(crate) fn run(project: &Project, edit: &Edit, tx: &Tx) -> Result<(Project, Vec<Created>)> {
+/// holds what blobs the ops write. `given` replays the ids an earlier run
+/// made, and must be what it uses, all of it.
+pub(crate) fn run(project: &Project, edit: &Edit, tx: &Tx, given: Option<&[Uuid]>) -> Result<Ran> {
     let mut run = Run {
         project: project.clone(),
         tx,
         labels: HashMap::new(),
         created: Vec::new(),
+        given: given.map(|ids| ids.iter().copied().collect()),
+        made: Vec::new(),
     };
     for (index, op) in edit.ops.iter().enumerate() {
         run.op(index, op)?;
     }
-    Ok((run.project, run.created))
+    if run.given.as_ref().is_some_and(|left| !left.is_empty()) {
+        return Err(Error::invalid(
+            edit.ops.len().saturating_sub(1),
+            "the edit makes fewer ids than it was given",
+        ));
+    }
+    Ok(Ran {
+        project: run.project,
+        created: run.created,
+        made: run.made,
+    })
 }
 
 impl Run<'_, '_> {
+    /// A fresh id, or a replay's next one, which mustn't name anything yet.
+    fn fresh(&mut self, op: usize) -> Result<Uuid> {
+        let uuid = match &mut self.given {
+            None => Uuid::now_v7(),
+            Some(given) => {
+                let uuid = given.pop_front().ok_or_else(|| {
+                    Error::invalid(op, "the edit makes more ids than it was given")
+                })?;
+                if self.project.pages.contains_key(&PageId(uuid))
+                    || self.project.index.contains_key(&LayerId(uuid))
+                    || self.made.contains(&uuid)
+                {
+                    return Err(Error::invalid(op, format!("id {uuid} already exists")));
+                }
+                uuid
+            }
+        };
+        self.made.push(uuid);
+        Ok(uuid)
+    }
+
     /// A new id, given or labelled.
     fn new_id(&mut self, op: usize, id: Option<&Ref>) -> Result<(Uuid, Option<String>)> {
         let Some(id) = id else {
-            return Ok((Uuid::now_v7(), None));
+            return Ok((self.fresh(op)?, None));
         };
         if let Some(label) = id.label() {
             if self.labels.contains_key(label) {
@@ -182,7 +266,7 @@ impl Run<'_, '_> {
                     format!("label ${label} is already used in this edit"),
                 ));
             }
-            let uuid = Uuid::now_v7();
+            let uuid = self.fresh(op)?;
             self.labels.insert(label.to_owned(), uuid);
             return Ok((uuid, Some(label.to_owned())));
         }
@@ -212,7 +296,7 @@ impl Run<'_, '_> {
             ("mask", &mut block.mask.id),
             ("cleanup", &mut block.cleanup.id),
         ] {
-            let new = LayerId(Uuid::now_v7());
+            let new = LayerId(self.fresh(op)?);
             renamed.push((*id, new));
             *id = new;
             let label = label.map(|label| format!("{label}.{part}"));
@@ -287,6 +371,13 @@ impl Run<'_, '_> {
         for text in texts {
             text.content = crate::text::joined(std::mem::take(&mut text.content.0));
         }
+        if let Content::Shape(Shape {
+            fill: Some(fill), ..
+        }) = &layer.content
+            && let Some(reason) = fill.invalid()
+        {
+            return Err(Error::invalid(op, format!("layer {}: {reason}", layer.id)));
+        }
         let json = serde_json::to_value(layer.own()).expect("layers serialize");
         if serde_json::from_value::<Layer>(json).is_err() {
             return Err(Error::invalid(
@@ -320,6 +411,12 @@ impl Run<'_, '_> {
                 size,
                 background,
             } => self.add_page(index, id.as_ref(), *at, *size, background.as_ref()),
+            Op::UpdatePage { page, patch } => self.update_page(index, page, patch),
+            Op::MergePages {
+                pages,
+                rtl,
+                keep_originals,
+            } => self.merge_pages(index, pages, *rtl, *keep_originals),
             Op::SetBackground { page, background } => {
                 self.set_background(index, page, background.as_ref())
             }
@@ -335,8 +432,9 @@ impl Run<'_, '_> {
             Op::DuplicateLayer {
                 layer,
                 id,
+                page,
                 index: at,
-            } => self.duplicate_layer(index, layer, id.as_ref(), *at),
+            } => self.duplicate_layer(index, layer, id.as_ref(), page.as_ref(), *at),
             Op::MoveLayer {
                 layer,
                 parent,
@@ -348,6 +446,12 @@ impl Run<'_, '_> {
                 self.transform_layer(index, layer, *transform)
             }
             Op::SetText { layer, text } => self.set_text(index, layer, text),
+            Op::ReplaceText {
+                text,
+                replacement,
+                match_case,
+                layers,
+            } => self.replace_text(index, text, replacement, *match_case, layers.as_deref()),
             Op::SetRichText { layer, spans } => self.set_rich_text(index, layer, spans),
             Op::SetAttribute {
                 layer,
@@ -361,6 +465,7 @@ impl Run<'_, '_> {
                 pixels,
             } => self.write_pixels(index, layer, *rect, pixels),
             Op::AddFile { bytes } => self.add_file(bytes),
+            Op::AdjustColors { layer, adjust } => self.adjust_colors(index, layer, *adjust),
         }
     }
 }

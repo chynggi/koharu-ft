@@ -56,7 +56,7 @@ Vulkan build, so on Vulkan its models run on the CPU.
 
 | Part | Model | Cite |
 |---|---|---|
-| place | the `store` folder beside the program in Windows release builds, where setup installs Koharu, and the system cache folder's `koharu/store` otherwise | |
+| place | `Koharu/store` under the OS local application data directory, shared by debug and release builds | |
 | packages | a folder per package, per version, per platform and backend | |
 | models | Hugging Face repositories at a pinned commit, laid out as Hugging Face's own cache lays them out, by repository and commit snapshot, so a newer commit never mixes into an older one | the `huggingface_hub` cache's `snapshots` by revision [HF cache] |
 | writing | into a staging folder on the same disk, validated, then renamed into place, so nothing is ever half written; a lock other processes respect holds off a second download of the same thing | |

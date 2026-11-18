@@ -26,8 +26,8 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
     // scheduler runs on.
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
-    // The install folder in Windows release builds, where setup puts Koharu
-    // and its store; it's read-only on macOS and Linux, so the app's local
+    // The install folder in Windows release builds, where setup puts Koharu;
+    // it's read-only on macOS and Linux, so the app's local
     // data folder otherwise. That is Tauri's `app_local_data_dir`, which
     // needs the app this builds.
     let folder = if cfg!(all(windows, not(debug_assertions))) {

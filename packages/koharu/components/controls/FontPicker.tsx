@@ -1,10 +1,11 @@
 'use client'
 
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, Search, X } from 'lucide-react'
+import { ChevronDown, Search, Star, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useFontFavorites } from '@/lib/fontFavorites'
 import { useFontPreview } from '@/lib/queries'
 import type { FontFamily } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
@@ -44,12 +45,17 @@ export function FontPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const input = useRef<HTMLInputElement>(null)
+  const favorites = useFontFavorites((state) => state.favorites)
+  const toggleFavorite = useFontFavorites((state) => state.toggle)
+  const favoriteNames = useMemo(() => new Set(favorites), [favorites])
   const orderedFamilies = useMemo(
     () =>
-      [...families].sort((left, right) =>
-        left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }),
+      [...families].sort(
+        (left, right) =>
+          Number(favoriteNames.has(right.name)) - Number(favoriteNames.has(left.name)) ||
+          left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }),
       ),
-    [families],
+    [families, favoriteNames],
   )
   const results = useMemo(() => {
     const normalized = normalizeFontName(query)
@@ -136,6 +142,8 @@ export function FontPicker({
           <FontList
             key={query}
             families={results}
+            favorites={favoriteNames}
+            onToggleFavorite={toggleFavorite}
             value={value}
             onSelect={(family) => {
               onChange(family)
@@ -150,10 +158,14 @@ export function FontPicker({
 
 function FontList({
   families,
+  favorites,
+  onToggleFavorite,
   value,
   onSelect,
 }: {
   families: FontFamily[]
+  favorites: ReadonlySet<string>
+  onToggleFavorite: (family: string) => void
   value: string
   onSelect: (family: string) => void
 }) {
@@ -182,7 +194,7 @@ function FontList({
   return (
     <ScrollArea
       viewportRef={list}
-      role='listbox'
+      role='group'
       aria-label={t('fontPicker.fonts')}
       className='relative'
       viewportClassName='overflow-x-hidden'
@@ -198,27 +210,43 @@ function FontList({
           const family = families[virtualRow.index]
           if (!family) return null
           const selected = normalizeFontName(family.name) === normalizeFontName(value)
+          const favorite = favorites.has(family.name)
           return (
-            <button
+            <div
               key={virtualRow.key}
-              type='button'
-              role='option'
-              aria-label={family.name}
-              aria-selected={selected}
               className={cn(
-                'absolute inset-x-0 top-0 flex h-9.5 w-full items-center px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+                'absolute inset-x-0 top-0 flex h-9.5 w-full items-center',
                 selected && 'bg-accent text-accent-foreground',
               )}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
-              onClick={() => onSelect(family.name)}
             >
-              <div className='flex min-w-0 flex-1 flex-col justify-center gap-px'>
-                <FontPreviewLabel family={family} className='h-4.5 w-full min-w-0' />
-                <span className='min-w-0 truncate text-[8px] leading-none text-muted-foreground'>
-                  {family.name}
-                </span>
-              </div>
-            </button>
+              <button
+                type='button'
+                aria-label={family.name}
+                aria-pressed={selected}
+                className='flex h-full min-w-0 flex-1 items-center px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none'
+                onClick={() => onSelect(family.name)}
+              >
+                <div className='flex min-w-0 flex-1 flex-col justify-center gap-px'>
+                  <FontPreviewLabel family={family} className='h-4.5 w-full min-w-0' />
+                  <span className='min-w-0 truncate text-[8px] leading-none text-muted-foreground'>
+                    {family.name}
+                  </span>
+                </div>
+              </button>
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon'
+                className='mr-1 size-7 shrink-0'
+                aria-label={t(favorite ? 'fontPicker.removeFavorite' : 'fontPicker.addFavorite', {
+                  family: family.name,
+                })}
+                onClick={() => onToggleFavorite(family.name)}
+              >
+                <Star aria-hidden='true' className={cn('size-3.5', favorite && 'fill-current')} />
+              </Button>
+            </div>
           )
         })}
       </div>

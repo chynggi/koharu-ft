@@ -10,7 +10,7 @@ use image::{GrayImage, RgbImage};
 use imageproc::contours::{BorderType, find_contours_with_threshold};
 use koharu_torch::{Device, Kind, Tensor};
 
-pub(super) fn boxes_from_mask(mask: &GrayImage) -> Vec<[u32; 4]> {
+pub(crate) fn boxes_from_mask(mask: &GrayImage) -> Vec<[u32; 4]> {
     let width = mask.width();
     let mut left = width;
     let mut top = mask.height();
@@ -45,8 +45,11 @@ pub(super) fn boxes_from_mask(mask: &GrayImage) -> Vec<[u32; 4]> {
             .copy_from_slice(&mask.as_raw()[source_start..source_start + cropped_width as usize]);
     }
 
+    // OpenCV lists the outer contours last found first, and a crop pasted
+    // later covers the overlap of one before it, so the order is upstream's.
     find_contours_with_threshold::<u32>(&padded, 127)
         .into_iter()
+        .rev()
         .filter(|contour| contour.border_type == BorderType::Outer && contour.parent.is_none())
         .filter_map(|contour| {
             let mut points = contour.points.into_iter();
@@ -72,7 +75,7 @@ pub(super) fn boxes_from_mask(mask: &GrayImage) -> Vec<[u32; 4]> {
         .collect()
 }
 
-pub(super) fn crop_box(
+pub(crate) fn crop_box(
     image_width: u32,
     image_height: u32,
     [left, top, right, bottom]: [u32; 4],

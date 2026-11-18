@@ -57,7 +57,7 @@ Within a rank, more memory wins, then a newer CUDA architecture. If the best GPU
 | Model weights, pinned to a Hugging Face commit              | The first time that model loads            |
 | Fonts from Koharu's font dataset                            | When a text needs a face your system lacks |
 
-Everything goes into one store: the `store` folder in Koharu's installation folder on Windows, and `koharu/store` under the operating system's cache folder on macOS and Linux. Downloads are staged and validated before they move into place, so an interrupted download is retried on the next use. After an update, older runtime versions are removed in the background; model files stay. See [data locations](/reference/data).
+Everything goes into one store: `Koharu/store` under the OS local application data directory, shared by debug and release builds. Downloads are staged and validated before they move into place, so an interrupted download is retried on the next use. After an update, older runtime versions are removed in the background; model files stay. See [data locations](/reference/data).
 
 ## Memory and model residency
 

@@ -110,6 +110,7 @@ fn tiles_cover_what_was_painted() {
         .apply(edit(vec![Op::DuplicateLayer {
             layer: raster.into(),
             id: None,
+            page: None,
             index: None,
         }]))
         .expect("a duplicate");
@@ -346,4 +347,62 @@ fn pixels_read_back_what_write_pixels_wrote() {
             assert_eq!(*at, expected, "at ({x}, {y})");
         }
     }
+}
+
+#[test]
+fn a_colour_adjustment_keeps_alpha_and_clear_pixels() {
+    let (_dir, mut session, page) = session();
+    let raster = add(&mut session, page, None, json!({"kind": "raster"}));
+    let painted = [[100, 150, 200, 128], [0, 0, 0, 0], [40, 40, 40, 0]].concat();
+    paint(&mut session, raster, rect(0, 0, 3, 1), painted.clone()).expect("paint");
+    let adjust = |session: &mut Session, adjust: serde_json::Value| {
+        session.apply(edit(vec![
+            serde_json::from_value(
+                json!({"op": "adjust_colors", "layer": raster, "adjust": adjust}),
+            )
+            .expect("an op"),
+        ]))
+    };
+    let read = |session: &Session| session.pixels(raster, rect(0, 0, 3, 1)).expect("pixels");
+
+    adjust(&mut session, json!({"kind": "brightness", "delta": 20})).expect("brightness");
+    assert_eq!(
+        read(&session),
+        [[120, 170, 220, 128], [0; 4], [40, 40, 40, 0]].concat()
+    );
+    adjust(&mut session, json!({"kind": "grayscale"})).expect("grayscale");
+    assert_eq!(read(&session)[..4], [163, 163, 163, 128]);
+    // Contrast scales alpha in `image`; it stays.
+    adjust(&mut session, json!({"kind": "contrast", "percent": 50.0})).expect("contrast");
+    assert_eq!(read(&session)[3], 128);
+    adjust(
+        &mut session,
+        json!({"kind": "levels", "low": 100, "high": 200}),
+    )
+    .expect("levels");
+
+    for _ in 0..4 {
+        session.undo().expect("undo");
+    }
+    assert_eq!(read(&session), painted);
+
+    // What the kernels can't take, and a grey picture, fail.
+    for bad in [
+        json!({"kind": "levels", "low": 200, "high": 100}),
+        json!({"kind": "hue", "degrees": 270}),
+    ] {
+        assert!(matches!(
+            adjust(&mut session, bad),
+            Err(Error::Invalid { .. })
+        ));
+    }
+    let group = add(&mut session, page, None, json!({"kind": "group"}));
+    let mask = add(&mut session, page, Some(group), json!({"kind": "mask"}));
+    let grey = session.apply(edit(vec![
+        serde_json::from_value(
+            json!({"op": "adjust_colors", "layer": mask, "adjust": {"kind": "grayscale"}}),
+        )
+        .expect("an op"),
+    ]));
+    assert!(matches!(grey, Err(Error::Invalid { .. })));
 }

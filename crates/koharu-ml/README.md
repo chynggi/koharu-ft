@@ -23,7 +23,10 @@ to the code that makes it.
 | Baberu OCR, with DINOv2 | Japanese OCR | libtorch | [Baberu OCR] |
 | Hayai OCR v2.7 Supernova, with SigLIP2 | Japanese, Chinese, Korean, and English OCR | libtorch | [Hayai OCR] |
 | LaMa, fine-tuned on manga | inpainting | libtorch | [LaMa], as [IOPaint] runs it |
+| Seamless Manga Inpainting, with MangaLineExtraction | inpainting | libtorch | [Manga Inpainting], [MangaLineExtraction], as [IOPaint] runs them |
+| MI-GAN, 512 Places2 | inpainting | libtorch | [MI-GAN], as [IOPaint] runs it |
 | RORem | inpainting | stable-diffusion.cpp | [RORem] |
+| PowerPaint v1 | inpainting | stable-diffusion.cpp | [PowerPaint], as [IOPaint] runs it |
 | FLUX.3 Image Klein | inpainting and generation | stable-diffusion.cpp | [FLUX.3 Klein] |
 | MOSS-Image SFT, with Qwen3.5 9B | inpainting and generation | stable-diffusion.cpp | [MOSS-Image] |
 | Qwen-Image 2.1, with Qwen3-VL 8B | inpainting, generation, and editing | stable-diffusion.cpp | [Qwen-Image] |
@@ -70,7 +73,7 @@ Read in November 2026.
 
 - Layout: [RF-DETR], [Koharu Layout]
 - OCR: [manga-ocr-ar], [Baberu OCR], [Hayai OCR]
-- Inpainting and generation: [LaMa], [IOPaint], [RORem], [FLUX.3 Klein],
+- Inpainting and generation: [LaMa], [IOPaint], [Manga Inpainting], [MangaLineExtraction], [MI-GAN], [RORem], [PowerPaint], [FLUX.3 Klein],
   [MOSS-Image], [Qwen-Image], [diffusers Flux2 Klein inpaint], [diffusers
   Qwen-Image inpaint]
 
@@ -81,6 +84,10 @@ Read in November 2026.
 [Hayai OCR]: https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova
 [LaMa]: https://github.com/advimman/lama/tree/786f5936b27fb3dacd2b1ad799e4de968ea697e7
 [IOPaint]: https://github.com/Sanster/IOPaint/tree/61a759fb3f332bacdce8b2813f4837495c9b86e0
+[Manga Inpainting]: https://github.com/msxie92/MangaInpainting/tree/02b749406e9a88dcea1b98599ce33d6b075a432e
+[MangaLineExtraction]: https://github.com/ljsabc/MangaLineExtraction_PyTorch/tree/6ec136d5332180b65476e62c2558f2873d5d936a
+[MI-GAN]: https://github.com/Picsart-AI-Research/MI-GAN/tree/2b793c5ece43f4253e32d4afc257120a5deed6f5
+[PowerPaint]: https://huggingface.co/Sanster/PowerPaint-V1-stable-diffusion-inpainting/tree/4104236baefdb2a1dd0f32812d8edbbfc4efd164
 [RORem]: https://github.com/leeruibin/RORem/tree/891ab8a17bbcfb16a773c078cb256aae8cb30468
 [FLUX.3 Klein]: https://github.com/black-forest-labs/flux-3-image-klein/tree/62e90b9278b73ecc52927770c6965dc6b1966498
 [MOSS-Image]: https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT

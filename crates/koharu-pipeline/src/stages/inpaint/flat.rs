@@ -2,7 +2,8 @@
 //! inpainting model. Each reads a ring of unmasked pixels just past the
 //! lettering's grown mask, inside its balloon or panel, and the first tier
 //! that can rebuild the ring fills the mask: one colour for plain paper, and
-//! Telea's fast marching for a smooth gradient. Everything else goes to the
+//! Telea's fast marching for a planar gradient or a row or column profile
+//! for a nonlinear gradient. Everything else goes to the
 //! model: a lettering crossing its balloon's outline, a line or art against
 //! it, and screentone, which LaMa redrew cleanly on Give My Regards to Black
 //! Jack where tiles of the page, as Leptonica paints them, had copied art
@@ -30,6 +31,9 @@ const FLAT: f64 = 10.0;
 const LINE_CONTRAST: f64 = 64.0;
 /// How far Telea reads known pixels around each one it fills.
 const RADIUS: u32 = 5;
+const PROFILE_RADIUS: usize = 4;
+const PROFILE_TOLERANCE: u8 = 12;
+const PROFILE_INLIERS: f64 = 0.9;
 
 /// Where a lettering sits: its balloon's outline, and its panel's bounds on
 /// the page.
@@ -45,6 +49,7 @@ pub(super) struct Place {
 pub(super) enum Fill {
     Color,
     Smooth,
+    Profile,
 }
 
 pub(super) enum Verdict {
@@ -100,6 +105,22 @@ impl<'a> Page<'a> {
         if smooth.mean < FLAT && smooth.most <= LINE_CONTRAST {
             self.smooth(rect, mask);
             return Verdict::Filled(Fill::Smooth);
+        }
+        let rows = Profile::fit(&ring, &colors, &pixels, |_, y| y);
+        let columns = Profile::fit(&ring, &colors, &pixels, |x, _| x);
+        let (profile, rows) = match (rows, columns) {
+            (Some((_, row_score)), Some((columns, column_score))) if column_score > row_score => {
+                (Some(columns), false)
+            }
+            (Some((rows, _)), _) => (Some(rows), true),
+            (None, columns) => (columns.map(|(profile, _)| profile), false),
+        };
+        if let Some(profile) = profile {
+            for &(x, y) in &pixels {
+                self.image
+                    .put_pixel(x, y, Rgb(profile.at(if rows { y } else { x })));
+            }
+            return Verdict::Filled(Fill::Profile);
         }
         Verdict::Model {
             line: smooth.most > LINE_CONTRAST,
@@ -187,6 +208,75 @@ fn median(colors: &[[u8; 3]]) -> [u8; 3] {
         let middle = values.len() / 2;
         *values.select_nth_unstable(middle).1
     })
+}
+
+/// A windowed median of ring colors along one axis, with interpolation
+/// between observed lines and no extrapolation through the masked area.
+struct Profile {
+    lines: Vec<(u32, [u8; 3])>,
+}
+
+impl Profile {
+    fn fit(
+        ring: &[(u32, u32)],
+        colors: &[[u8; 3]],
+        pixels: &[(u32, u32)],
+        axis: impl Fn(u32, u32) -> u32,
+    ) -> Option<(Self, f64)> {
+        let coords = ring.iter().map(|&(x, y)| axis(x, y));
+        let first = coords.clone().min()?;
+        let last = coords.max()?;
+        if pixels
+            .iter()
+            .any(|&(x, y)| !(first..=last).contains(&axis(x, y)))
+        {
+            return None;
+        }
+        let mut lines = vec![Vec::new(); (last - first + 1) as usize];
+        for (&(x, y), &color) in ring.iter().zip(colors) {
+            lines[(axis(x, y) - first) as usize].push(color);
+        }
+        let observed = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| !line.is_empty())
+            .map(|(i, _)| {
+                let window =
+                    i.saturating_sub(PROFILE_RADIUS)..(i + PROFILE_RADIUS + 1).min(lines.len());
+                let colors: Vec<[u8; 3]> = lines[window].iter().flatten().copied().collect();
+                (first + i as u32, median(&colors))
+            })
+            .collect();
+        let profile = Self { lines: observed };
+        let mut inliers = 0;
+        for (&(x, y), color) in ring.iter().zip(colors) {
+            let predicted = profile.at(axis(x, y));
+            let delta = color
+                .iter()
+                .zip(predicted)
+                .map(|(&a, b)| a.abs_diff(b))
+                .max()?;
+            if f64::from(delta) > LINE_CONTRAST {
+                return None;
+            }
+            inliers += usize::from(delta <= PROFILE_TOLERANCE);
+        }
+        let score = inliers as f64 / ring.len() as f64;
+        (score >= PROFILE_INLIERS).then_some((profile, score))
+    }
+
+    fn at(&self, line: u32) -> [u8; 3] {
+        let after = self.lines.partition_point(|&(i, _)| i < line);
+        let (end, to) = self.lines[after];
+        if end == line {
+            return to;
+        }
+        let (start, from) = self.lines[after - 1];
+        let t = f64::from(line - start) / f64::from(end - start);
+        std::array::from_fn(|i| {
+            (f64::from(from[i]) * (1.0 - t) + f64::from(to[i]) * t).round() as u8
+        })
+    }
 }
 
 /// A least-squares plane through each channel, about the ring's centre.
@@ -298,6 +388,35 @@ mod tests {
         assert!(matches!(filled, Verdict::Filled(_)));
         let [value, ..] = image.get_pixel(25, 23).0;
         assert!(value.abs_diff((60 + 3 * 25) as u8) <= 4, "{value}");
+    }
+
+    #[test]
+    fn a_nonlinear_row_or_column_gradient_uses_the_axis_profile() {
+        for rows in [false, true] {
+            let paper = |x: u32, y: u32| {
+                let d = (if rows { y } else { x }).abs_diff(40);
+                [(100 + 5 * d).min(255) as u8; 3]
+            };
+            let rect = Rect {
+                x: 20,
+                y: 20,
+                width: 40,
+                height: 40,
+            };
+            let mask = GrayImage::from_pixel(40, 40, Luma([255]));
+            let mut covered = GrayImage::new(80, 80);
+            imageops::replace(&mut covered, &mask, 20, 20);
+            let mut image = RgbImage::from_fn(80, 80, |x, y| {
+                Rgb(if covered.get_pixel(x, y).0[0] == 0 {
+                    paper(x, y)
+                } else {
+                    [0; 3]
+                })
+            });
+            let filled = Page::new(&mut image, &covered).fill(rect, &mask, &Place::default());
+            assert!(matches!(filled, Verdict::Filled(Fill::Profile)));
+            assert!(image.get_pixel(40, 40).0[0].abs_diff(paper(40, 40)[0]) <= 12);
+        }
     }
 
     #[test]

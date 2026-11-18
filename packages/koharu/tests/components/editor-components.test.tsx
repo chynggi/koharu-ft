@@ -6,7 +6,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TitleBar } from '@/components/app/TitleBar'
 import { WindowControls } from '@/components/app/WindowChrome'
-import { queryClient } from '@/lib/queries'
+import { FontPicker } from '@/components/controls/FontPicker'
+import { PageRail } from '@/components/editor/PageRail'
+import { FONT_FAVORITES_STORAGE_KEY, useFontFavorites } from '@/lib/fontFavorites'
+import { pageKey, projectKey, queryClient } from '@/lib/queries'
+import { useKoharuStore } from '@/lib/store'
+import { commands } from '@koharu/ipc/protocol'
 
 const nativeWindow = vi.hoisted(() => ({
   close: vi.fn(async () => undefined),
@@ -104,5 +109,66 @@ describe('window chrome', () => {
     expect(await screen.findByText('0.62.0')).toBeInTheDocument()
     expect(screen.getByText('Mayo Takanashi')).toBeInTheDocument()
     expect(nativeGetVersion).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('font favorites', () => {
+  it('pins a favorite without choosing it', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const families = [
+      { name: 'Alpha', faces: [] },
+      { name: 'Zeta', faces: [] },
+    ]
+    try {
+      render(
+        <FontPicker ariaLabel='Font family' value='' families={families} onChange={onChange} />,
+      )
+      await user.click(screen.getByRole('button', { name: 'Font family' }))
+      const alpha = await screen.findByRole('button', { name: 'Alpha' })
+      const zeta = screen.getByRole('button', { name: 'Zeta' })
+      expect(alpha.compareDocumentPosition(zeta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      await user.click(screen.getByRole('button', { name: /Zeta.*favorite|favorite.*Zeta/i }))
+      expect(zeta.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(JSON.parse(localStorage.getItem(FONT_FAVORITES_STORAGE_KEY) ?? 'null')).toEqual([
+        'Zeta',
+      ])
+      expect(onChange).not.toHaveBeenCalled()
+
+      await user.click(zeta)
+      expect(onChange).toHaveBeenCalledWith('Zeta')
+    } finally {
+      useFontFavorites.setState({ favorites: [] })
+      localStorage.removeItem(FONT_FAVORITES_STORAGE_KEY)
+    }
+  })
+})
+
+describe('page shortcuts', () => {
+  it('uses the rail selection and leaves arrows to the focused filter', () => {
+    const show = vi.spyOn(commands, 'show').mockResolvedValue(null)
+    const first = { id: 'first', size: { width: 100, height: 100 }, background: null, layers: [] }
+    const second = { ...first, id: 'second' }
+    queryClient.setQueryData(projectKey, {
+      name: 'Book',
+      page: 'first',
+      pages: [first, second],
+      revisions: {},
+    })
+    queryClient.setQueryData(pageKey, first)
+    useKoharuStore.setState({ selectedPages: ['first'], selectedLayers: ['layer'] })
+    render(<PageRail />)
+
+    const filter = screen.getByRole('textbox')
+    filter.focus()
+    fireEvent.keyDown(filter, { key: 'ArrowRight' })
+    expect(show).not.toHaveBeenCalled()
+
+    filter.blur()
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(show).toHaveBeenCalledWith('second')
+    expect(useKoharuStore.getState().selectedPages).toEqual(['second'])
+    expect(useKoharuStore.getState().selectedLayers).toEqual([])
   })
 })

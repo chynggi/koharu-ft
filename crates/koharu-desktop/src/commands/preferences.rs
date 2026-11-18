@@ -130,6 +130,30 @@ pub async fn set_api_key(vendor: String, key: Option<String>) -> Result<()> {
     .await??)
 }
 
+/// Whether the processing server's token is stored.
+#[tauri::command]
+#[specta::specta]
+pub async fn has_server_token() -> Result<bool> {
+    Ok(tokio::task::spawn_blocking(|| {
+        koharu_config::secrets::get(koharu_pipeline::remote::TOKEN).map(|token| token.is_some())
+    })
+    .await??)
+}
+
+/// Stores the processing server's token, encrypted as an API key is, or
+/// forgets it for `None`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_server_token(token: Option<String>) -> Result<()> {
+    Ok(tokio::task::spawn_blocking(move || match token {
+        Some(token) => {
+            koharu_config::secrets::set(koharu_pipeline::remote::TOKEN, &SecretString::from(token))
+        }
+        None => koharu_config::secrets::delete(koharu_pipeline::remote::TOKEN),
+    })
+    .await??)
+}
+
 /// The sign-in waiting for the user, which the next one or `stop_sign_in`
 /// ends.
 static SIGNING_IN: Mutex<Option<AbortHandle>> = Mutex::new(None);

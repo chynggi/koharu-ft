@@ -19,7 +19,7 @@ use serde_rusqlite::from_rows;
 use serde_with::{json::JsonString, serde_as};
 
 use crate::{
-    Content, Error, Hash, LayerId, Page, PageId, Project, ProjectId, Result, Uuid,
+    Error, Hash, LayerId, Page, PageId, Project, ProjectId, Result, Uuid,
     project::{TileMap, depth_first, ids},
     tiles,
 };
@@ -219,8 +219,8 @@ impl Store {
     }
 }
 
-/// Every blob the project names: its tiles, its images' files, and its pages'
-/// backgrounds.
+/// Every blob the project names: its tiles, its images' and patterns' files,
+/// and its pages' backgrounds.
 fn named(project: &Project) -> HashSet<Hash> {
     let tiles = project
         .tiles
@@ -230,10 +230,7 @@ fn named(project: &Project) -> HashSet<Hash> {
         .pages
         .values()
         .flat_map(|page| depth_first(&page.layers))
-        .filter_map(|layer| match &layer.content {
-            Content::Image(image) => Some(image.file),
-            _ => None,
-        });
+        .filter_map(|layer| layer.content.file());
     let backgrounds = project
         .pages
         .values()

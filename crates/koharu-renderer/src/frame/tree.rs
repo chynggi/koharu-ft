@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use koharu_scene::{Blend, LayerId, MaskMode};
 use kurbo::{Affine, BezPath, Rect, Shape as _, Stroke};
-use vello_gpu::peniko::{Color, Fill};
+use vello_gpu::{
+    PaintType,
+    peniko::{Color, Extend, Fill},
+};
 
 use crate::{
     pixels::Pixels,
@@ -17,10 +20,22 @@ use crate::{
 pub(crate) struct ShapeVector {
     pub path: BezPath,
     pub fill_rule: Fill,
-    pub fill: Option<Color>,
+    pub fill: Option<ShapePaint>,
     pub stroke: Option<(Stroke, Color)>,
     /// What it covers, its stroke included.
     pub bounds: Rect,
+}
+
+/// A shape's fill in its own coordinates. A pattern keeps its pixels, which
+/// become a texture only when drawn.
+pub(crate) enum ShapePaint {
+    Brush(PaintType),
+    Pattern {
+        pixels: Arc<Pixels>,
+        /// From the image's pixels to the shape's coordinates.
+        transform: Affine,
+        extend: Extend,
+    },
 }
 
 /// What a node draws, in its own coordinates, as the renderer keeps it.

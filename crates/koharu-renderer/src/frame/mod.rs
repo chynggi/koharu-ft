@@ -13,7 +13,7 @@ use crate::{Drawing, Gpu, pixels::check_size, text::ResolvedText};
 mod paint;
 mod tree;
 
-pub(crate) use self::tree::{Content, MaskNode, Node, ShapeVector};
+pub(crate) use self::tree::{Content, MaskNode, Node, ShapePaint, ShapeVector};
 
 /// A page at one revision, immutable and cheap to clone.
 #[derive(Clone)]

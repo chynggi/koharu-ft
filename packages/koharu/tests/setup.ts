@@ -81,7 +81,7 @@ beforeEach(() => {
     canvasSelection: [],
     selectedPages: [],
     tool: 'select',
-    brush: { diameter: 48, color: '#FFFFFF' },
+    brush: { diameter: 48, color: '#FFFFFF', ramp: null },
     panel: 'layers',
     storyHover: null,
     processingScope: 'selected-pages',

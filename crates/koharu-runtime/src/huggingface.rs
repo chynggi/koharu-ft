@@ -94,7 +94,7 @@ impl Repository {
 
     fn path(&self, name: &str) -> PathBuf {
         store::root()
-            .join("huggingface")
+            .join("hugging-face")
             .join(self.kind.plural())
             .join(self.id.replace(['/', '\\'], "--"))
             .join("snapshots")

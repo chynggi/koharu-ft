@@ -9,13 +9,17 @@ export const detectors: Record<Detector, string> = {
 
 export const recognizers: Record<Recognizer, string> = {
   'manga-ocr-ar': 'Manga OCR AR',
+  'manga-ocr-cpt-flex': 'Manga OCR CPT-flex',
   'baberu-ocr': 'Baberu OCR',
   'hayai-ocr': 'Hayai OCR',
 }
 
 export const inpainters: Record<Inpainter, string> = {
   lama: 'LaMa',
+  'manga-inpainting': 'Manga Inpainting',
+  'mi-gan': 'MI-GAN',
   'rorem-mixed': 'RORem',
+  powerpaint: 'PowerPaint',
   'flux3-klein': 'FLUX.3 Klein',
   'moss-image': 'MOSS-Image',
   'qwen-image': 'Qwen-Image 2.1',

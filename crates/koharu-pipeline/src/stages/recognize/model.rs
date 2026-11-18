@@ -1,5 +1,8 @@
 use image::DynamicImage;
-use koharu_ml::{baberu_ocr::BaberuOcr, hayai_ocr::HayaiOcr, manga_ocr_ar::MangaOcrAr};
+use koharu_ml::{
+    baberu_ocr::BaberuOcr, hayai_ocr::HayaiOcr, manga_ocr_ar::MangaOcrAr,
+    manga_ocr_cpt::MangaOcrCptFlex,
+};
 use koharu_runtime::Device;
 use serde::{Deserialize, Serialize};
 use strum::{Display, VariantArray};
@@ -14,6 +17,8 @@ pub enum Recognizer {
     #[default]
     #[strum(to_string = "Manga OCR AR")]
     MangaOcrAr,
+    #[strum(to_string = "Manga OCR CPT-flex")]
+    MangaOcrCptFlex,
     #[strum(to_string = "Baberu OCR")]
     BaberuOcr,
     #[strum(to_string = "Hayai OCR")]
@@ -42,6 +47,15 @@ impl Recognize for MangaOcrAr {
     }
 }
 
+impl Recognize for MangaOcrCptFlex {
+    fn inference(&self, images: &[DynamicImage]) -> anyhow::Result<Vec<String>> {
+        MangaOcrCptFlex::inference(self, images)
+    }
+    fn language(&self) -> &'static str {
+        "ja"
+    }
+}
+
 impl Recognize for BaberuOcr {
     fn inference(&self, images: &[DynamicImage]) -> anyhow::Result<Vec<String>> {
         BaberuOcr::inference(self, images)
@@ -65,6 +79,7 @@ impl Recognize for HayaiOcr {
 pub(super) async fn load(model: Recognizer, device: &'static Device) -> anyhow::Result<Model> {
     Ok(match model {
         Recognizer::MangaOcrAr => Box::new(MangaOcrAr::load(device).await?),
+        Recognizer::MangaOcrCptFlex => Box::new(MangaOcrCptFlex::load(device).await?),
         Recognizer::BaberuOcr => Box::new(BaberuOcr::load(device).await?),
         Recognizer::HayaiOcr => Box::new(HayaiOcr::load(device).await?),
     })

@@ -32,7 +32,7 @@ pub struct RunId(pub u64);
 /// A run was queued, a stage started or finished on a page, or a run ended.
 /// A stage starts when the GPU takes it, or for a hosted translation when
 /// it's sent.
-#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 // Named apart from the agent's own `Event`, which crosses to the interface
 // too; JSON carries no container name.
 #[serde(rename = "PipelineEvent", tag = "kind", rename_all = "snake_case")]
@@ -59,7 +59,7 @@ pub enum Event {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
     Done,

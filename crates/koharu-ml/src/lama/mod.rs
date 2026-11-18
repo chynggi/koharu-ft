@@ -14,6 +14,7 @@ use image::{DynamicImage, GrayImage, RgbImage};
 use koharu_runtime::Repository;
 use koharu_torch::{Device, Kind, Tensor};
 
+pub(crate) use self::processor::{boxes_from_mask, crop_box};
 use self::{config::FFCResNetGeneratorConfig, model::Model};
 
 const REPOSITORY: Repository = Repository::model(

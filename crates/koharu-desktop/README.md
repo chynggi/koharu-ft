@@ -53,8 +53,7 @@ do: with the scene's own queries and edits, its undo and redo, and its history.
   lists it. A project's name is its file's name, so a name that isn't a file
   name on every platform is refused rather than changed.
 - **Where it lives.** A Windows release build keeps it in the folder Koharu is
-  installed in, beside the model store, so it holds Koharu's program, models,
-  and projects together; a per-user install goes to the user's own
+  installed in, alongside the program; a per-user install goes to the user's own
   `AppData\Local` [Tauri installer]. That folder isn't writable on
   macOS or Linux [Tauri app directories], so there it's the app's local data
   folder, and so is it in debug builds, which then share the installed app's

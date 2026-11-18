@@ -1,7 +1,8 @@
 'use client'
 
-import { ChevronDown } from 'lucide-react'
-import { type ReactNode, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, Eraser } from 'lucide-react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ModelPicker } from '@/components/controls/ModelPicker'
@@ -12,16 +13,20 @@ import {
   PreferenceRow,
   PreferenceSection,
 } from '@/components/preferences/PreferenceFields'
+import { call } from '@/lib/backend'
 import { modelName, orderedLanguageChoices, REASONING, vendorOf } from '@/lib/translation'
-import type {
-  Detector,
-  Inpainter,
-  Model,
-  PipelineConfig,
-  Recognizer,
-  TranslatorConfig,
+import {
+  commands,
+  type Detector,
+  type Inpainter,
+  type Model,
+  type PipelineConfig,
+  type Recognizer,
+  type TranslatorConfig,
 } from '@koharu/ipc/protocol'
 import { Badge } from '@koharu/ui/components/badge'
+import { Button } from '@koharu/ui/components/button'
+import { Input } from '@koharu/ui/components/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@koharu/ui/components/popover'
 import {
   Select,
@@ -147,7 +152,88 @@ export function PipelinePreferences({
           onChange={(next) => onChange({ ...value, translator: next })}
         />
       </Stage>
+      <RemoteServer
+        url={value.remote?.url ?? ''}
+        onChange={(url) => onChange({ ...value, remote: url ? { url } : null })}
+      />
     </PreferencePage>
+  )
+}
+
+/** The processing server runs go to, the stages' models above running there: its address, kept
+ * with the settings, and its token, kept as an API key is. */
+function RemoteServer({ url, onChange }: { url: string; onChange: (url: string) => void }) {
+  const { t } = useTranslation()
+  const [address, setAddress] = useState(url)
+  const [token, setToken] = useState('')
+  const stored = useQuery({
+    queryKey: ['server-token'],
+    queryFn: () => call(commands.hasServerToken),
+  })
+  useEffect(() => setAddress(url), [url])
+
+  const storeToken = (next: string | null) =>
+    void call(commands.setServerToken, next)
+      .then(() => {
+        setToken('')
+        return stored.refetch()
+      })
+      .catch(() => undefined)
+
+  return (
+    <PreferenceSection
+      title={t('settings.pipeline.remote.title')}
+      description={t('settings.pipeline.remote.description')}
+    >
+      <PreferenceRow title={t('settings.pipeline.remote.url')}>
+        <Input
+          aria-label={t('settings.pipeline.remote.url')}
+          type='url'
+          spellCheck={false}
+          placeholder='http://192.168.0.10:47823'
+          className='h-8 w-72 text-[12px]'
+          value={address}
+          onChange={(event) => setAddress(event.currentTarget.value)}
+          onBlur={() => address.trim() !== url && onChange(address.trim())}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+          }}
+        />
+      </PreferenceRow>
+      <PreferenceRow title={t('settings.pipeline.remote.token')}>
+        <div className='flex w-72 gap-2'>
+          <Input
+            aria-label={t('settings.pipeline.remote.token')}
+            type='text'
+            autoComplete='off'
+            spellCheck={false}
+            placeholder={
+              stored.data
+                ? t('settings.providers.configured')
+                : t('settings.providers.notConfigured')
+            }
+            className='h-8 min-w-0 flex-1 text-[12px] [-webkit-text-security:disc] [&::placeholder]:[-webkit-text-security:none]'
+            value={token}
+            onChange={(event) => setToken(event.currentTarget.value)}
+            onBlur={() => token && storeToken(token)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+            }}
+          />
+          {stored.data && (
+            <Button
+              type='button'
+              variant='outline'
+              size='icon'
+              aria-label={t('settings.pipeline.remote.clearToken')}
+              onClick={() => storeToken(null)}
+            >
+              <Eraser />
+            </Button>
+          )}
+        </div>
+      </PreferenceRow>
+    </PreferenceSection>
   )
 }
 

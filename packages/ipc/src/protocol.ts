@@ -47,7 +47,7 @@ export type Align = 'start' | 'center' | 'end' | 'justify'
  */
 export type Anchor = 'start' | 'center' | 'end'
 
-export type Answer = ProjectAnswer | Page | Layer | LayerId[] | History
+export type Answer = ProjectAnswer | Page | Layer | LayerId[] | History | TextMatch[]
 
 /**
  *  A painted area of a page: a byte a pixel over `rect`, in page pixels,
@@ -134,6 +134,8 @@ export type Brush = {
   /**  In page pixels. */
   diameter: number
   color: Rgba
+  /**  What the draw tool's colour fades to, if it fades. */
+  ramp?: Ramp | null
 }
 
 /**
@@ -173,7 +175,31 @@ export type CharStyle = {
   fill?: Rgba | null
   stroke?: Rgba | null
   stroke_width?: number | null
+  stroke_position?: StrokePosition | null
+  stroke_join?: StrokeJoin | null
+  outer_stroke?: Rgba | null
+  outer_stroke_width?: number | null
 }
+
+/**
+ *  A colour adjustment of a picture's pixels, as Photoshop's Image >
+ *  Adjustments. Each keeps alpha, and a clear pixel its colour too, since its
+ *  colour shows if its alpha is raised later.
+ */
+export type ColorAdjust =
+  /**  `delta`, in -255..=255, added to each colour channel. */
+  | { kind: 'brightness'; delta: number }
+  /**
+   *  The distance from mid-grey scaled by `percent`, in -100..=100; 0
+   *  changes nothing and 100 doubles it.
+   */
+  | { kind: 'contrast'; percent: number }
+  /**  The channels from `low` to `high` stretched onto 0..=255. */
+  | { kind: 'levels'; low: number; high: number }
+  /**  The hue turned by `degrees`, in -180..=180. */
+  | { kind: 'hue'; degrees: number }
+  /**  Rec. 709 luminance in each colour channel. */
+  | { kind: 'grayscale' }
 
 /**  The app's theme colours the canvas draws with. */
 export type Colors = {
@@ -265,6 +291,23 @@ export type Event =
 
 export type ExportFormat = 'png' | 'psd' | 'cbz'
 
+export type ExportOptions = {
+  formats: ExportFormat[]
+  /**
+   *  A file's name without its extension: `{index}`, `{index:04}`, and
+   *  `{label}`, the page's name, between literal text.
+   */
+  pattern: string
+  /**  PNG and PSD files each in a folder of their own. */
+  subfolders: boolean
+}
+
+/**  How many of an export's pages are written. */
+export type ExportProgress = {
+  completed: number
+  total: number
+}
+
 export type FillRule = 'non_zero' | 'even_odd'
 
 /**  How a box's text meets the box. */
@@ -332,6 +375,41 @@ export type Frame =
       }
     } & { box?: never })
 
+export type Gradient = {
+  kind: GradientKind
+  stops: GradientStop[]
+  extend?: PaintExtend
+}
+
+export type GradientKind =
+  /**  Along the line from `start` to `end`. */
+  | ({
+      linear: {
+        start: [number, number]
+        end: [number, number]
+      }
+    } & { radial?: never; sweep?: never })
+  /**  Out from `center`; `radius` is a fraction of the bounds' width. */
+  | ({
+      radial: {
+        center: [number, number]
+        radius: number
+      }
+    } & { linear?: never; sweep?: never })
+  /**  Around `center`, clockwise from `start_degrees` to `end_degrees`. */
+  | ({
+      sweep: {
+        center: [number, number]
+        start_degrees: number
+        end_degrees: number
+      }
+    } & { linear?: never; radial?: never })
+
+export type GradientStop = {
+  offset: number
+  color: Rgba
+}
+
 /**  A folder of layers, drawn first to last. */
 export type Group = Record<string, never>
 
@@ -367,7 +445,15 @@ export type ImportSource =
   | 'folder'
 
 /**  The inpainters, by id in the section and by name. */
-export type Inpainter = 'lama' | 'rorem-mixed' | 'flux3-klein' | 'moss-image' | 'qwen-image'
+export type Inpainter =
+  | 'lama'
+  | 'manga-inpainting'
+  | 'mi-gan'
+  | 'rorem-mixed'
+  | 'powerpaint'
+  | 'flux3-klein'
+  | 'moss-image'
+  | 'qwen-image'
 
 export type InpainterConfig = {
   model?: Inpainter
@@ -481,7 +567,7 @@ export type NewLayer = {
 } & Content
 
 /**  Why a gesture did nothing, for the app to say in the user's language. */
-export type Notice = 'eraser_needs_raster'
+export type Notice = 'eraser_needs_raster' | 'fill_needs_raster'
 
 export type Offset = {
   x: number
@@ -498,6 +584,16 @@ export type Op =
    *  becomes its background and gives it its size.
    */
   | { op: 'add_page'; id?: Ref | null; index: number; size?: Size | null; background?: Hash | null }
+  /**  Merge-patch a page's `name` and `chapter`. */
+  | { op: 'update_page'; page: Ref; patch: Value }
+  /**
+   *  Join two or more pages, taken in project order, side by side into a
+   *  new spread where the first of them was: right to left when `rtl`,
+   *  tops aligned. Their visible backgrounds become its background and
+   *  copies of their layers move with them; the originals go unless
+   *  `keep_originals`.
+   */
+  | { op: 'merge_pages'; pages: Ref[]; rtl: boolean; keep_originals?: boolean }
   /**
    *  Set or clear a page's background. A new file must be an image of the
    *  page's size.
@@ -522,9 +618,10 @@ export type Op =
   /**
    *  Copy a layer with everything inside it, its pixels, text, and
    *  attributes. The copy goes just above the original unless `index` says
-   *  where.
+   *  where; with `page`, it goes at the top level of that page, at its top
+   *  unless `index` says where.
    */
-  | { op: 'duplicate_layer'; layer: Ref; id?: Ref | null; index?: number | null }
+  | { op: 'duplicate_layer'; layer: Ref; id?: Ref | null; page?: Ref | null; index?: number | null }
   /**
    *  Move a layer within its page, to `index` counted after it is taken
    *  out.
@@ -551,6 +648,15 @@ export type Op =
    *  the block has none. Styling on unchanged characters is kept.
    */
   | { op: 'set_text'; layer: Ref; text: string }
+  /**  Replace every literal match in translations and text layers as one edit. */
+  | {
+      op: 'replace_text'
+      text: string
+      replacement: string
+      match_case?: boolean
+      /**  None selects the whole project. */
+      layers?: LayerId[] | null
+    }
   /**  Replace a text's spans, from the rich editor. */
   | { op: 'set_rich_text'; layer: Ref; spans: Span[] }
   /**
@@ -567,6 +673,8 @@ export type Op =
   | { op: 'write_pixels'; layer: Ref; rect: Rect; pixels: number[] }
   /**  Add an imported file, stored once by its content hash. */
   | { op: 'add_file'; bytes: number[] }
+  /**  Adjust the colours of a raster's or a block's `cleanup` pixels. */
+  | { op: 'adjust_colors'; layer: Ref; adjust: ColorAdjust }
 
 /**  An opacity, from 0 to 1. */
 export type Opacity = number
@@ -583,6 +691,8 @@ export type Outcome =
  */
 export type Page = {
   id: PageId
+  name?: string
+  chapter?: string | null
   size: Size
   background: Background | null
   /**  Drawn first to last. */
@@ -602,9 +712,13 @@ export type PageId = string
 /**  A page without its layers, which `get_page` answers. */
 export type PageSummary = {
   id: PageId
+  name: string
+  chapter: string | null
   size: Size
   background: Background | null
 }
+
+export type PaintExtend = 'pad' | 'repeat' | 'reflect'
 
 /**
  *  A panel of the page: what's read in it, drawn where it is, past the
@@ -622,11 +736,29 @@ export type Path = string
 /**  How a path's text meets the path: as a box's, but a path never grows. */
 export type PathFit = 'shrink' | 'none' | 'best'
 
+/**
+ *  An imported image repeated across the shape: a tile's top-left sits at
+ *  `origin`, it is `scale` of the bounds' width wide, and it turns clockwise
+ *  by `rotation_degrees` about its top-left.
+ */
+export type Pattern = {
+  file: Hash
+  origin: [number, number]
+  scale: number
+  rotation_degrees: number
+  extend?: PaintExtend
+}
+
 export type PipelineConfig = {
   detector?: DetectorConfig
   recognizer?: RecognizerConfig
   inpainter?: InpainterConfig
   translator?: TranslatorConfig
+  /**
+   *  The processing server runs go to, with their settings; `None` runs
+   *  them here.
+   */
+  remote?: RemoteConfig | null
 }
 
 /**
@@ -683,8 +815,28 @@ export type Query =
    *  and text layer that shows.
    */
   | { query: 'get_story'; page: PageId }
+  /**  Find literal text in translations and text layers across the project. */
+  | { query: 'find_text'; text: string; match_case?: boolean }
   /**  Get the undo and redo labels. */
   | { query: 'get_history' }
+
+/**
+ *  A second colour the draw tool's paint fades to from the brush colour,
+ *  every channel alpha included.
+ */
+export type Ramp = {
+  to: Rgba
+  along: RampAlong
+}
+
+/**  Where a ramp runs. */
+export type RampAlong =
+  /**  From the stroke's start to its end. */
+  | 'stroke'
+  /**  Across the page from left to right, so strokes continue one ramp. */
+  | 'horizontal'
+  /**  Down the page from top to bottom. */
+  | 'vertical'
 
 export type RangeInclusive<T> = {
   start: T
@@ -697,7 +849,7 @@ export type Raster = {
 }
 
 /**  The recognizers, by id in the section and by name. */
-export type Recognizer = 'manga-ocr-ar' | 'baberu-ocr' | 'hayai-ocr'
+export type Recognizer = 'manga-ocr-ar' | 'manga-ocr-cpt-flex' | 'baberu-ocr' | 'hayai-ocr'
 
 export type RecognizerConfig = {
   model?: Recognizer
@@ -716,6 +868,12 @@ export type Rect = {
  *  same edit.
  */
 export type Ref = string
+
+/**  Where a server runs. */
+export type RemoteConfig = {
+  /**  Its address, as `http://host:port`. */
+  url: string
+}
 
 export type RendererConfig = {
   font_families?: string[]
@@ -755,9 +913,20 @@ export type RunId = number
 export type Shape = {
   path: Path
   fill_rule?: FillRule
-  fill?: Rgba | null
+  fill?: ShapeFill | null
   stroke?: Stroke | null
 }
+
+/**
+ *  A shape's paint. A solid uses the scene's numeric RGBA representation.
+ *  Gradient and pattern coordinates are normalized to the shape's path
+ *  bounds: `(0, 0)` is its top-left and `(1, 1)` its bottom-right, so moving
+ *  or reshaping the path keeps the paint on it.
+ */
+export type ShapeFill =
+  | Rgba
+  | ({ gradient: Gradient } & { pattern?: never })
+  | ({ pattern: Pattern } & { gradient?: never })
 
 /**
  *  What a sign-in asks of the user: to sign in on a page, entering a code
@@ -801,6 +970,12 @@ export type Stroke = {
   width: number
 }
 
+/**  How a glyph outline turns a corner. */
+export type StrokeJoin = 'round' | 'miter' | 'bevel'
+
+/**  Where an outline falls relative to the glyph contour. */
+export type StrokePosition = 'outside' | 'center' | 'inside'
+
 /**
  *  What a run works on. It runs every stage it's given on everything it
  *  names, replacing what's there, and never a stage it isn't given.
@@ -840,6 +1015,13 @@ export type Text = {
   transform?: Transform
 }
 
+export type TextMatch = {
+  page: PageId
+  layer: LayerId
+  text: string
+  count: number
+}
+
 /**  A text's character and paragraph values. */
 export type TextStyle = {
   chars?: CharStyle
@@ -853,8 +1035,11 @@ export type Tool =
   | 'select'
   | 'direct_select'
   | 'text'
+  | 'rectangle'
+  | 'ellipse'
   | 'draw'
   | 'eraser'
+  | 'bucket'
   | 'color_picker'
   | 'remove'
   | 'pan'
@@ -961,6 +1146,11 @@ export const commands = {
   /** Stores `vendor`'s API key, encrypted with the key the OS credential store keeps, or forgets it for `None`. */
   setApiKey: (vendor: string, key: string | null) =>
     invoke<null>('set_api_key', { vendor, key }, { headers: headers() }),
+  /** Whether the processing server's token is stored. */
+  hasServerToken: () => invoke<boolean>('has_server_token', {}, { headers: headers() }),
+  /** Stores the processing server's token, encrypted as an API key is, or forgets it for `None`. */
+  setServerToken: (token: string | null) =>
+    invoke<null>('set_server_token', { token }, { headers: headers() }),
   /** Signs in to `vendor`, one that signs in, in place of the sign-in waiting; `on_prompt` hears what the user must do. A stopped sign-in ends without one. */
   signIn: (vendor: string, onPrompt: Channel<SignInPrompt>) =>
     invoke<null>('sign_in', { vendor, onPrompt }, { headers: headers() }),
@@ -972,11 +1162,20 @@ export const commands = {
   /** `family`'s name set in it, as WebP. */
   getFontPreview: (family: string) =>
     invoke<ArrayBuffer>('get_font_preview', { family }, { headers: headers() }),
+  /** Picks an image and fills the shapes `layers` with it, each tile at the image's own size from the shape's top-left, as Photoshop's pattern fill at 100%, in one undo step. */
+  fillWithPattern: (layers: LayerId[]) =>
+    invoke<null>('fill_with_pattern', { layers }, { headers: headers() }),
   /** Picks files or a folder and adds their pages after the project's last: the files in name order, numbers by value, an archive's or a PDF's own pages in theirs. */
   import: (source: ImportSource) => invoke<null>('import', { source }, { headers: headers() }),
-  /** Picks where the open project's pages go, and writes them there. `labels` names a PSD's layers the scene names nothing, in the interface's language. */
-  export: (format: ExportFormat, labels: Labels) =>
-    invoke<null>('export', { format, labels }, { headers: headers() }),
+  /** Picks a folder and writes `pages` of the open project there, in project order; `on_progress` hears each page written. `labels` names a PSD's layers the scene names nothing, in the interface's language. The project is the one open when this starts. A stopped export keeps the files it wrote and no unfinished archive. */
+  export: (
+    pages: PageId[],
+    options: ExportOptions,
+    labels: Labels,
+    onProgress: Channel<ExportProgress>,
+  ) => invoke<null>('export', { pages, options, labels, onProgress }, { headers: headers() }),
+  /** Stops the export writing after the page it's on. */
+  stopExport: () => invoke<null>('stop_export', {}, { headers: headers() }),
   /** The canvas element's rectangle, in CSS pixels from the window's corner. */
   setViewport: (x: number, y: number, width: number, height: number) =>
     invoke<null>('set_viewport', { x, y, width, height }, { headers: headers() }),

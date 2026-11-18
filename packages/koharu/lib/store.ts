@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 
 import type {
+  ExportProgress,
   LayerId,
   Model,
   PageId,
@@ -11,6 +12,7 @@ import type {
   Rgba,
   RunId,
   Size,
+  RampAlong,
   Stage,
   Tool,
   Transfer,
@@ -30,14 +32,17 @@ export function isBrushTool(tool: CanvasTool): boolean {
 }
 
 /** Each tool's key, Photoshop's for its counterpart: the Move tool's V, the Direct Selection
- * tool's A, the Type tool's T, the Brush's B, the Eraser's E, the Eyedropper's I, the Remove
- * tool's J, and the Hand's H. */
+ * tool's A, the Type tool's T, the shape tools' U, the Brush's B, the Eraser's E, the Paint
+ * Bucket's G, the Eyedropper's I, the Remove tool's J, and the Hand's H. A key two tools share goes on to the next of them. */
 export const toolKeys: Record<CanvasTool, string> = {
   select: 'v',
   direct_select: 'a',
   text: 't',
+  rectangle: 'u',
+  ellipse: 'u',
   draw: 'b',
   eraser: 'e',
+  bucket: 'g',
   color_picker: 'i',
   remove: 'j',
   pan: 'h',
@@ -46,6 +51,8 @@ export const toolKeys: Record<CanvasTool, string> = {
 export interface CanvasBrush {
   diameter: number
   color: string
+  /** The colour the draw tool fades to, and where; `null` paints one colour. */
+  ramp: { to: string; along: RampAlong } | null
 }
 
 /** Where the page shows: a page point `p` sits at `p * zoom + (x, y)` in CSS pixels from the
@@ -57,7 +64,7 @@ export interface Camera {
 }
 
 /** The right pane's tabs. */
-export type Panel = 'layers' | 'story' | 'agent'
+export type Panel = 'layers' | 'story' | 'agent' | 'find'
 export type PipelineScope = 'page' | 'selected-pages' | 'project'
 export const pipelineStages: readonly Stage[] = ['detect', 'recognize', 'inpaint', 'translate']
 
@@ -80,6 +87,8 @@ interface KoharuStore {
   models: Model[]
   jobs: Record<string, Job>
   downloads: Record<string, Transfer>
+  /** The export writing, by its pages written; `null` when none is. */
+  exporting: ExportProgress | null
   camera: Camera
   /** The colour the canvas's picker picked last, numbered so a repeat counts. */
   picked: { color: string; serial: number } | null
@@ -110,6 +119,7 @@ interface KoharuStore {
   setBrush: (brush: CanvasBrush) => void
   dismissJob: (id: string) => void
   dismissDownload: (id: number) => void
+  setExporting: (exporting: ExportProgress | null) => void
 }
 
 export const useKoharuStore = create<KoharuStore>()((set) => ({
@@ -118,13 +128,14 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   models: [],
   jobs: {},
   downloads: {},
+  exporting: null,
   camera: { zoom: 1, x: 0, y: 0 },
   picked: null,
   selectedLayers: [],
   canvasSelection: [],
   selectedPages: [],
   tool: 'select',
-  brush: { diameter: 48, color: '#FFFFFF' },
+  brush: { diameter: 48, color: '#FFFFFF', ramp: null },
   panel: 'layers',
   storyHover: null,
   processingScope: 'selected-pages',
@@ -147,6 +158,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
       delete jobs[id]
       return { jobs }
     }),
+  setExporting: (exporting) => set({ exporting }),
   dismissDownload: (id) =>
     set((state) => {
       const downloads = { ...state.downloads }

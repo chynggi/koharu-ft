@@ -1,9 +1,14 @@
-//! Export: every page as PNG or PSD files in a folder, or as a CBZ of PNGs.
+//! Export: pages as PNG or PSD files in a folder, and as a CBZ of PNGs there,
+//! named by a filename pattern.
 
 use std::{
+    collections::HashSet,
     io::{Cursor, Write as _},
-    path::Path,
-    sync::Arc,
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::Context as _;
@@ -11,16 +16,20 @@ use fs_err::File;
 use image::ImageFormat;
 use koharu_psd::Labels;
 use koharu_renderer::Frame;
-use koharu_scene::PageId;
-use serde::Deserialize;
+use koharu_scene::{PageId, Session};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{State, Window};
+use tauri::{State, Window, ipc::Channel};
 use tauri_runtime_cef::CefRuntime;
 
+use self::naming::{Names, Template};
 use super::Result;
 use crate::app::App;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Type)]
+mod naming;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Png,
@@ -28,82 +37,191 @@ pub enum ExportFormat {
     Cbz,
 }
 
-/// Picks where the open project's pages go, and writes them there. `labels`
-/// names a PSD's layers the scene names nothing, in the interface's language.
+#[derive(Clone, Debug, Deserialize, Type)]
+pub struct ExportOptions {
+    pub formats: Vec<ExportFormat>,
+    /// A file's name without its extension: `{index}`, `{index:04}`, and
+    /// `{label}`, the page's name, between literal text.
+    pub pattern: String,
+    /// PNG and PSD files each in a folder of their own.
+    pub subfolders: bool,
+}
+
+/// How many of an export's pages are written.
+#[derive(Clone, Copy, Debug, Serialize, Type)]
+pub struct ExportProgress {
+    pub completed: u32,
+    pub total: u32,
+}
+
+/// The export writing, which `stop_export` stops after the page it's on.
+static EXPORTING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+
+/// Picks a folder and writes `pages` of the open project there, in project
+/// order; `on_progress` hears each page written. `labels` names a PSD's
+/// layers the scene names nothing, in the interface's language. The project
+/// is the one open when this starts. A stopped export keeps the files it
+/// wrote and no unfinished archive.
 #[tauri::command]
 #[specta::specta]
 pub async fn export(
     app: State<'_, Arc<App>>,
     window: Window<CefRuntime>,
-    format: ExportFormat,
+    pages: Vec<PageId>,
+    options: ExportOptions,
     labels: Labels,
+    on_progress: Channel<ExportProgress>,
 ) -> Result<()> {
-    let name = app
-        .project
-        .lock()
-        .as_ref()
-        .map(|project| project.name.clone())
-        .context("no project is open")?;
-    let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
-    let destination = match format {
-        ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
-        ExportFormat::Cbz => {
-            dialog
-                .set_file_name(format!("{name}.cbz"))
-                .add_filter("CBZ", &["cbz"])
-                .save_file()
-                .await
-        }
+    let (name, session) = {
+        let project = app.project.lock();
+        let project = project.as_ref().context("no project is open")?;
+        (project.name.clone(), Arc::clone(&project.session))
     };
-    let Some(destination) = destination.map(|picked| picked.path().to_owned()) else {
+    let template = Template::parse(&options.pattern)?;
+    if options.formats.is_empty() || pages.is_empty() {
+        return Err(anyhow::anyhow!("an export needs a format and a page").into());
+    }
+    let Some(folder) = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .pick_folder()
+        .await
+        .map(|picked| picked.path().to_owned())
+    else {
         return Ok(());
     };
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Some(going) = EXPORTING.lock().replace(Arc::clone(&stop)) {
+        going.store(true, Ordering::Relaxed);
+    }
     let app = Arc::clone(&app);
-    Ok(tokio::task::spawn_blocking(move || write(&app, format, &labels, &destination)).await??)
+    let going = Arc::clone(&stop);
+    let written = tokio::task::spawn_blocking(move || {
+        let job = Job {
+            app: &app,
+            session: &session,
+            template: &template,
+            options: &options,
+            labels: &labels,
+            stop: &stop,
+            on_progress: &on_progress,
+        };
+        job.write(&name, &pages, &folder)
+    })
+    .await;
+    EXPORTING
+        .lock()
+        .take_if(|current| Arc::ptr_eq(current, &going));
+    Ok(written??)
 }
 
-fn write(
-    app: &App,
-    format: ExportFormat,
-    labels: &Labels,
-    destination: &Path,
-) -> anyhow::Result<()> {
-    let session = app.session()?;
-    let pages: Vec<PageId> = session
-        .lock()
-        .project()
-        .pages()
-        .map(|page| page.id)
-        .collect();
-    let digits = pages.len().to_string().len().max(3);
-    let mut archive = match format {
-        ExportFormat::Cbz => Some(::zip::ZipWriter::new(File::create(destination)?)),
-        ExportFormat::Png | ExportFormat::Psd => None,
-    };
-    for (index, &page) in pages.iter().enumerate() {
-        let number = format!("{:0digits$}", index + 1);
-        let frame = app.renderer.render(&session.lock(), page)?;
-        match (format, &mut archive) {
-            (ExportFormat::Psd, _) => {
-                let psd = koharu_psd::export(&session.lock(), &app.renderer, page, labels)?;
-                fs_err::write(destination.join(format!("{number}.psd")), psd)?;
+/// Stops the export writing after the page it's on.
+#[tauri::command]
+#[specta::specta]
+pub fn stop_export() {
+    if let Some(going) = EXPORTING.lock().take() {
+        going.store(true, Ordering::Relaxed);
+    }
+}
+
+struct Job<'a> {
+    app: &'a App,
+    session: &'a Mutex<Session>,
+    template: &'a Template,
+    options: &'a ExportOptions,
+    labels: &'a Labels,
+    stop: &'a AtomicBool,
+    on_progress: &'a Channel<ExportProgress>,
+}
+
+impl Job<'_> {
+    fn write(&self, name: &str, pages: &[PageId], folder: &Path) -> anyhow::Result<()> {
+        let chosen: HashSet<PageId> = pages.iter().copied().collect();
+        // Each chosen page with its 1-based place in the project and its name.
+        let pages: Vec<(usize, PageId, String)> = {
+            let session = self.session.lock();
+            let project = session.project();
+            for &page in &chosen {
+                project.page(page)?;
             }
-            (_, Some(archive)) => {
-                // Already-compressed PNGs gain nothing from deflate.
-                let options = ::zip::write::SimpleFileOptions::default()
-                    .compression_method(::zip::CompressionMethod::Stored);
-                archive.start_file(format!("{number}.png"), options)?;
-                archive.write_all(&png(&frame)?)?;
+            project
+                .pages()
+                .enumerate()
+                .filter(|(_, page)| chosen.contains(&page.id))
+                .map(|(index, page)| (index + 1, page.id, page.name.clone()))
+                .collect()
+        };
+        let formats = &self.options.formats;
+        let png_files = formats.contains(&ExportFormat::Png);
+        let psd_files = formats.contains(&ExportFormat::Psd);
+        let directory = |extension: &str| -> anyhow::Result<PathBuf> {
+            let directory = match self.options.subfolders && png_files && psd_files {
+                true => folder.join(extension),
+                false => folder.to_owned(),
+            };
+            fs_err::create_dir_all(&directory)?;
+            Ok(directory)
+        };
+        let png_folder = png_files.then(|| directory("png")).transpose()?;
+        let psd_folder = psd_files.then(|| directory("psd")).transpose()?;
+        let archive_path = formats.contains(&ExportFormat::Cbz).then(|| {
+            folder.join(match sanitize_filename::sanitize(name.trim()) {
+                stem if stem.is_empty() => "project.cbz".to_owned(),
+                stem => format!("{stem}.cbz"),
+            })
+        });
+        let mut archive = archive_path
+            .as_ref()
+            .map(|path| anyhow::Ok(::zip::ZipWriter::new(File::create(path)?)))
+            .transpose()?;
+        let total = u32::try_from(pages.len()).unwrap_or(u32::MAX);
+        let _ = self.on_progress.send(ExportProgress {
+            completed: 0,
+            total,
+        });
+        // Names repeat across folders and the archive, but never within one.
+        let (mut png_names, mut psd_names, mut entry_names) =
+            (Names::default(), Names::default(), Names::default());
+        for (completed, (index, page, label)) in (1u32..).zip(pages) {
+            if self.stop.load(Ordering::Relaxed) {
+                drop(archive);
+                if let Some(path) = archive_path {
+                    fs_err::remove_file(path)?;
+                }
+                return Ok(());
             }
-            (_, None) => {
-                fs_err::write(destination.join(format!("{number}.png")), png(&frame)?)?;
+            let stem = self.template.render(index, &label)?;
+            if png_folder.is_some() || archive.is_some() {
+                let png = png(&self.app.renderer.render(&self.session.lock(), page)?)?;
+                if let Some(directory) = &png_folder {
+                    let file = format!("{}.png", png_names.unique(stem.clone()));
+                    fs_err::write(directory.join(file), &png)?;
+                }
+                if let Some(archive) = &mut archive {
+                    // Already-compressed PNGs gain nothing from deflate.
+                    let options = ::zip::write::SimpleFileOptions::default()
+                        .compression_method(::zip::CompressionMethod::Stored);
+                    archive
+                        .start_file(format!("{}.png", entry_names.unique(stem.clone())), options)?;
+                    archive.write_all(&png)?;
+                }
             }
+            if let Some(directory) = &psd_folder {
+                let psd = koharu_psd::export(
+                    &self.session.lock(),
+                    &self.app.renderer,
+                    page,
+                    self.labels,
+                )?;
+                let file = format!("{}.psd", psd_names.unique(stem));
+                fs_err::write(directory.join(file), psd)?;
+            }
+            let _ = self.on_progress.send(ExportProgress { completed, total });
         }
+        if let Some(archive) = archive {
+            archive.finish()?;
+        }
+        Ok(())
     }
-    if let Some(archive) = archive {
-        archive.finish()?;
-    }
-    Ok(())
 }
 
 fn png(frame: &Frame) -> anyhow::Result<Vec<u8>> {

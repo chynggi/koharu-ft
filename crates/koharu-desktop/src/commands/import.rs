@@ -1,6 +1,6 @@
 //! Pages from files: images, ZIP, CBZ, RAR, and CBR archives of them, and PDFs
 //! rendered with hayro, in name order. Each becomes a file of the project and
-//! a page made from it.
+//! a page made from it. An image also becomes a shape's pattern.
 
 use std::{
     cell::RefCell,
@@ -18,7 +18,7 @@ use hayro::{
     hayro_syntax::Pdf, render, vello_cpu::color::palette::css::WHITE,
 };
 use image::ImageFormat;
-use koharu_scene::{Edit, Hash, Op};
+use koharu_scene::{Edit, Hash, LayerId, Op, Ref};
 use rars::ArchiveReader;
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -151,6 +151,67 @@ pub async fn import(
         }
         app.edit(Edit {
             label: "import".to_owned(),
+            ops,
+        })?;
+        Ok(())
+    })
+    .await??)
+}
+
+/// The pattern images the file dialog offers.
+const PATTERNS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+
+/// Picks an image and fills the shapes `layers` with it, each tile at the
+/// image's own size from the shape's top-left, as Photoshop's pattern fill at
+/// 100%, in one undo step.
+#[tauri::command]
+#[specta::specta]
+pub async fn fill_with_pattern(
+    app: State<'_, Arc<App>>,
+    window: Window<CefRuntime>,
+    layers: Vec<LayerId>,
+) -> Result<()> {
+    let picked = rfd::AsyncFileDialog::new()
+        .set_parent(&window)
+        .add_filter("Images", &PATTERNS)
+        .pick_file()
+        .await;
+    let Some(file) = picked else {
+        return Ok(());
+    };
+    let path = file.path().to_owned();
+    let app = Arc::clone(&app);
+    Ok(tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let bytes = fs_err::read(&path)?;
+        let (width, _) = image::ImageReader::new(io::Cursor::new(&bytes))
+            .with_guessed_format()?
+            .into_dimensions()
+            .with_context(|| format!("{} isn't an image", path.display()))?;
+        let file = Hash::of(&bytes);
+        let project = app.session()?.lock().project();
+        let mut ops = vec![Op::AddFile { bytes }];
+        for layer in layers {
+            let koharu_scene::Content::Shape(shape) = &project.layer(layer)?.content else {
+                bail!("only a shape takes a pattern");
+            };
+            let bounds = kurbo::Shape::bounding_box(&kurbo::BezPath::from(&shape.path));
+            // A merge patch would keep another kind's keys; the fill goes first.
+            ops.push(Op::UpdateLayer {
+                layer: Ref::from(layer),
+                patch: serde_json::json!({"fill": null}),
+            });
+            ops.push(Op::UpdateLayer {
+                layer: Ref::from(layer),
+                patch: serde_json::json!({"fill": {"pattern": {
+                    "file": file,
+                    "origin": [0.0, 0.0],
+                    "scale": f64::from(width) / bounds.width().max(1.0),
+                    "rotation_degrees": 0.0,
+                }}}),
+            });
+        }
+        app.edit(Edit {
+            label: "set_fill".to_owned(),
             ops,
         })?;
         Ok(())

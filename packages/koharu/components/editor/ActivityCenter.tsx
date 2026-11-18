@@ -7,13 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { call } from '@/lib/backend'
 import { usePages } from '@/lib/queries'
 import { useKoharuStore, type Job } from '@/lib/store'
-import { commands, type Transfer } from '@koharu/ipc/protocol'
+import { commands, type ExportProgress, type Transfer } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 
 export function ActivityCenter() {
   const { t } = useTranslation()
   const jobs = useKoharuStore((state) => state.jobs)
   const downloads = useKoharuStore((state) => state.downloads)
+  const exporting = useKoharuStore((state) => state.exporting)
   const activities = useMutationState({
     filters: { status: 'pending' },
     select: (mutation) => ({
@@ -31,7 +32,12 @@ export function ActivityCenter() {
   )
   const failedDownloads = Object.values(downloads).filter((download) => failure(download) !== null)
   const visibleDownloads = [...runningDownloads, ...failedDownloads]
-  if (activities.length === 0 && visibleJobs.length === 0 && visibleDownloads.length === 0)
+  if (
+    activities.length === 0 &&
+    visibleJobs.length === 0 &&
+    visibleDownloads.length === 0 &&
+    exporting === null
+  )
     return null
 
   return (
@@ -68,6 +74,7 @@ export function ActivityCenter() {
       {visibleJobs.map((job) => (
         <JobItem key={job.id} job={job} />
       ))}
+      {exporting && <ExportItem exporting={exporting} />}
     </aside>
   )
 }
@@ -93,6 +100,34 @@ function DownloadGroup({ downloads }: { downloads: Transfer[] }) {
           {percent !== null ? `${percent}%` : null}
         </span>
         <span aria-hidden='true' />
+        <div className='col-start-2 col-end-4'>
+          <Progress value={percent} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ExportItem({ exporting }: { exporting: ExportProgress }) {
+  const { t } = useTranslation()
+  const percent = progress(exporting.completed, exporting.total)
+  return (
+    <div role='status' className='border-b p-3 last:border-b-0'>
+      <div className='grid grid-cols-[1rem_minmax(0,1fr)_2.25rem_1.5rem] items-start gap-x-2.5'>
+        <Download className='mt-0.5 size-3.5 justify-self-center text-primary' />
+        <span className='truncate text-[12px] font-medium'>{t('menu.export')}</span>
+        <span className='pt-0.5 text-right text-[10px] tabular-nums'>
+          {percent !== null ? `${percent}%` : null}
+        </span>
+        <Button
+          size='icon-xs'
+          variant='ghost'
+          className='-mt-1'
+          aria-label={t('activity.stop')}
+          onClick={() => void call(commands.stopExport).catch(() => undefined)}
+        >
+          <Square className='size-2.5 fill-current' />
+        </Button>
         <div className='col-start-2 col-end-4'>
           <Progress value={percent} />
         </div>

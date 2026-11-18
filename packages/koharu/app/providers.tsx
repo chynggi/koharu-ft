@@ -8,6 +8,7 @@ import { StartupView } from '@/components/app/StartupView'
 import { Updater } from '@/components/app/Updater'
 import ClientOnly from '@/components/ClientOnly'
 import { refreshModels, refreshPreferences } from '@/lib/backend'
+import '@/lib/forkPreferences'
 import i18n from '@/lib/i18n'
 import { pageKey, projectKey, queryClient, refresh, type ProjectView } from '@/lib/queries'
 import {

@@ -269,3 +269,42 @@ fn files_go_at_reopening_when_nothing_names_them() {
     assert!(session.file(&hscan).is_ok(), "a background names its file");
     assert_eq!(session.history(), History::default());
 }
+
+#[test]
+fn a_shape_pattern_names_its_file() {
+    let (dir, mut session, page) = session();
+    let tile = png(2, 2);
+    let file = Hash::of(&tile);
+    let pattern = |file: Hash| {
+        json!({"kind": "shape", "path": "M0 0 L8 0 L8 8 Z",
+            "fill": {"pattern": {"file": file, "origin": [0.0, 0.0], "scale": 0.25, "rotation_degrees": 0.0}}})
+    };
+    let error = apply(
+        &mut session,
+        vec![json!({"op": "add_layer", "page": page, "index": 0, "layer": pattern(file)})],
+    )
+    .err()
+    .expect("a pattern of a file not added is refused");
+    assert!(matches!(error, Error::Invalid { .. }), "{error}");
+
+    let gradient = json!({"kind": "shape", "path": "M0 0 L8 0 L8 8 Z",
+        "fill": {"gradient": {"kind": {"linear": {"start": [0.0, 0.0], "end": [0.0, 0.0]}},
+            "stops": [{"offset": 0.0, "color": [0.0, 0.0, 0.0, 1.0]}, {"offset": 1.0, "color": [1.0, 1.0, 1.0, 1.0]}]}}});
+    let error = apply(
+        &mut session,
+        vec![json!({"op": "add_layer", "page": page, "index": 0, "layer": gradient})],
+    )
+    .err()
+    .expect("a gradient with no length is refused");
+    assert!(matches!(error, Error::Invalid { .. }), "{error}");
+
+    session
+        .apply(edit(vec![Op::AddFile {
+            bytes: tile.clone(),
+        }]))
+        .expect("a file");
+    add(&mut session, page, None, pattern(file));
+    drop(session);
+    let session = Session::open(dir.path().join("test.khr")).expect("it opens");
+    assert_eq!(session.file(&file).expect("the pattern's file"), tile);
+}

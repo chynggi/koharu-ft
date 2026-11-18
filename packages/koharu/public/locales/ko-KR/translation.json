@@ -1,4 +1,18 @@
 {
+  "find": {
+    "matchCase": "대소문자 구분",
+    "noResults": "이 텍스트가 포함된 번역이 없습니다.",
+    "page": "{{number}}페이지",
+    "placeholder": "번역에서 찾기",
+    "replace": "바꾸기",
+    "replaceAll": "모두 바꾸기",
+    "replacePlaceholder": "바꿀 내용",
+    "searching": "찾는 중…",
+    "summary": "{{pages}}개 페이지에서 {{count}}건",
+    "summary_one": "{{pages}}개 페이지에서 {{count}}건",
+    "summary_other": "{{pages}}개 페이지에서 {{count}}건",
+    "title": "찾기"
+  },
   "about": {
     "author": "작성자",
     "description": "만화 번역 도구",
@@ -16,6 +30,17 @@
     "processingFailed": "처리에 실패했습니다.",
     "stop": "중지",
     "title": "활동"
+  },
+  "adjust": {
+    "apply": "적용",
+    "brightness_contrast": "명도/대비",
+    "brightness": "명도",
+    "contrast": "대비",
+    "levels": "레벨",
+    "levelsLow": "입력 검정",
+    "levelsHigh": "입력 흰색",
+    "hue": "색조",
+    "grayscale": "채도 감소"
   },
   "agent": {
     "applying": "프로젝트 변경 사항 적용 중…",
@@ -38,7 +63,8 @@
   "canvas": {
     "empty": "시작할 페이지를 선택하세요.",
     "notice": {
-      "eraser_needs_raster": "지우려면 래스터 레이어를 선택하세요."
+      "eraser_needs_raster": "지우려면 래스터 레이어를 선택하세요.",
+      "fill_needs_raster": "채우려면 래스터 레이어를 선택하세요."
     },
     "typeText": "텍스트 입력"
   },
@@ -83,6 +109,8 @@
     "title": "피드백 보내기"
   },
   "fontPicker": {
+    "addFavorite": "{{family}}즐겨찾기에 추가",
+    "removeFavorite": "즐겨찾기에서 {{family}} 제거",
     "choose": "글꼴 선택",
     "fontCount": "글꼴 {{count}}개",
     "fontCount_one": "글꼴 {{count}}개",
@@ -95,14 +123,19 @@
     "close": "작업 내역 닫기",
     "opened": "열었을 때",
     "steps": {
+      "adjust_colors": "색상 조정",
+      "add_shape": "도형 추가",
       "add_text": "텍스트 추가",
       "delete_layers": "레이어 삭제",
       "delete_pages": "페이지 삭제",
       "detect": "감지",
+      "duplicate_layer": "레이어 복제",
       "edit_frame": "프레임 편집",
       "erase": "지우기",
+      "fill": "채우기",
       "import": "페이지 가져오기",
       "inpaint": "인페인팅",
+      "merge_pages": "페이지 병합",
       "move": "이동",
       "move_layer": "레이어 이동",
       "move_page": "페이지 이동",
@@ -110,13 +143,16 @@
       "recognize": "OCR",
       "resize": "크기 조정",
       "rotate": "회전",
+      "set_fill": "칠 변경",
       "set_locked": "잠금/잠금 해제",
       "set_source_text": "원문 편집",
+      "set_stroke": "선 변경",
       "set_style": "글꼴 서식 변경",
       "set_text": "텍스트 편집",
       "set_visibility": "표시/숨기기",
       "translate": "번역",
-      "update_layer": "레이어 변경"
+      "update_layer": "레이어 변경",
+      "update_page": "페이지 편집"
     },
     "title": "작업 내역"
   },
@@ -167,6 +203,7 @@
     "borderWidth": "테두리 너비",
     "chooseFontSize": "글꼴 크기 선택",
     "decreaseBorderWidth": "테두리 너비 줄이기",
+    "decreaseSecondBorderWidth": "두 번째 테두리 너비 줄이기",
     "font": "글꼴",
     "fontSize": "글꼴 크기",
     "fontStyles": {
@@ -176,7 +213,19 @@
     "fontWeight": "글꼴 굵기",
     "horizontal": "가로쓰기",
     "increaseBorderWidth": "테두리 너비 늘리기",
+    "increaseSecondBorderWidth": "두 번째 테두리 너비 늘리기",
     "opacity": "불투명도",
+    "outlineBevel": "베벨",
+    "outlineCenter": "중앙",
+    "outlineInside": "안쪽",
+    "outlineJoin": "모서리",
+    "outlineMiter": "뾰족하게",
+    "outlineOutside": "바깥쪽",
+    "outlinePosition": "위치",
+    "outlineRound": "둥글게",
+    "secondBorder": "2차 테두리",
+    "secondBorderColor": "두 번째 테두리 색상",
+    "secondBorderWidth": "두 번째 테두리 너비",
     "selectPage": "레이어를 확인할 페이지를 선택하세요.",
     "source": "원문",
     "text": "텍스트",
@@ -235,6 +284,7 @@
     "unlocked": "잠금 해제됨"
   },
   "menu": {
+    "adjustments": "조정",
     "about": "정보",
     "closeProject": "프로젝트 닫기",
     "delete": "선택 항목 삭제",
@@ -247,6 +297,7 @@
     "github": "GitHub",
     "help": "도움말",
     "history": "작업 내역",
+    "image": "이미지",
     "import": "페이지 가져오기",
     "process": "처리",
     "processLayers": "선택한 레이어 처리",
@@ -274,6 +325,7 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 작업",
+    "chapterStart": "챕터 시작",
     "delete": "삭제",
     "emptyDescription": "이미지 파일이나 폴더를 가져와 페이지를 추가하세요.",
     "emptyTitle": "아직 페이지가 없습니다",
@@ -283,10 +335,17 @@
     "importFolder": "폴더…",
     "importing": "페이지 가져오는 중…",
     "importingAction": "가져오는 중…",
+    "mergeAsSpread": "양면 페이지로 병합",
+    "mergeLeftToRight": "왼쪽에서 오른쪽으로",
+    "mergeRightToLeft": "오른쪽에서 왼쪽으로",
     "noImage": "이미지 없음",
     "noResults": "필터와 일치하는 페이지가 없습니다.",
+    "pageName": "페이지 이름",
     "pageNumber": "{{number}}페이지",
     "pages": "페이지",
+    "rename": "이름 바꾸기",
+    "renameDescription": "이 페이지의 새 이름을 정하세요.",
+    "renameTitle": "페이지 이름 바꾸기",
     "selected": "{{count}}개 선택됨"
   },
   "outputPicker": {
@@ -320,6 +379,16 @@
   },
   "settings": {
     "appearance": {
+      "colorTheme": "색상 테마",
+      "colorThemeDescription": "인터페이스 팔레트를 선택합니다. 모든 팔레트에는 라이트와 다크 버전이 있습니다.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "오션",
+        "matcha": "말차"
+      },
+      "animations": "인터페이스 애니메이션",
+      "animationsDescription": "메뉴와 대화 상자를 페이드로 표시하고 마우스오버와 스위치 변화를 부드럽게 합니다. 시스템의 동작 줄이기 설정을 따릅니다.",
       "description": "아트워크 렌더링에는 영향을 주지 않고 작업 공간의 모습을 조정합니다.",
       "interface": "인터페이스",
       "language": "언어",
@@ -345,6 +414,13 @@
         "prompt": "프롬프트",
         "promptDescription": "생성형 모델에만 적용됩니다.",
         "textThreshold": "텍스트 임곗값"
+      },
+      "remote": {
+        "title": "처리 서버",
+        "description": "위의 모든 단계를 koharu-server가 실행 중인 다른 컴퓨터에서 돌립니다. 주소를 비우면 이 컴퓨터에서 실행합니다.",
+        "url": "서버 주소",
+        "token": "서버 토큰",
+        "clearToken": "서버 토큰 지우기"
       },
       "stages": {
         "detect": {
@@ -453,18 +529,48 @@
     "sfx": "효과음",
     "title": "스토리"
   },
+  "shape": {
+    "title": "도형",
+    "fill": "칠",
+    "fillNone": "칠 없음",
+    "fillSolid": "단색",
+    "fillLinear": "선형 그라디언트",
+    "fillRadial": "방사형 그라디언트",
+    "fillSweep": "각도 그라디언트",
+    "fillPattern": "패턴",
+    "fillColor": "칠 색상",
+    "choosePattern": "이미지 선택…",
+    "angle": "각도",
+    "stopColor": "정지점 {{index}} 색상",
+    "stopPosition": "정지점 {{index}} 위치",
+    "removeStop": "정지점 {{index}} 삭제",
+    "addStop": "정지점 추가",
+    "strokeColor": "선 색상",
+    "strokeWidth": "선 두께",
+    "decrease": "{{name}} 줄이기",
+    "increase": "{{name}} 늘리기"
+  },
   "tools": {
     "brushSize": "브러시 크기",
     "brushSizeInput": "브러시 크기",
     "brushSizePixels": "브러시 크기: {{size}}픽셀",
     "brushSizeShort": "{{size}} px",
+    "bucket": "페인트 통",
     "color_picker": "색상 선택기",
     "decreaseBrushSize": "브러시 크기 줄이기",
     "direct_select": "직접 선택",
     "draw": "그리기",
+    "ellipse": "타원",
     "eraser": "지우개",
     "increaseBrushSize": "브러시 크기 늘리기",
     "pan": "이동",
+    "ramp": "색상 램프",
+    "rampColor": "램프 끝 색상",
+    "rampAlong": "램프 방향",
+    "rampStroke": "획을 따라",
+    "rampHorizontal": "왼쪽에서 오른쪽",
+    "rampVertical": "위에서 아래",
+    "rectangle": "사각형",
     "remove": "제거",
     "select": "선택",
     "text": "텍스트"
@@ -493,5 +599,24 @@
     "maximize": "최대화",
     "minimize": "최소화",
     "restore": "복원"
+  },
+  "export": {
+    "cancel": "취소",
+    "cbzHint": "PNG 페이지를 하나의 아카이브로 묶습니다. 파일 이름은 프로젝트 이름을 씁니다.",
+    "description": "페이지를 이미지 파일로 렌더링합니다.",
+    "formats": "형식",
+    "pattern": "파일명 패턴",
+    "patternError": {
+      "separator": "패턴에 경로 구분자나 '..'를 쓸 수 없습니다.",
+      "token": "알 수 없는 토큰입니다. {index} 또는 {label}을 쓰세요.",
+      "unclosed": "패턴의 중괄호가 맞지 않습니다.",
+      "width": "자릿수는 숫자여야 합니다."
+    },
+    "scope": "페이지",
+    "scopeAll": "전체 페이지 ({{count}})",
+    "scopeSelected": "선택한 페이지 ({{count}})",
+    "start": "내보내기",
+    "subfolders": "형식별로 폴더 나누기",
+    "title": "페이지 내보내기"
   }
 }

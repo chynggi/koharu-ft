@@ -655,6 +655,7 @@ fn reopening_matches_memory() {
         .apply(edit(vec![Op::DuplicateLayer {
             layer: panel.into(),
             id: None,
+            page: None,
             index: None,
         }]))
         .expect("a duplicate");

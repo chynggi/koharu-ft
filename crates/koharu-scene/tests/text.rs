@@ -96,6 +96,7 @@ fn text_and_duplicates_survive_reopening() {
         .apply(edit(vec![Op::DuplicateLayer {
             layer: balloon.into(),
             id: None,
+            page: None,
             index: None,
         }]))
         .expect("a duplicate");
@@ -170,4 +171,46 @@ fn a_blocks_translation_comes_and_goes_with_its_own_ops() {
     assert!(matches!(error, Error::Locked { .. }), "{error}");
     let error = apply(&mut session, vec![set(json!(1))]).expect_err("locked");
     assert!(matches!(error, Error::Locked { .. }), "{error}");
+}
+
+#[test]
+fn literal_replace_keeps_source_text_and_rolls_back_on_a_locked_match() {
+    let (_dir, mut session, page) = session();
+    let a = add(
+        &mut session,
+        page,
+        None,
+        json!({"kind":"text","content":"Ken and KEN"}),
+    );
+    let b = add(
+        &mut session,
+        page,
+        None,
+        json!({"kind":"block","source":{"content":"Ken"},"translation":{"content":"Ken"}}),
+    );
+    let replace =
+        || op(json!({"op":"replace_text","text":"ken","replacement":"$1","match_case":false}));
+    apply(
+        &mut session,
+        vec![json!({"op":"update_layer","layer":b,"patch":{"locked":true}})],
+    )
+    .unwrap();
+    let before = session.project();
+    assert!(session.apply(edit(vec![replace()])).is_err());
+    assert_eq!(session.project(), before);
+    apply(
+        &mut session,
+        vec![json!({"op":"update_layer","layer":b,"patch":{"locked":false}})],
+    )
+    .unwrap();
+    let before = session.project();
+    session.apply(edit(vec![replace()])).unwrap();
+    assert_eq!(text(&session, a).content.text(), "$1 and $1");
+    let Content::Block(block) = layer(&session, b).content else {
+        panic!("a block")
+    };
+    assert_eq!(block.source.content.text(), "Ken");
+    assert_eq!(block.translation.unwrap().content.text(), "$1");
+    session.undo().unwrap();
+    assert_eq!(session.project(), before);
 }

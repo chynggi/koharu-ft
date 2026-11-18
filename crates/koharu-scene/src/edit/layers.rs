@@ -11,7 +11,7 @@ use kurbo::{Affine, BezPath};
 use super::{Place, Run};
 use crate::{
     Content, Created, Error, Layer, LayerId, LayerKind, NewLayer, Offset, Path, Ref, Result,
-    Transform, Uuid,
+    Transform,
     project::{ids, locked_inside, may_hold},
 };
 
@@ -75,13 +75,10 @@ impl Run<'_, '_> {
 
     /// That the files a layer names were added.
     fn check_names(&self, op: usize, layer: &Layer) -> Result<()> {
-        if let Content::Image(image) = &layer.content
-            && !self.tx.has_blob(&image.file)?
+        if let Some(file) = layer.content.file()
+            && !self.tx.has_blob(&file)?
         {
-            return Err(Error::invalid(
-                op,
-                format!("file {} was not added", image.file),
-            ));
+            return Err(Error::invalid(op, format!("file {file} was not added")));
         }
         Ok(())
     }
@@ -91,15 +88,27 @@ impl Run<'_, '_> {
         op: usize,
         layer: &Ref,
         id: Option<&Ref>,
+        page: Option<&Ref>,
         index: Option<usize>,
     ) -> Result<()> {
         let place = self.place(layer)?;
-        if let Some(parent) = self.parent(&place) {
-            self.unlocked(op, parent)?;
-        }
-        let (list, at) = place.holder();
-        let len = self.project.pages[&place.page].list(list).len();
-        let index = index.unwrap_or(at + 1);
+        let mut copy = self.get(&place).clone();
+        let (target, list, index, len) = match page {
+            Some(page) => {
+                let page = self.page(page)?;
+                may_hold(None, copy.kind()).map_err(|reason| Error::invalid(op, reason))?;
+                let len = self.project.pages[&page].layers.len();
+                (page, Vec::new(), index.unwrap_or(len), len)
+            }
+            None => {
+                if let Some(parent) = self.parent(&place) {
+                    self.unlocked(op, parent)?;
+                }
+                let (list, at) = place.holder();
+                let len = self.project.pages[&place.page].list(list).len();
+                (place.page, list.to_vec(), index.unwrap_or(at + 1), len)
+            }
+        };
         if index > len {
             return Err(Error::invalid(
                 op,
@@ -107,16 +116,15 @@ impl Run<'_, '_> {
             ));
         }
         let (uuid, label) = self.new_id(op, id)?;
-        let mut copy = self.get(&place).clone();
         self.renumber(op, &mut copy, LayerId(uuid), label)?;
-        self.project.insert(place.page, list, index, copy);
+        self.project.insert(target, &list, index, copy);
         Ok(())
     }
 
     /// Gives `copy` the id `to` and everything inside it new ids, top first.
     /// Tile maps are shared, so a copy's pixels cost nothing until one of
     /// them is painted.
-    fn renumber(
+    pub(super) fn renumber(
         &mut self,
         op: usize,
         copy: &mut Layer,
@@ -133,7 +141,8 @@ impl Run<'_, '_> {
             self.share_tiles(old, new);
         }
         for child in &mut copy.children {
-            self.renumber(op, child, LayerId(Uuid::now_v7()), None)?;
+            let id = LayerId(self.fresh(op)?);
+            self.renumber(op, child, id, None)?;
         }
         Ok(())
     }

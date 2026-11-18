@@ -5,7 +5,8 @@
 
 use koharu_renderer::ResolvedText;
 use koharu_scene::{
-    Align, Color, Direction, FillRule, Frame as TextFrame, Shape as SceneShape, Text,
+    Align, Color, Direction, FillRule, Frame as TextFrame, Shape as SceneShape, ShapeFill,
+    StrokeJoin, StrokePosition, Text,
 };
 use kurbo::{Affine, BezPath, PathEl, Point};
 use photocraft_psd::{
@@ -150,29 +151,32 @@ fn rgb(color: Color) -> Value {
 /// colour fill (`SoCo`), and its stroke as vector stroke data (`vstk`). With a
 /// stroke, the fill moves to `vscg`, which names its kind first, as ag-psd
 /// writes it; a stroke without a fill turns the fill off. A shape with
-/// neither draws nothing and gets no blocks.
+/// neither draws nothing and gets no blocks. A gradient or pattern, whose
+/// normalized geometry Photoshop's fill layers don't share, stays the
+/// renderer's pixels with no blocks.
 pub(crate) fn shape(layer: &SceneShape, size: (u32, u32)) -> Result<Vec<TaggedBlock>> {
-    if layer.fill.is_none() && layer.stroke.is_none() {
+    let fill = match &layer.fill {
+        None => None,
+        Some(ShapeFill::Solid(color)) => Some(*color),
+        Some(ShapeFill::Gradient { .. } | ShapeFill::Pattern { .. }) => return Ok(Vec::new()),
+    };
+    if fill.is_none() && layer.stroke.is_none() {
         return Ok(Vec::new());
     }
     let mut blocks = vec![vector_mask(&parse(&layer.path)?, layer.fill_rule, size)];
     let content = |color: Color| Descriptor::new("null").with("Clr ", rgb(color));
     let Some(stroke) = &layer.stroke else {
-        blocks.extend(
-            layer
-                .fill
-                .map(|fill| block(*b"SoCo", versioned(content(Color::from(fill))))),
-        );
+        blocks.extend(fill.map(|fill| block(*b"SoCo", versioned(content(Color::from(fill))))));
         return Ok(blocks);
     };
     let mut vscg = b"SoCo".to_vec();
     vscg.extend(versioned(content(Color::from(
-        layer.fill.unwrap_or(stroke.color),
+        fill.unwrap_or(stroke.color),
     ))));
     let style = Descriptor::new("strokeStyle")
         .with("strokeStyleVersion", Value::Integer(2))
         .with("strokeEnabled", Value::Boolean(true))
-        .with("fillEnabled", Value::Boolean(layer.fill.is_some()))
+        .with("fillEnabled", Value::Boolean(fill.is_some()))
         .with("strokeStyleLineWidth", unit(b"#Pxl", stroke.width))
         .with("strokeStyleLineDashOffset", unit(b"#Pxl", 0.0))
         // kurbo's default miter limit, which the renderer strokes with.
@@ -211,9 +215,10 @@ const LF: u16 = b'\n' as u16;
 /// A text's blocks as the renderer laid it out, which drew at least one
 /// run: a type layer (`TySh`) holding its transform, a text descriptor with
 /// the EngineData, and a warp descriptor; and, when every run shares one
-/// stroke, an Outside stroke effect (`lfx2` with `FrFX`), how Photoshop
-/// strokes type outside its glyphs as the renderer does. Strokes that differ
-/// by span stay in the pixels only.
+/// round-cornered stroke and none has a second one, a stroke effect (`lfx2`
+/// with `FrFX`) at the same position, how Photoshop strokes type as the
+/// renderer does. Photoshop's effect has one stroke and only round corners,
+/// so other strokes, and strokes that differ by span, stay in the pixels.
 pub(crate) fn type_layer(layer: &Text, text: &ResolvedText, index: i32) -> Vec<TaggedBlock> {
     let vertical = layer.direction == Direction::Vertical;
     let frame = text.frame;
@@ -344,24 +349,39 @@ pub(crate) fn type_layer(layer: &Text, text: &ResolvedText, index: i32) -> Vec<T
     data.extend([0; 16]);
 
     let mut blocks = vec![block(*b"TySh", data)];
-    let stroke = text.runs[0].stroke;
-    if let Some((color, width)) = stroke
-        && text.runs.iter().all(|run| run.stroke == stroke)
+    let first = &text.runs[0];
+    if let Some((color, width)) = first.stroke
+        && first.stroke_join == StrokeJoin::Round
+        && text.runs.iter().all(|run| {
+            run.stroke == first.stroke
+                && run.stroke_position == first.stroke_position
+                && run.stroke_join == first.stroke_join
+                && run.outer_stroke.is_none()
+        })
     {
         // An effect's size is in page pixels, where the renderer's stroke
         // grows with the layer's transform.
         let scale = transform.determinant().abs().sqrt();
-        blocks.push(stroke_effect(color, f64::from(width) * scale));
+        blocks.push(stroke_effect(
+            color,
+            f64::from(width) * scale,
+            first.stroke_position,
+        ));
     }
     blocks
 }
 
-fn stroke_effect(color: Color, width: f64) -> TaggedBlock {
+fn stroke_effect(color: Color, width: f64, position: StrokePosition) -> TaggedBlock {
+    let style = match position {
+        StrokePosition::Outside => "OutF",
+        StrokePosition::Center => "CtrF",
+        StrokePosition::Inside => "InsF",
+    };
     let stroke = Descriptor::new("FrFX")
         .with("enab", Value::Boolean(true))
         .with("present", Value::Boolean(true))
         .with("showInDialog", Value::Boolean(true))
-        .with("Styl", enumerated("FStl", "OutF"))
+        .with("Styl", enumerated("FStl", style))
         .with("PntT", enumerated("FrFl", "SClr"))
         .with("Md  ", enumerated("BlnM", "Nrml"))
         .with("Opct", opacity(color))

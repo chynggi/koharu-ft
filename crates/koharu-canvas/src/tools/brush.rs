@@ -12,7 +12,7 @@ use vello_cpu::{Pixmap, RenderContext, Resources, color::palette::css::WHITE};
 
 use super::added;
 use crate::{
-    Effect, Notice, Tool,
+    Effect, Notice, RampAlong, Tool,
     draw::overlay::Overlay,
     gesture::{Context, Gesture, GestureLook, Press},
     view::Sample,
@@ -25,6 +25,13 @@ const TOLERANCE: f64 = 0.1;
 /// A brush tool's press starts a stroke: the draw tool's onto the one
 /// selected raster or a new one, the eraser's onto the one selected.
 pub(crate) fn press(cx: &Context, sample: Sample) -> Press {
+    if sample.modifiers.ctrl() && sample.modifiers.alt() {
+        return Press::starts(Gesture::ResizeBrush(Resize {
+            origin: sample.screen,
+            start: cx.brush.diameter,
+            diameter: cx.brush.diameter,
+        }));
+    }
     let target = match cx.tool {
         Tool::Remove => None,
         _ => cx
@@ -42,6 +49,40 @@ pub(crate) fn press(cx: &Context, sample: Sample) -> Press {
         points,
         target,
     }))
+}
+
+/// A diameter preview anchored to the press. Only release changes the brush.
+pub(crate) struct Resize {
+    origin: Point,
+    start: f64,
+    diameter: f64,
+}
+
+impl Resize {
+    pub fn moved(&mut self, cx: &Context, samples: &[Sample]) {
+        if let Some(last) = samples.last() {
+            let travel = (last.screen.x - self.origin.x) / cx.view.camera().scale;
+            let size = cx.snapshot.size();
+            self.diameter = (self.start + 2.0 * travel)
+                .round()
+                .clamp(1.0, size.width.max(size.height).max(1.0));
+        }
+    }
+
+    pub fn finish(self) -> Vec<Effect> {
+        (self.diameter != self.start)
+            .then_some(Effect::BrushDiameter(self.diameter))
+            .into_iter()
+            .collect()
+    }
+
+    pub fn preview(&self, overlay: &mut Overlay) {
+        overlay.ring(self.origin, self.diameter);
+    }
+
+    pub fn look(&self) -> GestureLook {
+        GestureLook::BrushRing(self.origin, self.diameter)
+    }
 }
 
 /// A brush stroke through page points, onto `target` or, for the draw tool
@@ -92,13 +133,93 @@ impl Stroke {
             .and_then(|layer| cx.snapshot.writable(layer))
             .is_none_or(|(_, format)| format == PixelFormat::Rgba8);
         let tint = match self.tool {
-            Tool::Draw if colored => cx.brush.color,
+            Tool::Draw if colored => {
+                // A ramp previews as a straight one between its ends.
+                if let Some((from, to)) = self.ramp_ends(cx) {
+                    let brush = cx.brush;
+                    overlay.fill_ramp(
+                        &self.outline,
+                        (from, to),
+                        (brush.color, brush.color_at(1.0)),
+                    );
+                    return;
+                }
+                cx.brush.color
+            }
             _ => {
                 let Rgba([r, g, b, _]) = cx.colors.selection;
                 Rgba([r, g, b, 0.4])
             }
         };
         overlay.fill(&self.outline, tint);
+    }
+
+    /// Where the brush's ramp starts and ends on the page, `None` without one.
+    fn ramp_ends(&self, cx: &Context) -> Option<(Point, Point)> {
+        let size = cx.snapshot.size();
+        Some(match cx.brush.ramp?.along {
+            RampAlong::Stroke => (*self.points.first()?, *self.points.last()?),
+            RampAlong::Horizontal => (Point::ZERO, Point::new(size.width, 0.0)),
+            RampAlong::Vertical => (Point::ZERO, Point::new(0.0, size.height)),
+        })
+    }
+
+    /// The brush's colour over the page pixels `rect`, as opaque as
+    /// `coverage` says of it: one colour, or each pixel's along the ramp,
+    /// whose stroke position is that of the nearest point of the stroke's
+    /// line, measured along it.
+    fn paint(&self, cx: &Context, rect: koharu_scene::Rect, coverage: &[u8]) -> RgbaImage {
+        let brush = cx.brush;
+        let size = cx.snapshot.size();
+        let lengths: Vec<f64> = self
+            .points
+            .windows(2)
+            .map(|pair| pair[0].distance(pair[1]))
+            .collect();
+        let total: f64 = lengths.iter().sum();
+        let along_stroke = |at: Point| {
+            let (mut best, mut walked, mut position) = (f64::INFINITY, 0.0, 0.0);
+            for (pair, length) in self.points.windows(2).zip(&lengths) {
+                let t = match *length > 0.0 {
+                    true => {
+                        ((at - pair[0]).dot(pair[1] - pair[0]) / (length * length)).clamp(0.0, 1.0)
+                    }
+                    false => 0.0,
+                };
+                let distance = pair[0].lerp(pair[1], t).distance(at);
+                if distance < best {
+                    (best, position) = (distance, walked + t * length);
+                }
+                walked += length;
+            }
+            if total > 0.0 { position / total } else { 0.0 }
+        };
+        let pixels = coverage
+            .iter()
+            .enumerate()
+            .flat_map(|(index, &covered)| {
+                let color = match brush.ramp {
+                    None => brush.color,
+                    Some(ramp) => {
+                        let index = index as u32;
+                        let at = Point::new(
+                            f64::from(rect.x) + f64::from(index % rect.width) + 0.5,
+                            f64::from(rect.y) + f64::from(index / rect.width) + 0.5,
+                        );
+                        brush.color_at(match ramp.along {
+                            _ if covered == 0 => 0.0,
+                            RampAlong::Stroke => along_stroke(at),
+                            RampAlong::Horizontal => at.x / size.width,
+                            RampAlong::Vertical => at.y / size.height,
+                        })
+                    }
+                };
+                let Rgba([r, g, b, a]) = color;
+                let [r, g, b] = [r, g, b].map(|channel| (channel * 255.0).round() as u8);
+                [r, g, b, (f32::from(covered) * a).round() as u8]
+            })
+            .collect();
+        RgbaImage::from_raw(rect.width, rect.height, pixels).expect("coverage covers `rect`")
     }
 
     pub fn look(&self) -> GestureLook {
@@ -139,7 +260,7 @@ impl Stroke {
                     (Tool::Draw, PixelFormat::Rgba8) => {
                         let mut under = RgbaImage::from_raw(own.width, own.height, pixels)
                             .ok_or_else(|| anyhow::anyhow!("a raster's pixels are RGBA"))?;
-                        imageops::overlay(&mut under, &paint(rect, coverage, cx.brush.color), 0, 0);
+                        imageops::overlay(&mut under, &self.paint(cx, rect, coverage), 0, 0);
                         pixels = under.into_raw();
                     }
                     (Tool::Draw, PixelFormat::Gray8) => {
@@ -156,7 +277,7 @@ impl Stroke {
                 (vec![write], None)
             }
             None if self.tool == Tool::Draw => {
-                let pixels = paint(rect, coverage, cx.brush.color).into_raw();
+                let pixels = self.paint(cx, rect, coverage).into_raw();
                 let (id, add) = added(cx.snapshot.page(), Content::Raster(Raster::default()));
                 let write = Op::WritePixels {
                     layer: Ref::from(id),
@@ -216,16 +337,6 @@ fn coverage(outline: &BezPath, page: Size) -> Option<(koharu_scene::Rect, Vec<u8
     let mut pixmap = Pixmap::new(width, height);
     context.render(&mut pixmap, &mut Resources::new());
     Some((rect, pixmap.data().iter().map(|pixel| pixel.a).collect()))
-}
-
-/// The brush's `color` over `rect`, as opaque as `coverage` says of it.
-fn paint(rect: koharu_scene::Rect, coverage: &[u8], Rgba([r, g, b, a]): Rgba) -> RgbaImage {
-    let [r, g, b] = [r, g, b].map(|channel| (channel * 255.0).round() as u8);
-    let pixels = coverage
-        .iter()
-        .flat_map(|&covered| [r, g, b, (f32::from(covered) * a).round() as u8])
-        .collect();
-    RgbaImage::from_raw(rect.width, rect.height, pixels).expect("coverage covers `rect`")
 }
 
 /// `pixels`, `bytes` to a pixel, with their last channel, a raster's alpha

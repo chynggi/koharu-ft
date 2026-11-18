@@ -12,30 +12,45 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import {
+  BookmarkIcon,
+  Columns2,
   FilePlus2,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   Search,
   Settings,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call, dispatch } from '@/lib/backend'
 import { useImportPages, usePage, useProject } from '@/lib/queries'
-import { deletePages, movePage } from '@/lib/scene'
+import { deletePages, mergePages, movePage, updatePage } from '@/lib/scene'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type ImportSource, type PageSummary } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@koharu/ui/components/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@koharu/ui/components/dropdown-menu'
 import { Input } from '@koharu/ui/components/input'
+import { Label } from '@koharu/ui/components/label'
 import { ScrollArea } from '@koharu/ui/components/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 import { cn } from '@koharu/ui/lib/utils'
@@ -57,12 +72,21 @@ export function PageRail() {
   const [dragged, setDragged] = useState<{ page: string; target: number | null } | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const [query, setQuery] = useState('')
-  const normalized = query.trim()
+  const [renaming, setRenaming] = useState<{ page: string; name: string; chapter: string } | null>(
+    null,
+  )
+  const normalized = query.trim().toLowerCase()
   const visiblePages = useMemo(
     () =>
       pages
         .map((page, index) => ({ page, index }))
-        .filter(({ index }) => !normalized || String(index + 1).includes(normalized)),
+        .filter(
+          ({ page, index }) =>
+            !normalized ||
+            String(index + 1).includes(normalized) ||
+            page.name.toLowerCase().includes(normalized) ||
+            (page.chapter ?? '').toLowerCase().includes(normalized),
+        ),
     [normalized, pages],
   )
   const pageList = useRef<HTMLDivElement>(null)
@@ -105,6 +129,42 @@ export function PageRail() {
     }
   }
 
+  const navigate = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return
+    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+    if (!step || dragged || useKoharuStore.getState().settingsOpen) return
+    if (
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable ||
+        event.target.closest(
+          'input, textarea, select, button, a, [role="menu"], [role="dialog"], [role="listbox"], [role="slider"], [role="separator"]',
+        ))
+    )
+      return
+
+    const from = pages.findIndex((page) => page.id === active)
+    const next = from + step
+    if (from < 0 || !pages[next]) return
+    event.preventDefault()
+    select(next, false, false)
+    const row = visiblePages.findIndex(({ index }) => index === next)
+    if (row >= 0) pageVirtualizer.scrollToIndex(row, { align: 'auto' })
+  })
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => navigate(event)
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const deletePage = (page: string) =>
     void call(deletePages, [page])
       .then(() => {
@@ -112,6 +172,24 @@ export function PageRail() {
         if (active === page) selectLayers([])
       })
       .catch(() => undefined)
+
+  /** The selected pages become one spread, which is then the selection and on show. */
+  const merge = (rtl: boolean) =>
+    void call(mergePages, selected, rtl)
+      .then((change) => {
+        const spread = change.pages.added[0]
+        if (!spread) return
+        selectPages([spread])
+        selectLayers([])
+        dispatch(commands.show, spread)
+      })
+      .catch(() => undefined)
+
+  const rename = () => {
+    if (!renaming) return
+    dispatch(updatePage, renaming.page, renaming.name.trim(), renaming.chapter.trim())
+    setRenaming(null)
+  }
 
   /** A page dropped on another takes its place; `move_page` counts its index after the page is
    * taken out, which is that place either way. */
@@ -224,6 +302,15 @@ export function PageRail() {
                         target={dragged !== null && dragged.target === index}
                         onSelect={(additive, range) => select(index, additive, range)}
                         onDelete={() => deletePage(page.id)}
+                        canMerge={selected.length > 1 && selected.includes(page.id)}
+                        onMerge={merge}
+                        onRename={() =>
+                          setRenaming({
+                            page: page.id,
+                            name: page.name,
+                            chapter: page.chapter ?? '',
+                          })
+                        }
                       />
                     </div>
                   )
@@ -253,6 +340,51 @@ export function PageRail() {
           </Tooltip>
         </div>
       </aside>
+      <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
+        <DialogContent className='sm:max-w-sm'>
+          <form
+            className='grid gap-4'
+            onSubmit={(event) => {
+              event.preventDefault()
+              rename()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{t('navigator.renameTitle')}</DialogTitle>
+              <DialogDescription>{t('navigator.renameDescription')}</DialogDescription>
+            </DialogHeader>
+            <div className='grid gap-1.5'>
+              <Label htmlFor='page-name'>{t('navigator.pageName')}</Label>
+              <Input
+                id='page-name'
+                autoFocus
+                value={renaming?.name ?? ''}
+                onChange={(event) => {
+                  const name = event.currentTarget.value
+                  setRenaming((current) => current && { ...current, name })
+                }}
+              />
+            </div>
+            <div className='grid gap-1.5'>
+              <Label htmlFor='page-chapter'>{t('navigator.chapterStart')}</Label>
+              <Input
+                id='page-chapter'
+                value={renaming?.chapter ?? ''}
+                onChange={(event) => {
+                  const chapter = event.currentTarget.value
+                  setRenaming((current) => current && { ...current, chapter })
+                }}
+              />
+            </div>
+            <DialogFooter>
+              <Button type='button' variant='ghost' onClick={() => setRenaming(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type='submit'>{t('navigator.rename')}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -322,6 +454,9 @@ function PageItem({
   target,
   onSelect,
   onDelete,
+  canMerge,
+  onMerge,
+  onRename,
 }: {
   page: PageSummary
   index: number
@@ -334,9 +469,14 @@ function PageItem({
   target: boolean
   onSelect: (additive: boolean, range: boolean) => void
   onDelete: () => void
+  /** Whether this page is one of several selected pages a spread can join. */
+  canMerge: boolean
+  onMerge: (rtl: boolean) => void
+  onRename: () => void
 }) {
   const { t } = useTranslation()
-  const name = t('navigator.pageNumber', { number: index + 1 })
+  const number = t('navigator.pageNumber', { number: index + 1 })
+  const name = page.name || number
   const handle = useDraggable({ id: page.id })
   const { setNodeRef } = useDroppable({ id: page.id })
   // A press on the page's own buttons and menus doesn't drag it.
@@ -372,6 +512,10 @@ function PageItem({
         if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
         onSelect(event.ctrlKey || event.metaKey, event.shiftKey)
       }}
+      onDoubleClick={(event) => {
+        if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
+        onRename()
+      }}
     >
       <div className='grid h-16 w-12 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]'>
         {page.background ? (
@@ -397,13 +541,39 @@ function PageItem({
               <MoreHorizontal />
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end'>
+              <DropdownMenuItem onClick={onRename}>
+                <Pencil /> {t('navigator.rename')}
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger disabled={!canMerge}>
+                  <Columns2 /> {t('navigator.mergeAsSpread')}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => onMerge(true)}>
+                    {t('navigator.mergeRightToLeft')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMerge(false)}>
+                    {t('navigator.mergeLeftToRight')}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuItem variant='destructive' onClick={onDelete}>
                 <Trash2 /> {t('navigator.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <p className='mt-1 text-[9px] text-muted-foreground tabular-nums'>
+        {page.chapter && (
+          <p
+            className='mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-primary'
+            title={t('navigator.chapterStart')}
+          >
+            <BookmarkIcon className='size-2.5 shrink-0' aria-label={t('navigator.chapterStart')} />
+            <span className='truncate'>{page.chapter}</span>
+          </p>
+        )}
+        <p className='mt-1 truncate text-[9px] text-muted-foreground tabular-nums'>
+          {page.name ? `${number} · ` : ''}
           {page.size.width} × {page.size.height}
         </p>
       </div>

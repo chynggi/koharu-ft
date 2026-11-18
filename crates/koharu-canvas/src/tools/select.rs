@@ -1,12 +1,12 @@
 //! The select tool: a click, a drag of the selection, the marquee, and what
 //! the pointer hovers.
 
-use koharu_scene::LayerId;
-use kurbo::{Point, Rect};
+use koharu_scene::{Edit, LayerId};
+use kurbo::{Affine, Point, Rect, Vec2};
 
 use super::{
     command,
-    transform::{Mode, Transform},
+    transform::{Mode, Transform, transformed},
 };
 use crate::{
     Effect,
@@ -82,6 +82,24 @@ fn drag(cx: &Context, selection: &[LayerId], page: Point) -> Gesture {
         .cloned()
         .collect();
     Gesture::Transform(Transform::new(cx, Mode::Move, page, controls))
+}
+
+/// The move an arrow key makes of the selection's unlocked layers, `by` in
+/// page pixels, as Photoshop's Move tool nudges; `None` with nothing to move.
+pub(crate) fn nudge(cx: &Context, by: Vec2) -> Option<Vec<Effect>> {
+    let ops: Vec<_> = cx
+        .snapshot
+        .controls()
+        .iter()
+        .filter(|control| cx.selection.contains(control.layer) && !control.locked)
+        .map(|control| transformed(control, Affine::translate(by)))
+        .collect();
+    (!ops.is_empty()).then(|| {
+        vec![Effect::Edit(Edit {
+            label: "move".to_owned(),
+            ops,
+        })]
+    })
 }
 
 /// A selection rectangle, from where it started to where it is, in page

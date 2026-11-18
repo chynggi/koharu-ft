@@ -95,8 +95,8 @@ masked pixels come back.
 
 | Inpainter | Takes a prompt |
 |---|---|
-| LaMa | no |
-| RORem, FLUX.3 Klein, MOSS-Image, Qwen-Image 2.1 | yes: an area's own, or else the settings' |
+| LaMa, Manga Inpainting, MI-GAN | no |
+| RORem, PowerPaint, FLUX.3 Klein, MOSS-Image, Qwen-Image 2.1 | yes: an area's own, or else the settings' |
 
 ## 4. Translation
 
@@ -157,7 +157,7 @@ is a language CLDR doesn't name in English.
 | `detector.model` | `koharu-layout-highres` |
 | `detector.text`, `onomatopoeia`, `bubble`, `panel` | the model's own thresholds |
 | `recognizer.model` | `manga-ocr-ar`, or `baberu-ocr` or `hayai-ocr` |
-| `inpainter.model` | `lama`, or `rorem-mixed`, `flux3-klein`, `moss-image`, or `qwen-image` |
+| `inpainter.model` | `lama`, or `manga-inpainting`, `mi-gan`, `rorem-mixed`, `powerpaint`, `flux3-klein`, `moss-image`, or `qwen-image` |
 | `inpainter.prompt` | asks the model to remove all text and keep everything else, for a run that brings none |
 | `translator.model` | `koharu/index-translate-9b` |
 | `translator.target` | `en` |

@@ -10,6 +10,26 @@ use specta::Type;
 
 use crate::{Align, Direction, Frame, Rgba, Transform};
 
+/// Where an outline falls relative to the glyph contour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokePosition {
+    #[default]
+    Outside,
+    Center,
+    Inside,
+}
+
+/// How a glyph outline turns a corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeJoin {
+    #[default]
+    Round,
+    Miter,
+    Bevel,
+}
+
 /// Character values; each is also a mark key on a span, and a mark wins for
 /// its span.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type, JsonSchema)]
@@ -29,6 +49,14 @@ pub struct CharStyle {
     pub stroke: Option<Rgba>,
     #[serde(default)]
     pub stroke_width: Option<f64>,
+    #[serde(default)]
+    pub stroke_position: Option<StrokePosition>,
+    #[serde(default)]
+    pub stroke_join: Option<StrokeJoin>,
+    #[serde(default)]
+    pub outer_stroke: Option<Rgba>,
+    #[serde(default)]
+    pub outer_stroke_width: Option<f64>,
 }
 
 impl CharStyle {
@@ -43,6 +71,10 @@ impl CharStyle {
             fill: self.fill.or(base.fill),
             stroke: self.stroke.or(base.stroke),
             stroke_width: self.stroke_width.or(base.stroke_width),
+            stroke_position: self.stroke_position.or(base.stroke_position),
+            stroke_join: self.stroke_join.or(base.stroke_join),
+            outer_stroke: self.outer_stroke.or(base.outer_stroke),
+            outer_stroke_width: self.outer_stroke_width.or(base.outer_stroke_width),
         }
     }
 }

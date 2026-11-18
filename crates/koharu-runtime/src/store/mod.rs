@@ -14,21 +14,13 @@ use anyhow::{Context, Result, ensure};
 use lock::lock;
 pub(crate) use remove::remove_others;
 
-/// The one store everything downloads into: the `store` folder beside the
-/// executable in Windows release builds, where setup puts Koharu, and the OS
-/// cache folder's `koharu/store` otherwise.
+/// Models and runtime packages share one store across build profiles.
 pub(crate) fn root() -> &'static Path {
     static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
-        if cfg!(all(windows, not(debug_assertions))) {
-            std::env::current_exe()
-                .expect("Koharu knows where its executable is")
-                .with_file_name("store")
-        } else {
-            dirs::cache_dir()
-                .unwrap_or_else(std::env::temp_dir)
-                .join("koharu")
-                .join("store")
-        }
+        dirs::data_local_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("Koharu")
+            .join("store")
     });
     &ROOT
 }

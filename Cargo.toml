@@ -159,6 +159,7 @@ tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "17a527
 # The native window and event types of `Cef::on_window_event`: the runtime's
 # own winit fork, which it does not re-export.
 tauri-winit = { version = "=0.31.0-beta.3", default-features = false }
+regex = "1.13.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 # disables `esaxx_fast` feature which is conflicting with `ort`
@@ -193,6 +194,7 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 zip = { version = "9.5.0", features = ["deflate"] }
+zstd = "0.14.3"
 
 [patch.crates-io]
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "17a527316d3aee46f7185c178d3b3122d8ebfd7b" }

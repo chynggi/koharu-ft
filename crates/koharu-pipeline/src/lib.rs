@@ -7,6 +7,7 @@ mod error;
 mod event;
 mod gpu;
 mod pipeline;
+pub mod remote;
 mod request;
 mod scheduler;
 mod stages;
@@ -15,6 +16,7 @@ pub use config::PipelineConfig;
 pub use error::{Error, Result};
 pub use event::{Event, Outcome, RunId};
 pub use pipeline::Pipeline;
+pub use remote::RemoteConfig;
 pub use request::{Area, Request, Stage, Target};
 pub use stages::{
     detect::{Detector, DetectorConfig},

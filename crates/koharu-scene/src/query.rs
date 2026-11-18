@@ -20,6 +20,12 @@ pub enum Query {
     /// List the texts a reader sees on a page, in reading order: each block
     /// and text layer that shows.
     GetStory { page: PageId },
+    /// Find literal text in translations and text layers across the project.
+    FindText {
+        text: String,
+        #[serde(default)]
+        match_case: bool,
+    },
     /// Get the undo and redo labels.
     GetHistory,
 }
@@ -32,6 +38,7 @@ pub enum Answer {
     Layer(Box<Layer>),
     Story(Vec<LayerId>),
     History(History),
+    Matches(Vec<TextMatch>),
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -46,8 +53,31 @@ pub struct ProjectAnswer {
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct PageSummary {
     pub id: PageId,
+    pub name: String,
+    pub chapter: Option<String>,
     pub size: Size,
     pub background: Option<Background>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct TextMatch {
+    pub page: PageId,
+    pub layer: LayerId,
+    pub text: String,
+    pub count: usize,
+}
+
+/// A literal expression with Unicode case matching, shared by search and replace.
+pub(crate) fn expression(text: &str, match_case: bool) -> Result<regex::Regex> {
+    if text.is_empty() {
+        return Err(crate::Error::Rejected(
+            "search text must not be empty".into(),
+        ));
+    }
+    regex::RegexBuilder::new(&regex::escape(text))
+        .case_insensitive(!match_case)
+        .build()
+        .map_err(|error| crate::Error::Rejected(error.to_string()))
 }
 
 impl Session {
@@ -61,6 +91,8 @@ impl Session {
                     .pages()
                     .map(|page| PageSummary {
                         id: page.id,
+                        name: page.name.clone(),
+                        chapter: page.chapter.clone(),
                         size: page.size,
                         background: page.background,
                     })
@@ -70,6 +102,32 @@ impl Session {
             Query::GetLayer { layer } => Answer::Layer(Box::new(project.layer(layer)?.clone())),
             Query::GetStory { page } => Answer::Story(project.story(page)?),
             Query::GetHistory => Answer::History(self.history()),
+            Query::FindText { text, match_case } => {
+                let expression = expression(&text, match_case)?;
+                let mut found = Vec::new();
+                for page in project.pages() {
+                    for layer in project.layers_of(page.id)? {
+                        let text = match &layer.content {
+                            crate::Content::Text(text) => Some(text.as_ref()),
+                            crate::Content::Block(block) => block.translation.as_ref(),
+                            _ => None,
+                        };
+                        if let Some(text) = text {
+                            let text = text.content.text();
+                            let count = expression.find_iter(&text).count();
+                            if count > 0 {
+                                found.push(TextMatch {
+                                    page: page.id,
+                                    layer: layer.id,
+                                    text,
+                                    count,
+                                });
+                            }
+                        }
+                    }
+                }
+                Answer::Matches(found)
+            }
         })
     }
 }

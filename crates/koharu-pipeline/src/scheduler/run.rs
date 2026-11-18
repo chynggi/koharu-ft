@@ -51,6 +51,11 @@ impl Plan {
         self.pages.len()
     }
 
+    /// The pages it works on, in project order.
+    pub(crate) fn page_ids(&self) -> Vec<PageId> {
+        self.pages.iter().map(|(page, _)| *page).collect()
+    }
+
     /// What a run of `stages` on `target` works on, or why it can't run.
     pub(crate) fn new(
         project: &Project,

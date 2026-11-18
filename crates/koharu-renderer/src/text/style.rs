@@ -31,6 +31,9 @@ pub(super) struct Span {
     pub fill: Color,
     /// The colour and width of a stroke.
     pub stroke: Option<(Color, f32)>,
+    pub stroke_position: koharu_scene::StrokePosition,
+    pub stroke_join: koharu_scene::StrokeJoin,
+    pub outer_stroke: Option<(Color, f32)>,
 }
 
 impl Styled {
@@ -54,6 +57,14 @@ impl Styled {
                 fonts: fonts(&style, &span.insert)?,
                 size: style.size.unwrap_or(24.0) as f32,
                 fill: style.fill.map_or(Color::BLACK, Color::from),
+                stroke_position: style.stroke_position.unwrap_or_default(),
+                stroke_join: style.stroke_join.unwrap_or_default(),
+                outer_stroke: match (style.outer_stroke, style.outer_stroke_width) {
+                    (Some(color), Some(width)) if width > 0.0 => {
+                        Some((Color::from(color), width as f32))
+                    }
+                    _ => None,
+                },
                 stroke: match (style.stroke, style.stroke_width) {
                     (Some(color), Some(width)) if width > 0.0 => {
                         Some((Color::from(color), width as f32))

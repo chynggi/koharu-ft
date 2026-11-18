@@ -3,9 +3,10 @@
 //! needs no lock. Calls wait in a priority queue, so an interactive run goes
 //! ahead at the next call. A model loads the first time a stage asks for it and stays
 //! until the settings switch away from it, `unload` is called, or the
-//! pipeline ends. Nothing is unloaded to make room: a model that doesn't fit
-//! fails, naming the memory free when it began to load. The stages know their
-//! models; this knows only their keys.
+//! pipeline ends. A model that fails to load beside the others loads once
+//! more alone, the others unloaded, so one that only fits by itself still
+//! runs; one that fails alone too fails, naming the memory free when it last
+//! began to load. The stages know their models; this knows only their keys.
 
 use std::{
     any::Any,
@@ -122,18 +123,24 @@ pub(crate) struct Models {
 impl Models {
     /// The model `key` names, which `load` gives the first time, on the
     /// runtime's device.
-    pub(crate) fn get<M, F>(
-        &mut self,
-        key: &Key,
-        load: impl FnOnce(&'static Device) -> F,
-    ) -> Result<&M>
+    pub(crate) fn get<M, F>(&mut self, key: &Key, load: impl Fn(&'static Device) -> F) -> Result<&M>
     where
         M: Send + 'static,
         F: Future<Output = anyhow::Result<M>>,
     {
         if !self.loaded.contains_key(key) {
             let _span = tracing::info_span!("load", model = %key.name).entered();
-            let model = self.runtime.block_on(loaded(key, load))?;
+            let model = match self.runtime.block_on(loaded(key, &load)) {
+                Ok(model) => model,
+                // `loaded` samples the device afresh, after the cache is
+                // emptied, so the retry sees what unloading freed.
+                Err(error) if !self.loaded.is_empty() => {
+                    tracing::warn!(%error, "loading alone, the other models unloaded");
+                    self.loaded.clear();
+                    self.runtime.block_on(loaded(key, &load))?
+                }
+                Err(error) => return Err(error),
+            };
             self.loaded.insert(key.clone(), Box::new(model));
         }
         Ok(self.loaded[key]
@@ -151,7 +158,7 @@ impl Models {
 /// first: its caching allocator keeps what its tensors freed, and the device
 /// counts that as used, so llama.cpp and stable-diffusion.cpp, which fit
 /// themselves to free memory, wouldn't see it as free.
-async fn loaded<M, F>(key: &Key, load: impl FnOnce(&'static Device) -> F) -> Result<M>
+async fn loaded<M, F>(key: &Key, load: impl Fn(&'static Device) -> F) -> Result<M>
 where
     F: Future<Output = anyhow::Result<M>>,
 {

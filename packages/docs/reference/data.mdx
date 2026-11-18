@@ -30,7 +30,7 @@ API keys and sign-ins are encrypted in `~/.koharu/secrets.age`. Its key is the o
 
 ## Runtime and model store
 
-Runtime packages and model files are stored in the `store` folder in Koharu's installation folder on Windows, and in `koharu/store` under the operating system cache folder on macOS and Linux. This data is replaceable: removing it while Koharu is closed makes the required files download again.
+Runtime packages and model files are stored in `Koharu/store` under the OS local application data directory, shared by debug and release builds. This data is replaceable: removing it while Koharu is closed makes the required files download again.
 
 Never remove the store while Koharu may still have its libraries loaded.
 

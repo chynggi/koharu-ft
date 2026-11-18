@@ -207,20 +207,38 @@ impl Canvas {
     /// press on it, as Photoshop's document window takes the keys once
     /// clicked: what it does, or `None` for a key the canvas leaves to the
     /// host. Delete and Backspace remove the direct selection tool's picked
-    /// anchors. A key whose press it took is its own until released, its
-    /// repeats included, so a held key never reaches the host halfway.
+    /// anchors, and the arrows move the select tool's selection a pixel, ten
+    /// with Shift, as Photoshop's Move tool nudges. A key whose press it took
+    /// is its own until released, its repeats included, so a held key never
+    /// reaches the host halfway; a held arrow nudges on each repeat.
     pub fn key(&mut self, event: &KeyboardEvent) -> Option<Vec<Effect>> {
         if self.held == Some(event.code) {
             if event.state == KeyState::Up {
                 self.held = None;
+                return Some(Vec::new());
             }
-            return Some(Vec::new());
+            return Some(self.nudge(event).unwrap_or_default());
         }
         if event.state != KeyState::Down {
             return None;
         }
         let effects = match event.key {
             Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.delete_anchors()?,
+            Key::Named(
+                NamedKey::ArrowLeft
+                | NamedKey::ArrowRight
+                | NamedKey::ArrowUp
+                | NamedKey::ArrowDown,
+            ) => self.nudge(event)?,
+            Key::Named(NamedKey::Escape)
+                if matches!(
+                    self.gesture.as_ref().map(|active| &active.gesture),
+                    Some(Gesture::ResizeBrush(_))
+                ) =>
+            {
+                self.cancel();
+                Vec::new()
+            }
             _ => return None,
         };
         self.held = Some(event.code);
@@ -235,6 +253,29 @@ impl Canvas {
         }
         let effects = tools::direct::delete(&self.context()?);
         self.selection.set_anchors(Vec::new());
+        Some(self.apply(effects))
+    }
+
+    /// The select tool's nudge an arrow `event` asks for; `None` with another
+    /// key, tool, or modifier, during a gesture, or with nothing to move.
+    fn nudge(&mut self, event: &KeyboardEvent) -> Option<Vec<Effect>> {
+        let modifiers = event.modifiers;
+        if self.tool != Tool::Select
+            || self.gesture.is_some()
+            || tools::command(modifiers)
+            || modifiers.alt()
+        {
+            return None;
+        }
+        let step = if modifiers.shift() { 10.0 } else { 1.0 };
+        let by = match event.key {
+            Key::Named(NamedKey::ArrowLeft) => Vec2::new(-step, 0.0),
+            Key::Named(NamedKey::ArrowRight) => Vec2::new(step, 0.0),
+            Key::Named(NamedKey::ArrowUp) => Vec2::new(0.0, -step),
+            Key::Named(NamedKey::ArrowDown) => Vec2::new(0.0, step),
+            _ => return None,
+        };
+        let effects = tools::select::nudge(&self.context()?, by)?;
         Some(self.apply(effects))
     }
 
@@ -368,6 +409,12 @@ impl Canvas {
             (Tool::Text, Some(PointerButton::Primary)) => {
                 Press::starts(Gesture::Draft(Draft::new(sample)))
             }
+            (tool @ (Tool::Rectangle | Tool::Ellipse), Some(PointerButton::Primary)) => {
+                Press::starts(Gesture::Shape(tools::shape::ShapeDraft::new(tool, sample)))
+            }
+            (Tool::Bucket, Some(PointerButton::Primary)) => {
+                Press::answers(tools::bucket::fill(&cx, sample)?)
+            }
             (Tool::ColorPicker, Some(PointerButton::Primary)) => {
                 Press::answers(tools::picker::pick(&cx, sample)?)
             }
@@ -454,6 +501,10 @@ impl Canvas {
                 Effect::Camera(camera) => {
                     self.view.set_camera(camera);
                     Some(Effect::Camera(self.view.camera()))
+                }
+                Effect::BrushDiameter(diameter) => {
+                    self.brush.diameter = diameter;
+                    Some(Effect::BrushDiameter(diameter))
                 }
                 effect => Some(effect),
             })
@@ -623,6 +674,7 @@ impl Canvas {
             overlay.handles(control);
         }
         if self.tool.is_brush()
+            && !matches!(gesture, Some(Gesture::ResizeBrush(_)))
             && let Some(sample) = self.pointer
         {
             overlay.ring(sample.screen, self.brush.diameter);

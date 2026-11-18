@@ -588,7 +588,46 @@ fn brush(diameter: f64, color: [f32; 4]) -> Brush {
     Brush {
         diameter,
         color: Rgba(color),
+        ramp: None,
     }
+}
+
+#[test]
+fn brush_resize_commits_the_diameter_on_release_and_esc_cancels() {
+    let Some(mut fixture) = unscaled_of((100, 100), Vec::new()) else {
+        return;
+    };
+    let canvas = &mut fixture.canvas;
+    canvas.set_tool(Tool::Draw);
+    canvas.set_brush(brush(10.0, [1.0, 0.0, 0.0, 1.0]));
+    let modifiers = Modifiers::CONTROL | Modifiers::ALT;
+
+    assert!(
+        canvas
+            .input(down((30.0, 50.0), modifiers))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(canvas.input(drag(1, (40.0, 50.0))).unwrap().is_empty());
+    let effects = canvas.input(up(1, (40.0, 50.0))).unwrap();
+    assert!(matches!(&effects[..], [Effect::BrushDiameter(diameter)] if *diameter == 30.0));
+
+    assert!(
+        canvas
+            .input(down((30.0, 50.0), modifiers))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(canvas.input(drag(1, (50.0, 50.0))).unwrap().is_empty());
+    let mut escape = delete(KeyState::Down, false);
+    escape.code = Code::Escape;
+    escape.key = Key::Named(NamedKey::Escape);
+    assert!(canvas.key(&escape).unwrap().is_empty());
+    assert!(canvas.input(up(1, (50.0, 50.0))).unwrap().is_empty());
+
+    canvas.input(down((30.0, 50.0), modifiers)).unwrap();
+    let effects = canvas.input(up(1, (40.0, 50.0))).unwrap();
+    assert!(matches!(&effects[..], [Effect::BrushDiameter(diameter)] if *diameter == 50.0));
 }
 
 #[test]
@@ -606,6 +645,71 @@ fn a_stroke_paints_a_new_raster_where_it_ran() {
     assert_eq!(fixture.canvas.selection(), [raster]);
     assert_eq!(pixel(&fixture, raster, (50, 50)), [255, 0, 0, 255]);
     assert_eq!(pixel(&fixture, raster, (50, 70))[3], 0);
+}
+
+#[test]
+fn the_bucket_fills_the_region_of_one_colour_under_it() {
+    let Some(mut fixture) = unscaled_of((100, 100), offset_raster()) else {
+        return;
+    };
+    let raster = layers(&fixture)[0];
+    fixture.canvas.set_tool(Tool::Bucket);
+    fixture.canvas.set_brush(brush(6.0, [1.0, 0.0, 0.0, 1.0]));
+    // With no raster selected there is nothing to fill.
+    let effects = gesture(&mut fixture.canvas, (50.0, 50.0), (50.0, 50.0));
+    assert!(matches!(
+        effects[..],
+        [Effect::Notice(Notice::FillNeedsRaster)]
+    ));
+
+    fixture.canvas.select(vec![raster]);
+    let effects = gesture(&mut fixture.canvas, (50.0, 50.0), (50.0, 50.0));
+    assert_eq!(apply(&mut fixture, effects), ["fill"]);
+    assert_eq!(pixel(&fixture, raster, (35, 35)), [255, 0, 0, 255]);
+    assert_eq!(pixel(&fixture, raster, (25, 25)), [0; 4]);
+    // Filling a colour with itself changes nothing.
+    let effects = gesture(&mut fixture.canvas, (50.0, 50.0), (50.0, 50.0));
+    assert!(apply(&mut fixture, effects).is_empty());
+    // The clear pixels around it fill to the page's edge, past the raster's
+    // own origin, and leave the square.
+    let effects = gesture(&mut fixture.canvas, (5.0, 5.0), (5.0, 5.0));
+    assert_eq!(apply(&mut fixture, effects), ["fill"]);
+    assert_eq!(pixel(&fixture, raster, (-5, -5)), [255, 0, 0, 255]);
+    assert_eq!(pixel(&fixture, raster, (89, 89)), [255, 0, 0, 255]);
+    assert_eq!(pixel(&fixture, raster, (90, 90)), [0; 4]);
+}
+
+#[test]
+fn a_ramp_fades_along_the_stroke_or_across_the_page() {
+    let Some(mut fixture) = unscaled_of((100, 20), Vec::new()) else {
+        return;
+    };
+    fixture.canvas.set_tool(Tool::Draw);
+    let ramp = |along| Brush {
+        ramp: Some(crate::Ramp {
+            to: Rgba([0.0, 0.0, 1.0, 1.0]),
+            along,
+        }),
+        ..brush(6.0, [1.0, 0.0, 0.0, 1.0])
+    };
+    // Along a stroke from right to left, its start is red and its end blue.
+    fixture.canvas.set_brush(ramp(crate::RampAlong::Stroke));
+    let effects = gesture(&mut fixture.canvas, (90.0, 5.0), (10.0, 5.0));
+    assert_eq!(apply(&mut fixture, effects), ["paint"]);
+    let along = layers(&fixture)[0];
+    let [red, _, blue, _] = pixel(&fixture, along, (89, 5));
+    assert!(red > 200 && blue < 50, "{red} {blue}");
+    let [red, _, blue, _] = pixel(&fixture, along, (11, 5));
+    assert!(blue > 200 && red < 50, "{red} {blue}");
+
+    // Across the page, the same stroke is blue at the right.
+    fixture.canvas.select(Vec::new());
+    fixture.canvas.set_brush(ramp(crate::RampAlong::Horizontal));
+    let effects = gesture(&mut fixture.canvas, (90.0, 15.0), (10.0, 15.0));
+    assert_eq!(apply(&mut fixture, effects), ["paint"]);
+    let across = layers(&fixture)[1];
+    let [red, _, blue, _] = pixel(&fixture, across, (89, 15));
+    assert!(blue > 200 && red < 50, "{red} {blue}");
 }
 
 #[test]
@@ -661,6 +765,75 @@ fn a_remove_stroke_asks_to_inpaint_what_it_covered() {
     assert!(rect.x + rect.width as i32 >= 44 && rect.y + rect.height as i32 >= 24);
     let at = ((20 - rect.y) * rect.width as i32 + (30 - rect.x)) as usize;
     assert_eq!(mask[at], 255);
+}
+
+#[test]
+fn a_shape_tool_fills_its_drag_with_the_brush_colour() {
+    let Some(mut fixture) = unscaled(Vec::new()) else {
+        return;
+    };
+    fixture.canvas.set_brush(brush(16.0, [0.0, 0.0, 1.0, 1.0]));
+    let bounds = |fixture: &Fixture, id| {
+        let value = layer(fixture, id);
+        assert_eq!(value["fill"], json!([0.0, 0.0, 1.0, 1.0]));
+        let path = value["path"].as_str().expect("a path").to_owned();
+        BezPath::from_svg(&path).expect("a path").bounding_box()
+    };
+
+    fixture.canvas.set_tool(Tool::Rectangle);
+    // A click draws nothing.
+    let effects = gesture(&mut fixture.canvas, (30.0, 40.0), (30.0, 40.0));
+    assert!(apply(&mut fixture, effects).is_empty());
+    let effects = gesture(&mut fixture.canvas, (110.0, 60.0), (10.0, 10.0));
+    assert_eq!(apply(&mut fixture, effects), ["add_shape"]);
+    let [rectangle] = layers(&fixture)[..] else {
+        panic!("one layer");
+    };
+    assert_eq!(fixture.canvas.selection(), [rectangle]);
+    assert_eq!(
+        bounds(&fixture, rectangle),
+        Rect::new(10.0, 10.0, 110.0, 60.0)
+    );
+
+    // Shift keeps an ellipse round; Alt draws it about the press.
+    fixture.canvas.set_tool(Tool::Ellipse);
+    let both = SHIFT | Modifiers::ALT;
+    let mut effects = fixture
+        .canvas
+        .input(down((200.0, 200.0), both))
+        .expect("input");
+    effects.extend(
+        fixture
+            .canvas
+            .input(PointerEvent::Move(PointerUpdate {
+                pointer: mouse(1),
+                current: state((240.0, 220.0), both),
+                coalesced: Vec::new(),
+                predicted: Vec::new(),
+            }))
+            .expect("input"),
+    );
+    // The release reads the keys too, as Photoshop's does.
+    effects.extend(
+        fixture
+            .canvas
+            .input(PointerEvent::Up(PointerButtonEvent {
+                button: Some(PointerButton::Primary),
+                pointer: mouse(1),
+                state: state((240.0, 220.0), both),
+            }))
+            .expect("input"),
+    );
+    assert_eq!(apply(&mut fixture, effects), ["add_shape"]);
+    let [_, ellipse] = layers(&fixture)[..] else {
+        panic!("two layers");
+    };
+    let round = bounds(&fixture, ellipse);
+    assert!(close(round.origin(), Point::new(160.0, 160.0)), "{round:?}");
+    assert!(close(
+        Point::new(round.x1, round.y1),
+        Point::new(240.0, 240.0)
+    ));
 }
 
 #[test]
@@ -1363,6 +1536,67 @@ fn deleting_anchors_joins_their_neighbours_and_never_opens_a_frame() {
     fixture.canvas.key(&delete(KeyState::Up, false));
     // With no anchor picked, Delete is the host's.
     assert!(fixture.canvas.key(&delete(KeyState::Down, false)).is_none());
+}
+
+fn arrow(key: NamedKey, code: Code, state: KeyState, repeat: bool, shift: bool) -> KeyboardEvent {
+    let mut modifiers = Modifiers::default();
+    modifiers.set(Modifiers::SHIFT, shift);
+    KeyboardEvent {
+        state,
+        key: Key::Named(key),
+        code,
+        modifiers,
+        repeat,
+        ..KeyboardEvent::default()
+    }
+}
+
+#[test]
+fn arrows_nudge_the_selection_a_pixel_or_ten_with_shift() {
+    let Some(mut fixture) = unscaled(vec![shape(0, (50.0, 50.0, 40.0, 40.0), json!({}))]) else {
+        return;
+    };
+    let right = |state, repeat| arrow(NamedKey::ArrowRight, Code::ArrowRight, state, repeat, false);
+    let down = |state, repeat| arrow(NamedKey::ArrowDown, Code::ArrowDown, state, repeat, true);
+    let origin = |fixture: &Fixture| {
+        let path = layer(fixture, layers(fixture)[0])["path"]
+            .as_str()
+            .expect("a path")
+            .to_owned();
+        BezPath::from_svg(&path)
+            .expect("a path")
+            .bounding_box()
+            .origin()
+    };
+    // With nothing selected, an arrow is the host's, which turns the page.
+    assert!(fixture.canvas.key(&right(KeyState::Down, false)).is_none());
+
+    fixture.canvas.select(layers(&fixture));
+    let effects = fixture
+        .canvas
+        .key(&right(KeyState::Down, false))
+        .expect("taken");
+    assert_eq!(apply(&mut fixture, effects), ["move"]);
+    // Held, each repeat nudges again.
+    let effects = fixture
+        .canvas
+        .key(&right(KeyState::Down, true))
+        .expect("taken");
+    assert_eq!(apply(&mut fixture, effects), ["move"]);
+    assert!(fixture.canvas.key(&right(KeyState::Up, false)).is_some());
+    assert!(close(origin(&fixture), Point::new(52.0, 50.0)));
+
+    let effects = fixture
+        .canvas
+        .key(&down(KeyState::Down, false))
+        .expect("taken");
+    assert_eq!(apply(&mut fixture, effects), ["move"]);
+    fixture.canvas.key(&down(KeyState::Up, false));
+    assert!(close(origin(&fixture), Point::new(52.0, 60.0)));
+
+    // Another tool leaves the arrows to the host.
+    fixture.canvas.set_tool(Tool::Draw);
+    assert!(fixture.canvas.key(&right(KeyState::Down, false)).is_none());
 }
 
 #[test]

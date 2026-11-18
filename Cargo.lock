@@ -5553,6 +5553,7 @@ dependencies = [
  "cursor-icon",
  "fs-err",
  "image",
+ "imageproc",
  "koharu-config",
  "koharu-renderer",
  "koharu-scene",
@@ -5762,6 +5763,7 @@ dependencies = [
  "tokenizers",
  "tokio",
  "tracing-subscriber",
+ "zip 9.6.0",
 ]
 
 [[package]]
@@ -5773,6 +5775,7 @@ dependencies = [
  "bytesize",
  "clap",
  "fs-err",
+ "futures",
  "icu_experimental",
  "icu_locale",
  "icu_locale_core",
@@ -5790,6 +5793,7 @@ dependencies = [
  "parking_lot 0.13.0",
  "petgraph 0.8.3",
  "rayon",
+ "reqwest",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -5801,6 +5805,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "zstd",
 ]
 
 [[package]]
@@ -5865,6 +5870,7 @@ version = "0.83.5"
 dependencies = [
  "anyhow",
  "backon",
+ "blake3",
  "dirs 7.0.0",
  "flate2",
  "fs-err",
@@ -5905,6 +5911,7 @@ dependencies = [
  "jsonptr 0.8.2",
  "kurbo",
  "rayon",
+ "regex",
  "rusqlite",
  "schemars 1.2.3",
  "semver",
@@ -5930,6 +5937,25 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-plugin",
+]
+
+[[package]]
+name = "koharu-server"
+version = "0.83.5"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "koharu-config",
+ "koharu-pipeline",
+ "koharu-scene",
+ "parking_lot 0.13.0",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

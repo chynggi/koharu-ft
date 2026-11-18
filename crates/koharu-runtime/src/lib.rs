@@ -1,5 +1,6 @@
 //! Gets Koharu ready to run models on this machine's GPU.
 
+mod asset;
 mod device;
 mod hardware;
 mod huggingface;
@@ -10,6 +11,7 @@ mod transfer;
 use anyhow::Context;
 use tokio::sync::OnceCell;
 
+pub use asset::Asset;
 pub use device::{Backend, Device, Memory};
 pub use huggingface::Repository;
 pub use transfer::{State, Transfer, transfers};

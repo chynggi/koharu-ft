@@ -23,4 +23,6 @@ pub enum Error {
     SecretsUnreadable { path: PathBuf, reason: String },
     #[error("the secret `{0}` can't be empty")]
     EmptySecret(String),
+    #[error("secrets come from the environment here; set `{0}` and start again")]
+    FromEnvironment(String),
 }

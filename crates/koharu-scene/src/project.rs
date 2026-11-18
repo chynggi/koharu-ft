@@ -37,6 +37,10 @@ pub struct Project {
 #[serde(deny_unknown_fields)]
 pub struct Page {
     pub id: PageId,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub chapter: Option<String>,
     pub size: Size,
     pub background: Option<Background>,
     /// Drawn first to last.

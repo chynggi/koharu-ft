@@ -4,8 +4,11 @@
 //!
 //! These calls take a file lock and ask the OS credential store, either of which
 //! can block, so async code should run them on a blocking thread.
+//!
+//! A processing server, as in a container with no credential store, reads
+//! them from its environment instead; the desktop app never does.
 
-use std::{collections::BTreeMap, path::Path, str::FromStr};
+use std::{collections::BTreeMap, path::Path, str::FromStr, sync::OnceLock};
 
 use age::x25519::Identity;
 
@@ -19,18 +22,54 @@ const ACCOUNT: &str = "secrets";
 
 type Secrets = BTreeMap<String, String>;
 
+/// Set once a server has asked for its secrets from the environment.
+static ENVIRONMENT: OnceLock<()> = OnceLock::new();
+
+/// Reads every secret from the environment from now on, the one under
+/// `name` from `variable(name)`, and refuses to store one. Only a processing
+/// server calls this.
+pub fn from_environment() {
+    let _ = ENVIRONMENT.set(());
+}
+
+/// The environment variable a server reads the secret `name` from:
+/// `KOHARU_SECRET_` and the name in capitals, any other character `_`.
+#[must_use]
+pub fn variable(name: &str) -> String {
+    let name: String = name
+        .chars()
+        .map(|character| match character.is_ascii_alphanumeric() {
+            true => character.to_ascii_uppercase(),
+            false => '_',
+        })
+        .collect();
+    format!("KOHARU_SECRET_{name}")
+}
+
 /// The secret stored under `name`, or nothing when there's none.
 pub fn get(name: &str) -> Result<Option<SecretString>> {
+    if ENVIRONMENT.get().is_some() {
+        return Ok(std::env::var(variable(name))
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from));
+    }
     read(&path()?, &CredentialStore, name)
 }
 
 /// Stores `value` under `name`, replacing what was there.
 pub fn set(name: &str, value: &SecretString) -> Result<()> {
+    if ENVIRONMENT.get().is_some() {
+        return Err(Error::FromEnvironment(variable(name)));
+    }
     store(&path()?, &CredentialStore, name, value)
 }
 
 /// Forgets the secret under `name`; forgetting one that isn't stored succeeds.
 pub fn delete(name: &str) -> Result<()> {
+    if ENVIRONMENT.get().is_some() {
+        return Err(Error::FromEnvironment(variable(name)));
+    }
     edit(&path()?, &CredentialStore, |secrets| {
         secrets.remove(name);
     })

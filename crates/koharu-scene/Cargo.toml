@@ -12,6 +12,7 @@ keywords.workspace = true
 publish.workspace = true
 
 [dependencies]
+regex = { workspace = true }
 blake3 = { workspace = true }
 color = { workspace = true }
 derive_more = { workspace = true }

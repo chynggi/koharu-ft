@@ -1,9 +1,10 @@
 'use client'
 
-import { BookOpenText, Bot, Layers3 } from 'lucide-react'
+import { BookOpenText, Bot, Layers3, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AgentPanel } from '@/components/editor/AgentPanel'
+import { FindPanel } from '@/components/editor/FindPanel'
 import { LayersPanel } from '@/components/editor/LayersPanel'
 import { StoryPanel } from '@/components/editor/StoryPanel'
 import { useKoharuStore, type Panel } from '@/lib/store'
@@ -35,6 +36,9 @@ export function RightSidebar() {
           <TabsTrigger value='story' className={tab}>
             <BookOpenText /> {t('story.title')}
           </TabsTrigger>
+          <TabsTrigger value='find' className={tab}>
+            <Search /> {t('find.title')}
+          </TabsTrigger>
           <TabsTrigger value='agent' className={tab}>
             <Bot /> {t('agent.title')}
           </TabsTrigger>
@@ -44,6 +48,9 @@ export function RightSidebar() {
         </TabsContent>
         <TabsContent value='story' className='flex min-h-0 flex-col'>
           <StoryPanel />
+        </TabsContent>
+        <TabsContent value='find' keepMounted className='flex min-h-0 flex-col'>
+          <FindPanel />
         </TabsContent>
         <TabsContent value='agent' keepMounted className='flex min-h-0 flex-col'>
           <AgentPanel />

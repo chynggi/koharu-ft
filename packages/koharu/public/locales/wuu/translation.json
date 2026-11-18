@@ -1,4 +1,18 @@
 {
+  "find": {
+    "matchCase": "区分大小写",
+    "noResults": "呒没翻译包含搿段文字。",
+    "page": "第 {{number}} 页",
+    "placeholder": "勒拉翻译里寻",
+    "replace": "替换",
+    "replaceAll": "全部替换",
+    "replacePlaceholder": "替换成",
+    "searching": "寻勒…",
+    "summary": "{{pages}} 页里有 {{count}} 处",
+    "summary_one": "{{pages}} 页里有 {{count}} 处",
+    "summary_other": "{{pages}} 页里有 {{count}} 处",
+    "title": "寻"
+  },
   "about": {
     "author": "作者",
     "description": "漫画翻译工具",
@@ -16,6 +30,17 @@
     "processingFailed": "处理失败哉。",
     "stop": "停止",
     "title": "活动"
+  },
+  "adjust": {
+    "apply": "应用",
+    "brightness_contrast": "亮度/对比度",
+    "brightness": "亮度",
+    "contrast": "对比度",
+    "levels": "色阶",
+    "levelsLow": "输入黑场",
+    "levelsHigh": "输入白场",
+    "hue": "色相",
+    "grayscale": "去色"
   },
   "agent": {
     "applying": "来勒拿改动应用到项目里向…",
@@ -38,7 +63,8 @@
   "canvas": {
     "empty": "先选一页，就好开始。",
     "notice": {
-      "eraser_needs_raster": "先选一个栅格图层，再好擦。"
+      "eraser_needs_raster": "先选一个栅格图层，再好擦。",
+      "fill_needs_raster": "先选一个栅格图层，再好填充。"
     },
     "typeText": "输入文本"
   },
@@ -83,6 +109,8 @@
     "title": "发送反馈"
   },
   "fontPicker": {
+    "addFavorite": "将 {{family}} 加入收藏",
+    "removeFavorite": "侪收藏夹里移除 {{family}}",
     "choose": "选字体",
     "fontCount": "{{count}} 种字体",
     "fontCount_one": "{{count}} 种字体",
@@ -95,14 +123,19 @@
     "close": "关脱历史记录",
     "opened": "打开辰光",
     "steps": {
+      "adjust_colors": "调整颜色",
+      "add_shape": "添加形状",
       "add_text": "加文字",
       "delete_layers": "删脱图层",
       "delete_pages": "删脱页面",
       "detect": "检测",
+      "duplicate_layer": "复制图层",
       "edit_frame": "编辑文字框",
       "erase": "擦脱",
+      "fill": "填充",
       "import": "导入页面",
       "inpaint": "修补",
+      "merge_pages": "合并页面",
       "move": "移动",
       "move_layer": "移动图层",
       "move_page": "移动页面",
@@ -110,13 +143,16 @@
       "recognize": "OCR",
       "resize": "改大小",
       "rotate": "旋转",
+      "set_fill": "更改填充",
       "set_locked": "锁牢或者解锁",
       "set_source_text": "编辑原文",
+      "set_stroke": "更改描边",
       "set_style": "改文字样式",
       "set_text": "编辑文字",
       "set_visibility": "显示或者隐藏",
       "translate": "翻译",
-      "update_layer": "改图层"
+      "update_layer": "改图层",
+      "update_page": "编辑页面"
     },
     "title": "历史记录"
   },
@@ -167,6 +203,7 @@
     "borderWidth": "描边宽度",
     "chooseFontSize": "选字体大小",
     "decreaseBorderWidth": "拿描边调细点",
+    "decreaseSecondBorderWidth": "拿第二道描边调细点",
     "font": "字体",
     "fontSize": "字体大小",
     "fontStyles": {
@@ -176,7 +213,19 @@
     "fontWeight": "字体粗细",
     "horizontal": "横排",
     "increaseBorderWidth": "拿描边调粗点",
+    "increaseSecondBorderWidth": "拿第二道描边调粗点",
     "opacity": "不透明度",
+    "outlineBevel": "斜角",
+    "outlineCenter": "居中",
+    "outlineInside": "內側",
+    "outlineJoin": "轉角",
+    "outlineMiter": "尖角",
+    "outlineOutside": "外側",
+    "outlinePosition": "位置",
+    "outlineRound": "圓角",
+    "secondBorder": "第二道描边",
+    "secondBorderColor": "第二道描边颜色",
+    "secondBorderWidth": "第二道描边宽度",
     "selectPage": "先选一页，再看箇页个图层。",
     "source": "原文",
     "text": "文本",
@@ -235,6 +284,7 @@
     "unlocked": "呒没锁牢"
   },
   "menu": {
+    "adjustments": "调整",
     "about": "关于",
     "closeProject": "关闭项目",
     "delete": "删除拣中个内容",
@@ -247,6 +297,7 @@
     "github": "GitHub",
     "help": "帮助",
     "history": "历史记录",
+    "image": "图像",
     "import": "导入页面",
     "process": "处理",
     "processLayers": "处理拣中个图层",
@@ -274,6 +325,7 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 个操作",
+    "chapterStart": "章节开始",
     "delete": "删除",
     "emptyDescription": "要添加页面，先导入图像文件或者文件夹。",
     "emptyTitle": "还呒没页面",
@@ -283,10 +335,17 @@
     "importFolder": "文件夹…",
     "importing": "来勒导入页面…",
     "importingAction": "来勒导入…",
+    "mergeAsSpread": "合并为跨页",
+    "mergeLeftToRight": "从左到右",
+    "mergeRightToLeft": "从右到左",
     "noImage": "呒没图像",
     "noResults": "呒没符合箇个筛选条件个页面。",
+    "pageName": "页面名称",
     "pageNumber": "第 {{number}} 页",
     "pages": "页面",
+    "rename": "改名",
+    "renameDescription": "帮箇页取个新名字。",
+    "renameTitle": "页面改名",
     "selected": "拣中个页面：{{count}} 页"
   },
   "outputPicker": {
@@ -320,6 +379,16 @@
   },
   "settings": {
     "appearance": {
+      "colorTheme": "配色主题",
+      "colorThemeDescription": "拣界面个配色。每种配色侪有浅色搭深色两个版本。",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "海洋",
+        "matcha": "抹茶"
+      },
+      "animations": "界面动画",
+      "animationsDescription": "让菜单搭对话框淡进淡出，悬停搭开关个变化也顺滑点。照系统“减少动态效果”个设置来。",
       "description": "照房间个环境调整工作区个外观，图稿个渲染方式弗变。",
       "interface": "界面",
       "language": "语言",
@@ -345,6 +414,13 @@
         "prompt": "提示词",
         "promptDescription": "只对生成式模型有用。",
         "textThreshold": "文本阈值"
+      },
+      "remote": {
+        "title": "处理服务器",
+        "description": "拿上头所有阶段放到另一台跑 koharu-server 个机器上运行。地址空着就勒本机运行。",
+        "url": "服务器地址",
+        "token": "服务器令牌",
+        "clearToken": "清脱服务器令牌"
       },
       "stages": {
         "detect": {
@@ -453,18 +529,48 @@
     "sfx": "音效",
     "title": "故事"
   },
+  "shape": {
+    "title": "形状",
+    "fill": "填充",
+    "fillNone": "无填充",
+    "fillSolid": "纯色",
+    "fillLinear": "线性渐变",
+    "fillRadial": "径向渐变",
+    "fillSweep": "角度渐变",
+    "fillPattern": "图案",
+    "fillColor": "填充颜色",
+    "choosePattern": "选择图像…",
+    "angle": "角度",
+    "stopColor": "色标 {{index}} 颜色",
+    "stopPosition": "色标 {{index}} 位置",
+    "removeStop": "删除色标 {{index}}",
+    "addStop": "添加色标",
+    "strokeColor": "描边颜色",
+    "strokeWidth": "描边宽度",
+    "decrease": "减小{{name}}",
+    "increase": "增大{{name}}"
+  },
   "tools": {
     "brushSize": "笔刷大小",
     "brushSizeInput": "笔刷大小",
     "brushSizePixels": "笔刷大小：{{size}} 像素",
     "brushSizeShort": "{{size}} px",
+    "bucket": "油漆桶",
     "color_picker": "取色器",
     "decreaseBrushSize": "拿笔刷调小点",
     "direct_select": "直接选择",
     "draw": "笔刷",
+    "ellipse": "椭圆",
     "eraser": "橡皮擦",
     "increaseBrushSize": "拿笔刷调大点",
     "pan": "平移",
+    "ramp": "颜色渐变",
+    "rampColor": "渐变结束颜色",
+    "rampAlong": "渐变方向",
+    "rampStroke": "沿笔画",
+    "rampHorizontal": "从左到右",
+    "rampVertical": "从上到下",
+    "rectangle": "矩形",
     "remove": "移除",
     "select": "选择",
     "text": "文本"
@@ -493,5 +599,24 @@
     "maximize": "最大化",
     "minimize": "最小化",
     "restore": "还原"
+  },
+  "export": {
+    "cancel": "取消",
+    "cbzHint": "拿所有 PNG 页面打包成一个压缩包，文件名用项目名称。",
+    "description": "拿页面渲染成图像文件。",
+    "formats": "格式",
+    "pattern": "文件名模式",
+    "patternError": {
+      "separator": "模式里向勿好包含路径分隔符或者 '..'。",
+      "token": "勿认得个标记。请用 {index} 或者 {label}。",
+      "unclosed": "模式里向有勿配对个花括号。",
+      "width": "位数一定要是数字。"
+    },
+    "scope": "页面",
+    "scopeAll": "全部页面（{{count}}）",
+    "scopeSelected": "所选页面（{{count}}）",
+    "start": "导出",
+    "subfolders": "按格式分文件夹",
+    "title": "导出页面"
   }
 }

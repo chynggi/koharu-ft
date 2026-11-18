@@ -14,6 +14,7 @@ publish.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 backon = { workspace = true }
+blake3 = { workspace = true }
 dirs = { workspace = true }
 flate2 = { workspace = true }
 fs-err = { workspace = true }

@@ -1,4 +1,18 @@
 {
+  "find": {
+    "matchCase": "Учитывать регистр",
+    "noResults": "Ни один перевод не содержит этот текст.",
+    "page": "Страница {{number}}",
+    "placeholder": "Искать в переводах",
+    "replace": "Заменить",
+    "replaceAll": "Заменить все",
+    "replacePlaceholder": "Заменить на",
+    "searching": "Поиск…",
+    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
+    "title": "Поиск"
+  },
   "about": {
     "author": "Автор",
     "description": "Инструменты перевода манги",
@@ -16,6 +30,17 @@
     "processingFailed": "Ошибка обработки.",
     "stop": "Остановить",
     "title": "Активность"
+  },
+  "adjust": {
+    "apply": "Применить",
+    "brightness_contrast": "Яркость/Контрастность",
+    "brightness": "Яркость",
+    "contrast": "Контрастность",
+    "levels": "Уровни",
+    "levelsLow": "Входной чёрный",
+    "levelsHigh": "Входной белый",
+    "hue": "Цветовой тон",
+    "grayscale": "Обесцветить"
   },
   "agent": {
     "applying": "Применение изменений проекта…",
@@ -38,7 +63,8 @@
   "canvas": {
     "empty": "Выберите страницу, чтобы начать.",
     "notice": {
-      "eraser_needs_raster": "Выберите растровый слой, чтобы стирать."
+      "eraser_needs_raster": "Выберите растровый слой, чтобы стирать.",
+      "fill_needs_raster": "Выберите растровый слой, чтобы залить."
     },
     "typeText": "Ввод текста"
   },
@@ -83,6 +109,8 @@
     "title": "Отправить отзыв"
   },
   "fontPicker": {
+    "addFavorite": "Добавить {{family}} в избранное",
+    "removeFavorite": "Удалить {{family}} из избранного",
     "choose": "Выбрать шрифт",
     "fontCount": "Шрифтов: {{count}}",
     "fontCount_one": "Шрифт: {{count}}",
@@ -95,14 +123,19 @@
     "close": "Закрыть историю",
     "opened": "При открытии",
     "steps": {
+      "adjust_colors": "Коррекция цвета",
+      "add_shape": "Добавить фигуру",
       "add_text": "Добавление текста",
       "delete_layers": "Удаление слоёв",
       "delete_pages": "Удаление страниц",
       "detect": "Обнаружение",
+      "duplicate_layer": "Дублировать слои",
       "edit_frame": "Изменение рамки",
       "erase": "Стирание",
+      "fill": "Заливка",
       "import": "Импорт страниц",
       "inpaint": "Восстановление",
+      "merge_pages": "Объединить страницы",
       "move": "Перемещение",
       "move_layer": "Перемещение слоёв",
       "move_page": "Перемещение страницы",
@@ -110,13 +143,16 @@
       "recognize": "OCR",
       "resize": "Изменение размера",
       "rotate": "Поворот",
+      "set_fill": "Изменить заливку",
       "set_locked": "Блокировка",
       "set_source_text": "Изменение исходного текста",
+      "set_stroke": "Изменить обводку",
       "set_style": "Изменение стиля текста",
       "set_text": "Изменение текста",
       "set_visibility": "Показ или скрытие",
       "translate": "Перевод",
-      "update_layer": "Изменение слоя"
+      "update_layer": "Изменение слоя",
+      "update_page": "Изменить страницу"
     },
     "title": "История"
   },
@@ -167,6 +203,7 @@
     "borderWidth": "Ширина обводки",
     "chooseFontSize": "Выбрать размер шрифта",
     "decreaseBorderWidth": "Уменьшить ширину обводки",
+    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
     "font": "Шрифт",
     "fontSize": "Размер шрифта",
     "fontStyles": {
@@ -176,7 +213,19 @@
     "fontWeight": "Насыщенность шрифта",
     "horizontal": "Горизонтально",
     "increaseBorderWidth": "Увеличить ширину обводки",
+    "increaseSecondBorderWidth": "Увеличить ширину второй обводки",
     "opacity": "Непрозрачность",
+    "outlineBevel": "Скошенные",
+    "outlineCenter": "По центру",
+    "outlineInside": "Внутри",
+    "outlineJoin": "Углы",
+    "outlineMiter": "Острые",
+    "outlineOutside": "Снаружи",
+    "outlinePosition": "Положение",
+    "outlineRound": "Скруглённые",
+    "secondBorder": "2-я обводка",
+    "secondBorderColor": "Цвет второй обводки",
+    "secondBorderWidth": "Ширина второй обводки",
     "selectPage": "Выберите страницу для просмотра её слоёв.",
     "source": "Исходный текст",
     "text": "Текст",
@@ -235,6 +284,7 @@
     "unlocked": "Не заблокировано"
   },
   "menu": {
+    "adjustments": "Коррекция",
     "about": "О программе",
     "closeProject": "Закрыть проект",
     "delete": "Удалить выбранное",
@@ -247,6 +297,7 @@
     "github": "GitHub",
     "help": "Справка",
     "history": "История",
+    "image": "Изображение",
     "import": "Импортировать страницы",
     "process": "Обработка",
     "processLayers": "Обработать выбранные слои",
@@ -274,6 +325,7 @@
   },
   "navigator": {
     "actionsFor": "Действия для {{page}}",
+    "chapterStart": "Начало главы",
     "delete": "Удалить",
     "emptyDescription": "Импортируйте изображения или папку, чтобы добавить страницы.",
     "emptyTitle": "Страниц пока нет",
@@ -283,10 +335,17 @@
     "importFolder": "Папка…",
     "importing": "Импорт страниц…",
     "importingAction": "Импорт…",
+    "mergeAsSpread": "Объединить в разворот",
+    "mergeLeftToRight": "Слева направо",
+    "mergeRightToLeft": "Справа налево",
     "noImage": "Нет изображения",
     "noResults": "Нет страниц, соответствующих фильтру.",
+    "pageName": "Название страницы",
     "pageNumber": "Страница {{number}}",
     "pages": "Страницы",
+    "rename": "Переименовать",
+    "renameDescription": "Выберите новое имя для страницы.",
+    "renameTitle": "Переименовать страницу",
     "selected": "Выбрано: {{count}}"
   },
   "outputPicker": {
@@ -320,6 +379,16 @@
   },
   "settings": {
     "appearance": {
+      "colorTheme": "Цветовая тема",
+      "colorThemeDescription": "Выберите палитру интерфейса. У каждой палитры есть светлый и тёмный вариант.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Океан",
+        "matcha": "Матча"
+      },
+      "animations": "Анимация интерфейса",
+      "animationsDescription": "Плавно показывает меню и диалоги и сглаживает наведение и переключатели. Учитывает системную настройку уменьшения движения.",
       "description": "Настройте вид рабочего пространства, не меняя отрисовку изображения.",
       "interface": "Интерфейс",
       "language": "Язык",
@@ -345,6 +414,13 @@
         "prompt": "Промпт",
         "promptDescription": "Применяется только к генеративным моделям.",
         "textThreshold": "Порог текста"
+      },
+      "remote": {
+        "title": "Сервер обработки",
+        "description": "Выполнять все этапы выше на другой машине с koharu-server. Оставьте адрес пустым, чтобы выполнять здесь.",
+        "url": "Адрес сервера",
+        "token": "Токен сервера",
+        "clearToken": "Удалить токен сервера"
       },
       "stages": {
         "detect": {
@@ -453,18 +529,48 @@
     "sfx": "Звуковой эффект",
     "title": "Сценарий"
   },
+  "shape": {
+    "title": "Фигура",
+    "fill": "Заливка",
+    "fillNone": "Без заливки",
+    "fillSolid": "Сплошной цвет",
+    "fillLinear": "Линейный градиент",
+    "fillRadial": "Радиальный градиент",
+    "fillSweep": "Угловой градиент",
+    "fillPattern": "Узор",
+    "fillColor": "Цвет заливки",
+    "choosePattern": "Выбрать изображение…",
+    "angle": "Угол",
+    "stopColor": "Цвет точки {{index}}",
+    "stopPosition": "Положение точки {{index}}",
+    "removeStop": "Удалить точку {{index}}",
+    "addStop": "Добавить точку",
+    "strokeColor": "Цвет обводки",
+    "strokeWidth": "Толщина обводки",
+    "decrease": "Уменьшить: {{name}}",
+    "increase": "Увеличить: {{name}}"
+  },
   "tools": {
     "brushSize": "Размер кисти",
     "brushSizeInput": "Размер кисти",
     "brushSizePixels": "Размер кисти: {{size}} пикс.",
     "brushSizeShort": "{{size}} пкс",
+    "bucket": "Заливка",
     "color_picker": "Пипетка",
     "decreaseBrushSize": "Уменьшить размер кисти",
     "direct_select": "Стрелка",
     "draw": "Рисование",
+    "ellipse": "Эллипс",
     "eraser": "Ластик",
     "increaseBrushSize": "Увеличить размер кисти",
     "pan": "Перемещение",
+    "ramp": "Цветовой переход",
+    "rampColor": "Конечный цвет перехода",
+    "rampAlong": "Направление перехода",
+    "rampStroke": "Вдоль штриха",
+    "rampHorizontal": "Слева направо",
+    "rampVertical": "Сверху вниз",
+    "rectangle": "Прямоугольник",
     "remove": "Удаление",
     "select": "Выбор",
     "text": "Текст"
@@ -493,5 +599,24 @@
     "maximize": "Развернуть",
     "minimize": "Свернуть",
     "restore": "Восстановить"
+  },
+  "export": {
+    "cancel": "Отмена",
+    "cbzHint": "Один архив со страницами PNG, названный по проекту.",
+    "description": "Отрисовывает страницы в файлы изображений.",
+    "formats": "Форматы",
+    "pattern": "Шаблон имени файла",
+    "patternError": {
+      "separator": "Шаблон не может содержать разделитель пути или '..'.",
+      "token": "Неизвестный токен. Используйте {index} или {label}.",
+      "unclosed": "Непарная фигурная скобка в шаблоне.",
+      "width": "Количество цифр должно быть числом."
+    },
+    "scope": "Страницы",
+    "scopeAll": "Все страницы ({{count}})",
+    "scopeSelected": "Выбранные ({{count}})",
+    "start": "Экспортировать",
+    "subfolders": "Отдельные папки для каждого формата",
+    "title": "Экспорт страниц"
   }
 }

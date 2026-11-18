@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 
 use crate::{
-    Change, Edit, Error, Hash, History, LayerId, Project, ProjectId, Rect, Result, Revision, Tiles,
-    change, edit, project::Picture, store::Store, tiles,
+    Applied, Change, Edit, Error, Hash, History, LayerId, Project, ProjectId, Rect, Result,
+    Revision, Tiles, Uuid, change, edit, project::Picture, store::Store, tiles,
 };
 
 /// A project file's extension, without the dot.
@@ -29,6 +29,8 @@ pub struct Session {
     undo: Vec<Step>,
     redo: Vec<Step>,
     changes: broadcast::Sender<Change>,
+    /// Every edit applied since recording began, while it's on.
+    recorded: Option<Vec<Applied>>,
 }
 
 /// A project to go back to: the one before an edit, on the undo stack, or the
@@ -67,6 +69,7 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             changes: broadcast::channel(CHANGES).0,
+            recorded: None,
         }
     }
 
@@ -121,14 +124,49 @@ impl Session {
 
     /// Runs `edit` as one undo step. If it fails, nothing changes.
     pub fn apply(&mut self, edit: Edit) -> Result<Change> {
+        self.commit(edit, None)
+    }
+
+    /// Applies an edit as it was applied elsewhere, making the ids it made
+    /// there, on a project the same as the one it was applied to.
+    pub fn replay(&mut self, applied: Applied) -> Result<Change> {
+        self.commit(applied.edit, Some(&applied.ids))
+    }
+
+    /// Keeps every edit applied from now on, with the ids it made, for
+    /// `recorded` to hand over; a session records nothing until asked, and
+    /// undo and redo aren't edits.
+    pub fn record(&mut self) {
+        self.recorded.get_or_insert_with(Vec::new);
+    }
+
+    /// The edits applied since recording began or this was last called.
+    pub fn recorded(&mut self) -> Vec<Applied> {
+        self.recorded
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    fn commit(&mut self, edit: Edit, given: Option<&[Uuid]>) -> Result<Change> {
         let tx = self.store.begin()?;
-        let (next, created) = edit::run(&self.project, &edit, &tx)?;
+        let edit::Ran {
+            project: next,
+            created,
+            made,
+        } = edit::run(&self.project, &edit, &tx, given)?;
         tx.write_diff(&self.project, &next)?;
         // An edit that changes nothing still commits, so a file it added is
         // kept, but it adds no undo step.
         tx.commit()?;
         let (pages, layers) = change::changed(&self.project, &next);
         let changed = next != self.project;
+        if let Some(recorded) = &mut self.recorded {
+            recorded.push(Applied {
+                edit: edit.clone(),
+                ids: made,
+            });
+        }
         if changed {
             let before = std::mem::replace(&mut self.project, next);
             self.undo.push(Step {

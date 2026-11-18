@@ -6,7 +6,7 @@ mod engine_data;
 use koharu_renderer::{Drawn, Frame, Raster, Renderer};
 use koharu_scene::{
     Background, Balloon, Blend, Block, Content, FillRule, Layer, LayerId, Offset, PageId, Path,
-    Rgba, Session, Shape,
+    Rgba, Session, Shape, ShapeFill,
 };
 use kurbo::BezPath;
 use photocraft_psd::{
@@ -246,7 +246,7 @@ impl Export<'_> {
         let shape = Shape {
             path: balloon.outline.clone(),
             fill_rule: FillRule::NonZero,
-            fill: Some(Rgba([1.0, 1.0, 1.0, 1.0])),
+            fill: Some(ShapeFill::Solid(Rgba([1.0, 1.0, 1.0, 1.0]))),
             stroke: None,
         };
         let name = self.labels.outline.clone();

@@ -158,21 +158,42 @@ pub(crate) fn write(
                     ((y - origin_y) as usize * SIZE as usize + (from_x - origin_x) as usize) * bpp;
                 raw[target..target + width].copy_from_slice(&pixels[source..source + width]);
             }
-            let empty = match format {
-                PixelFormat::Rgba8 => raw.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0),
-                PixelFormat::Gray8 => raw.iter().all(|&value| value == 0),
-            };
-            if empty {
-                return Ok((position.0, position.1, None));
-            }
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::new(LEVEL));
-            encoder
-                .write_all(&raw)
-                .expect("writing to a Vec cannot fail");
-            let bytes = encoder.finish().expect("writing to a Vec cannot fail");
-            Ok((position.0, position.1, Some(bytes)))
+            Ok((position.0, position.1, encode(&raw, format)))
         })
         .collect()
+}
+
+/// Runs `change` on each of the `current` tiles' pixels, in parallel, and
+/// returns them encoded again, `None` for one now empty.
+pub(crate) fn map(
+    current: &[Stored],
+    format: PixelFormat,
+    change: impl Fn(&mut Vec<u8>) + Sync,
+) -> Result<Vec<Written>> {
+    current
+        .par_iter()
+        .map(|(x, y, bytes)| {
+            let mut raw = decompress(bytes, format)?;
+            change(&mut raw);
+            Ok((*x, *y, encode(&raw, format)))
+        })
+        .collect()
+}
+
+/// A tile's pixels compressed, or `None` when it holds none.
+fn encode(raw: &[u8], format: PixelFormat) -> Option<Vec<u8>> {
+    let empty = match format {
+        PixelFormat::Rgba8 => raw.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0),
+        PixelFormat::Gray8 => raw.iter().all(|&value| value == 0),
+    };
+    if empty {
+        return None;
+    }
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::new(LEVEL));
+    encoder
+        .write_all(raw)
+        .expect("writing to a Vec cannot fail");
+    Some(encoder.finish().expect("writing to a Vec cannot fail"))
 }
 
 /// Decodes compressed tiles in parallel.

@@ -15,10 +15,11 @@ use crate::{
     selection::Selection,
     snapshot::Snapshot,
     tools::{
-        brush::Stroke,
+        brush::{Resize, Stroke},
         direct::{Pick, Reshape},
         pan::Pan,
         select::Marquee,
+        shape::ShapeDraft,
         text::Draft,
         transform::Transform,
     },
@@ -70,6 +71,7 @@ pub(crate) enum GestureLook {
     None,
     Rect(Rect),
     Pointer(Point),
+    BrushRing(Point, f64),
     Stroke {
         points: usize,
         last: Point,
@@ -80,8 +82,10 @@ pub(crate) enum Gesture {
     Marquee(Marquee),
     Transform(Transform),
     Draft(Draft),
+    Shape(ShapeDraft),
     Pan(Pan),
     Stroke(Stroke),
+    ResizeBrush(Resize),
     Reshape(Reshape),
     Pick(Pick),
 }
@@ -93,8 +97,10 @@ impl Gesture {
             Self::Marquee(marquee) => marquee.moved(samples),
             Self::Transform(transform) => transform.moved(samples),
             Self::Draft(draft) => draft.moved(samples),
+            Self::Shape(draft) => draft.moved(samples),
             Self::Pan(pan) => return pan.moved(samples),
             Self::Stroke(stroke) => return stroke.moved(cx, samples),
+            Self::ResizeBrush(resize) => resize.moved(cx, samples),
             Self::Reshape(reshape) => reshape.moved(samples),
             Self::Pick(pick) => pick.moved(samples),
         }
@@ -107,8 +113,10 @@ impl Gesture {
             Self::Marquee(marquee) => Ok(marquee.finish(cx)),
             Self::Transform(transform) => Ok(transform.finish(cx)),
             Self::Draft(draft) => Ok(draft.finish(cx)),
+            Self::Shape(draft) => Ok(draft.finish(cx)),
             Self::Pan(_) => Ok(Vec::new()),
             Self::Stroke(stroke) => stroke.finish(cx),
+            Self::ResizeBrush(resize) => Ok(resize.finish()),
             Self::Reshape(reshape) => Ok(reshape.finish()),
             Self::Pick(pick) => Ok(pick.finish(cx.view)),
         }
@@ -119,8 +127,10 @@ impl Gesture {
             Self::Marquee(marquee) => marquee.preview(overlay),
             Self::Transform(transform) => return transform.preview(overlay),
             Self::Draft(draft) => draft.preview(overlay),
+            Self::Shape(draft) => draft.preview(cx, overlay),
             Self::Pan(_) => {}
             Self::Stroke(stroke) => stroke.preview(cx, overlay),
+            Self::ResizeBrush(resize) => resize.preview(overlay),
             Self::Reshape(reshape) => reshape.preview(overlay),
             Self::Pick(pick) => pick.preview(overlay),
         }
@@ -133,8 +143,9 @@ impl Gesture {
             Self::Marquee(_) => Some(CursorIcon::Default),
             Self::Transform(transform) => Some(transform.cursor()),
             Self::Draft(_) => Some(CursorIcon::Text),
+            Self::Shape(_) => Some(CursorIcon::Crosshair),
             Self::Pan(_) => Some(CursorIcon::Grabbing),
-            Self::Stroke(_) => None,
+            Self::Stroke(_) | Self::ResizeBrush(_) => None,
             Self::Reshape(reshape) => Some(reshape.cursor()),
             Self::Pick(_) => Some(CursorIcon::Default),
         }
@@ -167,8 +178,10 @@ impl Gesture {
             Self::Marquee(marquee) => GestureLook::Rect(marquee.rect()),
             Self::Transform(transform) => GestureLook::Pointer(transform.current()),
             Self::Draft(draft) => GestureLook::Rect(draft.rect()),
+            Self::Shape(draft) => GestureLook::Rect(draft.rect()),
             Self::Pan(_) => GestureLook::None,
             Self::Stroke(stroke) => stroke.look(),
+            Self::ResizeBrush(resize) => resize.look(),
             Self::Reshape(reshape) => GestureLook::Pointer(reshape.current()),
             Self::Pick(pick) => GestureLook::Rect(pick.rect()),
         }

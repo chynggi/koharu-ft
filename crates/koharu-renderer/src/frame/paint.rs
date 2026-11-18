@@ -11,7 +11,7 @@ use vello_gpu::{
     peniko::{BlendMode, Color, Compose, Extend, Fill, ImageQuality, ImageSampler, Mix},
 };
 
-use super::tree::{Content, MaskNode, Node};
+use super::tree::{Content, MaskNode, Node, ShapePaint};
 use crate::{Drawing, text};
 
 /// Paints `nodes` onto `drawing` through `to_output`, from page pixels to
@@ -109,12 +109,37 @@ impl<'n> Painter<'_, '_, 'n> {
         match content {
             Content::Text(layout) => text::draw(self.drawing, layout, transform, strokes)?,
             Content::Shape(shape) => {
+                match &shape.fill {
+                    Some(ShapePaint::Brush(paint)) => self.drawing.scene.set_paint(paint.clone()),
+                    Some(ShapePaint::Pattern {
+                        pixels,
+                        transform: to_shape,
+                        extend,
+                    }) => {
+                        let scale = (transform * *to_shape).determinant().abs().sqrt();
+                        let (level, to_image) =
+                            pixels.level(scale, self.drawing.gpu.largest_texture());
+                        let image = self.drawing.image(&level);
+                        let scene = &mut self.drawing.scene;
+                        scene.set_paint_transform(*to_shape * to_image);
+                        scene.set_paint(PaintType::Image(Image {
+                            image,
+                            sampler: ImageSampler {
+                                x_extend: *extend,
+                                y_extend: *extend,
+                                quality: ImageQuality::Medium,
+                                alpha: 1.0,
+                            },
+                        }));
+                    }
+                    None => {}
+                }
                 let scene = &mut self.drawing.scene;
                 scene.set_transform(transform);
-                if let Some(color) = shape.fill {
+                if shape.fill.is_some() {
                     scene.set_fill_rule(shape.fill_rule);
-                    scene.set_paint(color);
                     scene.fill_path(&shape.path);
+                    scene.reset_paint_transform();
                 }
                 if let Some((stroke, color)) = &shape.stroke {
                     scene.set_stroke(stroke.clone());

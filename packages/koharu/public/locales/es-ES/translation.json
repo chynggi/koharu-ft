@@ -1,4 +1,18 @@
 {
+  "find": {
+    "matchCase": "Coincidir mayúsculas y minúsculas",
+    "noResults": "Ninguna traducción contiene este texto.",
+    "page": "Página {{number}}",
+    "placeholder": "Buscar en las traducciones",
+    "replace": "Reemplazar",
+    "replaceAll": "Reemplazar todo",
+    "replacePlaceholder": "Reemplazar por",
+    "searching": "Buscando…",
+    "summary": "{{count}} coincidencias en {{pages}} página(s)",
+    "summary_one": "{{count}} coincidencia en {{pages}} página(s)",
+    "summary_other": "{{count}} coincidencias en {{pages}} página(s)",
+    "title": "Buscar"
+  },
   "about": {
     "author": "Autor",
     "description": "Herramientas de traducción de manga",
@@ -16,6 +30,17 @@
     "processingFailed": "Error de procesamiento.",
     "stop": "Detener",
     "title": "Actividad"
+  },
+  "adjust": {
+    "apply": "Aplicar",
+    "brightness_contrast": "Brillo/Contraste",
+    "brightness": "Brillo",
+    "contrast": "Contraste",
+    "levels": "Niveles",
+    "levelsLow": "Negro de entrada",
+    "levelsHigh": "Blanco de entrada",
+    "hue": "Tono",
+    "grayscale": "Desaturar"
   },
   "agent": {
     "applying": "Aplicando cambios al proyecto…",
@@ -38,7 +63,8 @@
   "canvas": {
     "empty": "Selecciona una página para empezar.",
     "notice": {
-      "eraser_needs_raster": "Selecciona una capa ráster para borrar."
+      "eraser_needs_raster": "Selecciona una capa ráster para borrar.",
+      "fill_needs_raster": "Selecciona una capa ráster para rellenar."
     },
     "typeText": "Escribir texto"
   },
@@ -83,6 +109,8 @@
     "title": "Enviar comentarios"
   },
   "fontPicker": {
+    "addFavorite": "Agregar {{family}} a favoritos",
+    "removeFavorite": "Quitar {{family}} de favoritos",
     "choose": "Elegir una fuente",
     "fontCount": "{{count}} fuentes",
     "fontCount_one": "{{count}} fuente",
@@ -95,14 +123,19 @@
     "close": "Cerrar historia",
     "opened": "Al abrir",
     "steps": {
+      "adjust_colors": "Ajustar colores",
+      "add_shape": "Añadir forma",
       "add_text": "Añadir texto",
       "delete_layers": "Eliminar capas",
       "delete_pages": "Eliminar páginas",
       "detect": "Detección",
+      "duplicate_layer": "Duplicar capas",
       "edit_frame": "Editar marco",
       "erase": "Borrar",
+      "fill": "Rellenar",
       "import": "Importar páginas",
       "inpaint": "Relleno",
+      "merge_pages": "Combinar páginas",
       "move": "Mover",
       "move_layer": "Mover capas",
       "move_page": "Mover página",
@@ -110,13 +143,16 @@
       "recognize": "OCR",
       "resize": "Cambiar tamaño",
       "rotate": "Rotar",
+      "set_fill": "Cambiar relleno",
       "set_locked": "Bloquear o desbloquear",
       "set_source_text": "Editar texto original",
+      "set_stroke": "Cambiar trazo",
       "set_style": "Cambiar estilo de texto",
       "set_text": "Editar texto",
       "set_visibility": "Mostrar u ocultar",
       "translate": "Traducción",
-      "update_layer": "Cambiar capa"
+      "update_layer": "Cambiar capa",
+      "update_page": "Editar página"
     },
     "title": "Historia"
   },
@@ -167,6 +203,7 @@
     "borderWidth": "Ancho del contorno",
     "chooseFontSize": "Elegir tamaño de fuente",
     "decreaseBorderWidth": "Reducir ancho del contorno",
+    "decreaseSecondBorderWidth": "Reducir ancho del segundo contorno",
     "font": "Fuente",
     "fontSize": "Tamaño de fuente",
     "fontStyles": {
@@ -176,7 +213,19 @@
     "fontWeight": "Grosor de fuente",
     "horizontal": "Horizontal",
     "increaseBorderWidth": "Aumentar ancho del contorno",
+    "increaseSecondBorderWidth": "Aumentar ancho del segundo contorno",
     "opacity": "Opacidad",
+    "outlineBevel": "Biseladas",
+    "outlineCenter": "Centro",
+    "outlineInside": "Interior",
+    "outlineJoin": "Esquinas",
+    "outlineMiter": "Puntiagudas",
+    "outlineOutside": "Exterior",
+    "outlinePosition": "Posición",
+    "outlineRound": "Redondas",
+    "secondBorder": "2.º contorno",
+    "secondBorderColor": "Color del segundo contorno",
+    "secondBorderWidth": "Ancho del segundo contorno",
     "selectPage": "Selecciona una página para inspeccionar sus capas.",
     "source": "Texto original",
     "text": "Texto",
@@ -235,6 +284,7 @@
     "unlocked": "Desbloqueada"
   },
   "menu": {
+    "adjustments": "Ajustes",
     "about": "Acerca de",
     "closeProject": "Cerrar proyecto",
     "delete": "Eliminar selección",
@@ -247,6 +297,7 @@
     "github": "GitHub",
     "help": "Ayuda",
     "history": "Historia",
+    "image": "Imagen",
     "import": "Importar páginas",
     "process": "Procesar",
     "processLayers": "Procesar capas seleccionadas",
@@ -274,6 +325,7 @@
   },
   "navigator": {
     "actionsFor": "Acciones para {{page}}",
+    "chapterStart": "Inicio del capítulo",
     "delete": "Eliminar",
     "emptyDescription": "Importa archivos de imagen o una carpeta para añadir páginas.",
     "emptyTitle": "Aún no hay páginas",
@@ -283,10 +335,17 @@
     "importFolder": "Carpeta…",
     "importing": "Importando páginas…",
     "importingAction": "Importando…",
+    "mergeAsSpread": "Combinar en una página doble",
+    "mergeLeftToRight": "De izquierda a derecha",
+    "mergeRightToLeft": "De derecha a izquierda",
     "noImage": "Sin imagen",
     "noResults": "Ninguna página coincide con este filtro.",
+    "pageName": "Nombre de página",
     "pageNumber": "Página {{number}}",
     "pages": "Páginas",
+    "rename": "Cambiar nombre",
+    "renameDescription": "Elige un nombre nuevo para esta página.",
+    "renameTitle": "Cambiar nombre de página",
     "selected": "{{count}} seleccionadas"
   },
   "outputPicker": {
@@ -320,6 +379,16 @@
   },
   "settings": {
     "appearance": {
+      "colorTheme": "Tema de color",
+      "colorThemeDescription": "Elige la paleta de la interfaz. Cada paleta tiene una versión clara y otra oscura.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "Océano",
+        "matcha": "Matcha"
+      },
+      "animations": "Animaciones de la interfaz",
+      "animationsDescription": "Funde menús y diálogos y suaviza los cambios al pasar el cursor y en los interruptores. Respeta el ajuste del sistema para reducir el movimiento.",
       "description": "Adapta el espacio de trabajo a tu entorno sin cambiar cómo se renderiza la ilustración.",
       "interface": "Interfaz",
       "language": "Idioma",
@@ -345,6 +414,13 @@
         "prompt": "Indicación",
         "promptDescription": "Solo se aplica a los modelos generativos.",
         "textThreshold": "Umbral de texto"
+      },
+      "remote": {
+        "title": "Servidor de procesamiento",
+        "description": "Ejecuta todas las etapas anteriores en otra máquina con koharu-server. Deja la dirección vacía para ejecutarlas aquí.",
+        "url": "Dirección del servidor",
+        "token": "Token del servidor",
+        "clearToken": "Borrar el token del servidor"
       },
       "stages": {
         "detect": {
@@ -453,18 +529,48 @@
     "sfx": "Efecto de sonido",
     "title": "Guion"
   },
+  "shape": {
+    "title": "Forma",
+    "fill": "Relleno",
+    "fillNone": "Sin relleno",
+    "fillSolid": "Color sólido",
+    "fillLinear": "Degradado lineal",
+    "fillRadial": "Degradado radial",
+    "fillSweep": "Degradado angular",
+    "fillPattern": "Motivo",
+    "fillColor": "Color de relleno",
+    "choosePattern": "Elegir imagen…",
+    "angle": "Ángulo",
+    "stopColor": "Color de la parada {{index}}",
+    "stopPosition": "Posición de la parada {{index}}",
+    "removeStop": "Quitar la parada {{index}}",
+    "addStop": "Añadir parada",
+    "strokeColor": "Color del trazo",
+    "strokeWidth": "Grosor del trazo",
+    "decrease": "Reducir {{name}}",
+    "increase": "Aumentar {{name}}"
+  },
   "tools": {
     "brushSize": "Tamaño del pincel",
     "brushSizeInput": "Tamaño del pincel",
     "brushSizePixels": "Tamaño del pincel: {{size}} píxeles",
     "brushSizeShort": "{{size}} px",
+    "bucket": "Bote de pintura",
     "color_picker": "Selector de color",
     "decreaseBrushSize": "Reducir tamaño del pincel",
     "direct_select": "Selección directa",
     "draw": "Dibujar",
+    "ellipse": "Elipse",
     "eraser": "Borrador",
     "increaseBrushSize": "Aumentar tamaño del pincel",
     "pan": "Desplazar",
+    "ramp": "Rampa de color",
+    "rampColor": "Color final de la rampa",
+    "rampAlong": "Dirección de la rampa",
+    "rampStroke": "A lo largo del trazo",
+    "rampHorizontal": "De izquierda a derecha",
+    "rampVertical": "De arriba abajo",
+    "rectangle": "Rectángulo",
     "remove": "Eliminar",
     "select": "Seleccionar",
     "text": "Texto"
@@ -493,5 +599,24 @@
     "maximize": "Maximizar",
     "minimize": "Minimizar",
     "restore": "Restaurar"
+  },
+  "export": {
+    "cancel": "Cancelar",
+    "cbzHint": "Un solo archivo con las páginas PNG, con el nombre del proyecto.",
+    "description": "Renderiza las páginas como archivos de imagen.",
+    "formats": "Formatos",
+    "pattern": "Patrón de nombre",
+    "patternError": {
+      "separator": "El patrón no puede contener un separador de ruta ni '..'.",
+      "token": "Token desconocido. Usa {index} o {label}.",
+      "unclosed": "Llave sin cerrar en el patrón.",
+      "width": "El número de dígitos tiene que ser un número."
+    },
+    "scope": "Páginas",
+    "scopeAll": "Todas las páginas ({{count}})",
+    "scopeSelected": "Seleccionadas ({{count}})",
+    "start": "Exportar",
+    "subfolders": "Carpetas separadas por formato",
+    "title": "Exportar páginas"
   }
 }

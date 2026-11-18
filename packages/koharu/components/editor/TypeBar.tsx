@@ -32,6 +32,8 @@ import {
   type Direction,
   type FontFamily,
   type LayerId,
+  type StrokeJoin,
+  type StrokePosition,
   type Text,
   type TextStyle,
   type Value,
@@ -65,6 +67,17 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/t
 const FALLBACK_FONT = 'CCWildWords'
 const BLACK = '#000000'
 const WHITE = '#FFFFFF'
+/** Each outline choice's label key, in the order the menus list them. */
+const strokePositions: Record<StrokePosition, string> = {
+  outside: 'outlineOutside',
+  center: 'outlineCenter',
+  inside: 'outlineInside',
+}
+const strokeJoins: Record<StrokeJoin, string> = {
+  round: 'outlineRound',
+  miter: 'outlineMiter',
+  bevel: 'outlineBevel',
+}
 
 interface Size {
   width: number
@@ -87,6 +100,7 @@ export function TypeBar() {
   const camera = useKoharuStore((state) => state.camera)
   const tool = useKoharuStore((state) => state.tool)
   const borderWidthId = useId()
+  const secondBorderWidthId = useId()
   const page = usePage().data
   const selectedIds = useKoharuStore((state) => state.selectedLayers)
   const defaultFont = useKoharuStore(
@@ -151,6 +165,11 @@ export function TypeBar() {
   const strokeWidth = chars.stroke_width ?? 0
   const stroke = chars.stroke ?? null
   const strokeEnabled = stroke !== null && stroke[3] > 0 && strokeWidth > 0
+  const strokePosition: StrokePosition = chars.stroke_position ?? 'outside'
+  const strokeJoin: StrokeJoin = chars.stroke_join ?? 'round'
+  const outerWidth = chars.outer_stroke_width ?? 0
+  const outer = chars.outer_stroke ?? null
+  const outerEnabled = outer !== null && outer[3] > 0 && outerWidth > 0
   const direction: Direction = lettering?.direction ?? 'horizontal'
   const align: Align = style.align ?? (direction === 'vertical' ? 'start' : 'center')
 
@@ -447,6 +466,102 @@ export function TypeBar() {
                 </NumberFieldDecrement>
                 <NumberFieldInput aria-label={t('inspector.borderWidth')} />
                 <NumberFieldIncrement aria-label={t('inspector.increaseBorderWidth')}>
+                  <Plus />
+                </NumberFieldIncrement>
+              </NumberFieldGroup>
+            </NumberField>
+          </div>
+          <div className='flex items-center gap-1'>
+            <Select
+              value={strokePosition}
+              onValueChange={(next) =>
+                next && apply({ chars: { stroke_position: next as StrokePosition } })
+              }
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('inspector.outlinePosition')}
+                className='min-w-0 flex-1'
+              >
+                <SelectValue>
+                  {(value: StrokePosition) => t(`inspector.${strokePositions[value]}`)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(strokePositions) as StrokePosition[]).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {t(`inspector.${strokePositions[value]}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={strokeJoin}
+              onValueChange={(next) =>
+                next && apply({ chars: { stroke_join: next as StrokeJoin } })
+              }
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('inspector.outlineJoin')}
+                className='min-w-0 flex-1'
+              >
+                <SelectValue>
+                  {(value: StrokeJoin) => t(`inspector.${strokeJoins[value]}`)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(strokeJoins) as StrokeJoin[]).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {t(`inspector.${strokeJoins[value]}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <span className='text-[10px] font-medium text-muted-foreground'>
+            {t('inspector.secondBorder')}
+          </span>
+          <div className='flex items-center gap-1'>
+            <ColorWell
+              label={t('inspector.secondBorderColor')}
+              size='sm'
+              allowTransparent
+              value={outerEnabled && outer ? rgbaToHex(outer) : null}
+              onChange={(color) =>
+                apply({
+                  chars:
+                    color === null
+                      ? { outer_stroke: null }
+                      : {
+                          outer_stroke: hexToRgba(color),
+                          outer_stroke_width: outerWidth > 0 ? outerWidth : 1.5,
+                        },
+                })
+              }
+            />
+            <NumberField
+              id={secondBorderWidthId}
+              name='second-border-width'
+              className='w-24'
+              value={outerWidth > 0 ? outerWidth : 1.5}
+              min={0.5}
+              max={32}
+              step={0.5}
+              onValueChange={(next) => {
+                if (next !== null && next >= 0.5 && next <= 32) {
+                  apply({
+                    chars: { outer_stroke_width: next, outer_stroke: outer ?? hexToRgba(BLACK) },
+                  })
+                }
+              }}
+            >
+              <NumberFieldGroup>
+                <NumberFieldDecrement aria-label={t('inspector.decreaseSecondBorderWidth')}>
+                  <Minus />
+                </NumberFieldDecrement>
+                <NumberFieldInput aria-label={t('inspector.secondBorderWidth')} />
+                <NumberFieldIncrement aria-label={t('inspector.increaseSecondBorderWidth')}>
                   <Plus />
                 </NumberFieldIncrement>
               </NumberFieldGroup>

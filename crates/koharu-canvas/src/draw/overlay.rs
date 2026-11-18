@@ -5,7 +5,10 @@
 use koharu_renderer::{Drawing, Frame, Label};
 use koharu_scene::Rgba;
 use kurbo::{Affine, BezPath, Circle, Line, Point, Rect, RoundedRect, Shape, Stroke};
-use vello_gpu::peniko::{BlendMode, Color, Compose, Fill, Mix};
+use vello_gpu::{
+    PaintType,
+    peniko::{BlendMode, Color, Compose, Fill, Gradient, Mix},
+};
 
 use crate::{
     Colors,
@@ -203,6 +206,18 @@ impl<'a, 'g> Overlay<'a, 'g> {
     /// A page path filled through the camera.
     pub fn fill(&mut self, path: &BezPath, tint: Rgba) {
         self.filled(self.view.to_screen(), color(tint), path);
+    }
+
+    /// A page path filled through the camera with a straight ramp between
+    /// two page points' colours.
+    pub fn fill_ramp(&mut self, path: &BezPath, (from, to): (Point, Point), colors: (Rgba, Rgba)) {
+        let gradient =
+            Gradient::new_linear(from, to).with_stops([color(colors.0), color(colors.1)]);
+        let scene = &mut self.drawing.scene;
+        scene.set_transform(self.view.to_screen());
+        scene.set_fill_rule(Fill::NonZero);
+        scene.set_paint(PaintType::Gradient(gradient));
+        scene.fill_path(path);
     }
 
     /// The brush's ring at `at` in the viewport, `diameter` page pixels

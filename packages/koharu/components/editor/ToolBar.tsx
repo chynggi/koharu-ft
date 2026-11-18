@@ -1,15 +1,19 @@
 'use client'
 
 import {
+  Blend,
   Brush,
+  Circle,
   Eraser,
   Hand,
   Minus,
   MousePointer2,
+  PaintBucket,
   Pipette,
   Plus,
   Sparkles,
   SplinePointer,
+  Square,
   Type,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -24,6 +28,7 @@ import {
   useKoharuStore,
   type CanvasTool,
 } from '@/lib/store'
+import type { RampAlong } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 import {
   NumberField,
@@ -38,6 +43,13 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@koharu/ui/components/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@koharu/ui/components/select'
 import { Slider } from '@koharu/ui/components/slider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 
@@ -45,8 +57,11 @@ const tools = [
   ['select', MousePointer2],
   ['direct_select', SplinePointer],
   ['text', Type],
+  ['rectangle', Square],
+  ['ellipse', Circle],
   ['draw', Brush],
   ['eraser', Eraser],
+  ['bucket', PaintBucket],
   ['color_picker', Pipette],
   ['remove', Sparkles],
   ['pan', Hand],
@@ -60,6 +75,10 @@ export function ToolBar() {
   const setTool = useKoharuStore((state) => state.setTool)
   const setBrush = useKoharuStore((state) => state.setBrush)
   const hasBrush = isBrushTool(active)
+  // The shape tools and the bucket fill with the brush colour, as Photoshop's with the
+  // foreground colour.
+  const colored =
+    active === 'draw' || active === 'rectangle' || active === 'ellipse' || active === 'bucket'
 
   return (
     <aside className='absolute top-3 left-3 z-20 flex w-11 flex-col rounded-2xl border border-border bg-[var(--surface-floating)] p-1 shadow-[var(--shadow-toolrail)]'>
@@ -93,18 +112,108 @@ export function ToolBar() {
         ))}
       </div>
 
-      {hasBrush && (
+      {(hasBrush || colored) && (
         <div className='flex flex-col items-center gap-1 border-t border-border/80 py-1.5'>
-          {active === 'draw' && (
+          {colored && (
             <ColorWell value={brush.color} onChange={(color) => setBrush({ ...brush, color })} />
           )}
-          <BrushSize
-            value={brush.diameter}
-            onChange={(diameter) => setBrush({ ...brush, diameter })}
-          />
+          {active === 'draw' && <RampControl />}
+          {hasBrush && (
+            <BrushSize
+              value={brush.diameter}
+              onChange={(diameter) => setBrush({ ...brush, diameter })}
+            />
+          )}
         </div>
       )}
     </aside>
+  )
+}
+
+/** Where a ramp runs, each with its label key. */
+const rampAlongs: Record<RampAlong, string> = {
+  stroke: 'rampStroke',
+  horizontal: 'rampHorizontal',
+  vertical: 'rampVertical',
+}
+
+/** The draw tool's ramp: the colour its paint fades to from the brush colour, and where. */
+function RampControl() {
+  const { t } = useTranslation()
+  const brush = useKoharuStore((state) => state.brush)
+  const setBrush = useKoharuStore((state) => state.setBrush)
+  const ramp = brush.ramp
+  return (
+    <Popover>
+      <Tooltip>
+        <PopoverTrigger
+          render={
+            <TooltipTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  aria-label={t('tools.ramp')}
+                  className='size-8 rounded-xl text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
+                />
+              }
+            >
+              {ramp ? (
+                <span
+                  aria-hidden='true'
+                  className='size-4 rounded-[4px] border border-border'
+                  style={{ background: `linear-gradient(90deg, ${brush.color}, ${ramp.to})` }}
+                />
+              ) : (
+                <Blend className='size-4' />
+              )}
+            </TooltipTrigger>
+          }
+        />
+        <TooltipContent side='right'>{t('tools.ramp')}</TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side='right'
+        align='center'
+        sideOffset={8}
+        className='w-52 gap-2.5 rounded-xl p-2.5'
+      >
+        <PopoverTitle className='text-[11px]'>{t('tools.ramp')}</PopoverTitle>
+        <div className='flex items-center gap-2'>
+          <ColorWell
+            label={t('tools.rampColor')}
+            size='sm'
+            allowTransparent
+            value={ramp?.to ?? null}
+            onChange={(to) =>
+              setBrush({
+                ...brush,
+                ramp: to === null ? null : { to, along: ramp?.along ?? 'stroke' },
+              })
+            }
+          />
+          <Select
+            value={ramp?.along ?? 'stroke'}
+            disabled={!ramp}
+            onValueChange={(along) =>
+              ramp && along && setBrush({ ...brush, ramp: { ...ramp, along: along as RampAlong } })
+            }
+          >
+            <SelectTrigger size='sm' aria-label={t('tools.rampAlong')} className='min-w-0 flex-1'>
+              <SelectValue>{(value: RampAlong) => t(`tools.${rampAlongs[value]}`)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(rampAlongs) as RampAlong[]).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(`tools.${rampAlongs[value]}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 

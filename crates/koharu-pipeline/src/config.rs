@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DetectorConfig, InpainterConfig, RecognizerConfig, TranslatorConfig};
+use crate::{DetectorConfig, InpainterConfig, RecognizerConfig, RemoteConfig, TranslatorConfig};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -15,6 +15,9 @@ pub struct PipelineConfig {
     pub recognizer: RecognizerConfig,
     pub inpainter: InpainterConfig,
     pub translator: TranslatorConfig,
+    /// The processing server runs go to, with their settings; `None` runs
+    /// them here.
+    pub remote: Option<RemoteConfig>,
 }
 
 impl koharu_config::Section for PipelineConfig {

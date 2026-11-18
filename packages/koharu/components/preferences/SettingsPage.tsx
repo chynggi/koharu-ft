@@ -14,6 +14,7 @@ import {
 import { ProviderPreferences } from '@/components/preferences/ProviderPreferences'
 import { TypesettingPreferences } from '@/components/preferences/TypesettingPreferences'
 import { refreshModels, refreshPreferences, savePreferences } from '@/lib/backend'
+import { colorThemes, useForkPreferences } from '@/lib/forkPreferences'
 import { supportedLanguages } from '@/lib/i18n'
 import { useKoharuStore } from '@/lib/store'
 import type { Preferences } from '@koharu/ipc/protocol'
@@ -26,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@koharu/ui/components/select'
+import { Switch } from '@koharu/ui/components/switch'
 
 const tabs = [
   ['appearance', Palette],
@@ -156,6 +158,9 @@ export function SettingsPage() {
 function AppearancePreferences() {
   const { theme, setTheme } = useTheme()
   const { t, i18n } = useTranslation()
+  const colorTheme = useForkPreferences((state) => state.preferences.colorTheme)
+  const interfaceAnimations = useForkPreferences((state) => state.preferences.interfaceAnimations)
+  const setPreference = useForkPreferences((state) => state.setPreference)
   const themes = [
     ['light', Sun],
     ['dark', Moon],
@@ -194,6 +199,55 @@ function AppearancePreferences() {
                 </Button>
               )
             })}
+          </div>
+        </PreferenceRow>
+        <PreferenceRow
+          title={t('settings.appearance.colorTheme')}
+          description={t('settings.appearance.colorThemeDescription')}
+        >
+          <Select
+            value={colorTheme}
+            items={Object.fromEntries(
+              colorThemes.map((id) => [id, t(`settings.appearance.colorThemes.${id}`)]),
+            )}
+            onValueChange={(id) => {
+              const selected = colorThemes.find((theme) => theme === id)
+              if (selected) setPreference('colorTheme', selected)
+            }}
+          >
+            <SelectTrigger
+              aria-label={t('settings.appearance.colorTheme')}
+              className='h-8 w-full text-[11px]'
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {colorThemes.map((id) => (
+                <SelectItem key={id} value={id}>
+                  <span
+                    data-palette={id}
+                    aria-hidden='true'
+                    className='flex gap-0.5 rounded border border-border bg-background p-0.5'
+                  >
+                    <span className='size-2.5 rounded-sm bg-primary' />
+                    <span className='size-2.5 rounded-sm bg-accent' />
+                  </span>
+                  {t(`settings.appearance.colorThemes.${id}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PreferenceRow>
+        <PreferenceRow
+          title={t('settings.appearance.animations')}
+          description={t('settings.appearance.animationsDescription')}
+        >
+          <div className='flex h-8 items-center justify-end'>
+            <Switch
+              aria-label={t('settings.appearance.animations')}
+              checked={interfaceAnimations}
+              onCheckedChange={(enabled) => setPreference('interfaceAnimations', enabled)}
+            />
           </div>
         </PreferenceRow>
         <PreferenceRow title={t('settings.appearance.language')}>

@@ -5,15 +5,21 @@
 use std::{io::Cursor, sync::Arc};
 
 use anyhow::{Context as _, Result, anyhow};
-use image::ImageReader;
-use koharu_scene::{FillRule, Hash, LayerId, Offset, Session, Shape, Text};
-use kurbo::{BezPath, Cap, Join, Shape as _, Stroke};
-use vello_gpu::peniko::{Color, Fill};
+use image::{ImageReader, RgbaImage};
+use koharu_scene::{
+    FillRule, Gradient, GradientKind, Hash, LayerId, Offset, PaintExtend, Session, Shape,
+    ShapeFill, Text,
+};
+use kurbo::{Affine, BezPath, Cap, Join, Point, Rect, Shape as _, Stroke};
+use vello_gpu::{
+    PaintType,
+    peniko::{self, Color, ColorStop, Extend, Fill},
+};
 
 use super::Renderer;
 use crate::{
     fonts,
-    frame::{Content, ShapeVector},
+    frame::{Content, ShapePaint, ShapeVector},
     pixels::{Pixels, assemble, check_size},
     text,
 };
@@ -37,6 +43,10 @@ impl quick_cache::Weighter<Hash, Option<Content>> for Weight {
     fn weight(&self, _: &Hash, content: &Option<Content>) -> u64 {
         match content {
             Some(Content::Pixels(pixels)) => pixels.bytes(),
+            Some(Content::Shape(shape)) => match &shape.fill {
+                Some(ShapePaint::Pattern { pixels, .. }) => pixels.bytes(),
+                _ => 1024,
+            },
             _ => 1024,
         }
     }
@@ -56,6 +66,63 @@ pub(super) fn cache() -> Cache {
         Default::default(),
         Default::default(),
     )
+}
+
+/// Imported file `file` decoded, its size checked before any pixel is.
+fn decode(session: &Session, file: Hash) -> Result<RgbaImage> {
+    let bytes = session.file(&file)?;
+    let unsupported = || format!("file {file} is not a supported image");
+    let reader = || {
+        ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .with_context(unsupported)
+    };
+    let (width, height) = reader()?.into_dimensions().with_context(unsupported)?;
+    check_size(width, height)?;
+    Ok(reader()?.decode().with_context(unsupported)?.into_rgba8())
+}
+
+/// A point normalized to `area`, in the shape's coordinates.
+fn at(area: Rect, [x, y]: [f64; 2]) -> Point {
+    Point::new(area.x0 + x * area.width(), area.y0 + y * area.height())
+}
+
+fn extend(extend: PaintExtend) -> Extend {
+    match extend {
+        PaintExtend::Pad => Extend::Pad,
+        PaintExtend::Repeat => Extend::Repeat,
+        PaintExtend::Reflect => Extend::Reflect,
+    }
+}
+
+/// `gradient` across `area`, its stops in order.
+fn paint_gradient(gradient: &Gradient, area: Rect) -> peniko::Gradient {
+    let painted = match gradient.kind {
+        GradientKind::Linear { start, end } => {
+            peniko::Gradient::new_linear(at(area, start), at(area, end))
+        }
+        GradientKind::Radial { center, radius } => {
+            peniko::Gradient::new_radial(at(area, center), (radius * area.width()) as f32)
+        }
+        GradientKind::Sweep {
+            center,
+            start_degrees,
+            end_degrees,
+        } => peniko::Gradient::new_sweep(
+            at(area, center),
+            start_degrees.to_radians() as f32,
+            end_degrees.to_radians() as f32,
+        ),
+    };
+    let mut stops: Vec<ColorStop> = gradient
+        .stops
+        .iter()
+        .map(|stop| ColorStop::from((stop.offset, Color::from(stop.color))))
+        .collect();
+    stops.sort_by(|a, b| a.offset.total_cmp(&b.offset));
+    painted
+        .with_extend(extend(gradient.extend))
+        .with_stops(stops.as_slice())
 }
 
 fn canonical(value: &impl serde::Serialize) -> Result<Hash> {
@@ -107,11 +174,13 @@ impl Renderer {
     }
 
     /// A shape layer's path, fill, and stroke: centred on the path, with
-    /// miter joins and butt caps.
-    pub(super) fn shape(&self, shape: &Shape) -> Result<Option<Content>> {
+    /// miter joins and butt caps. A gradient or pattern spans the path's
+    /// bounds.
+    pub(super) fn shape(&self, session: &Session, shape: &Shape) -> Result<Option<Content>> {
         self.retain(canonical(shape)?, || {
             let path = BezPath::from(&shape.path);
-            let mut bounds = path.bounding_box();
+            let area = path.bounding_box();
+            let mut bounds = area;
             let stroke = shape.stroke.as_ref().map(|stroke| {
                 bounds = bounds.inflate(stroke.width * 2.0, stroke.width * 2.0);
                 (
@@ -121,13 +190,33 @@ impl Renderer {
                     Color::from(stroke.color),
                 )
             });
+            let fill = match &shape.fill {
+                None => None,
+                Some(ShapeFill::Solid(color)) => {
+                    Some(ShapePaint::Brush(PaintType::Solid(Color::from(*color))))
+                }
+                Some(ShapeFill::Gradient { gradient }) => Some(ShapePaint::Brush(
+                    PaintType::Gradient(paint_gradient(gradient, area)),
+                )),
+                Some(ShapeFill::Pattern { pattern }) => {
+                    let image = decode(session, pattern.file)?;
+                    let tile = pattern.scale * area.width() / f64::from(image.width().max(1));
+                    Some(ShapePaint::Pattern {
+                        transform: Affine::translate(at(area, pattern.origin).to_vec2())
+                            * Affine::rotate(pattern.rotation_degrees.to_radians())
+                            * Affine::scale(tile),
+                        pixels: Arc::new(Pixels::new(Offset::default(), image)),
+                        extend: extend(pattern.extend),
+                    })
+                }
+            };
             Ok(Some(Content::Shape(Arc::new(ShapeVector {
                 path,
                 fill_rule: match shape.fill_rule {
                     FillRule::NonZero => Fill::NonZero,
                     FillRule::EvenOdd => Fill::EvenOdd,
                 },
-                fill: shape.fill.map(Color::from),
+                fill,
                 stroke,
                 bounds,
             }))))
@@ -137,19 +226,9 @@ impl Renderer {
     /// Imported file `file` decoded, its size checked before any pixel is.
     pub(super) fn image(&self, session: &Session, file: Hash) -> Result<Option<Content>> {
         self.retain(file, || {
-            let bytes = session.file(&file)?;
-            let unsupported = || format!("file {file} is not a supported image");
-            let reader = || {
-                ImageReader::new(Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .with_context(unsupported)
-            };
-            let (width, height) = reader()?.into_dimensions().with_context(unsupported)?;
-            check_size(width, height)?;
-            let image = reader()?.decode().with_context(unsupported)?.into_rgba8();
             Ok(Some(Content::Pixels(Arc::new(Pixels::new(
                 Offset::default(),
-                image,
+                decode(session, file)?,
             )))))
         })
     }

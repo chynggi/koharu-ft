@@ -31,12 +31,6 @@ pub(crate) enum Target {
     #[cfg(target_os = "linux")]
     #[strum(props(version = 90_500, integrated = false))]
     Gfx950,
-    #[strum(props(version = 100_100, integrated = false))]
-    Gfx1010,
-    #[strum(props(version = 100_101, integrated = false))]
-    Gfx1011,
-    #[strum(props(version = 100_102, integrated = false))]
-    Gfx1012,
     #[strum(props(version = 100_300, integrated = false))]
     Gfx1030,
     #[strum(props(version = 100_301, integrated = false))]

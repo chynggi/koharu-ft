@@ -16,6 +16,8 @@ pub enum Scheduler {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SampleMethod {
     Euler,
+    /// DPM-Solver++(2M).
+    DpmPp2m,
 }
 
 /// A model's files and Koharu's settings for it. Whatever is left unset keeps
@@ -34,6 +36,8 @@ pub struct ContextParams<'a> {
     /// A `tokenizer.json` for a text encoder whose vocabulary sd.cpp doesn't
     /// hold, such as MOSS-Image's Qwen3.5.
     pub tokenizer: Option<&'a Path>,
+    /// Textual inversions, each a word a prompt names it by and its file.
+    pub embeddings: &'a [(&'a str, &'a Path)],
     pub vae_format: Option<VaeFormat>,
     /// The device to run on, by its ggml name, such as `CUDA0`.
     pub device: Option<&'a str>,

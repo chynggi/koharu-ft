@@ -52,6 +52,21 @@ impl Context {
         raw.llm_path = path(params.llm, "the text encoder path")?;
         raw.llm_vision_path = path(params.llm_vision, "the vision projector path")?;
         raw.tokenizer = path(params.tokenizer, "the tokenizer path")?;
+        let mut names = Vec::new();
+        let mut embeddings = Vec::new();
+        for (name, file) in params.embeddings {
+            names.push(CString::new(*name).map_err(|_| Error::Nul("an embedding name"))?);
+            let name = names.last().map_or(ptr::null(), |name| name.as_ptr());
+            embeddings.push(sys::sd_embedding_t {
+                name,
+                path: path(Some(file), "an embedding path")?,
+            });
+        }
+        if !embeddings.is_empty() {
+            raw.embeddings = embeddings.as_ptr();
+            raw.embedding_count = u32::try_from(embeddings.len())
+                .map_err(|_| Error::OutOfRange("the embedding count"))?;
+        }
         let device = params
             .device
             .map(|device| CString::new(device).map_err(|_| Error::Nul("the device")))
@@ -130,8 +145,11 @@ impl Context {
         if let Some(flow_shift) = params.flow_shift {
             raw.sample_params.flow_shift = flow_shift;
         }
-        if let Some(SampleMethod::Euler) = params.sample_method {
-            raw.sample_params.sample_method = sys::EULER_SAMPLE_METHOD;
+        if let Some(method) = params.sample_method {
+            raw.sample_params.sample_method = match method {
+                SampleMethod::Euler => sys::EULER_SAMPLE_METHOD,
+                SampleMethod::DpmPp2m => sys::DPMPP2M_SAMPLE_METHOD,
+            };
         }
         if let Some(steps) = params.steps {
             raw.sample_params.sample_steps = int(steps, "the step count")?;

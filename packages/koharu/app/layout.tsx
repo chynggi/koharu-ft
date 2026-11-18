@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import localFont from 'next/font/local'
 import { ThemeProvider } from 'next-themes'
+import localFont from 'next/font/local'
 
 import './globals.css'
 import Providers from '@/app/providers'
@@ -26,7 +26,12 @@ function RootLayout({
         className={`${notoSansCJK.variable} antialiased`}
         style={{ backgroundColor: 'transparent' }}
       >
-        <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
+        <ThemeProvider
+          attribute='class'
+          defaultTheme='system'
+          enableSystem
+          disableTransitionOnChange
+        >
           <Providers>{children}</Providers>
         </ThemeProvider>
       </body>

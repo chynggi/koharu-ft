@@ -37,6 +37,9 @@ pub struct TextRun {
     pub fill: Color,
     /// The stroke colour and width.
     pub stroke: Option<(Color, f32)>,
+    pub stroke_position: koharu_scene::StrokePosition,
+    pub stroke_join: koharu_scene::StrokeJoin,
+    pub outer_stroke: Option<(Color, f32)>,
 }
 
 /// What laying out a text resolved, for the inspector and PSD export.
