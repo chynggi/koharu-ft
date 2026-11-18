@@ -1,54 +1,46 @@
 //! Hayai OCR image and text processing.
 //!
-//! Canonical image preprocessing is the SigLIP2 NaFlex image processor
-//! (`Siglip2ImageProcessor`) with the released settings of
-//! `google/siglip2-base-patch16-naflex`:
-//! https://huggingface.co/google/siglip2-base-patch16-naflex/blob/main/preprocessor_config.json
-//! https://github.com/huggingface/transformers/blob/main/src/transformers/models/siglip2/image_processing_siglip2.py
+//! Image preprocessing is Hayai's own `HayaiImageProcessor` with its released
+//! settings and the patch budget `HayaiModel.ocr` asks for by default,
+//! `max_patches="auto"`, which picks one per crop:
+//! https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova/blob/5289b2cfdfd375dd651611b27ea87d21b5877008/processing_hayai.py
+//! https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova/blob/5289b2cfdfd375dd651611b27ea87d21b5877008/preprocessor_config.json
 
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
-use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
-use icu_normalizer::ComposingNormalizerBorrowed;
-use image::{DynamicImage, RgbImage};
+use anyhow::{Context, Result};
+use fast_image_resize::{FilterType, ResizeAlg};
+use image::DynamicImage;
 use koharu_torch::{Device, Kind, Tensor};
 use tokenizers::Tokenizer as HuggingFaceTokenizer;
 
 use super::config::siglip2;
 
-const RESCALE_FACTOR: f64 = 1.0 / 255.0;
-const IMAGE_MEAN: [f32; 3] = [0.5, 0.5, 0.5];
-const IMAGE_STD: [f32; 3] = [0.5, 0.5, 0.5];
+/// Pillow's bilinear filter, as convolution.
+const RESIZE: ResizeAlg = ResizeAlg::Convolution(FilterType::Bilinear);
+/// The fewest patches a crop is upscaled to.
+const MIN_PATCHES: i64 = 64;
+/// How far a crop is upscaled toward the budget before `MIN_PATCHES` rules.
+const MAX_SCALE: f64 = 4.0;
 
 #[derive(Debug)]
 pub(super) struct ImageProcessor {
-    mean: Tensor,
-    std: Tensor,
     device: Device,
 }
 
 /// One preprocessed crop in NaFlex layout.
 #[derive(Debug)]
 pub(super) struct ImageInput {
-    /// Patchified pixels `(1, MAX_NUM_PATCHES, channels * patch_size^2)`,
-    /// zero-padded in the patch dimension exactly like the upstream processor.
+    /// Patchified pixels `(patches, channels * patch_size^2)`; generation
+    /// pads them to the batch's longest crop, as upstream does.
     pub(super) pixel_values: Tensor,
-    /// Patch padding mask `(1, MAX_NUM_PATCHES)`; `0` marks padded patches.
-    pub(super) attention_mask: Tensor,
-    /// Patch-grid dimensions of the unpadded image `(height_patches, width_patches)`.
+    /// Patch-grid dimensions of the image `(height_patches, width_patches)`.
     pub(super) spatial_shape: [i64; 2],
 }
 
 impl ImageProcessor {
-    pub(super) fn new(device: Device) -> Result<Self> {
-        let mean = Tensor::from_slice(&IMAGE_MEAN)
-            .view([1, 3, 1, 1])
-            .to_device(device);
-        let std = Tensor::from_slice(&IMAGE_STD)
-            .view([1, 3, 1, 1])
-            .to_device(device);
-        Ok(Self { mean, std, device })
+    pub(super) fn new(device: Device) -> Self {
+        Self { device }
     }
 
     pub(super) fn preprocess(&self, image: &DynamicImage) -> Result<ImageInput> {
@@ -57,129 +49,130 @@ impl ImageProcessor {
         }
 
         let patch_size = siglip2::PATCH_SIZE;
-        let (height, width) = get_image_size_for_max_num_patches(
-            i64::from(image.height()),
-            i64::from(image.width()),
-            patch_size,
-            siglip2::MAX_NUM_PATCHES as i64,
-        );
-        let height = height as u32;
-        let width = width as u32;
-        let patch_height = (height / patch_size as u32) as i64;
-        let patch_width = (width / patch_size as u32) as i64;
-        let max_patches = siglip2::MAX_NUM_PATCHES as i64;
-        let num_patches = patch_height * patch_width;
-        ensure!(
-            num_patches <= max_patches,
-            "image resize produced {num_patches} patches above the {max_patches} limit"
-        );
+        let (height, width) = (i64::from(image.height()), i64::from(image.width()));
+        let (height, width) = target_size(height, width, budget(height, width));
+        let patch_height = height / patch_size;
+        let patch_width = width / patch_size;
+        let (height, width) = (height as u32, width as u32);
 
-        // Upstream resizes with Pillow/torchvision bilinear filtering;
-        // `fast_image_resize` uses the same triangle convolution but can
-        // differ at coefficient rounding.
+        // Upstream resizes with Pillow's bilinear filter; `fast_image_resize`
+        // uses the same triangle convolution but can differ at coefficient
+        // rounding.
         let image = image.to_rgb8();
         let image = if image.width() == width && image.height() == height {
             image
         } else {
-            resize_bilinear(&image, width, height)?
+            crate::image::resize(&image, width, height, RESIZE)?
         };
 
-        let mut pixel_values = Tensor::from_slice(image.as_raw())
-            .view([1, i64::from(height), i64::from(width), 3])
-            .permute([0, 3, 1, 2])
-            .to_device(self.device)
-            .to_kind(Kind::Float);
-        pixel_values *= RESCALE_FACTOR;
-        pixel_values = (&pixel_values - &self.mean) / &self.std;
-
-        // (1, channels, height, width) -> (1, patches, patch_size^2 * channels)
-        // with patch order (patch row, patch column, pixel row, pixel column).
+        // (height, width, channels) -> (patches, patch_size^2 * channels) with
+        // patch order (patch row, patch column, pixel row, pixel column), then
+        // [0, 255] to [-1, 1].
         let patch = patch_size;
-        let mut pixel_values = pixel_values
-            .reshape([1, 3, patch_height, patch, patch_width, patch])
-            .permute([0, 2, 4, 3, 5, 1])
-            .reshape([1, num_patches, -1]);
-
-        // The upstream processor pads every batch entry to `max_num_patches`;
-        // those padded prefix tokens are consumed by the encoder and decoder.
-        if num_patches < max_patches {
-            let padding = Tensor::zeros(
-                [1, max_patches - num_patches, pixel_values.size()[2]],
-                (Kind::Float, self.device),
-            );
-            pixel_values = Tensor::cat(&[pixel_values, padding], 1);
-        }
-
-        let attention_mask = if num_patches < max_patches {
-            Tensor::cat(
-                &[
-                    Tensor::ones([num_patches], (Kind::Int, self.device)),
-                    Tensor::zeros([max_patches - num_patches], (Kind::Int, self.device)),
-                ],
-                0,
-            )
-        } else {
-            Tensor::ones([max_patches], (Kind::Int, self.device))
-        };
+        let pixel_values = Tensor::from_slice(image.as_raw())?
+            .to(self.device)?
+            .reshape([patch_height, patch, patch_width, patch, 3])?
+            .permute([0, 2, 1, 3, 4])?
+            .reshape([patch_height * patch_width, -1])?
+            .to_kind(Kind::Float)?
+            .mul_scalar(2.0 / 255.0)?
+            .sub_scalar(1.0, 1)?;
 
         Ok(ImageInput {
             pixel_values,
-            attention_mask: attention_mask.view([1, max_patches]),
             spatial_shape: [patch_height, patch_width],
         })
     }
 }
 
-// Ported from `get_image_size_for_max_num_patches`: a binary search over the
-// scale whose result is rounded up to whole patches on each axis.
-fn get_image_size_for_max_num_patches(
-    image_height: i64,
-    image_width: i64,
-    patch_size: i64,
-    max_num_patches: i64,
-) -> (i64, i64) {
-    const EPS: f64 = 1e-5;
-    let scaled_size = |scale: f64, size: i64| -> i64 {
-        let scaled = ((size as f64 * scale) / patch_size as f64).ceil() as i64 * patch_size;
-        scaled.max(patch_size)
+/// Upstream `_select_best_max_patches`: the patch budget, of 128, 192, 256,
+/// and 384, that suits a crop's size and shape, with upstream's thresholds.
+/// The smallest budget wins when a larger one gives the same patches, as
+/// `MAX_SCALE` caps the crop; a short crop takes 128 or 192 while it's still
+/// upscaled enough; and a crop the 256 budget would leave small, by its
+/// shape, takes 384.
+fn budget(height: i64, width: i64) -> i64 {
+    let patch_size = siglip2::PATCH_SIZE;
+    let (crop_height, crop_width) = (height.max(1) as f64, width.max(1) as f64);
+    // Each budget's patches, and the scale it upsizes the crop by.
+    let tier = |budget: i64| -> (i64, f64) {
+        let (height, width) = target_size(height, width, budget);
+        let patches = height / patch_size * (width / patch_size);
+        let scale = (height as f64 / crop_height).min(width as f64 / crop_width);
+        (patches, scale)
     };
-
-    let mut scale_min = EPS / 10.0;
-    let mut scale_max = 100.0f64;
-    while scale_max - scale_min >= EPS {
-        let scale = (scale_min + scale_max) / 2.0;
-        let target_height = scaled_size(scale, image_height);
-        let target_width = scaled_size(scale, image_width);
-        let num_patches = (target_height / patch_size) * (target_width / patch_size);
-        if num_patches <= max_num_patches {
-            scale_min = scale;
-        } else {
-            scale_max = scale;
-        }
+    let (n128, s128) = tier(128);
+    let (n192, s192) = tier(192);
+    let (n256, s256) = tier(256);
+    let (n384, _) = tier(384);
+    if n128 == n384 {
+        return 128;
     }
-    let scale = scale_min;
-    (
-        scaled_size(scale, image_height),
-        scaled_size(scale, image_width),
-    )
+    let aspect = crop_height.max(crop_width) / crop_height.min(crop_width);
+    let wide = crop_width / crop_height;
+    let square = (0.77..=1.30).contains(&wide);
+    let horizontal = wide > 1.30;
+    if !square
+        && ((!horizontal && s128 >= 1.65 && aspect < 3.8)
+            || (horizontal && s128 >= 2.35 && aspect < 3.2))
+    {
+        return 128;
+    }
+    if n384 > n256
+        && (s256 < 1.28
+            || (square && s256 < 2.20)
+            || (horizontal && s256 < 1.45)
+            || (aspect >= 3.8 && s256 < 1.75)
+            || (aspect >= 5.0 && s256 < 2.20))
+    {
+        return 384;
+    }
+    if n192 == n128 {
+        return 128;
+    }
+    if n256 == n192 {
+        return 192;
+    }
+    if !square
+        && ((!horizontal && s192 >= 1.55 && aspect < 3.6)
+            || (horizontal && s192 >= 1.85 && aspect < 3.0))
+    {
+        return 192;
+    }
+    256
 }
 
-fn resize_bilinear(image: &RgbImage, width: u32, height: u32) -> Result<RgbImage> {
-    let mut resized = RgbImage::new(width, height);
-    Resizer::new()
-        .resize(
-            image,
-            &mut resized,
-            &ResizeOptions::new()
-                .resize_alg(ResizeAlg::Convolution(FilterType::Bilinear))
-                .use_alpha(false),
-        )
-        .map_err(|error| anyhow::anyhow!("failed to resize Hayai OCR input: {error}"))?;
-    Ok(resized)
+/// Upstream `_naflex_target_size`: the largest scale, up to `MAX_SCALE`,
+/// whose size rounded up to whole patches fits `budget` patches, and for a
+/// crop that leaves under `MIN_PATCHES`, the largest that fits `MIN_PATCHES`.
+fn target_size(height: i64, width: i64, budget: i64) -> (i64, i64) {
+    const EPS: f64 = 1e-5;
+    let patch_size = siglip2::PATCH_SIZE;
+    let scaled = |scale: f64, size: i64| -> i64 {
+        ((size as f64 * scale / patch_size as f64).ceil() as i64 * patch_size).max(patch_size)
+    };
+    let search = |mut low: f64, mut high: f64, budget: i64| -> f64 {
+        while high - low >= EPS {
+            let scale = 0.5 * (low + high);
+            let patches = scaled(scale, height) / patch_size * (scaled(scale, width) / patch_size);
+            if patches <= budget {
+                low = scale;
+            } else {
+                high = scale;
+            }
+        }
+        low
+    };
+
+    let mut scale = search(EPS, MAX_SCALE, budget);
+    if scaled(scale, height) / patch_size * (scaled(scale, width) / patch_size) < MIN_PATCHES {
+        scale = search(scale, 100.0, MIN_PATCHES.min(budget));
+    }
+    (scaled(scale, height), scaled(scale, width))
 }
 
 #[derive(Debug)]
-pub(crate) struct Tokenizer {
+pub(super) struct Tokenizer {
     inner: HuggingFaceTokenizer,
     bos_token_id: i64,
     eos_token_id: i64,
@@ -187,8 +180,7 @@ pub(crate) struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub(crate) fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
+    pub(super) fn from_file(path: &Path) -> Result<Self> {
         let inner = HuggingFaceTokenizer::from_file(path)
             .map_err(|error| anyhow::anyhow!(error.to_string()))
             .with_context(|| format!("failed to parse {}", path.display()))?;
@@ -206,25 +198,25 @@ impl Tokenizer {
         })
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.inner.get_vocab_size(true)
     }
 
-    pub(crate) fn bos_token_id(&self) -> i64 {
+    pub(super) fn bos_token_id(&self) -> i64 {
         self.bos_token_id
     }
 
-    pub(crate) fn eos_token_id(&self) -> i64 {
+    pub(super) fn eos_token_id(&self) -> i64 {
         self.eos_token_id
     }
 
-    pub(crate) fn pad_token_id(&self) -> i64 {
+    pub(super) fn pad_token_id(&self) -> i64 {
         self.pad_token_id
     }
 
     /// Decodes generated ids, dropping special tokens like the upstream
     /// `generate` cleanup pass.
-    pub(crate) fn decode(&self, token_ids: &[i64]) -> Result<String> {
+    pub(super) fn decode(&self, token_ids: &[i64]) -> Result<String> {
         let token_ids = token_ids
             .iter()
             .copied()
@@ -237,102 +229,57 @@ impl Tokenizer {
     }
 }
 
-/// Cleans a decoded transcription like the upstream model card's
-/// `normalize_text`: NFKC, whitespace runs collapsed to one space, spaces
-/// between CJK characters removed, ends trimmed.
-///
-/// Deliberate divergence: upstream strips CJK-internal whitespace with one
-/// non-overlapping `re.sub`, which leaves `"漢 字 漢"` as `"漢字 漢"`. That is a
-/// side effect of the scan rather than intent, and translation input reads
-/// better without the space, so this joins every CJK pair.
-pub(crate) fn normalize_text(text: &str) -> String {
-    let text = ComposingNormalizerBorrowed::new_nfkc().normalize(text);
-    let mut normalized = String::with_capacity(text.len());
-    for word in text.split_whitespace() {
-        let joins_cjk = normalized
-            .chars()
-            .next_back()
-            .zip(word.chars().next())
-            .is_some_and(|(previous, next)| is_cjk(previous) && is_cjk(next));
-        if !normalized.is_empty() && !joins_cjk {
-            normalized.push(' ');
-        }
-        normalized.push_str(word);
-    }
-    normalized
-}
-
-/// Character class of the upstream `cjk_char` pattern: CJK unified ideographs,
-/// hiragana and katakana, CJK extension A, and Hangul syllables.
-fn is_cjk(character: char) -> bool {
-    matches!(
-        character,
-        '\u{4E00}'..='\u{9FFF}'
-            | '\u{3040}'..='\u{30FF}'
-            | '\u{3400}'..='\u{4DBF}'
-            | '\u{AC00}'..='\u{D7AF}'
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // Expected sizes are upstream `_naflex_target_size`'s, and budgets
+    // `_select_best_max_patches`'s, on the same inputs.
+
     #[test]
     fn resize_budget_matches_upstream_binary_search() {
         // A square image fills the 256-patch budget with a 16x16 patch grid.
-        assert_eq!(
-            get_image_size_for_max_num_patches(1024, 1024, 16, 256),
-            (256, 256)
-        );
+        assert_eq!(target_size(1024, 1024, 256), (256, 256));
         // A wide line keeps its rough aspect ratio while rounding up to patch
         // size and staying within the patch budget.
-        let (height, width) = get_image_size_for_max_num_patches(120, 900, 16, 256);
-        assert_eq!(height % 16, 0);
-        assert_eq!(width % 16, 0);
-        assert!((height / 16) * (width / 16) <= 256);
-        assert_eq!(height, 96);
-        assert_eq!(width, 672);
+        assert_eq!(target_size(120, 900, 256), (96, 672));
     }
 
     #[test]
-    fn tiny_images_are_upscaled_to_fill_the_patch_budget() {
-        assert_eq!(
-            get_image_size_for_max_num_patches(4, 4, 16, 256),
-            (256, 256)
-        );
+    fn upscaling_stops_at_four_times() {
+        assert_eq!(target_size(32, 32, 256), (128, 128));
     }
 
     #[test]
-    fn normalize_text_applies_nfkc() {
-        assert_eq!(normalize_text("ＡＢＣ１２３！"), "ABC123!");
-        assert_eq!(normalize_text("ｶﾀｶﾅ"), "カタカナ");
+    fn tiny_images_are_upscaled_to_the_minimum_patch_count() {
+        assert_eq!(target_size(4, 4, 256), (128, 128));
     }
 
     #[test]
-    fn normalize_text_collapses_and_trims_whitespace() {
-        assert_eq!(normalize_text("  hello \r\n\t world  "), "hello world");
-        // NFKC maps the ideographic space to U+0020 before collapsing.
-        assert_eq!(normalize_text("a\u{3000}\u{3000}b"), "a b");
-    }
-
-    #[test]
-    fn normalize_text_removes_every_space_between_cjk_characters() {
-        // Upstream's single non-overlapping `re.sub` would leave "漢字 漢".
-        assert_eq!(normalize_text("漢 字 漢"), "漢字漢");
-        assert_eq!(normalize_text("ひら がな\nカタ カナ"), "ひらがなカタカナ");
-        assert_eq!(normalize_text("안녕 하세요"), "안녕하세요");
-    }
-
-    #[test]
-    fn normalize_text_keeps_spaces_next_to_non_cjk_text() {
-        assert_eq!(normalize_text("こんにちは world"), "こんにちは world");
-        assert_eq!(normalize_text("第 3 話"), "第 3 話");
-    }
-
-    #[test]
-    fn normalize_text_of_blank_input_is_empty() {
-        assert_eq!(normalize_text(""), "");
-        assert_eq!(normalize_text(" \n "), "");
+    fn each_crop_takes_the_budget_upstream_picks_for_it() {
+        // (height, width, budget, resized height, resized width)
+        let crops = [
+            // Capped at four times either way, so the smallest budget.
+            (32, 32, 128, 128, 128),
+            // Short vertical dialogue, still well upscaled at 128.
+            (150, 50, 128, 288, 96),
+            (200, 60, 192, 384, 128),
+            (64, 180, 192, 128, 368),
+            (60, 200, 256, 144, 448),
+            (300, 80, 256, 480, 128),
+            // A dense square block, a wide line, and a long strip.
+            (1024, 1024, 384, 304, 304),
+            (120, 900, 384, 112, 848),
+            (400, 100, 384, 608, 160),
+        ];
+        for (height, width, budget_expected, resized_height, resized_width) in crops {
+            let picked = budget(height, width);
+            assert_eq!(picked, budget_expected, "{height}x{width}");
+            assert_eq!(
+                target_size(height, width, picked),
+                (resized_height, resized_width),
+                "{height}x{width}"
+            );
+        }
     }
 }

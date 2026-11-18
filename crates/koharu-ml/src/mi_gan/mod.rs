@@ -1,112 +1,225 @@
-//! MI-GAN inference through the TorchScript archive IOPaint distributes.
+//! MI-GAN, run as IOPaint runs it: Picsart's 512-pixel Places2 generator,
+//! given a crop around each masked region.
 //!
-//! Original preprocessing and inference:
+//! Upstream:
+//! https://github.com/Picsart-AI-Research/MI-GAN/blob/2b793c5ece43f4253e32d4afc257120a5deed6f5/lib/model_zoo/migan_inference.py
 //! https://github.com/Sanster/IOPaint/blob/61a759fb3f332bacdce8b2813f4837495c9b86e0/iopaint/model/mi_gan.py
+//!
+//! IOPaint loads a TorchScript trace of the generator, which libtorch's C API
+//! here can't run. Its weights are Picsart's under Picsart's names; this
+//! loads the same weights from a safetensors conversion made for MLX, which
+//! keeps the names but stores each four-dimensional tensor channels-last.
+//! They're turned back to PyTorch's layout once, beside the file. The trace
+//! inserts an upsample's zeros with a transposed convolution where Picsart's
+//! code multiplies by `filter_const`; both give the same values.
+//!
+//! Divergence: IOPaint resizes a crop with OpenCV's bicubic, whose kernel
+//! differs a little from the Catmull-Rom one here.
 
-mod processor;
+mod model;
 
-use anyhow::{Context, Result};
-use image::{DynamicImage, GrayImage, RgbImage};
-use koharu_torch::Device;
+use std::path::{Path, PathBuf};
 
-use crate::{
-    backend::TryIntoDevice, lama::InpaintRequest, source::ComponentSource, torchscript::TorchScript,
-};
+use anyhow::{Context as _, Result, bail, ensure};
+use fast_image_resize::{FilterType, ResizeAlg};
+use image::{GrayImage, RgbImage, imageops};
+use koharu_runtime::Repository;
+use koharu_torch::{Device, Kind, Tensor};
+use safetensors::{SafeTensors, tensor::TensorView};
 
-use self::processor::Processor;
+use self::model::{Model, RESOLUTION};
 
-// Fetched straight from the upstream release. Not mirrored.
-crate::remote_repository! {
-    WEIGHTS = "https://github.com/Sanster/models/releases/download/migan/migan_traced.pt"
-        @ "fde1e5f7c6b6a48082f8eff36b9117e64b8c14ea4d1a76af508e29d357b28cbd",
-}
+const REPOSITORY: Repository = Repository::model(
+    "mlx-community/MI-GAN-512-places2-fp16",
+    "19644256716fc26ed723fbd9c0797d9c27f66c83",
+);
+
+/// `hd_strategy_crop_margin`, which `MIGAN.__call__` sets.
+const MARGIN: u32 = 128;
+const BICUBIC: ResizeAlg = ResizeAlg::Convolution(FilterType::CatmullRom);
 
 #[derive(Debug)]
 pub struct MiGan {
-    model: TorchScript,
-    processor: Processor,
+    device: Device,
+    model: Model,
 }
 
 impl MiGan {
-    pub async fn load(device: crate::Device, source: &ComponentSource) -> Result<Self> {
-        let device: Device = device.try_into_device()?;
-        let path = source
-            .resolve(WEIGHTS.into())
+    pub async fn load(device: &crate::Device) -> Result<Self> {
+        let (device, _) = crate::backend::torch(device);
+        let [weights] = REPOSITORY
+            .resolve(["model.safetensors"])
             .await
-            .context("failed to resolve MI-GAN weights")?;
-        Ok(Self {
-            model: TorchScript::load(&path, device)?,
-            processor: Processor::new(device),
+            .context("failed to resolve MI-GAN's files")?;
+        let mut model = Model::new(device)?;
+        model.load(channels_first(&weights)?)?;
+        Ok(Self { device, model })
+    }
+
+    /// `image` repainted where `mask` is white, `MIGAN.__call__`: a 512-pixel
+    /// image whole, and any other a crop around each masked region at a
+    /// time, shrunk to fit 512 pixels.
+    pub fn inference(&self, image: &RgbImage, mask: &GrayImage) -> Result<RgbImage> {
+        ensure!(
+            image.dimensions() == mask.dimensions(),
+            "image and mask dimensions differ"
+        );
+        let side = RESOLUTION as u32;
+        koharu_torch::inference_mode(|| {
+            if image.dimensions() == (side, side) {
+                return self.pad_forward(image, mask);
+            }
+            let (width, height) = image.dimensions();
+            let mut result = image.clone();
+            for found in crate::lama::boxes_from_mask(mask) {
+                let [left, top, right, bottom] =
+                    crate::lama::crop_box(width, height, found, MARGIN);
+                let (crop_width, crop_height) = (right - left, bottom - top);
+                let crop = imageops::crop_imm(image, left, top, crop_width, crop_height).to_image();
+                let crop_mask =
+                    imageops::crop_imm(mask, left, top, crop_width, crop_height).to_image();
+                // `resize_max_size`.
+                let longest = crop_width.max(crop_height);
+                let painted = if longest > side {
+                    let ratio = f64::from(side) / f64::from(longest);
+                    let fit = |length: u32| (f64::from(length) * ratio + 0.5) as u32;
+                    let (fit_width, fit_height) = (fit(crop_width), fit(crop_height));
+                    let painted = self.pad_forward(
+                        &crate::image::resize(&crop, fit_width, fit_height, BICUBIC)?,
+                        &crate::image::resize(&crop_mask, fit_width, fit_height, BICUBIC)?,
+                    )?;
+                    crate::image::resize(&painted, crop_width, crop_height, BICUBIC)?
+                } else {
+                    self.pad_forward(&crop, &crop_mask)?
+                };
+                // Only the masked pixels of the crop come from the model.
+                let mut pasted = crop;
+                for ((pixel, new), held) in pasted
+                    .pixels_mut()
+                    .zip(painted.pixels())
+                    .zip(crop_mask.pixels())
+                {
+                    if held.0[0] >= 127 {
+                        *pixel = *new;
+                    }
+                }
+                imageops::replace(&mut result, &pasted, left.into(), top.into());
+            }
+            Ok(result)
         })
     }
 
-    pub fn inference(
-        &self,
-        image: &DynamicImage,
-        mask: &GrayImage,
-        config: &InpaintRequest,
-    ) -> Result<RgbImage> {
-        koharu_torch::no_grad(|| self.processor.call(&self.model, image, mask, config))
+    /// `_pad_forward` and `MIGAN.forward`: the image padded symmetrically to
+    /// 512 pixels square, through the generator with the mask over 120, cropped
+    /// back, and blended over the image by the mask.
+    fn pad_forward(&self, image: &RgbImage, mask: &GrayImage) -> Result<RgbImage> {
+        let (width, height) = image.dimensions();
+        let side = RESOLUTION as u32;
+        ensure!(
+            width <= side && height <= side,
+            "MI-GAN takes at most {side} pixels a side"
+        );
+        let index = |at: u32, length: u32| crate::image::symmetric_index(at, length);
+        let padded = RgbImage::from_fn(side, side, |x, y| {
+            *image.get_pixel(index(x, width), index(y, height))
+        });
+        let padded_mask = GrayImage::from_fn(side, side, |x, y| {
+            *mask.get_pixel(index(x, width), index(y, height))
+        });
+        let side = i64::from(side);
+        let picture = Tensor::from_slice(padded.as_raw())?
+            .view([side, side, 3])?
+            .permute([2, 0, 1])?
+            .unsqueeze(0)?
+            .to(self.device)?
+            .to_kind(Kind::Float)?
+            .div_scalar(127.5)?
+            .sub_scalar(1.0, 1)?;
+        let held = Tensor::from_slice(padded_mask.as_raw())?
+            .view([1, 1, side, side])?
+            .to(self.device)?
+            .gt_scalar(120.0)?
+            .to_kind(Kind::Float)?;
+        let kept = held.ones_like(None, None)?.sub_tensor(&held, 1)?;
+        let input = Tensor::cat(
+            &[held.neg()?.add_scalar(0.5, 1)?, picture.mul_tensor(&kept)?],
+            1,
+        )?;
+        let output = self
+            .model
+            .forward(&input)?
+            .mul_scalar(127.5)?
+            .add_scalar(127.5, 1)?
+            .round()?
+            .clamp(Some(0.0.into()), Some(255.0.into()))?
+            .to_kind(Kind::Uint8)?
+            .squeeze_dim(0)?
+            .permute([1, 2, 0])?
+            .contiguous(koharu_torch::MemoryFormat::Contiguous)?
+            .to(Device::Cpu)?
+            .view([-1])?;
+        let generated = RgbImage::from_raw(side as u32, side as u32, Vec::<u8>::try_from(&output)?)
+            .context("MI-GAN's output isn't an image")?;
+        // `sd_keep_unmasked_area`.
+        let mut result = image.clone();
+        for (x, y, pixel) in result.enumerate_pixels_mut() {
+            let alpha = f32::from(mask.get_pixel(x, y).0[0]) / 255.0;
+            let new = generated.get_pixel(x, y);
+            for (old, new) in pixel.0.iter_mut().zip(new.0) {
+                *old = (f32::from(new) * alpha + f32::from(*old) * (1.0 - alpha)) as u8;
+            }
+        }
+        Ok(result)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::source::ComponentSource;
-
-    #[tokio::test]
-    #[cfg_attr(
-        windows,
-        ignore = "Windows resolves LibTorch only once Runtime::initialize preloads it"
-    )]
-    async fn a_non_archive_file_fails_with_the_loader_context() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("garbage.pt");
-        std::fs::write(&path, b"neither safetensors nor a torchscript archive").unwrap();
-        let source = ComponentSource::LocalFile(path);
-
-        let error = MiGan::load(crate::Device::cpu(), &source)
-            .await
-            .unwrap_err();
-        assert!(
-            format!("{error:#}").contains("failed to load TorchScript archive"),
-            "{error:#}"
-        );
+/// `weights` with every four-dimensional tensor from channels-last back to
+/// PyTorch's channels-first, made once beside it.
+fn channels_first(weights: &Path) -> Result<PathBuf> {
+    let folder = weights
+        .parent()
+        .context("the weights are in a folder")?
+        .join("koharu");
+    let converted = folder.join("model.safetensors");
+    if converted.is_file() {
+        return Ok(converted);
     }
-
-    /// Requires a real checkpoint, so it is excluded from the default run.
-    /// Pass `KOHARU_MIGAN_TS` with the path to `migan_traced.pt` to run it.
-    #[tokio::test]
-    #[ignore = "requires a local migan_traced.pt"]
-    async fn a_torchscript_archive_inpaints_through_the_padded_square() {
-        let path = std::path::PathBuf::from(std::env::var("KOHARU_MIGAN_TS").unwrap());
-        let model = MiGan::load(crate::Device::cpu(), &ComponentSource::LocalFile(path))
-            .await
-            .unwrap();
-
-        // A non-square image below 512 in both sides exercises the
-        // `pad_to_square` assumption: the model must accept exactly 512x512
-        // and the output must come back at the original size.
-        let image = DynamicImage::ImageRgb8(RgbImage::from_fn(300, 200, |x, y| {
-            image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
-        }));
-        let mut mask = GrayImage::new(300, 200);
-        for y in 50..150 {
-            for x in 100..200 {
-                mask.put_pixel(x, y, image::Luma([255]));
+    fs_err::create_dir_all(&folder)?;
+    let bytes = fs_err::read(weights)?;
+    let tensors = SafeTensors::deserialize(&bytes)?;
+    let mut permuted = Vec::new();
+    for (name, view) in tensors.tensors() {
+        let data = match view.shape() {
+            &[outer, height, width, inner] => {
+                let element = view.dtype().bitsize() / 8;
+                let data = view.data();
+                let mut out = vec![0; data.len()];
+                for o in 0..outer {
+                    for h in 0..height {
+                        for w in 0..width {
+                            for i in 0..inner {
+                                let from = (((o * height + h) * width + w) * inner + i) * element;
+                                let to = (((o * inner + i) * height + h) * width + w) * element;
+                                out[to..to + element].copy_from_slice(&data[from..from + element]);
+                            }
+                        }
+                    }
+                }
+                (vec![outer, inner, height, width], out)
             }
-        }
-
-        let output = model
-            .inference(&image, &mask, &InpaintRequest::default())
-            .unwrap();
-
-        assert_eq!(output.dimensions(), (300, 200));
-        let original = image.to_rgb8();
-        // Pixels outside the mask survive the crop, resize, and paste back.
-        assert_eq!(output.get_pixel(0, 0), original.get_pixel(0, 0));
-        assert_eq!(output.get_pixel(299, 199), original.get_pixel(299, 199));
+            shape if shape.len() <= 2 => (shape.to_vec(), view.data().to_vec()),
+            shape => bail!("`{name}` is {shape:?}, which MI-GAN has none of"),
+        };
+        permuted.push((name, view.dtype(), data));
     }
+    let views = permuted
+        .iter()
+        .map(|(name, dtype, (shape, data))| {
+            Ok((name.clone(), TensorView::new(*dtype, shape.clone(), data)?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let partial = converted.with_extension("partial");
+    safetensors::serialize_to_file(views, None, &partial)?;
+    fs_err::rename(&partial, &converted)?;
+    Ok(converted)
 }

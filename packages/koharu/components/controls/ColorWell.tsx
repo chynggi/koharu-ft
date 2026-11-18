@@ -6,9 +6,9 @@ import { HexColorInput, HexColorPicker } from 'react-colorful'
 import { useTranslation } from 'react-i18next'
 
 import { useColorSampling } from '@/components/controls/ColorSampling'
-import { useColorHistory } from '@/lib/colorHistory'
 import { Button } from '@koharu/ui/components/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@koharu/ui/components/popover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 import { cn } from '@koharu/ui/lib/utils'
 
 type ColorWellProps = {
@@ -35,8 +35,6 @@ export function ColorWell(props: ColorWellProps) {
   const [transparent, setTransparent] = useState(value === null)
   const [open, setOpen] = useState(false)
   const sampling = useColorSampling()
-  const recent = useColorHistory((state) => state.colors)
-  const remember = useColorHistory((state) => state.remember)
   const accessibleLabel = label ?? t('colorPicker.brushColor')
 
   useEffect(() => {
@@ -52,7 +50,6 @@ export function ColorWell(props: ColorWellProps) {
     const normalized = normalize(color)
     setDraft(normalized)
     setTransparent(false)
-    remember(normalized)
     if (props.allowTransparent) props.onChange(normalized)
     else props.onChange(normalized)
   }
@@ -65,29 +62,44 @@ export function ColorWell(props: ColorWellProps) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        aria-label={accessibleLabel}
-        disabled={disabled}
-        className={cn(
-          'grid place-items-center border border-input bg-background disabled:cursor-not-allowed disabled:opacity-40',
-          size === 'sm' ? 'size-6 rounded-md' : 'size-8 rounded-lg',
-        )}
-      >
-        {transparent ? (
-          <SquareSlash
-            aria-hidden='true'
-            className={cn('text-muted-foreground', size === 'sm' ? 'size-3.5' : 'size-4')}
-          />
-        ) : (
-          <span
-            className={cn(
-              'rounded-[3px] ring-1 ring-black/15',
-              size === 'sm' ? 'size-3' : 'size-4',
-            )}
-            style={{ backgroundColor: draft }}
-          />
-        )}
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              aria-label={accessibleLabel}
+              disabled={disabled}
+              // A small well is a field among a bar's fields; a large one is a bare swatch, as
+              // Photoshop's toolbar shows its foreground colour.
+              className={cn(
+                'grid place-items-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40',
+                size === 'sm'
+                  ? 'size-6 rounded-md border border-input bg-background'
+                  : 'size-8 rounded-md',
+              )}
+            />
+          }
+        >
+          {transparent ? (
+            <SquareSlash
+              aria-hidden='true'
+              className={cn('text-muted-foreground', size === 'sm' ? 'size-3.5' : 'size-4')}
+            />
+          ) : (
+            <span
+              className={cn(
+                size === 'sm'
+                  ? 'size-3 rounded-[3px] ring-1 ring-black/15'
+                  : 'size-5 rounded-[6px] border border-foreground/40 shadow-[inset_0_0_0_1px_white]',
+              )}
+              style={{ backgroundColor: draft }}
+            />
+          )}
+        </TooltipTrigger>
+        {/* Beside the tool rail's tools, as theirs are. */}
+        <TooltipContent side={size === 'sm' ? undefined : 'right'}>
+          {accessibleLabel}
+        </TooltipContent>
+      </Tooltip>
       <PopoverContent side='right' align='start' className='w-60 rounded-xl p-3'>
         <div>
           <HexColorPicker
@@ -118,34 +130,6 @@ export function ColorWell(props: ColorWellProps) {
             </Button>
           )}
         </div>
-        {recent.length > 0 && (
-          <div
-            role='group'
-            aria-label={t('colorPicker.recent')}
-            className='mt-3 grid grid-cols-8 gap-1'
-          >
-            {recent.map((color) => {
-              const selected = !transparent && color === draft
-              return (
-                <button
-                  key={color}
-                  type='button'
-                  aria-label={t('colorPicker.recentColor', { color })}
-                  aria-pressed={selected}
-                  className={cn(
-                    'size-5 rounded-[3px] ring-1 ring-black/15 outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    selected && 'ring-2 ring-ring',
-                  )}
-                  style={{ backgroundColor: color }}
-                  onClick={() => {
-                    setDraft(color)
-                    props.onChange(color)
-                  }}
-                />
-              )
-            })}
-          </div>
-        )}
         {allowTransparent && (
           <Button
             type='button'

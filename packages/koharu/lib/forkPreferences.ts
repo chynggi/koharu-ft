@@ -9,15 +9,11 @@ export const colorThemes = ['koharu', 'aniswipe', 'ocean', 'matcha'] as const
 export type ColorTheme = (typeof colorThemes)[number]
 
 export interface ForkPreferences {
-  mergeDeleteOriginals: boolean
-  showPageNumbers: boolean
   colorTheme: ColorTheme
   interfaceAnimations: boolean
 }
 
 export const forkPreferenceDefaults: ForkPreferences = {
-  mergeDeleteOriginals: true,
-  showPageNumbers: true,
   colorTheme: 'koharu',
   interfaceAnimations: true,
 }
@@ -73,12 +69,6 @@ function loadForkPreferences(): ForkPreferences {
     if (typeof parsed !== 'object' || parsed === null) return { ...forkPreferenceDefaults }
     const stored = parsed as Record<string, unknown>
     return {
-      // Deliberate divergence from nekoharu 8af42854, which read this as
-      // `=== true` and so defaulted to false: merging has always deleted the
-      // originals in this tree, so an absent key must still mean "delete" or
-      // existing projects get a silent behaviour change on the next merge.
-      mergeDeleteOriginals: stored.mergeDeleteOriginals !== false,
-      showPageNumbers: stored.showPageNumbers !== false,
       colorTheme: colorThemes.find((theme) => theme === stored.colorTheme) ?? 'koharu',
       interfaceAnimations: stored.interfaceAnimations !== false,
     }
@@ -89,5 +79,13 @@ function loadForkPreferences(): ForkPreferences {
 
 function persistForkPreferences(preferences: ForkPreferences): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(FORK_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences))
+  try {
+    const existing = JSON.parse(window.localStorage.getItem(FORK_PREFERENCES_STORAGE_KEY) ?? '{}')
+    window.localStorage.setItem(
+      FORK_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ ...existing, ...preferences }),
+    )
+  } catch {
+    window.localStorage.setItem(FORK_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences))
+  }
 }

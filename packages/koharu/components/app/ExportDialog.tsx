@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { EntityId, ExportFormat, ExportOptions } from '@koharu/bridge/protocol'
+import type { PageId, ExportFormat, ExportOptions } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 import { Checkbox } from '@koharu/ui/components/checkbox'
 import {
@@ -38,7 +38,8 @@ export function previewPattern(pattern: string): { name: string } | { error: str
     if (close === -1) return { error: 'unclosed' }
     const token = after.slice(0, close)
     const [name, width] = token.includes(':') ? token.split(':', 2) : [token, undefined]
-    if (width !== undefined && !/^\d+$/.test(width)) return { error: 'width' }
+    if (width !== undefined && (!/^\d+$/.test(width) || Number(width) > 32))
+      return { error: 'width' }
     if (name === 'index') out += '1'.padStart(Number(width ?? 0), '0')
     else if (name === 'label') out += 'page-01'
     else return { error: 'token' }
@@ -46,7 +47,8 @@ export function previewPattern(pattern: string): { name: string } | { error: str
   }
   if (rest.includes('}')) return { error: 'unclosed' }
   out += rest
-  if (out.includes('/') || out.includes('\\') || out.includes('..')) return { error: 'separator' }
+  const control = [...out].some((character) => character.charCodeAt(0) < 0x20)
+  if (control || /[<>:"/\\|?*]/.test(out) || out.includes('..')) return { error: 'separator' }
   if (!out.trim()) return { name: 'page' }
   return { name: out.trim() }
 }
@@ -60,9 +62,9 @@ export function ExportDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  pages: EntityId[]
-  selected: EntityId[]
-  onStart: (pages: EntityId[], options: ExportOptions) => void
+  pages: PageId[]
+  selected: PageId[]
+  onStart: (pages: PageId[], options: ExportOptions) => void
 }) {
   const { t } = useTranslation()
   const [png, setPng] = useState(true)
@@ -86,13 +88,14 @@ export function ExportDialog({
   const pageFormatCount = (png ? 1 : 0) + (psd ? 1 : 0)
   const bothFormats = pageFormatCount === 2
   const invalid = 'error' in preview
-  const canStart = formats.length > 0 && !invalid && pages.length > 0
+  const canStart =
+    formats.length > 0 && !invalid && pages.length > 0 && (scope === 'all' || selected.length > 0)
   // 아카이브 항목은 언제나 PNG다. 페이지 파일 형식이 하나도 없으면 미리보기도
   // 항목 이름을 보여줘야 하므로 png로 떨어진다.
   const previewExtension = psd && !png ? 'psd' : 'png'
 
   const start = () => {
-    onStart(scope === 'selected' ? selected : [], {
+    onStart(scope === 'selected' ? selected : pages, {
       formats,
       pattern,
       // 하위 폴더 체크박스가 비활성일 때는 체크 상태와 무관하게 false다.

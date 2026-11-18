@@ -1,4 +1,4 @@
-﻿//! Safe wrapper around `llama_timings`.
+//! Safe wrapper around `llama_timings`.
 use std::fmt::{Debug, Display, Formatter};
 
 /// A wrapper around `llama_timings`.

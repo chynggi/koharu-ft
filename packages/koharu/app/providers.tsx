@@ -7,19 +7,28 @@ import { I18nextProvider } from 'react-i18next'
 import { StartupView } from '@/components/app/StartupView'
 import { Updater } from '@/components/app/Updater'
 import ClientOnly from '@/components/ClientOnly'
-import { refreshTranslationModels } from '@/lib/backend'
+import { refreshModels, refreshPreferences } from '@/lib/backend'
+import '@/lib/forkPreferences'
 import i18n from '@/lib/i18n'
-import { pageKey, pagesKey, projectKey, queryClient, refresh } from '@/lib/queries'
 import {
-  receiveCanvas,
+  pageKey,
+  pagesKey,
+  projectKey,
+  queryClient,
+  refresh,
+  type ProjectView,
+} from '@/lib/queries'
+import {
+  receiveCanvasSelection,
   receiveDownload,
-  receiveStartupState,
-  receiveJob,
-  receiveResources,
+  receivePickedColor,
+  receivePipeline,
+  receiveRuns,
+  rgbaToHex,
   useKoharuStore,
 } from '@/lib/store'
-import { commands, openEventStream, type ProjectInfo } from '@koharu/bridge/protocol'
-import { Toaster } from '@koharu/ui/components/toast'
+import { commands, events, type Change, type PageId } from '@koharu/ipc/protocol'
+import { toast, Toaster } from '@koharu/ui/components/toast'
 import { TooltipProvider } from '@koharu/ui/components/tooltip'
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -28,59 +37,51 @@ export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
     const lifecycle = runtime.current
     lifecycle.active = true
-    const completed = new Map<string, number>()
-
-    const stream = openEventStream({
-      onCanvas: (canvas) => {
-        if (lifecycle.active) receiveCanvas(canvas)
-      },
-      onJob: (job) => {
-        if (!lifecycle.active) return
-        const previous = completed.get(job.id) ?? 0
-        completed.set(job.id, job.completed)
-        receiveJob(job)
-        if (job.completed > previous || job.state !== 'running') {
-          void refresh(projectKey, pagesKey, pageKey).catch(() => undefined)
-        }
-      },
-      onDownload: (download) => {
-        if (lifecycle.active) receiveDownload(download)
-      },
-      onResource: (resources) => {
-        if (lifecycle.active) receiveResources(resources)
-      },
-      onProject: (project) => {
-        if (!lifecycle.active) return
-        const previous = queryClient.getQueryData<ProjectInfo | null>(projectKey)
-        queryClient.setQueryData(projectKey, project)
-        if (previous?.name !== project?.name) {
-          const store = useKoharuStore.getState()
-          store.selectPages(project?.active_page ? [project.active_page] : [])
-          store.selectLayers([])
-        }
-        if (project) {
-          void refresh(pagesKey, pageKey).catch(() => undefined)
-        } else {
-          queryClient.setQueryData(pagesKey, [])
-          queryClient.setQueryData(pageKey, null)
-        }
-      },
-    })
-
     if (!lifecycle.bound) {
       lifecycle.bound = true
-      void refreshTranslationModels().catch(() => undefined)
-      void commands
-        .subscribe()
-        .then((state) => {
-          if (lifecycle.active) receiveStartupState(state)
+      const listen = <T,>(
+        event: (handler: (payload: T) => void) => Promise<unknown>,
+        receive: (payload: T) => void,
+      ) =>
+        event((payload) => {
+          if (lifecycle.active) receive(payload)
+        })
+
+      void refreshPreferences().catch(() => undefined)
+      void refreshModels().catch(() => undefined)
+
+      // Listening first, so nothing told while the runs load is missed.
+      void Promise.all([
+        listen(events.change, receiveChange),
+        listen(events.project, receiveProject),
+        listen(events.page, receivePage),
+        listen(events.selection, receiveCanvasSelection),
+        listen(events.camera, (camera) => useKoharuStore.setState({ camera })),
+        listen(events.selectionBounds, (selectionBounds) =>
+          useKoharuStore.setState({ selectionBounds }),
+        ),
+        listen(events.area, (area) => useKoharuStore.setState({ area })),
+        listen(events.typing, (typing) => useKoharuStore.setState({ typing })),
+        listen(events.color, (color) => receivePickedColor(rgbaToHex(color))),
+        listen(events.brushDiameter, (diameter) => {
+          const store = useKoharuStore.getState()
+          store.setBrush({ ...store.brush, diameter })
+        }),
+        listen(events.notice, (notice) =>
+          toast.add({ type: 'info', title: i18n.t(`canvas.notice.${notice}`) }),
+        ),
+        listen(events.pipeline, receivePipeline),
+        listen(events.download, receiveDownload),
+      ])
+        .then(() => commands.getPipelineEvents())
+        .then((runs) => {
+          if (lifecycle.active) receiveRuns(runs)
         })
         .catch(() => undefined)
     }
 
     return () => {
       lifecycle.active = false
-      stream.close()
     }
   }, [])
 
@@ -115,6 +116,52 @@ export function Providers({ children }: { children: ReactNode }) {
       </I18nextProvider>
     </QueryClientProvider>
   )
+}
+
+/** Another project opened, or the open one closed: its selection starts empty. A project told
+ * again, after changes the interface missed, is read again. */
+function receiveProject(name: string | null): void {
+  const previous = queryClient.getQueryData<ProjectView | null>(projectKey)
+  if (previous?.name !== name) {
+    const store = useKoharuStore.getState()
+    store.selectPages([])
+    store.selectLayers([])
+  }
+  if (name === null) {
+    queryClient.setQueryData(projectKey, null)
+    queryClient.setQueryData(pageKey, null)
+  } else {
+    void refresh(projectKey, pageKey).catch(() => undefined)
+  }
+}
+
+/** The page the canvas shows. The project is read again too: a read already under way, which a
+ * change starts, answers the page shown before, and would land over this one. */
+function receivePage(page: PageId | null): void {
+  queryClient.setQueryData<ProjectView | null>(projectKey, (project) =>
+    project ? { ...project, page } : project,
+  )
+  if (page !== null && useKoharuStore.getState().selectedPages.length === 0) {
+    useKoharuStore.getState().selectPages([page])
+  }
+  void refresh(projectKey, pageKey).catch(() => undefined)
+}
+
+/** An edit, undo, or redo, from whichever writer: the project and its shown page are read again,
+ * and so are the pages Story lists, which a change to one of their layers doesn't name. */
+function receiveChange(change: Change): void {
+  queryClient.setQueryData<ProjectView | null>(projectKey, (project) =>
+    project
+      ? {
+          ...project,
+          history: change.history,
+          revisions: project.page
+            ? { ...project.revisions, [project.page]: change.revision }
+            : project.revisions,
+        }
+      : project,
+  )
+  void refresh(projectKey, pageKey, pagesKey).catch(() => undefined)
 }
 
 function StartupBoundary({ children }: { children: ReactNode }) {

@@ -16,7 +16,6 @@ concurrency:
 jobs:
   update:
     name: Update sponsor graph
-    if: github.repository == 'koharu-rs/koharu'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -25,11 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-
-      - name: Validate provider tokens
-        run: |
-          test -n "$SPONSORKIT_GITHUB_TOKEN" || { echo "SPONSORKIT_GITHUB_TOKEN is not configured"; exit 1; }
-          test -n "$SPONSORKIT_PATREON_TOKEN" || { echo "SPONSORKIT_PATREON_TOKEN is not configured"; exit 1; }
 
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run sponsors

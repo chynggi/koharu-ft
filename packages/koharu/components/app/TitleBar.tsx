@@ -1,30 +1,30 @@
 'use client'
 
+import * as Sentry from '@sentry/nextjs'
+import { Channel } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { FilePlus2, FolderOpen, LoaderCircle, Settings } from 'lucide-react'
 import Image from 'next/image'
 import { useState, type ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AboutDialog } from '@/components/app/AboutDialog'
+import { AdjustDialog, type Adjustment } from '@/components/app/AdjustDialog'
 import { ExportDialog } from '@/components/app/ExportDialog'
-import { startWindowDrag, useMacOS, WindowControls } from '@/components/app/WindowChrome'
-import { call } from '@/lib/backend'
-import { selectableLayer } from '@/lib/geometry'
-import {
-  pageKey,
-  pagesKey,
-  projectKey,
-  refresh,
-  useImportPages,
-  usePage,
-  usePages,
-  useProject,
-} from '@/lib/queries'
+import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
+import { call, dispatch } from '@/lib/backend'
+import { useImportPages, usePage, useProject } from '@/lib/queries'
+import { adjustable, adjustColors, deleteSelection } from '@/lib/scene'
 import { useKoharuStore } from '@/lib/store'
-import { finishExportWhenDone, runExport } from '@/lib/transfer'
-import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
+import {
+  commands,
+  type ExportOptions,
+  type ExportProgress,
+  type PageId,
+} from '@koharu/ipc/protocol'
 import {
   Menubar,
+  MenubarCheckboxItem as UiMenubarCheckboxItem,
   MenubarContent as UiMenubarContent,
   MenubarItem as UiMenubarItem,
   MenubarMenu,
@@ -41,29 +41,78 @@ export function TitleBar() {
   const { t } = useTranslation()
   const [aboutOpen, setAboutOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [adjusting, setAdjusting] = useState<Adjustment | null>(null)
   const macOS = useMacOS()
   const project = useProject().data
-  const pagesQuery = usePages(Boolean(project))
   const pageQuery = usePage(Boolean(project))
-  const pages = project ? (pagesQuery.data ?? []) : []
+  const pages = project?.pages ?? []
   const page = project ? (pageQuery.data ?? null) : null
+  const pageNumber = page ? pages.findIndex((candidate) => candidate.id === page.id) + 1 : 0
+  const history = project?.history
+  const historyOpen = useKoharuStore((state) => state.historyOpen)
+  const setHistoryOpen = useKoharuStore((state) => state.setHistoryOpen)
   const selectedPages = useKoharuStore((state) => state.selectedPages)
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
+  const pictures = page ? adjustable(selectedLayers, page.layers) : []
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
-  const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
   const { importPages, importing } = useImportPages()
+  const exporting = useKoharuStore((state) => state.exporting !== null)
+  const setExporting = useKoharuStore((state) => state.setExporting)
+  const exportProject = (chosen: PageId[], options: ExportOptions) => {
+    setExporting({ completed: 0, total: chosen.length })
+    const progress = new Channel<ExportProgress>()
+    progress.onmessage = setExporting
+    void call(commands.export, chosen, options, psdLabels, progress)
+      .catch(() => undefined)
+      .finally(() => setExporting(null))
+  }
 
-  const run = (scope: Scope, operation: Operation = { operation: 'full' }) =>
-    void call(commands.process, scope, operation).catch(() => undefined)
+  const psdLabels = {
+    background: t('psd.background'),
+    cleanup: t('psd.cleanup'),
+    outline: t('psd.outline'),
+  }
 
-  const closeProject = () => void call(commands.closeProject).catch(() => undefined)
+  const closeProject = () => void call(commands.close).catch(() => undefined)
+
+  /** Sentry's feedback form, in the interface's language; it leaves the page when it closes. */
+  const sendFeedback = async () => {
+    const feedback = Sentry.getFeedback()
+    if (!feedback) return
+    const form = await feedback.createForm({
+      formTitle: t('feedback.title'),
+      nameLabel: t('feedback.name'),
+      namePlaceholder: t('feedback.namePlaceholder'),
+      emailLabel: t('feedback.email'),
+      emailPlaceholder: t('feedback.emailPlaceholder'),
+      messageLabel: t('feedback.message'),
+      messagePlaceholder: t('feedback.messagePlaceholder'),
+      isRequiredLabel: t('feedback.required'),
+      submitButtonLabel: t('feedback.submit'),
+      cancelButtonLabel: t('feedback.cancel'),
+      confirmButtonLabel: t('feedback.confirm'),
+      addScreenshotButtonLabel: t('feedback.addScreenshot'),
+      removeScreenshotButtonLabel: t('feedback.removeScreenshot'),
+      highlightToolText: t('feedback.highlight'),
+      hideToolText: t('feedback.hide'),
+      removeHighlightText: t('feedback.removeHighlight'),
+      successMessageText: t('feedback.sent'),
+      errorEmptyMessageText: t('feedback.emptyMessage'),
+      errorNoClientText: t('feedback.noClient'),
+      errorTimeoutText: t('feedback.timeout'),
+      errorForbiddenText: t('feedback.forbidden'),
+      errorGenericText: t('feedback.failed'),
+      onFormClose: () => form.removeFromDom(),
+    })
+    form.appendToDom()
+    form.open()
+  }
 
   return (
     <>
       <header
         data-tauri-drag-region='deep'
-        onMouseDownCapture={startWindowDrag}
         className='relative flex h-10 shrink-0 items-center bg-[var(--surface-titlebar)] text-[12px]'
       >
         {macOS ? (
@@ -106,10 +155,12 @@ export function TitleBar() {
                 </MenubarSubContent>
               </MenubarSub>
               <MenubarItem
-                disabled={!project || pages.length === 0}
+                disabled={!project || pages.length === 0 || exporting}
+                aria-busy={exporting}
                 onClick={() => setExportOpen(true)}
               >
-                {t('menu.export')}
+                {exporting && <LoaderCircle className='animate-spin' aria-hidden='true' />}
+                {t('menu.export')}…
               </MenubarItem>
               <MenubarSeparator />
               <MenubarItem disabled={!project} onClick={closeProject}>
@@ -127,23 +178,15 @@ export function TitleBar() {
             <MenubarTrigger>{t('menu.edit')}</MenubarTrigger>
             <MenubarContent>
               <MenubarItem
-                disabled={!project?.can_undo}
-                onClick={() =>
-                  void call(commands.undo)
-                    .then(() => refresh(projectKey, pagesKey, pageKey))
-                    .catch(() => undefined)
-                }
+                disabled={!history || history.current === 0}
+                onClick={() => dispatch(commands.undo)}
               >
                 {t('menu.undo')}
                 <MenubarShortcut>Ctrl+Z</MenubarShortcut>
               </MenubarItem>
               <MenubarItem
-                disabled={!project?.can_redo}
-                onClick={() =>
-                  void call(commands.redo)
-                    .then(() => refresh(projectKey, pagesKey, pageKey))
-                    .catch(() => undefined)
-                }
+                disabled={!history || history.current >= history.steps.length}
+                onClick={() => dispatch(commands.redo)}
               >
                 {t('menu.redo')}
                 <MenubarShortcut>Ctrl+Shift+Z</MenubarShortcut>
@@ -151,9 +194,7 @@ export function TitleBar() {
               <MenubarSeparator />
               <MenubarItem
                 disabled={!page}
-                onClick={() =>
-                  selectLayers(page?.layers.filter(selectableLayer).map((layer) => layer.id) ?? [])
-                }
+                onClick={() => selectLayers(page?.layers.map((layer) => layer.id) ?? [])}
               >
                 {t('menu.selectAllLayers')}
                 <MenubarShortcut>Ctrl+A</MenubarShortcut>
@@ -161,65 +202,57 @@ export function TitleBar() {
               <MenubarItem
                 disabled={selectedLayers.length === 0}
                 variant='destructive'
-                onClick={() =>
-                  void call(commands.deleteLayers, selectedLayers)
-                    .then(() => refresh(projectKey, pagesKey, pageKey))
-                    .catch(() => undefined)
-                }
+                onClick={() => dispatch(deleteSelection, selectedLayers, page?.layers ?? [])}
               >
                 {t('menu.delete')}
                 <MenubarShortcut>Del</MenubarShortcut>
+              </MenubarItem>
+              <MenubarSeparator />
+              {/* Frees the GPU, as Photoshop's Edit → Purge frees memory. */}
+              <MenubarItem onClick={() => dispatch(commands.unload)}>
+                {t('menu.unloadModels')}
               </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
 
           <MenubarMenu>
-            <MenubarTrigger>{t('menu.process')}</MenubarTrigger>
+            <MenubarTrigger>{t('menu.image')}</MenubarTrigger>
             <MenubarContent>
-              <MenubarItem
-                disabled={!project || pages.length === 0}
-                onClick={() => run({ scope: 'project' })}
-              >
-                {t('menu.processProject')}
-              </MenubarItem>
-              <MenubarItem
-                disabled={selectedPages.length === 0}
-                onClick={() => run({ scope: 'pages', value: selectedPages })}
-              >
-                {t('menu.processPages')}
-              </MenubarItem>
-              <MenubarItem
-                disabled={selectedLayers.length === 0}
-                onClick={() =>
-                  run(
-                    { scope: 'entities', value: selectedLayers },
-                    { operation: 'stages', stages: ['ocr', 'translation'] },
-                  )
-                }
-              >
-                {t('menu.processLayers')}
-              </MenubarItem>
-              <MenubarSeparator />
-              {(['detection', 'ocr', 'translation', 'inpainting'] as Stage[]).map((stage) => (
-                <MenubarItem
-                  key={stage}
-                  disabled={!project || pages.length === 0}
-                  onClick={() => run({ scope: 'project' }, { operation: 'through', stage })}
-                >
-                  {t('menu.runPhase', {
-                    phase: t(`phase.${stage}`),
-                  })}
-                </MenubarItem>
-              ))}
+              <MenubarSub>
+                <MenubarSubTrigger disabled={pictures.length === 0}>
+                  {t('menu.adjustments')}
+                </MenubarSubTrigger>
+                <MenubarSubContent className='min-w-44 p-1'>
+                  {(['brightness_contrast', 'levels', 'hue'] as const).map((adjustment) => (
+                    <MenubarItem key={adjustment} onClick={() => setAdjusting(adjustment)}>
+                      {t(`adjust.${adjustment}`)}…
+                    </MenubarItem>
+                  ))}
+                  <MenubarItem
+                    onClick={() => dispatch(adjustColors, pictures, [{ kind: 'grayscale' }])}
+                  >
+                    {t('adjust.grayscale')}
+                  </MenubarItem>
+                </MenubarSubContent>
+              </MenubarSub>
             </MenubarContent>
           </MenubarMenu>
 
           <MenubarMenu>
             <MenubarTrigger>{t('menu.view')}</MenubarTrigger>
             <MenubarContent>
-              <MenubarItem disabled={!page} onClick={requestCanvasFit}>
+              <MenubarItem disabled={!page} onClick={() => dispatch(commands.fit)}>
                 {t('menu.fit')}
+                <MenubarShortcut>Ctrl+0</MenubarShortcut>
               </MenubarItem>
+              <MenubarCheckboxItem
+                disabled={!page}
+                checked={historyOpen}
+                onCheckedChange={setHistoryOpen}
+                closeOnClick
+              >
+                {t('menu.history')}
+              </MenubarCheckboxItem>
             </MenubarContent>
           </MenubarMenu>
 
@@ -227,17 +260,19 @@ export function TitleBar() {
             <MenubarTrigger>{t('menu.help')}</MenubarTrigger>
             <MenubarContent>
               <MenubarItem
-                onClick={() => window.open('https://discord.gg/mHvHkxGnUY', '_blank', 'noopener,noreferrer')}
+                onClick={() => void openUrl('https://discord.gg/mHvHkxGnUY').catch(() => undefined)}
               >
                 {t('menu.discord')}
               </MenubarItem>
               <MenubarItem
                 onClick={() =>
-                  window.open('https://github.com/koharu-rs/koharu', '_blank', 'noopener,noreferrer')
-
+                  void openUrl('https://github.com/koharu-rs/koharu').catch(() => undefined)
                 }
               >
                 {t('menu.github')}
+              </MenubarItem>
+              <MenubarItem onClick={() => void sendFeedback().catch(() => undefined)}>
+                {t('menu.feedback')}
               </MenubarItem>
               <MenubarSeparator />
               <MenubarItem onClick={() => setAboutOpen(true)}>{t('menu.about')}</MenubarItem>
@@ -253,7 +288,7 @@ export function TitleBar() {
               {page && (
                 <>
                   <span className='mx-2'>/</span>
-                  <span>{page.label}</span>
+                  <span>{t('navigator.pageNumber', { number: pageNumber })}</span>
                 </>
               )}
             </span>
@@ -265,16 +300,13 @@ export function TitleBar() {
         {!macOS && <WindowControls />}
       </header>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <AdjustDialog adjustment={adjusting} layers={pictures} onClose={() => setAdjusting(null)} />
       <ExportDialog
         open={exportOpen}
         onOpenChange={setExportOpen}
         pages={pages.map((page) => page.id)}
         selected={selectedPages}
-        onStart={(target, options) => {
-          void call(runExport, target, options)
-            .then((job) => (job ? finishExportWhenDone(job) : undefined))
-            .catch(() => undefined)
-        }}
+        onStart={exportProject}
       />
     </>
   )
@@ -301,6 +333,22 @@ function MenubarItem({ className, ...props }: ComponentProps<typeof UiMenubarIte
     <UiMenubarItem
       className={cn(
         "min-h-8 gap-1.5 px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+/** Its text in line with the other items', and its check where their shortcuts go. */
+function MenubarCheckboxItem({
+  className,
+  ...props
+}: ComponentProps<typeof UiMenubarCheckboxItem>) {
+  return (
+    <UiMenubarCheckboxItem
+      className={cn(
+        'min-h-8 pr-7 pl-2 text-xs [&>span:first-child]:right-2 [&>span:first-child]:left-auto',
         className,
       )}
       {...props}

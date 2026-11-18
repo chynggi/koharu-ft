@@ -1,48 +1,55 @@
 'use client'
 
+import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
 import { useQuery } from '@tanstack/react-query'
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import {
+  BookmarkIcon,
   Columns2,
   FilePlus2,
-  Flag,
   FolderOpen,
   LoaderCircle,
   MoreHorizontal,
-  Search,
+  Pencil,
   Settings,
-  Trash2,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { ResourceMonitor } from '@/components/editor/ResourceMonitor'
-import { usePageImportDrop } from '@/components/editor/usePageImportDrop'
-import { call } from '@/lib/backend'
-import { useForkPreferences } from '@/lib/forkPreferences'
-import { activatePage, cancelPageActivation } from '@/lib/navigation'
+import { call, dispatch } from '@/lib/backend'
+import { useImportPages, usePage, useProject } from '@/lib/queries'
+import { deletePages, mergePages, movePage, updatePage } from '@/lib/scene'
+import { pipelineStages, useKoharuStore } from '@/lib/store'
+import { commands, type ImportSource, type PageSummary, type Stage } from '@koharu/ipc/protocol'
 import {
-  pageKey,
-  pagesKey,
-  preparedPageKey,
-  projectKey,
-  queryClient,
-  refresh,
-  useImportDroppedPages,
-  useImportPages,
-  usePage,
-  usePages,
-} from '@/lib/queries'
-import { useKoharuStore } from '@/lib/store'
-import { prefetchCanvasPages } from '@koharu/bridge/canvas'
-import {
-  commands,
-  type CanvasPagePreparation,
-  type PageImportSource,
-  type PageSummary,
-  type ProjectInfo,
-} from '@koharu/bridge/protocol'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@koharu/ui/components/alert-dialog'
 import { Button } from '@koharu/ui/components/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@koharu/ui/components/context-menu'
 import {
   Dialog,
   DialogContent,
@@ -56,62 +63,44 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@koharu/ui/components/dropdown-menu'
 import { Input } from '@koharu/ui/components/input'
+import { Label } from '@koharu/ui/components/label'
 import { ScrollArea } from '@koharu/ui/components/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 import { cn } from '@koharu/ui/lib/utils'
 
 const emptyPages: PageSummary[] = []
 
-interface IntentPrefetchState {
-  project: string
-  revision: number
-  pages: Set<string>
-}
-
-type DropPosition = 'before' | 'after'
-
 export function PageRail() {
   const { t } = useTranslation()
-  const pages = usePages().data ?? emptyPages
+  const project = useProject().data
+  const pages = project?.pages ?? emptyPages
   const active = usePage().data?.id ?? null
   const selected = useKoharuStore((state) => state.selectedPages)
   const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const mergeDeleteOriginals = useForkPreferences((state) => state.preferences.mergeDeleteOriginals)
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const { importPages, importing } = useImportPages()
-  const { importDropped } = useImportDroppedPages()
-  const railRef = useRef<HTMLElement>(null)
-  const { overDropZone, dropHandlers } = usePageImportDrop(railRef, importDropped)
   const anchor = useRef<number | null>(null)
-  const intentPrefetch = useRef<IntentPrefetchState | null>(null)
-  const keyboardPageIndex = useRef<number | null>(null)
-  const draggedPage = useRef<string | null>(null)
-  const dropTargetRef = useRef<{ page: string; position: DropPosition } | null>(null)
-  const dropHandled = useRef(false)
-  const [dragged, setDragged] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<{ page: string; position: DropPosition } | null>(
+  // A page being dragged, and the place of the page it's over.
+  const [dragged, setDragged] = useState<{ page: string; target: number | null } | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  // The page Delete asks about, kept while its dialog closes so the dialog still names it.
+  const [pageToDelete, setPageToDelete] = useState<{ page: string; number: number } | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [renaming, setRenaming] = useState<{ page: string; name: string; chapter: string } | null>(
     null,
-  )
-  const [query, setQuery] = useState('')
-  const [renaming, setRenaming] = useState<PageSummary | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const normalized = query.trim().toLocaleLowerCase()
-  const visiblePages = useMemo(
-    () =>
-      pages
-        .map((page, index) => ({ page, index }))
-        .filter(({ page }) => !normalized || page.label.toLocaleLowerCase().includes(normalized)),
-    [normalized, pages],
   )
   const pageList = useRef<HTMLDivElement>(null)
   const pageVirtualizer = useVirtualizer({
-    count: visiblePages.length,
+    count: pages.length,
     getScrollElement: () => pageList.current,
-    getItemKey: (index) => visiblePages[index]?.page.id ?? index,
+    getItemKey: (index) => pages[index]?.id ?? index,
     estimateSize: () => 72,
     gap: 2,
     overscan: 6,
@@ -122,217 +111,105 @@ export function PageRail() {
       ),
   })
 
-  // A project reopens at the page it was left on, so that page is centered
-  // once; later switches, such as a search result, scroll the rail only when
-  // the page is off screen.
-  const revealedActive = useRef<string | null>(null)
-  useEffect(() => {
-    if (!active || revealedActive.current === active) return
-    const index = visiblePages.findIndex(({ page }) => page.id === active)
-    if (index < 0) return
-    pageVirtualizer.scrollToIndex(index, {
-      align: revealedActive.current === null ? 'center' : 'auto',
-    })
-    revealedActive.current = active
-  }, [active, pageVirtualizer, visiblePages])
-
-  useEffect(() => cancelPageActivation, [])
-
-  const select = useCallback(
-    (index: number, additive: boolean, range: boolean) => {
-      const page = pages[index]
-      if (!page) return
-      let next: string[]
-      if (range && anchor.current !== null) {
-        const start = Math.min(anchor.current, index)
-        const end = Math.max(anchor.current, index)
-        const rangeIds = pages.slice(start, end + 1).map((item) => item.id)
-        next = additive ? [...new Set([...selected, ...rangeIds])] : rangeIds
-      } else if (additive) {
-        next = selected.includes(page.id)
-          ? selected.filter((id) => id !== page.id)
-          : [...selected, page.id]
-        anchor.current = index
-      } else {
-        next = [page.id]
-        anchor.current = index
-      }
-      void activatePage(page.id, next)
-    },
-    [pages, selected],
-  )
-
-  useEffect(() => {
-    keyboardPageIndex.current = pages.findIndex((page) => page.id === active)
-  }, [active, pages])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const { shortcuts } = useKoharuStore.getState()
-      const key = event.key.toLowerCase()
-      const step =
-        event.key === 'ArrowLeft' || event.key === 'PageUp' || key === shortcuts.previous_page
-          ? -1
-          : event.key === 'ArrowRight' || event.key === 'PageDown' || key === shortcuts.next_page
-            ? 1
-            : 0
-      if (
-        step === 0 ||
-        event.defaultPrevented ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey
-      )
-        return
-
-      const target = event.target
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.closest(
-            'input, textarea, select, [role="dialog"], [role="menu"], [role="listbox"], [role="slider"]',
-          ))
-      )
-        return
-
-      const current = keyboardPageIndex.current ?? pages.findIndex((page) => page.id === active)
-      const next = current + step
-      if (current < 0 || !pages[next]) return
-
-      event.preventDefault()
-      keyboardPageIndex.current = next
-      pageVirtualizer.scrollToIndex(next, { align: 'auto' })
-      select(next, false, false)
+  const select = (index: number, additive: boolean, range: boolean) => {
+    const page = pages[index]
+    if (!page) return
+    let next: string[]
+    if (range && anchor.current !== null) {
+      const start = Math.min(anchor.current, index)
+      const end = Math.max(anchor.current, index)
+      const rangeIds = pages.slice(start, end + 1).map((item) => item.id)
+      next = additive ? [...new Set([...selected, ...rangeIds])] : rangeIds
+    } else if (additive) {
+      next = selected.includes(page.id)
+        ? selected.filter((id) => id !== page.id)
+        : [...selected, page.id]
+      anchor.current = index
+    } else {
+      next = [page.id]
+      anchor.current = index
     }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, pageVirtualizer, pages, select])
-
-  const prefetchOnIntent = (page: string) => {
-    const project = queryClient.getQueryData<ProjectInfo | null>(projectKey)
-    if (!project || project.active_page === page) return
-    let state = intentPrefetch.current
-    if (!state || state.project !== project.name || state.revision !== project.revision) {
-      state = { project: project.name, revision: project.revision, pages: new Set() }
-      intentPrefetch.current = state
+    selectPages(next)
+    if (page.id !== active) {
+      selectLayers([])
+      dispatch(commands.show, page.id)
     }
-    const prepared = queryClient.getQueryData<CanvasPagePreparation>(preparedPageKey(page))
-    if (prepared?.revision === project.revision || state.pages.has(page)) return
-    state.pages.add(page)
-    void prefetchCanvasPages([page])
-      .then((pages) => {
-        const current = queryClient.getQueryData<ProjectInfo | null>(projectKey)
-        const preparedPage = pages.find(
-          (candidate) => candidate.page.id === page && candidate.revision === project.revision,
-        )
-        if (
-          preparedPage &&
-          current?.name === project.name &&
-          current.revision === preparedPage.revision
-        ) {
-          queryClient.setQueryData(preparedPageKey(page), preparedPage)
-          return
-        }
-        if (intentPrefetch.current === state) state.pages.delete(page)
-      })
-      .catch(() => {
-        if (intentPrefetch.current === state) state.pages.delete(page)
-      })
   }
 
+  const navigate = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return
+    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+    if (!step || dragged || useKoharuStore.getState().settingsOpen) return
+    if (
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable ||
+        event.target.closest(
+          'input, textarea, select, button, a, [role="menu"], [role="dialog"], [role="listbox"], [role="slider"], [role="separator"]',
+        ))
+    )
+      return
+
+    const from = pages.findIndex((page) => page.id === active)
+    const next = from + step
+    if (from < 0 || !pages[next]) return
+    event.preventDefault()
+    select(next, false, false)
+    pageVirtualizer.scrollToIndex(next, { align: 'auto' })
+  })
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => navigate(event)
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const deletePage = (page: string) =>
-    void call(commands.deletePages, [page])
+    void call(deletePages, [page])
       .then(() => {
         selectPages(selected.filter((selectedPage) => selectedPage !== page))
         if (active === page) selectLayers([])
-        return refresh(projectKey, pagesKey, pageKey)
       })
       .catch(() => undefined)
 
-  const mergePages = () => {
-    // `pages`는 이미 프로젝트 순서(레일의 왼쪽→오른쪽)이므로 걸러내기만 하면
-    // 합칠 순서가 나온다. 서버도 인접 여부를 다시 확인한다.
-    const ordered = pages.filter((page) => selected.includes(page.id)).map((page) => page.id)
-    if (ordered.length < 2) return
-    void call(commands.mergePages, ordered, mergeDeleteOriginals)
-      .then((merged) => {
-        selectPages([merged])
+  /** The selected pages become one spread, which is then the selection and on show. */
+  const merge = (rtl: boolean) =>
+    void call(mergePages, selected, rtl)
+      .then((change) => {
+        const spread = change.pages.added[0]
+        if (!spread) return
+        selectPages([spread])
         selectLayers([])
-        return refresh(projectKey, pagesKey, pageKey)
+        dispatch(commands.show, spread)
       })
       .catch(() => undefined)
-  }
 
-  const openRename = (page: PageSummary) => {
-    setRenaming(page)
-    setRenameValue(page.label)
-  }
-
-  const closeRename = () => {
+  const rename = () => {
+    if (!renaming) return
+    dispatch(updatePage, renaming.page, renaming.name.trim(), renaming.chapter.trim())
     setRenaming(null)
-    setRenameValue('')
   }
 
-  const submitRename = () => {
-    const page = renaming
-    const label = renameValue.trim()
-    if (!page || !label || label === page.label) {
-      closeRename()
-      return
-    }
-    void call(commands.renamePage, page.id, label)
-      .then(() => refresh(projectKey, pagesKey, pageKey))
-      .catch(() => undefined)
-      .finally(closeRename)
-  }
-
-  const setChapterStart = (page: PageSummary) =>
-    void call(commands.setPageChapterStart, page.id, !page.chapter_start)
-      .then(() => refresh(projectKey, pagesKey))
-      .catch(() => undefined)
-
-  const handleMovePage = useCallback(
-    (movingId: string | null, targetId: string | null, position: DropPosition | null) => {
-      if (!movingId || !targetId || !position || movingId === targetId) return
-      const movingIndex = pages.findIndex((item) => item.id === movingId)
-      const targetIndexInPages = pages.findIndex((item) => item.id === targetId)
-      if (movingIndex < 0 || targetIndexInPages < 0) return
-
-      const targetIndex = targetIndexInPages - (movingIndex < targetIndexInPages ? 1 : 0)
-      const destination = targetIndex + (position === 'after' ? 1 : 0)
-      void call(commands.movePage, movingId, destination)
-        .finally(() => refresh(projectKey, pagesKey))
-        .catch(() => undefined)
-    },
-    [pages],
-  )
-
-  const cleanupDrag = useCallback(() => {
-    draggedPage.current = null
-    dropTargetRef.current = null
-    dropHandled.current = false
+  /** A page dropped on another takes its place; `move_page` counts its index after the page is
+   * taken out, which is that place either way. */
+  const drop = (target: number | null) => {
+    const page = dragged?.page
     setDragged(null)
-    setDropTarget(null)
-  }, [])
+    if (page !== undefined && target !== null && pages[target]?.id !== page) {
+      dispatch(movePage, page, target)
+    }
+  }
 
   return (
     <>
-      <aside
-        ref={railRef}
-        data-drop-active={overDropZone}
-        className={cn(
-          'relative flex h-full min-h-0 flex-col bg-[var(--surface-sidebar)]',
-          overDropZone && 'ring-2 ring-inset ring-primary',
-        )}
-        {...dropHandlers}
-      >
-        {overDropZone && (
-          <div className='pointer-events-none absolute inset-0 z-20 grid place-items-center bg-primary/[0.06] text-[11px] font-medium text-foreground'>
-            {t('navigator.dropToImport')}
-          </div>
-        )}
+      <aside className='flex h-full min-h-0 flex-col bg-[var(--surface-sidebar)]'>
         <header className='flex h-10 shrink-0 items-center px-2.5'>
           <div className='flex min-w-0 items-center gap-2'>
             <h2 className='text-[11px] font-semibold'>{t('navigator.pages')}</h2>
@@ -353,21 +230,6 @@ export function PageRail() {
           )}
         </header>
 
-        {pages.length > 0 && (
-          <div className='border-b px-2 py-1.5'>
-            <label className='flex h-6 items-center gap-1.5 rounded-md border border-input bg-background/70 px-1.5'>
-              <Search className='size-3 text-muted-foreground' />
-              <Input
-                value={query}
-                aria-label={t('navigator.filter')}
-                placeholder={t('navigator.filter')}
-                className='h-5 min-w-0 border-0 bg-transparent p-0 text-[11px] shadow-none focus-visible:ring-0 md:text-[11px]'
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </label>
-          </div>
-        )}
-
         {pages.length === 0 ? (
           <div className='flex min-h-0 flex-1 flex-col items-center justify-center px-4 text-center'>
             <p className='text-[11px] font-medium'>{t('navigator.emptyTitle')}</p>
@@ -378,120 +240,79 @@ export function PageRail() {
               <PageImportMenu importing={importing} onImport={importPages} />
             </div>
           </div>
-        ) : visiblePages.length === 0 ? (
-          <div className='grid flex-1 place-items-center px-4 text-center text-[10px] text-muted-foreground'>
-            {t('navigator.noResults')}
-          </div>
         ) : (
-          <ScrollArea
-            className='min-h-0 flex-1'
-            viewportClassName='px-1.5 py-1.5'
-            viewportRef={pageList}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={({ active }) => setDragged({ page: String(active.id), target: null })}
+            onDragOver={({ over }) =>
+              setDragged(
+                (current) =>
+                  current && {
+                    ...current,
+                    target: over ? pages.findIndex((page) => page.id === over.id) : null,
+                  },
+              )
+            }
+            onDragCancel={() => setDragged(null)}
+            onDragEnd={({ over }) =>
+              drop(over ? pages.findIndex((page) => page.id === over.id) : null)
+            }
           >
-            <div
-              className='relative w-full'
-              style={{ height: pageVirtualizer.getTotalSize() }}
-              onDragOver={(event) => {
-                if (draggedPage.current && event.target === event.currentTarget) {
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                  const lastPage = visiblePages[visiblePages.length - 1]?.page
-                  if (lastPage && lastPage.id !== draggedPage.current) {
-                    dropTargetRef.current = { page: lastPage.id, position: 'after' }
-                    setDropTarget({ page: lastPage.id, position: 'after' })
-                  }
-                }
-              }}
-              onDrop={(event) => {
-                if (
-                  event.target === event.currentTarget &&
-                  !dropHandled.current &&
-                  dropTargetRef.current &&
-                  draggedPage.current
-                ) {
-                  event.preventDefault()
-                  dropHandled.current = true
-                  handleMovePage(
-                    draggedPage.current,
-                    dropTargetRef.current.page,
-                    dropTargetRef.current.position,
-                  )
-                  cleanupDrag()
-                }
-              }}
+            <ScrollArea
+              className='min-h-0 flex-1'
+              viewportClassName='px-1.5 py-1.5'
+              viewportRef={pageList}
             >
-              {pageVirtualizer.getVirtualItems().map((virtualRow) => {
-                const item = visiblePages[virtualRow.index]
-                if (!item) return null
-                const { page, index } = item
-                return (
-                  <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
-                    className='absolute top-0 left-0 w-full'
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
-                  >
-                    <PageItem
-                      page={page}
-                      index={index}
-                      active={active === page.id}
-                      selected={selected.includes(page.id)}
-                      dragged={dragged === page.id}
-                      isDragging={dragged !== null}
-                      dropPosition={dropTarget?.page === page.id ? dropTarget.position : null}
-                      onIntent={active === page.id ? undefined : () => prefetchOnIntent(page.id)}
-                      onSelect={(additive, range) => select(index, additive, range)}
-                      onDragStart={(event: DragEvent<HTMLElement>) => {
-                        draggedPage.current = page.id
-                        dropTargetRef.current = null
-                        dropHandled.current = false
-                        event.dataTransfer.effectAllowed = 'move'
-                        event.dataTransfer.setData('text/plain', page.id)
-                        setDragged(page.id)
-                      }}
-                      onDragEnd={() => {
-                        if (!dropHandled.current && draggedPage.current && dropTargetRef.current) {
-                          dropHandled.current = true
-                          handleMovePage(
-                            draggedPage.current,
-                            dropTargetRef.current.page,
-                            dropTargetRef.current.position,
+              <div
+                className='relative w-full touch-none'
+                style={{ height: pageVirtualizer.getTotalSize() }}
+              >
+                {pageVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const page = pages[virtualRow.index]
+                  if (!page) return null
+                  const index = virtualRow.index
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      className='absolute top-0 left-0 w-full'
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <PageItem
+                        page={page}
+                        index={index}
+                        revision={project?.revisions[page.id]}
+                        active={active === page.id}
+                        selected={selected.includes(page.id)}
+                        dragged={dragged?.page === page.id}
+                        target={dragged !== null && dragged.target === index}
+                        onSelect={(additive, range) => select(index, additive, range)}
+                        onRun={(stage) =>
+                          void call(commands.runPipeline, { pages: [page.id] }, [stage]).catch(
+                            () => undefined,
                           )
                         }
-                        cleanupDrag()
-                      }}
-                      onDragOver={(position) => {
-                        if (draggedPage.current && draggedPage.current !== page.id) {
-                          dropTargetRef.current = { page: page.id, position }
-                          setDropTarget({ page: page.id, position })
+                        onDelete={() => {
+                          setPageToDelete({ page: page.id, number: index + 1 })
+                          setConfirmingDelete(true)
+                        }}
+                        canMerge={selected.length > 1 && selected.includes(page.id)}
+                        onMerge={merge}
+                        onRename={() =>
+                          setRenaming({
+                            page: page.id,
+                            name: page.name,
+                            chapter: page.chapter ?? '',
+                          })
                         }
-                      }}
-                      onRename={() => openRename(page)}
-                      onDelete={() => deletePage(page.id)}
-                      onToggleChapterStart={() => setChapterStart(page)}
-                      canMerge={selected.length > 1}
-                      onMerge={mergePages}
-                      onDrop={(position, dataTransfer) => {
-                        const moving = draggedPage.current ?? dataTransfer.getData('text/plain')
-                        if (!dropHandled.current && moving && moving !== page.id) {
-                          dropHandled.current = true
-                          handleMovePage(moving, page.id, position)
-                        }
-                        cleanupDrag()
-                      }}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-            <div className='px-0.5 pt-1.5 pb-0.5'>
-              <PageImportMenu
-                importing={importing}
-                onImport={importPages}
-                className='w-full justify-center'
-              />
-            </div>
-          </ScrollArea>
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </ScrollArea>
+          </DndContext>
         )}
 
         <div className='mt-auto flex shrink-0 items-center gap-2 px-2 py-2'>
@@ -512,41 +333,73 @@ export function PageRail() {
             </TooltipTrigger>
             <TooltipContent side='right'>{t('menu.settings')}</TooltipContent>
           </Tooltip>
-          <ResourceMonitor />
         </div>
       </aside>
-
-      <Dialog
-        open={renaming !== null}
-        onOpenChange={(open) => {
-          if (!open) closeRename()
-        }}
-      >
-        <DialogContent className='sm:max-w-md'>
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('navigator.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('navigator.deleteDescription', {
+                page: t('navigator.pageNumber', { number: pageToDelete?.number }),
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              onClick={() => {
+                setConfirmingDelete(false)
+                if (pageToDelete !== null) deletePage(pageToDelete.page)
+              }}
+            >
+              {t('navigator.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
+        <DialogContent className='sm:max-w-sm'>
           <form
+            className='grid gap-4'
             onSubmit={(event) => {
               event.preventDefault()
-              submitRename()
+              rename()
             }}
           >
             <DialogHeader>
               <DialogTitle>{t('navigator.renameTitle')}</DialogTitle>
               <DialogDescription>{t('navigator.renameDescription')}</DialogDescription>
             </DialogHeader>
-            <Input
-              autoFocus
-              value={renameValue}
-              aria-label={t('navigator.pageName')}
-              className='mt-4'
-              onChange={(event) => setRenameValue(event.currentTarget.value)}
-            />
-            <DialogFooter className='mt-4'>
-              <Button type='button' variant='ghost' onClick={closeRename}>
+            <div className='grid gap-1.5'>
+              <Label htmlFor='page-name'>{t('navigator.pageName')}</Label>
+              <Input
+                id='page-name'
+                autoFocus
+                value={renaming?.name ?? ''}
+                onChange={(event) => {
+                  const name = event.currentTarget.value
+                  setRenaming((current) => current && { ...current, name })
+                }}
+              />
+            </div>
+            <div className='grid gap-1.5'>
+              <Label htmlFor='page-chapter'>{t('navigator.chapterStart')}</Label>
+              <Input
+                id='page-chapter'
+                value={renaming?.chapter ?? ''}
+                onChange={(event) => {
+                  const chapter = event.currentTarget.value
+                  setRenaming((current) => current && { ...current, chapter })
+                }}
+              />
+            </div>
+            <DialogFooter>
+              <Button type='button' variant='ghost' onClick={() => setRenaming(null)}>
                 {t('common.cancel')}
               </Button>
-              <Button type='submit' disabled={!renameValue.trim()}>
-                {t('navigator.rename')}
-              </Button>
+              <Button type='submit'>{t('navigator.rename')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -558,11 +411,9 @@ export function PageRail() {
 function PageImportMenu({
   importing,
   onImport,
-  className,
 }: {
   importing: boolean
-  onImport: (source: PageImportSource) => void
-  className?: string
+  onImport: (source: ImportSource) => void
 }) {
   const { t } = useTranslation()
   const icon = importing ? (
@@ -580,7 +431,7 @@ function PageImportMenu({
             variant='outline'
             disabled={importing}
             aria-busy={importing}
-            className={cn('rounded-lg text-[10px]', className)}
+            className='rounded-lg text-[10px]'
           />
         }
       >
@@ -615,174 +466,227 @@ function PageImportMenu({
 function PageItem({
   page,
   index,
+  revision,
   active,
   selected,
   dragged,
-  dropPosition,
-  isDragging,
-  onIntent,
+  target,
   onSelect,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onRename,
+  onRun,
   onDelete,
-  onToggleChapterStart,
-  onMerge,
   canMerge,
-  onDrop,
+  onMerge,
+  onRename,
 }: {
   page: PageSummary
   index: number
+  /** The project's revision when a change last named this page, so its thumbnail follows its
+   * edits. */
+  revision: string | undefined
   active: boolean
   selected: boolean
   dragged: boolean
-  dropPosition: DropPosition | null
-  isDragging?: boolean
-  onIntent?: () => void
+  target: boolean
   onSelect: (additive: boolean, range: boolean) => void
-  onDragStart: (event: DragEvent<HTMLElement>) => void
-  onDragEnd: () => void
-  onDragOver: (position: DropPosition) => void
-  onRename: () => void
+  onRun: (stage: Stage) => void
   onDelete: () => void
-  onToggleChapterStart: () => void
-  onMerge: () => void
+  /** Whether this page is one of several selected pages a spread can join. */
   canMerge: boolean
-  onDrop: (position: DropPosition, dataTransfer: DataTransfer) => void
+  onMerge: (rtl: boolean) => void
+  onRename: () => void
 }) {
   const { t } = useTranslation()
-  const showPageNumbers = useForkPreferences((state) => state.preferences.showPageNumbers)
+  const number = t('navigator.pageNumber', { number: index + 1 })
+  const name = page.name || number
+  const handle = useDraggable({ id: page.id })
+  const { setNodeRef } = useDroppable({ id: page.id })
+  // A press on the page's own buttons and menus doesn't drag it.
+  const { onPointerDown, ...listeners } = handle.listeners ?? {}
 
   return (
-    <article
-      draggable
-      data-active={active}
-      data-selected={selected}
-      data-chapter-start={page.chapter_start}
-      className={cn(
-        'group relative grid cursor-grab grid-cols-[48px_minmax(0,1fr)] gap-2.5 rounded-xl p-1.5 transition-colors select-none active:cursor-grabbing',
-        active
-          ? 'bg-primary/[0.09] hover:bg-primary/[0.09]'
-          : selected
-            ? 'bg-foreground/[0.06] hover:bg-foreground/[0.08]'
-            : 'hover:bg-foreground/[0.045]',
-        dragged && 'opacity-50',
-        dropPosition === 'before' &&
-          'before:absolute before:inset-x-1 before:-top-px before:z-10 before:border-t-2 before:border-primary',
-        dropPosition === 'after' &&
-          'after:absolute after:inset-x-1 after:-bottom-px after:z-10 after:border-t-2 after:border-primary',
-      )}
-      onPointerEnter={onIntent}
-      onFocus={onIntent}
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
-        onSelect(event.ctrlKey || event.metaKey, event.shiftKey)
-      }}
-      onDoubleClick={onRename}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragEnter={(event) => {
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-      }}
-      onDragOver={(event) => {
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-        const bounds = event.currentTarget.getBoundingClientRect()
-        onDragOver(event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after')
-      }}
-      onDrop={(event) => {
-        event.preventDefault()
-        const bounds = event.currentTarget.getBoundingClientRect()
-        const position = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
-        onDrop(position, event.dataTransfer)
-      }}
-    >
-      <div
-        className={cn(
-          'grid h-16 w-12 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]',
-          isDragging && 'pointer-events-none',
-        )}
-      >
-        {page.source_asset ? (
-          <PageThumbnail page={page.id} asset={page.source_asset} label={page.label} />
-        ) : (
-          <span className='text-[9px] text-muted-foreground'>{t('navigator.noImage')}</span>
-        )}
-      </div>
-      <div className={cn('min-w-0 py-0.5', isDragging && 'pointer-events-none')}>
-        <div className='flex items-start gap-1'>
-          <span className='flex min-w-0 flex-1 items-center gap-1 truncate text-[10px] font-medium'>
-            {page.chapter_start && (
-              <span
-                role='img'
-                aria-label={t('navigator.chapterStart')}
-                title={t('navigator.chapterStart')}
-                className='shrink-0 text-primary'
-              >
-                <Flag className='size-3' />
-              </span>
-            )}
-            <span className='truncate'>{page.label}</span>
-          </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant='ghost'
-                  size='icon-xs'
-                  aria-label={t('navigator.actionsFor', { page: page.label })}
-                  className='-mt-1 shrink-0 opacity-0 shadow-none group-hover:opacity-100 aria-expanded:opacity-100'
-                />
-              }
-            >
-              <MoreHorizontal />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='end'>
-              <DropdownMenuItem disabled={!canMerge} onClick={onMerge}>
-                <Columns2 /> {t('navigator.mergeAsSpread')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onToggleChapterStart}>
-                <Flag />
-                {page.chapter_start
-                  ? t('navigator.removeChapterStart')
-                  : t('navigator.markChapterStart')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onRename}>{t('navigator.rename')}</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant='destructive' onClick={onDelete}>
-                <Trash2 /> {t('navigator.delete')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {/* Labels can be renamed to anything; this is the page's position. */}
-        <p className='mt-1 text-[9px] leading-3.5 text-muted-foreground'>
-          {showPageNumbers && (
-            <>
-              <span
-                data-page-number={index + 1}
-                className='font-medium text-foreground tabular-nums'
-              >
-                {index + 1}
-              </span>
-              {' · '}
-            </>
+    // A right-click on the page opens the menu its button does.
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <article
+          ref={(element) => {
+            handle.setNodeRef(element)
+            setNodeRef(element)
+          }}
+          {...listeners}
+          onPointerDown={(event) => {
+            if (!(event.target as HTMLElement).closest('button,[role="menuitem"]')) {
+              onPointerDown?.(event)
+            }
+          }}
+          data-page={page.id}
+          data-page-index={index}
+          data-active={active}
+          data-selected={selected}
+          className={cn(
+            'group grid cursor-default grid-cols-[48px_minmax(0,1fr)] gap-2.5 rounded-xl p-1.5 transition-colors select-none',
+            active
+              ? 'bg-primary/[0.09] hover:bg-primary/[0.09]'
+              : selected
+                ? 'bg-foreground/[0.06] hover:bg-foreground/[0.08]'
+                : 'hover:bg-foreground/[0.045]',
+            dragged && 'opacity-50',
+            target && !dragged && 'ring-2 ring-primary/60',
           )}
-          {t('navigator.layerCount', { count: page.layer_count })}
-        </p>
-        <p className='mt-1 text-[9px] text-muted-foreground tabular-nums'>
-          {page.size.width} × {page.size.height}
-        </p>
-      </div>
-    </article>
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
+            onSelect(event.ctrlKey || event.metaKey, event.shiftKey)
+          }}
+          onDoubleClick={(event) => {
+            if ((event.target as HTMLElement).closest('button,[role="menuitem"]')) return
+            onRename()
+          }}
+        >
+          <div className='grid h-16 w-12 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]'>
+            {page.background ? (
+              <PageThumbnail
+                page={page.id}
+                version={revision ?? page.background.file}
+                label={name}
+              />
+            ) : (
+              <span className='text-[9px] text-muted-foreground'>{t('navigator.noImage')}</span>
+            )}
+          </div>
+          <div className='min-w-0 py-0.5'>
+            <div className='flex items-start gap-1'>
+              <span className='min-w-0 flex-1 truncate text-[10px] font-medium'>{name}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant='ghost'
+                      size='icon-xs'
+                      aria-label={t('navigator.actionsFor', { page: name })}
+                      className='-mt-1 shrink-0 opacity-0 shadow-none group-hover:opacity-100 aria-expanded:opacity-100'
+                    />
+                  }
+                >
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='end' className={pageMenu}>
+                  <PageActions
+                    Item={DropdownMenuItem}
+                    Separator={DropdownMenuSeparator}
+                    Sub={DropdownMenuSub}
+                    SubTrigger={DropdownMenuSubTrigger}
+                    SubContent={DropdownMenuSubContent}
+                    canMerge={canMerge}
+                    onRun={onRun}
+                    onRename={onRename}
+                    onMerge={onMerge}
+                    onDelete={onDelete}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {page.chapter && (
+              <p
+                className='mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-primary'
+                title={t('navigator.chapterStart')}
+              >
+                <BookmarkIcon
+                  className='size-2.5 shrink-0'
+                  aria-label={t('navigator.chapterStart')}
+                />
+                <span className='truncate'>{page.chapter}</span>
+              </p>
+            )}
+            <p className='mt-1 truncate text-[9px] text-muted-foreground tabular-nums'>
+              {page.name ? `${number} · ` : ''}
+              {page.size.width} × {page.size.height}
+            </p>
+          </div>
+        </article>
+      </ContextMenuTrigger>
+      <ContextMenuContent className={pageMenu}>
+        <PageActions
+          Item={ContextMenuItem}
+          Separator={ContextMenuSeparator}
+          Sub={ContextMenuSub}
+          SubTrigger={ContextMenuSubTrigger}
+          SubContent={ContextMenuSubContent}
+          canMerge={canMerge}
+          onRun={onRun}
+          onRename={onRename}
+          onMerge={onMerge}
+          onDelete={onDelete}
+        />
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
-function PageThumbnail({ page, asset, label }: { page: string; asset: string; label: string }) {
+/** A compact menu, as the rail's import menu is. */
+const pageMenu = 'w-auto min-w-20 border border-border/50 p-0.5 shadow-sm ring-0'
+const pageMenuItem =
+  'min-h-7 gap-1 px-1.5 py-0.5 text-[11px] [&_svg:not([class*="size-"])]:size-3.5'
+
+/** A page's actions, as the items of the menu `Item` and `Separator` belong to: each pipeline
+ * stage on the page alone, in the pipeline's order, then renaming it, joining the selected
+ * pages as a spread, and deleting it. */
+function PageActions({
+  Item,
+  Separator,
+  Sub,
+  SubTrigger,
+  SubContent,
+  canMerge,
+  onRun,
+  onRename,
+  onMerge,
+  onDelete,
+}: {
+  Item: typeof DropdownMenuItem | typeof ContextMenuItem
+  Separator: typeof DropdownMenuSeparator | typeof ContextMenuSeparator
+  Sub: typeof DropdownMenuSub | typeof ContextMenuSub
+  SubTrigger: typeof DropdownMenuSubTrigger | typeof ContextMenuSubTrigger
+  SubContent: typeof DropdownMenuSubContent | typeof ContextMenuSubContent
+  canMerge: boolean
+  onRun: (stage: Stage) => void
+  onRename: () => void
+  onMerge: (rtl: boolean) => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {pipelineStages.map((stage) => (
+        <Item key={stage} className={pageMenuItem} onClick={() => onRun(stage)}>
+          {t(`navigator.run.${stage}`)}
+        </Item>
+      ))}
+      <Separator />
+      <Item className={pageMenuItem} onClick={onRename}>
+        <Pencil /> {t('navigator.rename')}
+      </Item>
+      <Sub>
+        <SubTrigger className={pageMenuItem} disabled={!canMerge}>
+          <Columns2 /> {t('navigator.mergeAsSpread')}
+        </SubTrigger>
+        <SubContent className={pageMenu}>
+          <Item className={pageMenuItem} onClick={() => onMerge(true)}>
+            {t('navigator.mergeRightToLeft')}
+          </Item>
+          <Item className={pageMenuItem} onClick={() => onMerge(false)}>
+            {t('navigator.mergeLeftToRight')}
+          </Item>
+        </SubContent>
+      </Sub>
+      <Separator />
+      <Item variant='destructive' className={pageMenuItem} onClick={onDelete}>
+        {t('navigator.delete')}
+      </Item>
+    </>
+  )
+}
+
+/** The page as it renders, fetched again when `version` changes. */
+function PageThumbnail({ page, version, label }: { page: string; version: string; label: string }) {
   const { t } = useTranslation()
   const [source, setSource] = useState<string | null>(null)
   const [settled, setSettled] = useState(false)
@@ -791,11 +695,11 @@ function PageThumbnail({ page, asset, label }: { page: string; asset: string; la
     setSettled(false)
     const timeout = window.setTimeout(() => setSettled(true), 100)
     return () => window.clearTimeout(timeout)
-  }, [asset])
+  }, [version])
 
   const thumbnail = useQuery({
-    queryKey: ['thumbnail', asset],
-    queryFn: async () => new Uint8Array(await call(commands.getThumbnail, page)),
+    queryKey: ['thumbnail', page, version],
+    queryFn: async () => new Uint8Array(await call(commands.getPageThumbnail, page)),
     enabled: settled,
     staleTime: Number.POSITIVE_INFINITY,
     notifyOnChangeProps: ['data'],

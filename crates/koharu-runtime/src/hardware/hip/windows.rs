@@ -65,7 +65,7 @@ impl OpenCl {
     }
 }
 
-pub(super) fn probe() -> Vec<Device> {
+pub(in crate::hardware) fn probe() -> Vec<Device> {
     let Some(opencl) = OpenCl::load() else {
         return Vec::new();
     };
@@ -80,15 +80,13 @@ pub(super) fn probe() -> Vec<Device> {
             };
             let index = result.len();
             result.push(Device {
-                index,
                 name: format!("ROCm{index}"),
-                description: name.clone(),
-                backend: Backend::Rocm,
-                device_type: target.device_type(),
-                memory_total: 0,
-                memory_free: 0,
-                compute_capability: 0,
-                target: Some(name),
+                index,
+                description: name,
+                backend: Backend::Rocm {
+                    target: target.into(),
+                },
+                integrated: target.integrated(),
             });
         }
     }

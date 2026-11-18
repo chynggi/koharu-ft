@@ -13,16 +13,19 @@ use crate::model::LlamaModel;
 use crate::sampling::LlamaSampler;
 use crate::token::LlamaToken;
 
-/// Internal state for the llguidance sampler.
-struct LlgContext {
-    matcher: Matcher,
-}
-
 /// Build a [`toktrie::TokEnv`] from a [`LlamaModel`]'s vocabulary.
 ///
-/// Use this to construct and reuse an `llguidance::ParserFactory` for the model.
-/// Building the tokenizer environment walks and detokenizes the entire vocabulary,
-/// so callers should do it once per model rather than once per grammar.
+/// Use this to construct your own `llguidance::ParserFactory` (with any slice regexes,
+/// inference capabilities, or other configuration llguidance supports) and, from it, a
+/// `llguidance::Matcher` to convert into a [`LlamaSampler`] via `LlamaSampler::from`.
+///
+/// # Cost
+///
+/// This walks the entire vocabulary and detokenizes every token id to build a `TokTrie`
+/// (up to two `token_to_piece_bytes` FFI calls per token) — expect this to take on the
+/// order of hundreds of milliseconds for large vocabularies. Build it once per model and
+/// reuse the result (it's an `Arc`-backed [`TokEnv`], so cloning is cheap) across every
+/// grammar and request; don't call this per-request or per-grammar.
 ///
 /// This mirrors the logic in upstream `llguidance.cpp` — for each token:
 /// - Try normal detokenize (special=false)
@@ -30,29 +33,28 @@ struct LlgContext {
 pub fn llguidance_build_tok_env(model: &LlamaModel) -> TokEnv {
     let n_vocab = model.n_vocab().cast_unsigned();
     let tok_eos = {
-        let eot = unsafe { koharu_llama_sys::llama_vocab_eot(model.vocab_ptr()) };
+        let eot = model.vocab().eot().0;
         if eot == -1 {
-            model.token_eos().0.cast_unsigned()
+            model.vocab().eos().0.cast_unsigned()
         } else {
             eot.cast_unsigned()
         }
     };
     let info = TokRxInfo::new(n_vocab, tok_eos);
+
+    // Collect the full EOG set during the vocab walk (`tok_eos` first, so it
+    // stays the primary EOS). Registered via `with_eos_tokens` below.
     let mut eog_tokens = vec![tok_eos];
 
     let mut words = Vec::with_capacity(n_vocab as usize);
     for i in 0..n_vocab.cast_signed() {
         let token = LlamaToken(i);
-        if model.is_eog_token(token) && i.cast_unsigned() != tok_eos {
+        if model.vocab().is_eog(token) && i.cast_unsigned() != tok_eos {
             eog_tokens.push(i.cast_unsigned());
         }
-        let bytes = model
-            .token_to_piece_bytes(token, 32, false, None)
-            .unwrap_or_default();
+        let bytes = model.vocab().token_to_piece(token, false, None);
         if bytes.is_empty() {
-            let special_bytes = model
-                .token_to_piece_bytes(token, 32, true, None)
-                .unwrap_or_default();
+            let special_bytes = model.vocab().token_to_piece(token, true, None);
             if special_bytes.is_empty() {
                 words.push(vec![]);
             } else {
@@ -66,8 +68,19 @@ pub fn llguidance_build_tok_env(model: &LlamaModel) -> TokEnv {
         }
     }
 
+    // Register the whole EOG set, not just the primary `tok_eos`: llguidance only
+    // unmasks registered EOS tokens at grammar accepting states, so a model that
+    // ends via a secondary EOG token (e.g. gemma4's `<eos>` after a tool call)
+    // would otherwise be unable to stop and loop until the context overflows.
+    // Mirrors llama.cpp's GBNF sampler, which unmasks all EOG at accepting states.
     let trie = TokTrie::from(&info, &words).with_eos_tokens(&eog_tokens);
+
     Arc::new(ApproximateTokEnv::new(trie))
+}
+
+/// Internal state for the llguidance sampler.
+struct LlgContext {
+    matcher: Matcher,
 }
 
 // --- extern "C" vtable callbacks ---
@@ -83,6 +96,8 @@ unsafe extern "C" fn llg_accept(
     token: koharu_llama_sys::llama_token,
 ) {
     let ctx = unsafe { &mut *(*smpl).ctx.cast::<LlgContext>() };
+    // Consuming a token into an already-stopped parser errors and permanently
+    // poisons the matcher (reset() can't clear it), so skip it.
     if ctx.matcher.is_stopped() {
         return;
     }
@@ -150,7 +165,13 @@ static mut LLG_SAMPLER_I: koharu_llama_sys::llama_sampler_i = koharu_llama_sys::
     copy_state: None,
 };
 
-/// Wrap an already-built [`llguidance::Matcher`] in a llama.cpp sampler.
+/// Wraps an already-built [`llguidance::Matcher`] into a [`LlamaSampler`].
+///
+/// Build a [`TokEnv`] via [`llguidance_build_tok_env`], your own `llguidance::ParserFactory`
+/// (with whatever slices, inference capabilities, or other llguidance configuration you
+/// need), and parse your grammar into a `Matcher` — then convert it here. This only adapts
+/// the `Matcher` into the `llama_sampler` vtable; it has no opinion on how the `Matcher` was
+/// built.
 impl From<Matcher> for LlamaSampler {
     fn from(matcher: Matcher) -> Self {
         let ctx = Box::new(LlgContext { matcher });
@@ -160,6 +181,15 @@ impl From<Matcher> for LlamaSampler {
                 Box::into_raw(ctx).cast::<c_void>(),
             )
         };
-        LlamaSampler { sampler }
+        LlamaSampler::from_raw(sampler).expect("failed creating sampler")
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Important for soundness, `LlamaSampler` is thread-safe so this must be
+    // as well.
+    static_assertions::assert_impl_all!(LlgContext: Send, Sync);
 }

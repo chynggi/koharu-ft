@@ -1,247 +1,238 @@
 use std::{
-    cell::Cell,
-    fmt,
-    marker::PhantomData,
+    ffi::{CString, c_char},
+    mem::MaybeUninit,
+    path::Path,
     ptr::{self, NonNull},
     slice,
-    sync::Arc,
 };
+
+use image::{DynamicImage, RgbImage, RgbaImage};
+use koharu_diffusion_sys as sys;
 
 use crate::{
-    Audio, CancelMode, ContextParams, Error, ImageGenerationParams, Result, RgbImage, SampleMethod,
-    Scheduler, Video, VideoGenerationParams, ffi::NativeCall, image::copy_rgb_from_raw, sys,
+    ContextParams, Error, ImageParams, Result, SampleMethod, Scheduler, VaeFormat, logging,
 };
 
-struct ContextInner {
+/// A loaded model. sd.cpp keeps its last few prompt encodings
+/// (`conditioning_cache_size`, 4 by default), so the same prompt for every
+/// crop is encoded once.
+#[derive(Debug)]
+pub struct Context {
     pointer: NonNull<sys::sd_ctx_t>,
 }
 
-// Context operations require `&mut Context`. The only operation exposed on a
-// shared inner handle is native cancellation, which upstream implements using
-// an atomic cancellation flag.
-unsafe impl Send for ContextInner {}
-unsafe impl Sync for ContextInner {}
+// A context may move between threads; every call takes `&mut self`.
+unsafe impl Send for Context {}
 
-impl Drop for ContextInner {
+impl Context {
+    pub fn new(params: &ContextParams) -> Result<Self> {
+        logging::install();
+        let mut raw = unsafe {
+            let mut raw = MaybeUninit::<sys::sd_ctx_params_t>::zeroed();
+            sys::sd_ctx_params_init(raw.as_mut_ptr());
+            raw.assume_init()
+        };
+        // The strings sd.cpp reads while it loads.
+        let mut strings = Vec::new();
+        let mut path = |path: Option<&Path>, field: &'static str| -> Result<*const c_char> {
+            let Some(path) = path else {
+                return Ok(ptr::null());
+            };
+            let text = path
+                .to_str()
+                .ok_or_else(|| Error::NonUnicodePath(path.to_owned()))?;
+            strings.push(CString::new(text).map_err(|_| Error::Nul(field))?);
+            Ok(strings.last().map_or(ptr::null(), |text| text.as_ptr()))
+        };
+        raw.model_path = path(params.model, "the model path")?;
+        raw.diffusion_model_path = path(params.diffusion_model, "the diffusion model path")?;
+        raw.vae_path = path(params.vae, "the VAE path")?;
+        raw.clip_l_path = path(params.clip_l, "the CLIP-L path")?;
+        raw.clip_g_path = path(params.clip_g, "the CLIP-G path")?;
+        raw.llm_path = path(params.llm, "the text encoder path")?;
+        raw.llm_vision_path = path(params.llm_vision, "the vision projector path")?;
+        raw.tokenizer = path(params.tokenizer, "the tokenizer path")?;
+        let mut names = Vec::new();
+        let mut embeddings = Vec::new();
+        for (name, file) in params.embeddings {
+            names.push(CString::new(*name).map_err(|_| Error::Nul("an embedding name"))?);
+            let name = names.last().map_or(ptr::null(), |name| name.as_ptr());
+            embeddings.push(sys::sd_embedding_t {
+                name,
+                path: path(Some(file), "an embedding path")?,
+            });
+        }
+        if !embeddings.is_empty() {
+            raw.embeddings = embeddings.as_ptr();
+            raw.embedding_count = u32::try_from(embeddings.len())
+                .map_err(|_| Error::OutOfRange("the embedding count"))?;
+        }
+        let device = params
+            .device
+            .map(|device| CString::new(device).map_err(|_| Error::Nul("the device")))
+            .transpose()?;
+        if let Some(device) = &device {
+            raw.backend = device.as_ptr();
+        }
+        if params.vae_format == Some(VaeFormat::Flux2) {
+            raw.vae_format = sys::SD_VAE_FORMAT_FLUX2;
+        }
+        raw.enable_mmap = params.mmap;
+        raw.flash_attn = params.flash_attention;
+        raw.diffusion_flash_attn = params.flash_attention;
+        raw.diffusion_conv_direct = params.conv_direct;
+        raw.vae_conv_direct = params.conv_direct;
+        // Weights load now, so a model that doesn't fit fails here rather
+        // than partway through a page.
+        raw.eager_load = true;
+
+        let pointer = NonNull::new(unsafe { sys::new_sd_ctx(&raw) }).ok_or(Error::Load)?;
+        let context = Self { pointer };
+        if !unsafe { sys::sd_ctx_supports_image_generation(pointer.as_ptr()) } {
+            return Err(Error::Load);
+        }
+        Ok(context)
+    }
+
+    /// The images generated, RGB or RGBA as the model makes them.
+    pub fn generate_image(&mut self, params: &ImageParams) -> Result<Vec<DynamicImage>> {
+        let mut raw = unsafe {
+            let mut raw = MaybeUninit::<sys::sd_img_gen_params_t>::zeroed();
+            sys::sd_img_gen_params_init(raw.as_mut_ptr());
+            raw.assume_init()
+        };
+        let prompt = CString::new(params.prompt).map_err(|_| Error::Nul("the prompt"))?;
+        raw.prompt = prompt.as_ptr();
+        let negative_prompt =
+            CString::new(params.negative_prompt).map_err(|_| Error::Nul("the negative prompt"))?;
+        raw.negative_prompt = negative_prompt.as_ptr();
+        let reference_args = params
+            .reference_args
+            .map(|args| CString::new(args).map_err(|_| Error::Nul("the reference arguments")))
+            .transpose()?;
+        if let Some(args) = &reference_args {
+            raw.ref_image_args = args.as_ptr();
+        }
+        if let Some(width) = params.width {
+            raw.width = int(width, "the width")?;
+        }
+        if let Some(height) = params.height {
+            raw.height = int(height, "the height")?;
+        }
+        if let Some(init) = params.init {
+            raw.init_image = image(init.width(), init.height(), 3, init.as_raw());
+        }
+        if let Some(mask) = params.mask {
+            raw.mask_image = image(mask.width(), mask.height(), 1, mask.as_raw());
+        }
+        let mut references = params
+            .references
+            .iter()
+            .map(|reference| image(reference.width(), reference.height(), 3, reference.as_raw()))
+            .collect::<Vec<_>>();
+        if !references.is_empty() {
+            raw.ref_images = references.as_mut_ptr();
+            raw.ref_images_count = int(references.len(), "the reference count")?;
+        }
+        if let Some(cfg) = params.cfg {
+            raw.sample_params.guidance.txt_cfg = cfg;
+        }
+        if let Some(scheduler) = params.scheduler {
+            raw.sample_params.scheduler = match scheduler {
+                Scheduler::Discrete => sys::DISCRETE_SCHEDULER,
+            };
+        }
+        if let Some(flow_shift) = params.flow_shift {
+            raw.sample_params.flow_shift = flow_shift;
+        }
+        if let Some(method) = params.sample_method {
+            raw.sample_params.sample_method = match method {
+                SampleMethod::Euler => sys::EULER_SAMPLE_METHOD,
+                SampleMethod::DpmPp2m => sys::DPMPP2M_SAMPLE_METHOD,
+            };
+        }
+        if let Some(steps) = params.steps {
+            raw.sample_params.sample_steps = int(steps, "the step count")?;
+        }
+        if let Some(strength) = params.strength {
+            raw.strength = strength;
+        }
+        if let Some(seed) = params.seed {
+            raw.seed = seed;
+        }
+        if let Some(count) = params.count {
+            raw.batch_count = int(count, "the image count")?;
+        }
+
+        let mut output = Images(ptr::null_mut());
+        let generated = unsafe { sys::generate_image(self.pointer.as_ptr(), &raw, &mut output.0) };
+        if !generated {
+            return Err(Error::Generate);
+        }
+        output.copy()
+    }
+}
+
+impl Drop for Context {
     fn drop(&mut self) {
-        let _call = NativeCall::enter();
         unsafe { sys::free_sd_ctx(self.pointer.as_ptr()) };
     }
 }
 
-/// An owning stable-diffusion.cpp model context.
-pub struct Context {
-    inner: Arc<ContextInner>,
-    // A context may move between threads, but normal operations are not
-    // available concurrently through shared references.
-    _not_sync: PhantomData<Cell<()>>,
+fn int(value: impl TryInto<i32>, field: &'static str) -> Result<i32> {
+    value.try_into().map_err(|_| Error::OutOfRange(field))
 }
 
-impl fmt::Debug for Context {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Context")
-            .field("pointer", &self.inner.pointer)
-            .finish_non_exhaustive()
+/// An input image, borrowed: sd.cpp only reads its pixels, though the C
+/// struct predates `const` data.
+fn image(width: u32, height: u32, channel: u32, pixels: &[u8]) -> sys::sd_image_t {
+    sys::sd_image_t {
+        width,
+        height,
+        channel,
+        data: pixels.as_ptr().cast_mut(),
     }
 }
 
-impl Context {
-    /// Loads a model context with the supplied components and backend settings.
-    #[tracing::instrument(skip_all)]
-    pub fn new(params: &ContextParams) -> Result<Self> {
-        let native = params.to_native()?;
-        let _call = NativeCall::enter();
-        let pointer = unsafe { sys::new_sd_ctx(&raw const native.raw) };
-        let pointer = NonNull::new(pointer).ok_or(Error::ContextCreationFailed)?;
-        Ok(Self {
-            inner: Arc::new(ContextInner { pointer }),
-            _not_sync: PhantomData,
-        })
-    }
+/// The images sd.cpp allocated, freed by sd.cpp's own function so the C
+/// runtime that allocated them frees them.
+struct Images(*mut sys::sd_image_generation_result_t);
 
-    #[must_use]
-    pub fn supports_image_generation(&self) -> bool {
-        let _call = NativeCall::enter();
-        unsafe { sys::sd_ctx_supports_image_generation(self.inner.pointer.as_ptr()) }
-    }
-
-    #[must_use]
-    pub fn supports_video_generation(&self) -> bool {
-        let _call = NativeCall::enter();
-        unsafe { sys::sd_ctx_supports_video_generation(self.inner.pointer.as_ptr()) }
-    }
-
-    /// Returns the native model-specific default sampling method.
-    pub fn default_sample_method(&self) -> Result<SampleMethod> {
-        let _call = NativeCall::enter();
-        let raw = unsafe { sys::sd_get_default_sample_method(self.inner.pointer.as_ptr()) };
-        SampleMethod::try_from(raw)
-    }
-
-    /// Returns the native model-specific scheduler default for a sampler.
-    pub fn default_scheduler(&self, sample_method: SampleMethod) -> Result<Scheduler> {
-        let _call = NativeCall::enter();
-        let raw = unsafe {
-            sys::sd_get_default_scheduler(self.inner.pointer.as_ptr(), sample_method.as_raw())
-        };
-        Scheduler::try_from(raw)
-    }
-
-    /// Generates one or more owned images.
-    pub fn generate_image(&mut self, params: &ImageGenerationParams) -> Result<Vec<RgbImage>> {
-        let native = params.to_native()?;
-        let _call = NativeCall::enter();
-        let mut output = RawImages::default();
-        let succeeded = unsafe {
-            sys::generate_image(
-                self.inner.pointer.as_ptr(),
-                &raw const native.raw,
-                &raw mut output.pointer,
-                &raw mut output.count,
-            )
-        };
-        if !succeeded {
-            return Err(Error::ImageGenerationFailed);
+impl Images {
+    fn copy(&self) -> Result<Vec<DynamicImage>> {
+        // sd.cpp sets the result when it succeeds.
+        let result = unsafe { self.0.as_ref() }.ok_or(Error::Output)?;
+        let count = usize::try_from(result.count).map_err(|_| Error::Output)?;
+        if result.items.is_null() || count == 0 {
+            return Err(Error::Output);
         }
-        output.copy("image")
-    }
-
-    /// Generates owned video frames and optional audio.
-    pub fn generate_video(&mut self, params: &VideoGenerationParams) -> Result<Video> {
-        let native = params.to_native()?;
-        let _call = NativeCall::enter();
-        let mut frames = RawImages::default();
-        let mut audio = RawAudio::default();
-        let mut fps = 0;
-        let succeeded = unsafe {
-            sys::generate_video(
-                self.inner.pointer.as_ptr(),
-                &raw const native.raw,
-                &raw mut frames.pointer,
-                &raw mut frames.count,
-                &raw mut audio.pointer,
-                &raw mut fps,
-            )
-        };
-        if !succeeded {
-            return Err(Error::VideoGenerationFailed);
-        }
-        let fps =
-            u32::try_from(fps)
-                .ok()
-                .filter(|fps| *fps > 0)
-                .ok_or(Error::InvalidNativeOutput {
-                    kind: "video frame rate",
-                })?;
-        Ok(Video {
-            frames: frames.copy("video frame")?,
-            audio: audio.copy()?,
-            fps,
-        })
-    }
-
-    /// Creates a thread-safe handle that can cancel generation from another thread.
-    #[must_use]
-    pub fn cancel_handle(&self) -> CancelHandle {
-        CancelHandle {
-            inner: Arc::clone(&self.inner),
-        }
-    }
-
-    /// Changes the cancellation state directly.
-    pub fn cancel(&self, mode: CancelMode) {
-        self.cancel_handle().cancel(mode);
-    }
-}
-
-/// A cloneable handle to the atomic native cancellation flag.
-#[derive(Clone)]
-pub struct CancelHandle {
-    inner: Arc<ContextInner>,
-}
-
-impl fmt::Debug for CancelHandle {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CancelHandle")
-            .finish_non_exhaustive()
-    }
-}
-
-impl CancelHandle {
-    pub fn cancel(&self, mode: CancelMode) {
-        let _call = NativeCall::enter();
-        unsafe { sys::sd_cancel_generation(self.inner.pointer.as_ptr(), mode.as_raw()) };
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct RawImages {
-    pub(crate) pointer: *mut sys::sd_image_t,
-    pub(crate) count: i32,
-}
-
-impl Default for RawImages {
-    fn default() -> Self {
-        Self {
-            pointer: ptr::null_mut(),
-            count: 0,
-        }
-    }
-}
-
-impl RawImages {
-    pub(crate) fn copy(&self, kind: &'static str) -> Result<Vec<RgbImage>> {
-        let count = usize::try_from(self.count).map_err(|_| Error::InvalidNativeOutput { kind })?;
-        if count == 0 || self.pointer.is_null() {
-            return Err(Error::InvalidNativeOutput { kind });
-        }
-        if count > isize::MAX as usize / size_of::<sys::sd_image_t>() {
-            return Err(Error::InvalidNativeOutput { kind });
-        }
-        let raw_images = unsafe { slice::from_raw_parts(self.pointer, count) };
-        raw_images
+        unsafe { slice::from_raw_parts(result.items, count) }
             .iter()
-            .map(|raw| unsafe { copy_rgb_from_raw(raw) })
+            .map(|item| {
+                let image = &item.image;
+                if !matches!(image.channel, 3 | 4) || image.data.is_null() {
+                    return Err(Error::Output);
+                }
+                let length = (image.width as usize)
+                    .checked_mul(image.height as usize)
+                    .and_then(|pixels| pixels.checked_mul(image.channel as usize))
+                    .ok_or(Error::Output)?;
+                let pixels = unsafe { slice::from_raw_parts(image.data, length) }.to_vec();
+                let (width, height) = (image.width, image.height);
+                match image.channel {
+                    3 => RgbImage::from_raw(width, height, pixels).map(DynamicImage::ImageRgb8),
+                    _ => RgbaImage::from_raw(width, height, pixels).map(DynamicImage::ImageRgba8),
+                }
+                .ok_or(Error::Output)
+            })
             .collect()
     }
 }
 
-impl Drop for RawImages {
+impl Drop for Images {
     fn drop(&mut self) {
-        if !self.pointer.is_null() {
-            unsafe { sys::free_sd_images(self.pointer, self.count.max(0)) };
-        }
-    }
-}
-
-#[derive(Debug)]
-struct RawAudio {
-    pointer: *mut sys::sd_audio_t,
-}
-
-impl Default for RawAudio {
-    fn default() -> Self {
-        Self {
-            pointer: ptr::null_mut(),
-        }
-    }
-}
-
-impl RawAudio {
-    fn copy(&self) -> Result<Option<Audio>> {
-        let Some(audio) = NonNull::new(self.pointer) else {
-            return Ok(None);
-        };
-        Ok(Some(unsafe { Audio::copy_from_raw(audio.as_ref()) }?))
-    }
-}
-
-impl Drop for RawAudio {
-    fn drop(&mut self) {
-        if !self.pointer.is_null() {
-            unsafe { sys::free_sd_audio(self.pointer) };
+        if !self.0.is_null() {
+            unsafe { sys::free_sd_image_generation_result(self.0) };
         }
     }
 }

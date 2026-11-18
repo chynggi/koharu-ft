@@ -6,10 +6,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call } from '@/lib/backend'
-import { activatePage } from '@/lib/navigation'
-import { pageKey, pagesKey, projectKey, refresh, usePages, useProject } from '@/lib/queries'
+import { pageKey, projectKey, refresh, usePages, useProject } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { commands, type TranslationMatch } from '@koharu/bridge/protocol'
+import { commands, type TextMatch } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 import { Input } from '@koharu/ui/components/input'
 import { ScrollArea } from '@koharu/ui/components/scroll-area'
@@ -21,10 +20,10 @@ const SEARCH_DELAY_MS = 200
  * project revision, so they stay current after edits, replaces, and undo. */
 export function FindPanel() {
   const { t } = useTranslation()
-  const open = useKoharuStore((state) => state.sidebarPanel === 'find')
-  const setSidebarPanel = useKoharuStore((state) => state.setSidebarPanel)
+  const open = useKoharuStore((state) => state.panel === 'find')
+  const setSidebarPanel = useKoharuStore((state) => state.showPanel)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const revision = useProject().data?.revision
+  const project = useProject().data
   const pages = usePages().data
   const input = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
@@ -58,14 +57,19 @@ export function FindPanel() {
   }, [query])
 
   const results = useQuery({
-    queryKey: ['find-translations', search, matchCase, revision],
-    queryFn: () => call(commands.findTranslations, search, matchCase),
-    enabled: search.length > 0 && revision !== undefined,
+    queryKey: ['find-translations', search, matchCase, project],
+    queryFn: async () =>
+      (await call(commands.query, {
+        query: 'find_text',
+        text: search,
+        match_case: matchCase,
+      })) as TextMatch[],
+    enabled: search.length > 0 && project !== null && project !== undefined,
   })
   const matches = useMemo(() => (search ? (results.data ?? []) : []), [search, results.data])
   const total = matches.reduce((sum, match) => sum + match.count, 0)
   const groups = useMemo(() => {
-    const byPage = new Map<string, TranslationMatch[]>()
+    const byPage = new Map<string, TextMatch[]>()
     for (const match of matches) {
       byPage.set(match.page, [...(byPage.get(match.page) ?? []), match])
     }
@@ -75,16 +79,23 @@ export function FindPanel() {
   const replace = (layers: string[] | null) => {
     if (!search || replacing) return
     setReplacing(true)
-    void call(commands.replaceTranslations, search, replacement, matchCase, layers)
-      .then(() => refresh(projectKey, pagesKey, pageKey))
+    void call(commands.edit, {
+      label: 'replace_text',
+      ops: [{ op: 'replace_text', text: search, replacement, match_case: matchCase, layers }],
+    })
+      .then(() => refresh(projectKey, pageKey))
       .catch(() => undefined)
       .finally(() => setReplacing(false))
   }
 
-  const reveal = (match: TranslationMatch) => {
-    void activatePage(match.page, [match.page]).then((opened) => {
-      if (opened) selectLayers([match.layer])
-    })
+  const reveal = (match: TextMatch) => {
+    const store = useKoharuStore.getState()
+    store.selectPages([match.page])
+    store.selectLayers([])
+    void call(commands.show, match.page)
+      .then(() => refresh(projectKey, pageKey))
+      .then(() => selectLayers([match.layer]))
+      .catch(() => undefined)
   }
 
   return (
@@ -151,12 +162,11 @@ export function FindPanel() {
         <div className='flex flex-col gap-2 pb-2'>
           {groups.map((group) => {
             const first = group[0]!
-            const label = pages?.find((page) => page.id === first.page)?.label
+            const index = pages?.findIndex((page) => page.id === first.page) ?? -1
             return (
               <section key={first.page} className='flex flex-col gap-0.5'>
                 <h3 className='truncate px-1 text-[10px] font-medium text-muted-foreground'>
-                  {t('find.page', { number: first.page_index + 1 })}
-                  {label ? ` · ${label}` : ''}
+                  {pages?.[index]?.name || t('find.page', { number: index + 1 })}
                 </h3>
                 {group.map((match) => (
                   <div

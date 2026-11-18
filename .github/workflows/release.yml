@@ -24,7 +24,9 @@ jobs:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
             args: '--target aarch64-apple-darwin'
-          - platform: 'ubuntu-latest'
+          # The oldest Ubuntu Koharu supports, since a binary needs the glibc
+          # it was linked against or a newer one.
+          - platform: 'ubuntu-24.04'
             args: ''
           - platform: 'ubuntu-24.04-arm'
             args: ''
@@ -75,7 +77,6 @@ jobs:
         run: bun install
 
       - name: Setup Sentry CLI
-        if: github.repository == 'koharu-rs/koharu'
         uses: matbour/setup-sentry-cli@v3
         with:
           token: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -110,7 +111,6 @@ jobs:
           SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
           SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
           tauriScript: cargo tauri
@@ -121,11 +121,10 @@ jobs:
           prerelease: false
           args: >-
             ${{ matrix.args }}
-            ${{ github.repository == 'koharu-rs/koharu' && '--config ''{"build":{"beforeBundleCommand":"bash .github/sentry.sh"}}''' || '' }}
+            --config '{"build":{"beforeBundleCommand":"bash .github/sentry.sh"}}'
 
   winget:
     needs: release
-    if: github.repository == 'koharu-rs/koharu'
     runs-on: ubuntu-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@main

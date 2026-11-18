@@ -57,6 +57,3 @@ test-results/
 # Local documentation output
 /packages/docs/.mintlify/
 /packages/docs/site/
-
-# cmd
-.commandcode/

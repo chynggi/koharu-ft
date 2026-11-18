@@ -1,11 +1,11 @@
 use std::{
-    ffi::{CStr, c_char, c_int, c_uint},
+    ffi::{CStr, c_char, c_int, c_uint, c_void},
     sync::OnceLock,
 };
 
 use libloading::Library;
 
-use crate::{Backend, Device, DeviceType};
+use crate::{Backend, Device};
 
 const ATTRIBUTE_INTEGRATED: c_int = 18;
 const ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR: c_int = 75;
@@ -22,6 +22,7 @@ type DeviceGetAttribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> c_in
 type DeviceGetName = unsafe extern "C" fn(*mut c_char, c_int, c_int) -> c_int;
 type DeviceTotalMemory = unsafe extern "C" fn(*mut usize, c_int) -> c_int;
 type DriverGetVersion = unsafe extern "C" fn(*mut c_int) -> c_int;
+type DevicePrimaryCtxRetain = unsafe extern "C" fn(*mut *mut c_void, c_int) -> c_int;
 
 struct Cuda {
     // Keep the library loaded for as long as its function pointers are used.
@@ -31,6 +32,7 @@ struct Cuda {
     get_device_attribute: DeviceGetAttribute,
     get_device_name: DeviceGetName,
     get_device_memory: DeviceTotalMemory,
+    retain_primary_context: DevicePrimaryCtxRetain,
 }
 
 impl Cuda {
@@ -74,6 +76,9 @@ impl Cuda {
                 get_device_memory: *library
                     .get::<DeviceTotalMemory>(b"cuDeviceTotalMem_v2\0")
                     .ok()?,
+                retain_primary_context: *library
+                    .get::<DevicePrimaryCtxRetain>(b"cuDevicePrimaryCtxRetain\0")
+                    .ok()?,
                 _library: library,
                 device_count,
             })
@@ -100,7 +105,8 @@ impl Cuda {
         Some(name.to_string_lossy().into_owned())
     }
 
-    fn device(&self, index: c_int) -> Option<Device> {
+    /// The device and its total memory, which ranks it.
+    fn device(&self, index: c_int) -> Option<(Device, u64)> {
         let mut handle = 0;
         if unsafe { (self.get_device)(&mut handle, index) } != 0 {
             return None;
@@ -115,38 +121,58 @@ impl Cuda {
 
         let name = format!("CUDA{index}");
         let description = self.description(handle).unwrap_or_else(|| name.clone());
-        let mut memory_total = 0;
-        if unsafe { (self.get_device_memory)(&mut memory_total, handle) } != 0 {
-            memory_total = 0;
+        let mut memory = 0;
+        if unsafe { (self.get_device_memory)(&mut memory, handle) } != 0 {
+            memory = 0;
         }
-        let integrated = self.attribute(handle, ATTRIBUTE_INTEGRATED).unwrap_or(0);
-
-        Some(Device {
-            index: index as usize,
+        let device = Device {
             name,
+            index: usize::try_from(index).ok()?,
             description,
-            backend: Backend::Cuda,
-            device_type: if integrated != 0 {
-                DeviceType::IntegratedGpu
-            } else {
-                DeviceType::Gpu
-            },
-            memory_total,
-            memory_free: 0,
-            compute_capability,
-            target: None,
-        })
+            backend: Backend::Cuda { compute_capability },
+            integrated: self.attribute(handle, ATTRIBUTE_INTEGRATED).unwrap_or(0) != 0,
+        };
+        Some((device, memory as u64))
     }
 }
 
-pub(super) fn probe() -> Vec<Device> {
+fn driver() -> Option<&'static Cuda> {
     static DRIVER: OnceLock<Option<Cuda>> = OnceLock::new();
-    let Some(driver) = DRIVER.get_or_init(Cuda::load) else {
+    DRIVER.get_or_init(Cuda::load).as_ref()
+}
+
+pub(super) fn probe() -> Vec<(Device, u64)> {
+    let Some(driver) = driver() else {
         return Vec::new();
     };
     (0..driver.device_count)
         .filter_map(|index| driver.device(index))
         .collect()
+}
+
+/// Holds a reference to the primary context of the device at `index` for the
+/// rest of the process.
+///
+/// libtorch destroys its cached cuFFT plans in a static destructor as its DLL
+/// shuts down. A `torch_cuda.dll` built by the CUDA 13.3 toolkit has let the
+/// context go by then, while the driver, loaded first by the probe, still runs
+/// `cufftDestroy` for real and reads the context's freed memory: an access
+/// violation as the process exits. libtorch and llama.cpp use this same context,
+/// so this only creates it before their first use.
+pub(crate) fn hold_primary_context(index: usize) {
+    let Some(driver) = driver() else {
+        return;
+    };
+    let (mut handle, mut context) = (0, std::ptr::null_mut());
+    let status = unsafe {
+        match (driver.get_device)(&mut handle, index as c_int) {
+            0 => (driver.retain_primary_context)(&mut context, handle),
+            status => status,
+        }
+    };
+    if status != 0 {
+        tracing::warn!(status, "couldn't hold the CUDA primary context");
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -166,9 +192,4 @@ fn load_library() -> Option<Library> {
 fn load_library() -> Option<Library> {
     // The unversioned name may resolve to a toolkit stub instead of the driver.
     unsafe { Library::new("libcuda.so.1").ok() }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn load_library() -> Option<Library> {
-    None
 }

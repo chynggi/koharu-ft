@@ -1,14 +1,12 @@
 //! Hayai OCR configuration.
 //!
 //! Upstream configuration:
-//! https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.5-nova/blob/2803d0dc005fa4396ab1e7c5a472d2c450a247f7/configuration_hayai.py
+//! https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova/blob/5289b2cfdfd375dd651611b27ea87d21b5877008/configuration_hayai.py
 //! The vision encoder is the `Siglip2VisionModel` instantiated by
 //! `modeling_hayai.HayaiModel` from `google/siglip2-base-patch16-naflex`, whose
 //! released config only overrides the model type, so every value below is the
 //! transformers default:
-//! https://github.com/huggingface/transformers/blob/main/src/transformers/models/siglip2/configuration_siglip2.py
-
-use std::{fs, path::Path};
+//! https://github.com/huggingface/transformers/blob/598d8ba8baaec7fec5a22da0e2844c7bf4ea20e1/src/transformers/models/siglip2/configuration_siglip2.py
 
 use anyhow::{Result, ensure};
 use serde::Deserialize;
@@ -26,21 +24,6 @@ pub(super) mod siglip2 {
     /// interpolated per image instead of forcing a fixed input resolution.
     pub const POSITION_EMBEDDING_SIZE: i64 = 16;
     pub const LAYER_NORM_EPS: f64 = 1e-6;
-    /// Maximum number of 16x16 patches emitted by the SigLIP2 image processor.
-    ///
-    /// Nova's DSC projector merges 2x2 patches, so the decoder sees roughly a
-    /// quarter of this budget. Upstream model card (JMangaBench_Mixed, 3,286
-    /// crops, NFKC, T4 latency):
-    ///
-    /// | budget | decoder tokens | CER   | EM     | latency |
-    /// |-------:|---------------:|------:|-------:|--------:|
-    /// | 256    | <= 64          | 4.95% | 75.35% | 1.00x   |
-    /// | 384    | <= 96          | 3.65% | 79.15% | ~1.19x  |
-    /// | 512    | <= 128         | 3.10% | 80.68% | ~1.34x  |
-    ///
-    /// Koharu takes 512: 384 does not beat v2.1's 3.23% CER, and quality is
-    /// worth the ~34% latency over 256.
-    pub const MAX_NUM_PATCHES: usize = 512;
 }
 
 /// Decoder constants of `VisualCausalOCRDecoder`; upstream hardcodes them in
@@ -50,38 +33,33 @@ pub(super) mod decoder {
     pub const KEY_VALUE_HEADS: i64 = 2;
     pub const HEAD_DIM: i64 = 64;
     pub const ROPE_THETA: f64 = 10_000.0;
-}
-
-/// Spatial downscale of Nova's `DSCProjector`: a 2x2 pixel unshuffle merges
-/// `SPATIAL_DOWNSCALE^2` patches into one decoder token.
-pub(super) const SPATIAL_DOWNSCALE: i64 = 2;
-
-/// Decoder visual grid of a `patch_height x patch_width` patch grid after the
-/// unshuffle: `ceil(H / 2) x ceil(W / 2)`, so the visual prefix holds
-/// `H_out * W_out` tokens.
-pub(super) fn decoder_vision_grid(patch_height: i64, patch_width: i64) -> (i64, i64) {
-    (
-        (patch_height + SPATIAL_DOWNSCALE - 1) / SPATIAL_DOWNSCALE,
-        (patch_width + SPATIAL_DOWNSCALE - 1) / SPATIAL_DOWNSCALE,
-    )
+    /// `DSCProjector`'s `downscale_factor`: each 2x2 block of patches becomes
+    /// one decoder token.
+    pub const DOWNSCALE: i64 = 2;
+    /// `VisualCausalFlow`'s heads: half read the merged grid row by row,
+    /// half column by column from the right.
+    pub const FLOW_HEADS: i64 = 8;
+    /// `HayaiConfig`'s default `text_rope_offset`, which the released
+    /// `config.json` leaves out: text positions start here, past the visual
+    /// grid's.
+    pub const TEXT_ROPE_OFFSET: f64 = 64.0;
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct HayaiConfig {
-    pub(crate) vocab_size: i64,
-    pub(crate) d_model: i64,
-    pub(crate) d_vision: i64,
+pub(super) struct HayaiConfig {
+    pub(super) vocab_size: i64,
+    pub(super) d_model: i64,
+    pub(super) d_vision: i64,
     #[allow(dead_code)]
-    pub(crate) d_ffn: i64,
-    pub(crate) n_layers: usize,
+    pub(super) d_ffn: i64,
+    pub(super) n_layers: usize,
+    pub(super) n_vision_layers: usize,
+    pub(super) downscale_factor: i64,
+    pub(super) num_ids_classes: i64,
 }
 
 impl HayaiConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
-    }
-
-    pub(crate) fn validate(&self) -> Result<()> {
+    pub(super) fn validate(&self) -> Result<()> {
         ensure!(
             self.vocab_size > 0,
             "Hayai OCR vocabulary size must be positive"
@@ -100,20 +78,16 @@ impl HayaiConfig {
             "decoder query heads must be divisible by key/value heads"
         );
         ensure!(self.n_layers > 0, "decoder must have at least one layer");
+        ensure!(
+            self.n_vision_layers == siglip2::NUM_HIDDEN_LAYERS,
+            "Hayai OCR fuses all {} SigLIP2 encoder depths",
+            siglip2::NUM_HIDDEN_LAYERS
+        );
+        ensure!(
+            self.downscale_factor == decoder::DOWNSCALE,
+            "Hayai OCR's projector merges {0}x{0} patch blocks",
+            decoder::DOWNSCALE
+        );
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::decoder_vision_grid;
-
-    #[test]
-    fn decoder_vision_grid_halves_each_side_rounding_up() {
-        assert_eq!(decoder_vision_grid(16, 16), (8, 8));
-        assert_eq!(decoder_vision_grid(3, 5), (2, 3));
-        assert_eq!(decoder_vision_grid(1, 1), (1, 1));
-        // Extreme aspect ratio at the full 512-patch budget.
-        assert_eq!(decoder_vision_grid(1, 512), (1, 256));
     }
 }

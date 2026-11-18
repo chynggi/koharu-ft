@@ -1,72 +1,42 @@
 ---
 title: 'Set up Koharu Agent'
-description: 'Choose a backend for the integrated project assistant: Codex, a hosted provider, or a local model server.'
+description: 'Choose the Agent model and connect agents in other programs over MCP.'
 icon: 'robot'
 ---
 
-Koharu Agent runs inside the editor and can be driven by **Codex** (ChatGPT device-code sign-in) or by any configured provider with a tool-calling Chat Completions endpoint: OpenAI, OpenRouter, DeepSeek, Grok, LM Studio, or an OpenAI-compatible server such as llama.cpp or Ollama.
-
-Choose the backend from the first menu at the top of the Agent panel. Switching backends starts a new conversation.
-
-## Codex
+Koharu Agent is a project assistant inside the editor. It runs on any model you can pick for translation that calls tools: a hosted model, a subscription such as ChatGPT, or one of Koharu's general local models.
 
 <Steps>
-  <Step title='Open the Agent panel'>Open a project and select **Agent** on the right.</Step>
-  <Step title='Authorize the device'>
-    Choose **Sign in with Codex**. Koharu opens the authorization page in your browser; enter the
-    code shown in the panel and approve the sign-in for your account. The code expires after 15
-    minutes.
+  <Step title='Connect a provider'>
+    Add an API key or sign in under **Settings → Providers**, or skip this step to use a local
+    model. See [translation providers](/models/providers).
+  </Step>
+  <Step title='Open the Agent panel'>
+    Open a project and select the **Agent** tab on the right, beside **Layers** and **Story**.
   </Step>
   <Step title='Choose a model'>
-    Return to Koharu and wait for the account and model list. Select a Codex model and reasoning
-    level at the top of the Agent panel; **Automatic** uses the first available model. More
-    reasoning can help with ambiguous edits but takes longer.
+    Select a model and a reasoning level under the message box. **Provider default** uses the
+    model's own level, and **Off** turns reasoning off where the model allows it. More reasoning can
+    help with ambiguous edits but takes longer. **New chat** beside them starts the conversation
+    over.
   </Step>
 </Steps>
-
-Only one sign-in attempt can run at a time. Cancel it before starting another.
-
-## Providers and local models
-
-A provider backend uses the base URL and API key saved for that provider under **Settings**, the same ones the translation pipeline uses. Keys stay in the operating system's credential store.
-
-<Steps>
-  <Step title='Configure the provider'>
-    In **Settings**, enter the provider's API key. For **OpenAI-compatible** or **LM Studio**, set
-    the base URL of your server; the API key is optional for local servers.
-  </Step>
-  <Step title='Select it in the Agent panel'>
-    Choose the provider as the backend, then pick a model. **Automatic** uses the first model the
-    server lists. If no models appear, check the base URL and key in **Settings**.
-  </Step>
-</Steps>
-
-The model must support tool calling. To let the Agent inspect page images, use a vision model.
-
-### Run a local server
-
-- **llama.cpp**: start `llama-server` with `--jinja` so tool calls are parsed, a context of at least 16k tokens (`-c 32768`), and `--mmproj` for vision models. Use `http://localhost:8080/v1` as the OpenAI-compatible base URL.
-- **Ollama**: use `http://localhost:11434/v1` and raise the model's context length (`num_ctx`).
-- **LM Studio**: start the local server and select the **LM Studio** provider.
-
-<Warning>
-  A local server that shares the GPU with Koharu's detection, OCR, and inpainting models competes
-  for its memory, and Koharu cannot unload it. Prefer a small model, or run the server on another
-  device.
-</Warning>
 
 ## What context is shared
 
-The Agent starts with the open project's semantic state. It renders and attaches a page image only when it invokes visual page inspection; it does not automatically attach every page.
+Each request starts with the open project's outline: its pages and their layers. The Agent renders and attaches a page image only when it calls its page-view tool; it does not attach every page. A hosted model's provider receives what the Agent sends it.
 
 <Note>
-  Codex sign-in and provider credentials are separate. ChatGPT sign-in does not configure the OpenAI
-  provider, and an OpenAI API key does not sign in to Codex.
+  The Agent and translation share provider connections, but not models: the Agent's model and
+  reasoning are saved in the `[agent]` section of `~/.koharu/config.toml`, apart from translation's.
+  That section also holds `max_turns` (20 model calls per request by default) and `corrections` (how
+  many times a malformed tool call goes back to the model, 2 by default). The Agent's system prompt
+  is Koharu's own and can't be changed.
 </Note>
 
-## Sign out
+## Connect other agents over MCP
 
-With the Codex backend, **Sign out** cancels active work, clears the current Agent session, and removes the Codex account authorization used by Koharu. Opening or closing a project also clears the conversation. Agent configuration is saved separately from translator settings.
+While Koharu runs, it serves the same tools to agents in other programs over MCP's Streamable HTTP transport at `http://127.0.0.1:7878/mcp`, shown at the top of the Agent panel. Add that URL to an MCP client on the same machine. The server works on whichever project is open, accepts connections from this machine only, and refuses requests from web pages.
 
 <Card title='Work with a project' icon='comment' href='/agent/projects'>
   Give the Agent a precise scope, review its edits, and use project history.

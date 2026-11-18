@@ -1,0 +1,344 @@
+//! The GPU: one wgpu device and a vello_gpu renderer, which draws every page
+//! Koharu shows or exports.
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock, Weak, mpsc},
+};
+
+use anyhow::{Context, Result, anyhow};
+use glifo::{FontEmbolden, Glyph};
+use image::RgbaImage;
+use kurbo::Affine;
+use parking_lot::{Mutex, MutexGuard};
+use vello_gpu::{
+    ImageSource, Pixmap, RenderOptions, RenderTarget, RenderTargetConfig, Renderer, Resources,
+    Scene, TextureBindings, TextureId, TextureRegion,
+};
+use wgpu::{
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, TexelCopyBufferInfo,
+    Texture, TextureDescriptor, TextureFormat, TextureUsages, TextureView, util::DeviceExt as _,
+};
+
+use crate::fonts::Font;
+
+/// The process's GPU, started the first time it's asked for. One that fails
+/// to start stays failed until Koharu starts again.
+static GPU: LazyLock<Result<Gpu>> = LazyLock::new(Gpu::new);
+
+/// The device and its queue, which the desktop's compositor shares, and
+/// vello_gpu's renderer. The instance and adapter stay, because a window's
+/// surface must come from the instance the device came from, on an adapter
+/// that presents to it.
+pub struct Gpu {
+    pub instance: wgpu::Instance,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    /// What one drawing holds at a time.
+    vello: Mutex<State>,
+}
+
+/// vello_gpu's renderer, the glyphs it keeps, and each image uploaded as a
+/// texture of its own, by its pixmap's address, kept while the pixmap lives.
+struct State {
+    renderer: Renderer,
+    resources: Resources,
+    textures: HashMap<usize, (Weak<Pixmap>, TextureId, TextureView)>,
+    /// The id the next uploaded image is named by.
+    next_texture: u64,
+}
+
+impl Gpu {
+    /// The process's GPU, which the canvas and the window draw with.
+    pub fn get() -> Result<&'static Self> {
+        GPU.as_ref()
+            .map_err(|error| anyhow!("the GPU didn't start: {error:#}"))
+    }
+
+    /// Creates the device with the adapter's texture and buffer limits, rather
+    /// than `Limits::default()`, which caps a texture at 8192 pixels whatever
+    /// the GPU supports.
+    fn new() -> Result<Self> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            display: None,
+            backends: wgpu::Backends::from_env().unwrap_or_default(),
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+        });
+        let adapter = pollster::block_on(wgpu::util::initialize_adapter_from_env_or_default(
+            &instance, None,
+        ))
+        .context("no GPU adapter is available")?;
+        let supported = adapter.limits();
+        let required_limits = wgpu::Limits {
+            max_texture_dimension_2d: supported.max_texture_dimension_2d,
+            max_buffer_size: supported.max_buffer_size,
+            ..wgpu::Limits::default()
+        };
+        // External memory lets the window import the frames CEF shares.
+        let optional = wgpu::Features::CLEAR_TEXTURE
+            | wgpu::Features::PIPELINE_CACHE
+            | wgpu::Features::VULKAN_EXTERNAL_MEMORY_WIN32
+            | wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("koharu renderer"),
+            required_features: adapter.features() & optional,
+            required_limits,
+            ..Default::default()
+        }))
+        .context("no GPU adapter supports vello_gpu's features")?;
+        // A render takes its size from its target; this only sizes the
+        // renderer's first buffers.
+        let (renderer, resources) = Renderer::new(
+            &device,
+            &queue,
+            &RenderTargetConfig {
+                format: TextureFormat::Rgba8Unorm,
+                width: 1,
+                height: 1,
+            },
+        );
+        Ok(Self {
+            instance,
+            adapter,
+            device,
+            queue,
+            vello: Mutex::new(State {
+                renderer,
+                resources,
+                textures: HashMap::new(),
+                next_texture: 0,
+            }),
+        })
+    }
+
+    /// The longest side a texture may have on this GPU, and so a drawing's.
+    pub(crate) fn largest_texture(&self) -> u32 {
+        self.device
+            .limits()
+            .max_texture_dimension_2d
+            .min(u32::from(u16::MAX))
+    }
+
+    /// A drawing for a `width`×`height` target. It holds the renderer until
+    /// it's rendered.
+    pub fn drawing(&self, width: u16, height: u16) -> Drawing<'_> {
+        let mut vello = self.vello.lock();
+        // A texture whose pixmap has gone, as an evicted layer's, goes too.
+        vello
+            .textures
+            .retain(|_, (pixmap, ..)| pixmap.strong_count() > 0);
+        Drawing {
+            gpu: self,
+            vello,
+            scene: Scene::new(width, height),
+            bindings: TextureBindings::new(),
+        }
+    }
+
+    /// `texture`, an `Rgba8Unorm` texture made with `COPY_SRC` that holds
+    /// premultiplied RGBA, as vello_gpu draws it, read back as straight
+    /// alpha.
+    pub fn read_texture(&self, texture: &Texture) -> Result<RgbaImage> {
+        let (width, height) = (texture.width(), texture.height());
+        let padded_width = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let readback = self.device.create_buffer(&BufferDescriptor {
+            label: Some("koharu readback buffer"),
+            size: u64::from(padded_width) * u64::from(height),
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("koharu readback"),
+            });
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_width),
+                    rows_per_image: None,
+                },
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = self.queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
+            .map_err(|error| anyhow!("waiting for the GPU failed: {error:?}"))?;
+        receiver
+            .recv()
+            .context("the GPU closed the readback")?
+            .context("failed to map the readback buffer")?;
+        let mapped = slice
+            .get_mapped_range()
+            .context("failed to read the readback buffer")?;
+        let row = (width * 4) as usize;
+        let mut pixels = Vec::with_capacity(row * height as usize);
+        for line in mapped
+            .chunks_exact(padded_width as usize)
+            .take(height as usize)
+        {
+            pixels.extend_from_slice(&line[..row]);
+        }
+        drop(mapped);
+        readback.unmap();
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            let alpha = u32::from(pixel[3]);
+            if alpha != 0 && alpha != 255 {
+                for channel in &mut pixel[..3] {
+                    *channel = ((u32::from(*channel) * 255 + alpha / 2) / alpha).min(255) as u8;
+                }
+            }
+        }
+        RgbaImage::from_raw(width, height, pixels).context("the readback has the wrong size")
+    }
+}
+
+/// A scene for one render on the GPU, with the textures its images name.
+pub struct Drawing<'a> {
+    pub(crate) gpu: &'a Gpu,
+    vello: MutexGuard<'a, State>,
+    /// What the canvas draws over the page goes here too.
+    pub scene: Scene,
+    bindings: TextureBindings,
+}
+
+impl Drawing<'_> {
+    /// Renders into a texture the drawing's size and reads it back as
+    /// straight-alpha RGBA.
+    pub(crate) fn read(self) -> Result<RgbaImage> {
+        let gpu = self.gpu;
+        let texture = gpu.device.create_texture(&TextureDescriptor {
+            label: Some("koharu raster"),
+            size: Extent3d {
+                width: u32::from(self.scene.width()),
+                height: u32::from(self.scene.height()),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        self.render(&texture.create_view(&wgpu::TextureViewDescriptor::default()))?;
+        gpu.read_texture(&texture)
+    }
+
+    /// Renders into `target`, an `Rgba8Unorm` render attachment the drawing's
+    /// size, as premultiplied RGBA.
+    pub fn render(mut self, target: &TextureView) -> Result<()> {
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("koharu render"),
+            });
+        let State {
+            renderer,
+            resources,
+            ..
+        } = &mut *self.vello;
+        renderer
+            .render(
+                &self.scene,
+                resources,
+                &mut encoder,
+                RenderTarget {
+                    view: target,
+                    depth_view: None,
+                },
+                &self.bindings,
+                RenderOptions::default(),
+            )
+            .map_err(|error| anyhow!("the GPU couldn't render: {error}"))?;
+        self.gpu.queue.submit([encoder.finish()]);
+        Ok(())
+    }
+
+    /// Fills `glyphs` of `font` at `size` with the current paint and
+    /// transform, each turned by `turn` and grown by `embolden`.
+    pub(crate) fn glyphs(
+        &mut self,
+        font: &Font,
+        size: f32,
+        turn: Option<Affine>,
+        embolden: FontEmbolden,
+        glyphs: &[Glyph],
+    ) -> Result<()> {
+        let mut run = self
+            .scene
+            .glyph_run(&mut self.vello.resources, &font.data)
+            .font_size(size)
+            .normalized_coords(&font.coords)
+            .font_embolden(embolden)
+            .hint(false);
+        if let Some(turn) = turn {
+            run = run.glyph_transform(turn);
+        }
+        run.fill_glyphs(glyphs.iter().copied())
+            .map_err(|error| anyhow!("glyphs couldn't be drawn: {error:?}"))
+    }
+
+    /// `pixmap` as an image the scene samples: uploaded as a texture of its
+    /// own the first time, and named by its id.
+    pub(crate) fn image(&mut self, pixmap: &Arc<Pixmap>) -> ImageSource {
+        let address = Arc::as_ptr(pixmap) as usize;
+        let uploaded = self
+            .vello
+            .textures
+            .get(&address)
+            .filter(|(kept, ..)| kept.as_ptr() == Arc::as_ptr(pixmap))
+            .map(|(_, id, view)| (*id, view.clone()));
+        let (id, view) = uploaded.unwrap_or_else(|| {
+            let texture = self.gpu.device.create_texture_with_data(
+                &self.gpu.queue,
+                &TextureDescriptor {
+                    label: Some("koharu image"),
+                    size: Extent3d {
+                        width: u32::from(pixmap.width()),
+                        height: u32::from(pixmap.height()),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: TextureFormat::Rgba8Unorm,
+                    usage: TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                pixmap.data_as_u8_slice(),
+            );
+            let id = TextureId(self.vello.next_texture);
+            self.vello.next_texture += 1;
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.vello
+                .textures
+                .insert(address, (Arc::downgrade(pixmap), id, view.clone()));
+            (id, view)
+        });
+        self.bindings.insert(id, view);
+        ImageSource::external_texture(id, TextureRegion::Full, true)
+    }
+}

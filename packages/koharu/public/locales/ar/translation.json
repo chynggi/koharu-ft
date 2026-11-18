@@ -11,64 +11,43 @@
     "downloadingFiles": "جارٍ تنزيل {{count}} من الملفات",
     "downloadingFiles_one": "جارٍ تنزيل {{count}} ملف",
     "downloadingFiles_other": "جارٍ تنزيل {{count}} من الملفات",
-    "exportFailed": "فشل التصدير.",
-    "exporting": "جارٍ التصدير",
     "modelDownload": "تنزيل النموذج",
-    "pageLabel": "الصفحة {{number}}: {{label}}",
     "processing": "قيد المعالجة",
     "processingFailed": "فشلت المعالجة.",
     "stop": "إيقاف",
     "title": "النشاط"
   },
   "agent": {
-    "account": "حساب ChatGPT",
-    "applying": "جارٍ تطبيق تغييرات المشروع...",
-    "automatic": "تلقائي",
-    "backend": "الواجهة الخلفية",
     "cancel": "إلغاء",
     "cancelled": "أُلغي.",
-    "codex": "Codex",
-    "deviceCode": "رمز الجهاز",
-    "deviceCodeHint": "تم فتح متصفحك. أدخل هذا الرمز لتفويض Koharu.",
     "emptyDescription": "اطلب من Agent فحص هذا المشروع أو ترجمته أو تعديله أو معالجته. لن يعرض صور الصفحات إلا عند الحاجة.",
     "emptyTitle": "ماذا ينبغي أن يفعل Koharu؟",
     "failed": "فشل طلب Agent.",
-    "loading": "جارٍ تحميل الوكيل...",
+    "loading": "جارٍ تحميل الوكيل…",
     "message": "راسل Koharu Agent",
     "model": "النموذج",
-    "noModels": "لم يتم العثور على نماذج. تحقق من عنوان URL الأساسي ومفتاح API لهذا المزوّد في الإعدادات.",
+    "newChat": "محادثة جديدة",
     "placeholder": "اطلب من Koharu العمل على هذا المشروع...",
-    "properties": "الخصائص",
     "reasoning": "التفكير",
-    "reasoningLevels": {
-      "high": "عالٍ",
-      "low": "منخفض",
-      "max": "الأقصى",
-      "medium": "متوسط",
-      "ultra": "فائق",
-      "xhigh": "عالٍ جدًا"
-    },
     "send": "إرسال",
-    "signIn": "تسجيل الدخول عبر Codex",
-    "signInDescription": "سجّل الدخول باستخدام اشتراك ChatGPT. يستخدم Koharu مصادقة رمز الجهاز ولا يطلب API key أبدًا.",
-    "signInTitle": "ربط Codex",
-    "signOut": "تسجيل الخروج",
-    "signingIn": "في انتظار تسجيل الدخول...",
     "thinking": "جارٍ التفكير...",
+    "thought": "فكّر لمدة {{seconds}} ث",
     "title": "Agent",
+    "toolFailed": "فشل {{tool}}",
+    "used": "استخدم {{tool}}",
+    "using": "يستخدم {{tool}}",
     "working": "جارٍ العمل..."
   },
   "canvas": {
     "empty": "اختر صفحة للبدء.",
-    "fit": "ملاءمة النافذة",
-    "surface": "لوحة Koharu",
-    "unavailable": "لوحة WebGPU غير متاحة"
+    "notice": {
+      "eraser_needs_raster": "حدد طبقة نقطية للمسح.",
+      "fill_needs_raster": "حدد طبقة نقطية للتعبئة."
+    }
   },
   "colorPicker": {
     "brushColor": "لون الفرشاة",
     "hexCode": "رمز اللون الست عشري",
-    "recent": "الألوان الأخيرة",
-    "recentColor": "لون حديث {{color}}",
     "sampleCanvas": "اختيار لون من اللوحة",
     "transparent": "شفاف"
   },
@@ -76,101 +55,92 @@
     "back": "رجوع",
     "cancel": "إلغاء",
     "clearSearch": "مسح البحث",
-    "experimental": "تجريبي",
-    "loading": "جارٍ التحميل…",
-    "reset": "إعادة ضبط"
+    "loading": "جارٍ التحميل…"
   },
   "errors": {
     "fatalTitle": "تعذّر على Koharu المتابعة",
     "tryAgain": "أعد المحاولة"
   },
-  "export": {
+  "feedback": {
+    "addScreenshot": "إضافة لقطة شاشة",
     "cancel": "إلغاء",
-    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
-    "description": "تصيير الصفحات إلى ملفات صور.",
-    "formats": "التنسيقات",
-    "pattern": "نمط اسم الملف",
-    "patternError": {
-      "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
-      "token": "رمز غير معروف. استخدم {index} أو {label}.",
-      "unclosed": "قوس غير مغلق في النمط.",
-      "width": "يجب أن يكون عدد الخانات رقمًا."
-    },
-    "scope": "الصفحات",
-    "scopeAll": "كل الصفحات ({{count}})",
-    "scopeSelected": "المحدد ({{count}})",
-    "start": "تصدير",
-    "subfolders": "مجلد منفصل لكل تنسيق",
-    "title": "تصدير الصفحات"
+    "confirm": "تأكيد",
+    "email": "البريد الإلكتروني",
+    "emailPlaceholder": "your.email@example.org",
+    "emptyMessage": "يُرجى وصف ما حدث.",
+    "failed": "تعذّر إرسال الملاحظات. يُرجى المحاولة مرة أخرى.",
+    "forbidden": "لا يمكن إرسال الملاحظات من هذا الإصدار.",
+    "hide": "إخفاء",
+    "highlight": "تمييز",
+    "message": "الوصف",
+    "messagePlaceholder": "ماذا حدث؟ وماذا كنت تتوقع؟",
+    "name": "الاسم",
+    "namePlaceholder": "اسمك",
+    "noClient": "الملاحظات غير متاحة حاليًا.",
+    "removeHighlight": "إزالة",
+    "removeScreenshot": "إزالة لقطة الشاشة",
+    "required": "(مطلوب)",
+    "sent": "شكرًا على ملاحظاتك!",
+    "submit": "إرسال",
+    "timeout": "انتهت مهلة الإرسال. يُرجى المحاولة مرة أخرى.",
+    "title": "إرسال ملاحظات"
   },
-  "find": {
-    "matchCase": "مطابقة حالة الأحرف",
-    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
-    "page": "الصفحة {{number}}",
-    "placeholder": "البحث في الترجمات",
-    "replace": "استبدال",
-    "replaceAll": "استبدال الكل",
-    "replacePlaceholder": "الاستبدال بـ",
-    "searching": "جارٍ البحث…",
-    "summary": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
-    "title": "بحث"
+  "fill": {
+    "deselect": "إلغاء التحديد",
+    "generate": "إنشاء",
+    "model": "نموذج التعبئة",
+    "prompt": "صِف ما تريد إضافته (اختياري)",
+    "title": "التعبئة التوليدية"
   },
   "fontPicker": {
-    "activeFilterCount": "{{count}} مرشّحات نشطة",
-    "activeFilterCount_one": "{{count}} مرشّح نشط",
-    "activeFilterCount_other": "{{count}} مرشّح نشط",
-    "addFavorite": "إضافة {{family}} إلى المفضلة",
-    "allFonts": "كل الخطوط",
-    "allPurposes": "كل الأغراض",
-    "allScripts": "كل الأنظمة الكتابية",
-    "allSources": "كل المصادر",
-    "allStyles": "كل الأنماط",
     "choose": "اختر خطًا",
-    "clearFilters": "مسح المرشّحات",
-    "favorites": "المفضلة",
-    "filter": "تصفية الخطوط",
-    "filterActiveLabel": "تصفية الخطوط، {{count}} نشطة",
     "fontCount": "{{count}} خط",
     "fontCount_one": "{{count}} خط",
     "fontCount_other": "{{count}} خط",
-    "fontLabel": "{{family}}، {{source}}",
     "fonts": "الخطوط",
     "noResults": "لا توجد خطوط تطابق هذا البحث",
-    "purpose": "الغرض",
-    "removeFavorite": "إزالة {{family}} من المفضلة",
-    "script": "النظام الكتابي",
-    "scripts": {
-      "arab": "العربية",
-      "beng": "البنغالية",
-      "cyrl": "السيريلية",
-      "deva": "الديفاناغارية",
-      "gujr": "الغوجاراتية",
-      "guru": "الغورموخية",
-      "hang": "الهانغول",
-      "hani": "الهان",
-      "hebr": "العبرية",
-      "hira": "الهيراغانا",
-      "kana": "الكاتاكانا",
-      "knda": "الكانادية",
-      "latn": "اللاتينية",
-      "mlym": "المالايالامية",
-      "taml": "التاميلية",
-      "telu": "التيلوغوية",
-      "thai": "التايلاندية"
-    },
     "search": "ابحث عن خطوط",
-    "source": "المصدر",
-    "sources": {
-      "bundled": "مضمّن",
-      "system": "النظام"
+    "addFavorite": "إضافة {{family}} إلى المفضلة",
+    "removeFavorite": "إزالة {{family}} من المفضلة"
+  },
+  "history": {
+    "close": "إغلاق السجل",
+    "opened": "عند الفتح",
+    "steps": {
+      "add_text": "إضافة نص",
+      "delete_layers": "حذف الطبقات",
+      "delete_pages": "حذف الصفحات",
+      "detect": "الكشف",
+      "edit_frame": "تحرير الإطار",
+      "erase": "مسح",
+      "import": "استيراد الصفحات",
+      "inpaint": "الترميم",
+      "move": "نقل",
+      "move_layer": "نقل الطبقات",
+      "move_page": "نقل الصفحة",
+      "paint": "رسم",
+      "recognize": "OCR",
+      "resize": "تغيير الحجم",
+      "rotate": "تدوير",
+      "set_locked": "قفل أو إلغاء القفل",
+      "set_source_text": "تحرير النص الأصلي",
+      "set_style": "تغيير نمط النص",
+      "set_text": "تحرير النص",
+      "set_visibility": "إظهار أو إخفاء",
+      "translate": "الترجمة",
+      "update_layer": "تغيير الطبقة",
+      "adjust_colors": "تعديل الألوان",
+      "add_shape": "إضافة شكل",
+      "duplicate_layer": "تكرار الطبقات",
+      "fill": "تعبئة",
+      "merge_pages": "دمج الصفحات",
+      "set_fill": "تغيير التعبئة",
+      "set_stroke": "تغيير الحد",
+      "update_page": "تعديل الصفحة"
     },
-    "style": "النمط"
+    "title": "السجل"
   },
   "inference": {
-    "currentPage": "الصفحة الحالية",
-    "currentPageDescription": "معالجة الصفحة المعروضة في اللوحة فقط.",
     "entireProject": "المشروع كاملًا",
     "entireProjectDescription": "معالجة كل صفحة في هذا المشروع.",
     "model": "النموذج",
@@ -183,7 +153,6 @@
     "runProcessing": "تشغيل المعالجة",
     "scope": "النطاق",
     "scopeShort": {
-      "page": "صفحة",
       "project": "مشروع",
       "selected-pages": "التحديد"
     },
@@ -202,22 +171,6 @@
     "stopProcessing": "إيقاف المعالجة"
   },
   "inspector": {
-    "adjust": {
-      "apply": "تطبيق",
-      "brightness": "السطوع",
-      "contrast": "التباين",
-      "degrees": "الدرجات",
-      "delta": "المقدار",
-      "grayscale": "تدرج رمادي",
-      "high": "الأعلى",
-      "hue": "تدرج اللون",
-      "invalidLevels": "يجب أن تكون القيمة الدنيا أقل من العليا.",
-      "levels": "المستويات",
-      "low": "الأدنى",
-      "percent": "النسبة المئوية",
-      "singleLayer": "حدد طبقة نقطية واحدة لضبطها.",
-      "title": "نوع الضبط"
-    },
     "alignBottom": "محاذاة للأسفل",
     "alignCenter": "توسيط أفقي",
     "alignLeft": "محاذاة لليسار",
@@ -226,104 +179,42 @@
     "alignTop": "محاذاة للأعلى",
     "alignment": "المحاذاة",
     "auto": "تلقائي",
-    "autoFit": "ملاءمة تلقائية",
     "border": "الحدود",
     "borderColor": "لون الحدود",
     "borderWidth": "عرض الحدود",
-    "secondBorder": "الحدود 2",
-    "secondBorderColor": "لون الحدود الثانية",
-    "secondBorderWidth": "عرض الحدود الثانية",
-    "increaseSecondBorderWidth": "زيادة عرض الحدود الثانية",
-    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
     "chooseFontSize": "اختر حجم الخط",
-    "color": "اللون",
-    "customFrame": "إطار مخصّص",
     "decreaseBorderWidth": "تقليل عرض الحدود",
-    "direction": "الاتجاه",
     "font": "الخط",
     "fontSize": "حجم الخط",
-    "fontStyle": "نمط الخط",
     "fontStyles": {
       "italic": "مائل",
-      "normal": "عادي",
       "oblique": "منحرف"
     },
     "fontWeight": "وزن الخط",
     "horizontal": "أفقي",
     "increaseBorderWidth": "زيادة عرض الحدود",
     "opacity": "العتامة",
-    "placement": "الموضع",
-    "resetAutoFit": "إعادة إلى الملاءمة التلقائية",
     "selectPage": "اختر صفحة لعرض طبقاتها.",
-    "shape": {
-      "addStop": "إضافة نقطة توقف",
-      "dash": "متقطع",
-      "fill": "التعبئة",
-      "fillKind": {
-        "gradient": "تدرج",
-        "pattern": "نقش",
-        "solid": "مصمت"
-      },
-      "fillKindLabel": "نوع التعبئة",
-      "gradientKind": {
-        "linear": "خطي",
-        "radial": "شعاعي"
-      },
-      "gradientKindLabel": "نوع التدرج",
-      "kind": {
-        "arrow": "سهم",
-        "ellipse": "شكل بيضاوي",
-        "line": "خط",
-        "rectangle": "مستطيل"
-      },
-      "kindLabel": "نوع الشكل: {{kind}}",
-      "kindTitle": "نوع الشكل",
-      "pattern": {
-        "ignoredForStretch": "يتم تجاهل الأصل والمقياس أثناء التمديد.",
-        "originX": "الأصل X",
-        "originY": "الأصل Y",
-        "repeat": {
-          "stretch": "تمديد",
-          "tile": "تبليط"
-        },
-        "repeatLabel": "التكرار",
-        "replace": "استبدال الصورة",
-        "rotation": "الدوران",
-        "scale": "المقياس",
-        "title": "النقش",
-        "upload": "اختيار صورة"
-      },
-      "rasterize": "تحويل إلى نقطي",
-      "removeStop": "إزالة نقطة التوقف",
-      "stopColor": "لون نقطة التوقف {{index}}",
-      "stopOffset": "موضع نقطة التوقف {{index}}",
-      "stops": "نقاط التوقف",
-      "stopsTooClose": "لا توجد مساحة بين نقاط التوقف",
-      "stroke": "الحد",
-      "strokeWidth": "عرض الحد"
-    },
-    "size": "الحجم",
     "source": "النص المصدر",
-    "style": "النمط",
+    "text": "نص",
     "textColor": "لون النص",
     "textDirection": "اتجاه النص",
     "translation": "الترجمة",
     "type": "النوع",
-    "unplaced": "غير موضوع",
     "vertical": "عمودي",
-    "weight": "الوزن",
-    "width": "العرض",
-    "outlineMethod": "طريقة الحدود",
-    "outlineExpansion": "توسيع",
-    "outlineContour": "حدود المسار",
-    "outlinePosition": "الموضع",
-    "outlineOutside": "الخارج",
+    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
+    "increaseSecondBorderWidth": "زيادة عرض الحدود الثانية",
+    "outlineBevel": "مشطوفة",
     "outlineCenter": "الوسط",
     "outlineInside": "الداخل",
     "outlineJoin": "الزوايا",
-    "outlineRound": "مستديرة",
     "outlineMiter": "حادة",
-    "outlineBevel": "مشطوفة"
+    "outlineOutside": "الخارج",
+    "outlinePosition": "الموضع",
+    "outlineRound": "مستديرة",
+    "secondBorder": "الحدود 2",
+    "secondBorderColor": "لون الحدود الثانية",
+    "secondBorderWidth": "عرض الحدود الثانية"
   },
   "languages": {
     "ar": "العربية",
@@ -340,35 +231,38 @@
     "zh-TW": "繁體中文"
   },
   "layers": {
-    "copySelected": "نسخ طبقات النص المحددة",
     "delete": "حذف {{name}}",
     "edit": "تعديل {{name}}",
     "empty": "لا توجد طبقات في هذه الصفحة.",
     "hide": "إخفاء {{name}}",
-    "imageName": "صورة {{index}}",
     "kinds": {
-      "cleanup": "تنظيف",
-      "dialogue": "حوار",
-      "freeText": "نص حر",
+      "balloon": "فقاعة",
+      "block": "كتلة نص",
       "group": "مجموعة",
       "image": "صورة",
-      "paint": "طلاء",
+      "mask": "قناع",
+      "panel": "إطار",
+      "raster": "نقطية",
       "shape": "شكل",
-      "text": "نص",
-      "textGroup": "مجموعة نص"
+      "text": "نص"
     },
+    "lock": "قفل {{name}}",
     "locked": "مقفل",
-    "lockedLabel": "{{name}} مقفل",
-    "moveDown": "نقل {{name}} لأسفل",
-    "moveUp": "نقل {{name}} لأعلى",
     "opacityLabel": "عتامة {{name}}",
-    "originalArtwork": "الرسم الأصلي",
-    "pasteCopied": "لصق طبقات النص المنسوخة",
+    "parts": {
+      "cleanup": "تنظيف",
+      "mask": "قناع",
+      "pick": "{{part}} {{name}}",
+      "toggle": "Shift+نقر للإظهار أو الإخفاء"
+    },
     "show": "إظهار {{name}}",
     "sourceLabel": "النص المصدر لـ {{name}}",
+    "textLabel": "نص {{name}}",
     "textName": "نص {{index}}",
     "title": "الطبقات",
-    "translationLabel": "ترجمة {{name}}"
+    "translationLabel": "ترجمة {{name}}",
+    "unlock": "إلغاء قفل {{name}}",
+    "unlocked": "غير مقفل"
   },
   "menu": {
     "about": "عن البرنامج",
@@ -377,26 +271,25 @@
     "discord": "Discord",
     "edit": "تحرير",
     "export": "تصدير المشروع",
+    "feedback": "إرسال ملاحظات",
     "file": "ملف",
     "fit": "ملاءمة النافذة",
     "github": "GitHub",
     "help": "مساعدة",
+    "history": "السجل",
     "import": "استيراد الصفحات",
-    "process": "معالجة",
-    "processLayers": "معالجة الطبقات المحدّدة",
-    "processPages": "معالجة الصفحات المحدّدة",
-    "processProject": "معالجة المشروع",
     "redo": "إعادة",
-    "runPhase": "تشغيل {{phase}}",
     "selectAllLayers": "تحديد كل الطبقات",
     "settings": "الإعدادات",
     "undo": "تراجع",
-    "view": "عرض"
+    "unloadModels": "إلغاء تحميل النماذج",
+    "view": "عرض",
+    "adjustments": "تعديلات",
+    "image": "صورة"
   },
   "model": {
     "baseUrl": "عنوان URL الأساسي",
     "default": "افتراضي",
-    "instructions": "التعليمات",
     "targetLanguage": "اللغة المستهدفة"
   },
   "modelPicker": {
@@ -409,95 +302,68 @@
   },
   "navigator": {
     "actionsFor": "إجراءات {{page}}",
-    "mergeAsSpread": "دمج في صفحة مزدوجة",
-    "chapterStart": "بداية الفصل",
     "delete": "حذف",
+    "deleteDescription": "يؤدي هذا إلى حذف «{{page}}» وطبقاتها. يمكنك التراجع عن ذلك.",
+    "deleteTitle": "حذف الصفحة؟",
     "emptyDescription": "استورد ملفات صور أو مجلدًا لإضافة صفحات.",
     "emptyTitle": "لا توجد صفحات بعد",
-    "filter": "تصفية الصفحات",
     "importAction": "استيراد",
     "importFiles": "ملفات…",
     "importFolder": "مجلد…",
     "importing": "جارٍ استيراد الصفحات…",
     "importingAction": "جارٍ الاستيراد…",
-    "dropToImport": "أفلت الملفات أو المجلدات لاستيرادها",
-    "layerCount": "{{count}} من الطبقات",
-    "layerCount_one": "{{count}} طبقة",
-    "layerCount_other": "{{count}} من الطبقات",
-    "markChapterStart": "تعيين كبداية فصل",
-    "removeChapterStart": "إزالة علامة بداية الفصل",
     "noImage": "لا توجد صورة",
-    "noResults": "لا توجد صفحات تطابق هذا المرشّح.",
-    "pageName": "اسم الصفحة",
+    "pageNumber": "الصفحة {{number}}",
     "pages": "الصفحات",
+    "run": {
+      "detect": "كشف",
+      "inpaint": "ترميم",
+      "recognize": "التعرّف على النص",
+      "translate": "ترجمة"
+    },
+    "selected": "{{count}} محدّد",
+    "chapterStart": "بداية الفصل",
+    "mergeAsSpread": "دمج في صفحة مزدوجة",
+    "mergeLeftToRight": "من اليسار إلى اليمين",
+    "mergeRightToLeft": "من اليمين إلى اليسار",
+    "pageName": "اسم الصفحة",
     "rename": "إعادة تسمية",
     "renameDescription": "اختر اسمًا جديدًا لهذه الصفحة.",
-    "renameTitle": "إعادة تسمية الصفحة",
-    "selected": "{{count}} محدّد"
+    "renameTitle": "إعادة تسمية الصفحة"
   },
   "outputPicker": {
-    "instructions": "تعليمات الترجمة",
-    "instructionsPlaceholder": "إرشادات اختيارية للنبرة والأسماء والتنسيق.",
     "targetLanguage": "اللغة المستهدفة",
     "title": "مخرجات الترجمة"
   },
   "phase": {
-    "detection": "الكشف",
-    "inpainting": "الترميم",
-    "ocr": "OCR",
-    "translation": "الترجمة"
+    "detect": "الكشف",
+    "inpaint": "الترميم",
+    "recognize": "OCR",
+    "translate": "الترجمة"
   },
   "phaseDescription": {
-    "detection": "تحديد موقع النص على الصفحة.",
-    "inpainting": "إعادة بناء الرسم خلف النص المُزال.",
-    "ocr": "قراءة النص داخل كل منطقة.",
-    "translation": "تحويل النص المصدر إلى اللغة المستهدفة."
+    "detect": "تحديد موقع النص على الصفحة.",
+    "inpaint": "إعادة بناء الرسم خلف النص المُزال.",
+    "recognize": "قراءة النص داخل كل منطقة.",
+    "translate": "تحويل النص المصدر إلى اللغة المستهدفة."
   },
-  "providerDescriptions": {
-    "caiyun": "واجهة ترجمة Caiyun.",
-    "claude": "نماذج Anthropic Claude.",
-    "deepl": "واجهة ترجمة DeepL.",
-    "deepseek": "نماذج DeepSeek اللغوية.",
-    "gemini": "نماذج Google Gemini.",
-    "google-cloud-translation": "واجهة Google Cloud Translation.",
-    "grok": "نماذج xAI Grok اللغوية.",
-    "lm-studio": "نماذج يقدّمها LM Studio.",
-    "local": "نماذج تعمل على هذا الجهاز.",
-    "minimax": "نماذج MiniMax اللغوية.",
-    "openai": "نماذج OpenAI اللغوية.",
-    "openai-compatible": "أي خادم يوفّر واجهة متوافقة مع OpenAI.",
-    "openrouter": "نماذج تُوجَّه عبر OpenRouter."
+  "psd": {
+    "background": "الخلفية",
+    "cleanup": "تنظيف",
+    "outline": "المخطط"
   },
-  "resources": {
-    "cpu": "CPU",
-    "memoryScope": {
-      "device": "هذا الجهاز، كل التطبيقات",
-      "process": "Koharu فقط",
-      "system": "هذا الجهاز، ذاكرة مشتركة"
-    },
-    "processUtilization": "استخدام العملية",
-    "ram": "RAM",
-    "summary": "RAM {{ram}}%، CPU {{cpu}}%",
-    "title": "موارد النظام",
-    "tooltip": "RAM {{ramUsed}} من {{ramTotal}} · CPU {{cpu}}%",
-    "usedOfTotal": "{{used}} من {{total}} مستخدم",
-    "vramScoped": "{{value}} VRAM · {{scope}}",
-    "vramUnavailable": "غير متاح",
-    "vramValue": "{{value}} VRAM"
+  "reasoning": {
+    "high": "عالٍ",
+    "low": "منخفض",
+    "max": "الأقصى",
+    "medium": "متوسط",
+    "minimal": "أدنى",
+    "off": "إيقاف",
+    "xhigh": "عالٍ جدًا"
   },
   "settings": {
     "appearance": {
-      "animations": "حركات الواجهة",
-      "animationsDescription": "يُظهر القوائم ومربعات الحوار بتلاشٍ تدريجي ويُنعّم تغيّرات التمرير والمفاتيح. يتبع إعداد النظام لتقليل الحركة.",
       "description": "طابق مساحة عملك مع الغرفة دون تغيير طريقة عرض الرسومات.",
-      "colorTheme": "سمة الألوان",
-      "colorThemeDescription": "اختر لوحة ألوان الواجهة. لكل لوحة نسخة فاتحة وأخرى داكنة.",
-      "colorThemes": {
-        "koharu": "Koharu",
-        "aniswipe": "AniSwipe",
-        "ocean": "المحيط",
-        "matcha": "ماتشا"
-      },
       "interface": "الواجهة",
       "language": "اللغة",
       "theme": "المظهر",
@@ -507,169 +373,71 @@
         "light": "فاتح",
         "system": "النظام"
       },
-      "title": "المظهر"
+      "title": "المظهر",
+      "colorTheme": "سمة الألوان",
+      "colorThemeDescription": "اختر لوحة ألوان الواجهة. لكل لوحة نسخة فاتحة وأخرى داكنة.",
+      "colorThemes": {
+        "koharu": "Koharu",
+        "aniswipe": "AniSwipe",
+        "ocean": "المحيط",
+        "matcha": "ماتشا"
+      },
+      "animations": "حركات الواجهة",
+      "animationsDescription": "يُظهر القوائم ومربعات الحوار بتلاشٍ تدريجي ويُنعّم تغيّرات التمرير والمفاتيح. يتبع إعداد النظام لتقليل الحركة."
     },
     "backToEditor": "العودة إلى المحرّر",
-    "features": {
-      "title": "ميزات NeKoharu",
-      "description": "خيارات خاصة بنسخة NeKoharu.",
-      "pages": "الصفحات",
-      "mergeDeleteOriginals": "حذف الصفحات الأصلية بعد الدمج",
-      "mergeDeleteOriginalsDescription": "يزيل الصفحات المصدر بعد دمجها في صفحة مزدوجة. عند إيقافه، تبقى الصفحات الأصلية في المشروع وتنتقل طبقات النص والتنظيف فقط إلى الصفحة المزدوجة.",
-      "showPageNumbers": "إظهار أرقام الصفحات",
-      "showPageNumbersDescription": "يعرض موضع كل صفحة أسفل اسمها في شريط الصفحات."
-    },
-    "generation": {
-      "description": "اضبط طريقة توليد النماذج اللغوية للنص المترجم.",
-      "enableReasoning": "تفعيل التفكير",
-      "frequencyPenalty": "Frequency penalty",
-      "maxTokens": "Maximum tokens",
-      "minP": "Min P",
-      "presencePenalty": "Presence penalty",
-      "repeatPenalty": "Repeat penalty",
-      "sampling": "أخذ العينات",
-      "samplingDescription": "تحكّم في كيفية اختيار النموذج للنص المولّد وتنويعه.",
-      "temperature": "Temperature",
-      "reasoning": "التفكير",
-      "reasoningDescription": "استخدام تفكير النموذج أثناء الترجمة.",
-      "title": "التوليد",
-      "topK": "Top K",
-      "topP": "Top P",
-      "vision": "الرؤية",
-      "visionDescription": "تزويد النموذج اللغوي بصور الصفحات أثناء الترجمة."
-    },
-    "llm": {
-      "accelerator": "المسرّع",
-      "acceleratorDescription": "إعدادات التفريغ والانتباه المُمرَّرة إلى llama.cpp.",
-      "activeDevice": "يعمل على {{device}} ({{backend}}).",
-      "batchSizes": "أحجام الدفعات",
-      "batchThreads": "الدفعة",
-      "batching": "التجميع في دفعات",
-      "batchingDescription": "اترك الحقل فارغًا للإبقاء على القيمة التلقائية لـ Koharu.",
-      "context": "السياق",
-      "contextDescription": "يحدد Koharu حجم السياق من كل موجّه، وهذه الإعدادات تقيّده.",
-      "contextMode": "وضع السياق",
-      "contextModeDescription": "الوضع الديناميكي يخصص بالضبط ما تحتاجه الصفحة.",
-      "contextModes": {
-        "bounded": "ديناميكي ضمن حدود",
-        "dynamic": "ديناميكي",
-        "fixed": "ثابت"
-      },
-      "contextSize": "حجم السياق",
-      "flashAttention": "Flash attention",
-      "flashAttentionModes": {
-        "auto": "تلقائي",
-        "off": "إيقاف",
-        "on": "تشغيل"
-      },
-      "generationThreads": "التوليد",
-      "gpuLayerModes": {
-        "all": "الكل",
-        "custom": "مخصص"
-      },
-      "gpuLayers": "طبقات GPU",
-      "kvCache": "نوع ذاكرة KV المؤقتة",
-      "kvCacheKey": "المفتاح",
-      "kvCacheValue": "القيمة",
-      "layers": "الطبقات",
-      "maxOutputTokens": "الحد الأقصى لرموز الإخراج",
-      "maxOutputTokensDescription": "رفع هذه القيمة يزيد ذاكرة KV المؤقتة في كل طلب.",
-      "maximumContext": "الحد الأقصى",
-      "minimumContext": "الحد الأدنى",
-      "noGpuOffload": "لا يوجد مسرّع نشط، لذا تعمل كل الطبقات على وحدة المعالجة المركزية.",
-      "threads": "الخيوط",
-      "tokens": "الرموز"
-    },
     "loading": "جارٍ تحميل التفضيلات…",
-    "models": {
-      "add": "إضافة نموذج",
-      "addDescription": "اختر ملف .gguf يمكن للجهاز الذي يشغّل Koharu قراءته.",
-      "addLocal": "إضافة نموذج محلي",
-      "browseProjector": "اختيار ملف الإسقاط",
-      "description": "سجّل ملفات GGUF الخاصة بك واضبط طريقة تشغيل llama.cpp لها.",
-      "name": "الاسم المعروض",
-      "none": "لا توجد نماذج مسجلة",
-      "noneDescription": "أضف ملف .gguf لاستخدامه كنموذج ترجمة.",
-      "path": "مسار النموذج",
-      "pathPlaceholder": "مسار ملف .gguf على الجهاز الذي يشغّل Koharu",
-      "projector": "الإسقاط",
-      "projectorPlaceholder": "ملف mmproj .gguf اختياري للرؤية",
-      "registered": "النماذج المسجلة",
-      "registeredDescription": "تُقرأ الملفات في مكانها، ولا يعدّل Koharu أي ملف .gguf.",
-      "remove": "إزالة {{model}}",
-      "title": "النماذج المحلية"
-    },
     "pipeline": {
       "description": "اختر النماذج والخيارات المستخدمة لمعالجة كل صفحة.",
+      "model": "النموذج",
       "modelLabel": "نموذج {{stage}}",
       "options": {
         "bubbleThreshold": "عتبة الفقاعات",
-        "checkpointSource": "مصدر نقطة الحفظ",
-        "flux3": {
-          "license": "رخصة FLUX Kommunity: للاستخدام غير التجاري، والمخرجات التجارية فقط للمؤسسات التي تقل إيراداتها السنوية عن 5 ملايين دولار أمريكي.",
-          "licenseLink": "قراءة الرخصة",
-          "resources": "يحتاج إلى {{vram}} غيغابايت من VRAM، ونحو {{ram}} غيغابايت إضافية من ذاكرة النظام، وتنزيل أولي بحجم {{download}} غيغابايت.",
-          "speed": "أبطأ من FLUX.2 Klein: يتناوب المُوسِّع ونموذج الصورة على GPU في كل صفحة."
-        },
-        "format": "التنسيق",
-        "formatKind": {
-          "safeTensors": "Safetensors",
-          "torchScript": "TorchScript"
-        },
-        "maxPixels": "الحد الأقصى للبكسلات",
-        "negativePrompt": "الطلب السلبي",
-        "paddingMaskCrop": "حشوة قص القناع",
+        "onomatopoeiaThreshold": "عتبة المؤثرات الصوتية",
         "panelThreshold": "عتبة الألواح",
-        "powerpaintEmbeddings": "مجلد تضمينات المهام",
-        "powerpaintModel": "ملف النموذج",
         "prompt": "الطلب",
-        "request": "طلب المُوسِّع",
-        "requestDescription": "يحوّل مُوسِّع الموجّهات الرسمي هذا الطلب إلى وصف كامل لكل بلاطة.",
-        "seed": "البذرة",
-        "source": {
-          "inpaintor": "نموذج الترميم",
-          "line": "نموذج الخطوط",
-          "text_encoder": "مُرمِّز النص",
-          "transformer": "Transformer",
-          "upsampler": "مُوسِّع الموجّهات",
-          "upsampler_mmproj": "إسقاط المُوسِّع",
-          "vae": "VAE"
-        },
-        "sourceDescription": "تحمّل التجاوزات نقطة حفظ من اختيارك. يقرأ FLUX.2 Klein بنيته من الملف، لذا تفشل نقطة الحفظ غير المتوافقة عند تحميل النموذج.",
-        "sourceDigest": "البصمة (BLAKE3)",
-        "sourceFilename": "الملف",
-        "sourceKind": {
-          "builtin": "مضمّن",
-          "huggingFace": "Hugging Face",
-          "localFile": "ملف محلي",
-          "url": "URL"
-        },
-        "sourcePath": "المسار",
-        "sourceRepository": "المستودع",
-        "sourceRevision": "المراجعة (تجزئة إيداع من 40 حرفًا)",
-        "sourceUrl": "URL",
-        "steps": "الخطوات",
-        "strength": "القوة",
+        "promptDescription": "ينطبق على النماذج التوليدية فقط.",
         "textThreshold": "عتبة النص"
       },
-      "processing": "المعالجة",
       "stages": {
-        "detection": {
+        "detect": {
           "description": "إيجاد النصوص وفقاعات الكلام والألواح.",
-          "title": "الكشف"
+          "title": "الكاشف"
         },
-        "inpainting": {
+        "inpaint": {
           "description": "إعادة بناء الرسم أسفل النص المُزال.",
-          "title": "الترميم"
+          "title": "المرمّم"
         },
-        "ocr": {
+        "recognize": {
           "description": "قراءة النص المصدر داخل المناطق المكتشفة.",
-          "title": "OCR"
+          "title": "المتعرّف"
+        },
+        "translate": {
+          "description": "ترجمة النص المصدر إلى اللغة الهدف.",
+          "title": "المترجم"
         }
       },
-      "title": "خط المعالجة"
+      "thresholds": "العتبات",
+      "title": "خط المعالجة",
+      "translator": {
+        "instructions": "تعليمات إضافية",
+        "instructionsDescription": "اختيارية، بأي لغة وأي صيغة، مثل طريقة كتابة اسم أو نبرة الأسلوب. يضيفها Koharu كما هي بعد موجّه النظام الخاص به.",
+        "reasoning": "التفكير",
+        "reasoningDescription": "استخدام تفكير النموذج أثناء الترجمة.",
+        "targetLanguageDescription": "اختر اللغة التي تُترجم إليها النصوص.",
+        "vision": "الرؤية",
+        "visionDescription": "تزويد النموذج اللغوي بصور الصفحات أثناء الترجمة."
+      },
+      "remote": {
+        "title": "خادم المعالجة",
+        "description": "تشغيل جميع المراحل أعلاه على جهاز آخر يعمل عليه koharu-server. اترك العنوان فارغًا للتشغيل هنا.",
+        "url": "عنوان الخادم",
+        "token": "رمز الخادم",
+        "clearToken": "مسح رمز الخادم"
+      }
     },
     "providers": {
+      "browserHint": "أكمل تسجيل الدخول في الصفحة التي فتحها متصفحك.",
       "clearCredential": "مسح API key لـ {{provider}}",
       "configured": "مهيّأ",
       "connections": "الاتصالات",
@@ -677,62 +445,37 @@
       "credential": "API key",
       "credentialLabel": "API key لـ {{provider}}",
       "description": "اربط مزوّدي الترجمة والنماذج اللغوية.",
+      "deviceCodeHint": "أدخل هذا الرمز في الصفحة التي فتحها متصفحك.",
       "notConfigured": "غير مهيّأ",
+      "openPage": "فتح صفحة تسجيل الدخول",
+      "openaiCompatible": "متوافق مع OpenAI",
+      "signIn": "تسجيل الدخول",
+      "signInLabel": "تسجيل الدخول إلى {{provider}}",
+      "signOut": "تسجيل الخروج",
+      "signOutLabel": "تسجيل الخروج من {{provider}}",
+      "signingIn": "في انتظار تسجيل الدخول…",
+      "subscription": "الاشتراك",
       "title": "المزوّدون"
-    },
-    "shortcuts": {
-      "description": "تتوفّر اختصارات المفتاح الواحد عندما لا يكون حقل النص قيد التركيز.",
-      "inputLabel": "اختصار {{action}}",
-      "nextPage": "الصفحة التالية",
-      "pages": "الصفحات",
-      "previousPage": "الصفحة السابقة",
-      "title": "الاختصارات",
-      "tools": "الأدوات"
     },
     "tabs": {
       "appearance": "المظهر",
-      "features": "ميزات NeKoharu",
-      "models": "النماذج",
       "pipeline": "خط المعالجة",
       "providers": "المزوّدون",
-      "shortcuts": "الاختصارات",
-      "translation": "الترجمة",
-      "typesetting": "تنضيد النص"
+      "typesetting": "محرك العرض"
     },
     "title": "الإعدادات",
-    "translation": {
-      "batching": "تجميع الطلبات",
-      "combinePages": "دمج الصفحات في طلب واحد",
-      "combinePagesDescription": "ترجمة ما يصل إلى العدد المحدد من الصفحات معًا لاتساق الأسماء والحبكة. تستخدم الطلبات متعددة الصفحات النص فقط ولا تتضمن صور الصفحات.",
-      "description": "اختر أي نموذج مزوّد مهيّأ، ثم طبّق مجموعة موحّدة من خيارات الترجمة والتوليد.",
-      "instructionsDescription": "إرشادات الأسماء أو النبرة أو المصطلحات أو التنسيق.",
-      "instructionsLabel": "تعليمات الترجمة",
-      "instructionsPlaceholder": "إرشادات اختيارية على مستوى المشروع",
-      "maxPagesPerRequest": "الحد الأقصى للصفحات في كل طلب",
-      "model": "النموذج",
-      "modelDescription": "تشير تسميات المزوّد إلى مكان تشغيل كل نموذج؛ وتُهيَّأ الاتصالات بشكل منفصل.",
-      "modelQuantization": "تكميم النموذج",
-      "output": "الإخراج",
-      "quantization": "التكميم",
-      "quantizationDescription": "تستخدم الصيغ الأصغر ذاكرة أقل، مع مقايضة في الجودة عادةً.",
-      "selectQuantization": "اختر تكميمًا",
-      "targetLanguageDescription": "اختر اللغة التي تُترجم إليها النصوص.",
-      "title": "الترجمة",
-      "translationModel": "نموذج الترجمة",
-      "translationModelDescription": "اختر النموذج المستخدم لترجمة النصوص."
-    },
     "typesetting": {
       "addFamily": "إضافة عائلة خطوط",
       "defaultFamilies": "عائلات الخطوط الافتراضية",
       "description": "عيّن مجموعة الخطوط المرتّبة المستخدمة عندما لا يكون لطبقة النص عائلة معيّنة.",
       "empty": "لا توجد عائلات افتراضية. سيستخدم Koharu البديل من النظام.",
       "familyLabel": "عائلة الخطوط الافتراضية {{index}}",
-      "fontFallback": "بديل الخطوط",
+      "fontFallback": "الخطوط المفضلة",
       "fontFallbackDescription": "يستخدم Koharu أول عائلة متاحة تدعم النص.",
       "loadError": "تعذّر تحميل الخطوط. لا يزال بإمكانك إزالة العائلات الحالية.",
       "loadingFonts": "جارٍ تحميل الخطوط…",
       "removeFamily": "إزالة {{family}}",
-      "title": "تنضيد النص"
+      "title": "محرك العرض"
     }
   },
   "start": {
@@ -752,7 +495,7 @@
     "projectList": "المشاريع",
     "projectName": "اسم المشروع",
     "projectNamePlaceholder": "مشروعي الجديد",
-    "storageHint": "تُخزَّن المشاريع محليًا في مجلد المستندات.",
+    "storageHint": "تُخزَّن المشاريع محليًا على هذا الكمبيوتر.",
     "title": "المشاريع",
     "yourProjects": "مشاريعك"
   },
@@ -765,39 +508,38 @@
   "status": {
     "zoom": "تكبير"
   },
+  "story": {
+    "noText": "لا يوجد نص في هذه الصفحة.",
+    "sfx": "مؤثر صوتي",
+    "title": "القصة",
+    "translate": "ترجمة {{name}}"
+  },
   "tools": {
-    "brushRamp": {
-      "alongStroke": "على طول الضربة",
-      "fixedAxis": "محور ثابت",
-      "none": "بلا"
-    },
-    "brushRampTitle": "تدرج الفرشاة",
     "brushSize": "حجم الفرشاة",
     "brushSizeInput": "حجم الفرشاة",
     "brushSizePixels": "حجم الفرشاة: {{size}} بكسل",
     "brushSizeShort": "{{size}} بكسل",
     "color_picker": "منتقي الألوان",
     "decreaseBrushSize": "تقليل حجم الفرشاة",
+    "direct_select": "التحديد المباشر",
     "draw": "فرشاة",
     "eraser": "ممحاة",
-    "fill": "تعبئة",
-    "fillColor": "لون التعبئة",
     "increaseBrushSize": "زيادة حجم الفرشاة",
-    "manual_ocr_box": "التعرف اليدوي على النص (مربع)",
-    "manual_ocr_clean": "التعرف على النص مع التنظيف",
-    "manual_ocr_lasso": "التعرف اليدوي على النص (لاسو)",
+    "lasso": "اللاسو",
+    "marquee": "التحديد المستطيل",
     "pan": "تحريك",
-    "rampAxis": {
-      "horizontal": "أفقي",
-      "vertical": "عمودي"
-    },
-    "rampAxisTitle": "المحور",
-    "rampFrom": "لون البداية",
-    "rampTo": "لون النهاية",
     "remove": "إزالة",
     "select": "تحديد",
-    "shape": "شكل",
-    "text": "نص"
+    "text": "نص",
+    "bucket": "دلو الطلاء",
+    "ellipse": "قطع ناقص",
+    "ramp": "تدرج اللون",
+    "rampColor": "لون نهاية التدرج",
+    "rampAlong": "اتجاه التدرج",
+    "rampStroke": "على طول الضربة",
+    "rampHorizontal": "من اليسار إلى اليمين",
+    "rampVertical": "من الأعلى إلى الأسفل",
+    "rectangle": "مستطيل"
   },
   "updater": {
     "available": {
@@ -823,5 +565,70 @@
     "maximize": "تكبير",
     "minimize": "تصغير",
     "restore": "استعادة"
+  },
+  "find": {
+    "matchCase": "مطابقة حالة الأحرف",
+    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
+    "page": "الصفحة {{number}}",
+    "placeholder": "البحث في الترجمات",
+    "replace": "استبدال",
+    "replaceAll": "استبدال الكل",
+    "replacePlaceholder": "الاستبدال بـ",
+    "searching": "جارٍ البحث…",
+    "summary": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
+    "title": "بحث"
+  },
+  "adjust": {
+    "apply": "تطبيق",
+    "brightness_contrast": "السطوع/التباين",
+    "brightness": "السطوع",
+    "contrast": "التباين",
+    "levels": "المستويات",
+    "levelsLow": "أسود الإدخال",
+    "levelsHigh": "أبيض الإدخال",
+    "hue": "تدرج اللون",
+    "grayscale": "إزالة التشبع"
+  },
+  "shape": {
+    "title": "شكل",
+    "fill": "التعبئة",
+    "fillNone": "بلا تعبئة",
+    "fillSolid": "لون خالص",
+    "fillLinear": "تدرج خطي",
+    "fillRadial": "تدرج شعاعي",
+    "fillSweep": "تدرج زاوي",
+    "fillPattern": "نقش",
+    "fillColor": "لون التعبئة",
+    "choosePattern": "اختيار صورة…",
+    "angle": "الزاوية",
+    "stopColor": "لون النقطة {{index}}",
+    "stopPosition": "موضع النقطة {{index}}",
+    "removeStop": "إزالة النقطة {{index}}",
+    "addStop": "إضافة نقطة",
+    "strokeColor": "لون الحد",
+    "strokeWidth": "عرض الحد",
+    "decrease": "إنقاص {{name}}",
+    "increase": "زيادة {{name}}"
+  },
+  "export": {
+    "cancel": "إلغاء",
+    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
+    "description": "تصيير الصفحات إلى ملفات صور.",
+    "formats": "التنسيقات",
+    "pattern": "نمط اسم الملف",
+    "patternError": {
+      "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
+      "token": "رمز غير معروف. استخدم {index} أو {label}.",
+      "unclosed": "قوس غير مغلق في النمط.",
+      "width": "يجب أن يكون عدد الخانات رقمًا."
+    },
+    "scope": "الصفحات",
+    "scopeAll": "كل الصفحات ({{count}})",
+    "scopeSelected": "المحدد ({{count}})",
+    "start": "تصدير",
+    "subfolders": "مجلد منفصل لكل تنسيق",
+    "title": "تصدير الصفحات"
   }
 }

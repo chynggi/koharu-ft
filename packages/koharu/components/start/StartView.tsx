@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call } from '@/lib/backend'
-import { pageKey, pagesKey, projectKey, refresh } from '@/lib/queries'
+import { pageKey, projectKey, refresh } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
-import { commands, type ProjectSummary } from '@koharu/bridge/protocol'
+import { commands } from '@koharu/ipc/protocol'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/t
 export function StartView() {
   const { t } = useTranslation()
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
-  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [projects, setProjects] = useState<string[]>([])
   const [name, setName] = useState('')
   const [busy, setBusy] = useState<string | null>('list')
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
@@ -51,8 +51,8 @@ export function StartView() {
     if (!projectName || busy) return
     setBusy('create')
     try {
-      await call(commands.createProject, projectName)
-      await refresh(projectKey, pagesKey, pageKey)
+      await call(commands.create, projectName)
+      await refresh(projectKey, pageKey)
       setName('')
     } finally {
       setBusy(null)
@@ -63,8 +63,8 @@ export function StartView() {
     if (busy) return
     setBusy(projectName)
     try {
-      await call(commands.openProject, projectName)
-      await refresh(projectKey, pagesKey, pageKey)
+      await call(commands.open, projectName)
+      await refresh(projectKey, pageKey)
     } finally {
       setBusy(null)
     }
@@ -179,41 +179,47 @@ export function StartView() {
                   </span>
                 </header>
 
-                <ScrollArea
-                  className='min-h-0 flex-1'
-                  viewportClassName='p-2'
-                  aria-busy={busy === 'list'}
-                >
-                  {busy === 'list' && projects.length === 0 ? (
-                    <p className='grid min-h-full place-items-center text-[11px] text-muted-foreground'>
-                      {t('start.loadingProjects')}
-                    </p>
-                  ) : projects.length === 0 ? (
-                    <div
-                      className='grid min-h-full place-items-center px-6 text-center'
-                      role='status'
-                    >
-                      <div>
-                        <span className='mx-auto grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground'>
-                          <Folder className='size-[18px]' />
-                        </span>
-                        <p className='mt-3 text-[12px] font-medium'>{t('start.emptyTitle')}</p>
-                        <p className='mt-1 text-[10px] leading-4 text-muted-foreground'>
-                          {t('start.emptyDescription')}
-                        </p>
-                      </div>
+                {/* Outside the scroll area, whose content takes only its children's
+                    height, so these fill the space under the header; a bottom padding
+                    as tall as the header centres them on the whole panel. */}
+                {busy === 'list' && projects.length === 0 ? (
+                  <p
+                    className='grid flex-1 place-items-center pb-14 text-[11px] text-muted-foreground'
+                    aria-busy
+                  >
+                    {t('start.loadingProjects')}
+                  </p>
+                ) : projects.length === 0 ? (
+                  <div
+                    className='grid flex-1 place-items-center px-6 pb-14 text-center'
+                    role='status'
+                  >
+                    <div>
+                      <span className='mx-auto grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground'>
+                        <Folder className='size-[18px]' />
+                      </span>
+                      <p className='mt-3 text-[12px] font-medium'>{t('start.emptyTitle')}</p>
+                      <p className='mt-1 text-[10px] leading-4 text-muted-foreground'>
+                        {t('start.emptyDescription')}
+                      </p>
                     </div>
-                  ) : (
+                  </div>
+                ) : (
+                  <ScrollArea
+                    className='min-h-0 flex-1'
+                    viewportClassName='p-2'
+                    aria-busy={busy === 'list'}
+                  >
                     <ul className='grid gap-0.5' aria-label={t('start.projectList')}>
                       {projects.map((project) => (
                         <li
-                          key={project.name}
+                          key={project}
                           className='group flex min-w-0 items-center rounded-lg hover:bg-foreground/[0.045]'
                         >
                           <button
                             type='button'
                             className='flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
-                            onClick={() => void openProject(project.name).catch(() => undefined)}
+                            onClick={() => void openProject(project).catch(() => undefined)}
                             disabled={busy !== null}
                           >
                             <span className='grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground'>
@@ -221,7 +227,7 @@ export function StartView() {
                             </span>
                             <span className='min-w-0'>
                               <span className='block truncate text-[11px] font-medium'>
-                                {project.name}
+                                {project}
                               </span>
                               <span className='mt-0.5 block text-[9px] text-muted-foreground'>
                                 {t('start.projectKind')}
@@ -233,8 +239,8 @@ export function StartView() {
                             size='icon-sm'
                             variant='ghost'
                             className='mr-2 size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100'
-                            aria-label={t('start.deleteLabel', { name: project.name })}
-                            onClick={() => setProjectToDelete(project.name)}
+                            aria-label={t('start.deleteLabel', { name: project })}
+                            onClick={() => setProjectToDelete(project)}
                             disabled={busy !== null}
                           >
                             <Trash2 className='size-3.5' />
@@ -242,8 +248,8 @@ export function StartView() {
                         </li>
                       ))}
                     </ul>
-                  )}
-                </ScrollArea>
+                  </ScrollArea>
+                )}
               </section>
             </div>
           </section>

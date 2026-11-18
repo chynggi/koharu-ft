@@ -46,23 +46,25 @@ impl ImageProcessor {
         let count = grid_h * grid_w;
         // (gh*16, gw*16) -> (gh*gw, channel, row, column), the upstream
         // `transpose(0, 2, 4, 1, 3)` order; the three channels are equal.
-        let patches = Tensor::from_slice(canvas.image.as_raw())
-            .to_device(self.device)
-            .to_kind(Kind::Float)
-            .view([grid_h, PATCH_SIZE, grid_w, PATCH_SIZE])
-            .permute([0, 2, 1, 3])
-            .reshape([count, 1, PATCH_SIZE * PATCH_SIZE])
-            .expand([count, 3, PATCH_SIZE * PATCH_SIZE], false)
-            .reshape([count, PATCH_FEATURES]);
-        let patches = (patches / 255.0 - 0.5) / 0.5;
+        let patches = Tensor::from_slice(canvas.image.as_raw())?
+            .to(self.device)?
+            .to_kind(Kind::Float)?
+            .view([grid_h, PATCH_SIZE, grid_w, PATCH_SIZE])?
+            .permute([0, 2, 1, 3])?
+            .reshape([count, 1, PATCH_SIZE * PATCH_SIZE])?
+            .expand([count, 3, PATCH_SIZE * PATCH_SIZE], false)?
+            .reshape([count, PATCH_FEATURES])?
+            .div_scalar(255.0)?
+            .sub_scalar(0.5, 1)?
+            .div_scalar(0.5)?;
         let padding = Tensor::zeros(
             [MAX_PATCHES - count, PATCH_FEATURES],
             (Kind::Float, self.device),
-        );
-        let patches = Tensor::cat(&[patches, padding], 0).unsqueeze(0);
-        let valid = Tensor::arange(MAX_PATCHES, (Kind::Int64, self.device))
-            .lt(count)
-            .unsqueeze(0);
+        )?;
+        let patches = Tensor::cat(&[patches, padding], 0)?.unsqueeze(0)?;
+        let valid = Tensor::arange(MAX_PATCHES, (Kind::Int64, self.device))?
+            .lt_scalar(count)?
+            .unsqueeze(0)?;
         Ok(ImageInput {
             patches,
             valid,

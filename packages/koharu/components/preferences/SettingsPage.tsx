@@ -1,26 +1,10 @@
 'use client'
 
-import {
-  ArrowLeft,
-  Boxes,
-  Check,
-  Cpu,
-  KeyRound,
-  Keyboard,
-  Languages,
-  Monitor,
-  Moon,
-  Palette,
-  Sparkles,
-  Sun,
-  Type,
-} from 'lucide-react'
+import { ArrowLeft, Cpu, KeyRound, Monitor, Moon, Palette, Sun, Type } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { FeaturesPreferences } from '@/components/preferences/FeaturesPreferences'
-import { LocalModelPreferences } from '@/components/preferences/LocalModelPreferences'
 import { PipelinePreferences } from '@/components/preferences/PipelinePreferences'
 import {
   PreferencePage,
@@ -28,20 +12,13 @@ import {
   PreferenceSection,
 } from '@/components/preferences/PreferenceFields'
 import { ProviderPreferences } from '@/components/preferences/ProviderPreferences'
-import { TranslationPreferences } from '@/components/preferences/TranslationPreferences'
 import { TypesettingPreferences } from '@/components/preferences/TypesettingPreferences'
-import { refreshPreferences, refreshTranslationModels, savePreferences } from '@/lib/backend'
+import { refreshModels, refreshPreferences, savePreferences } from '@/lib/backend'
 import { colorThemes, useForkPreferences } from '@/lib/forkPreferences'
 import { supportedLanguages } from '@/lib/i18n'
-import { receivePreferences, useKoharuStore, type ShortcutAction } from '@/lib/store'
-import {
-  type PipelineConfig,
-  type Preferences,
-  type ProviderPreferences as ProviderSettings,
-  type TypesettingConfig,
-} from '@koharu/bridge/protocol'
+import { useKoharuStore } from '@/lib/store'
+import type { Preferences } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
-import { Input } from '@koharu/ui/components/input'
 import { ScrollArea } from '@koharu/ui/components/scroll-area'
 import {
   Select,
@@ -56,13 +33,7 @@ const tabs = [
   ['appearance', Palette],
   ['pipeline', Cpu],
   ['providers', KeyRound],
-  ['translation', Languages],
-  ['models', Boxes],
   ['typesetting', Type],
-  // The fork appends `features` right before `shortcuts`; our `models` tab is
-  // the only entry it does not have, so the relative position is unchanged.
-  ['features', Sparkles],
-  ['shortcuts', Keyboard],
 ] as const
 type Tab = (typeof tabs)[number][0]
 
@@ -71,96 +42,44 @@ export function SettingsPage() {
   const open = useKoharuStore((state) => state.settingsOpen)
   const setOpen = useKoharuStore((state) => state.setSettingsOpen)
   const preferences = useKoharuStore((state) => state.preferences)
-  const translationModels = useKoharuStore((state) => state.translationModels)
+  const models = useKoharuStore((state) => state.models)
   const [tab, setTab] = useState<Tab>('appearance')
-  const [pipeline, setPipeline] = useState<PipelineConfig | null>(preferences?.pipeline ?? null)
-  const [providers, setProviders] = useState<ProviderSettings | null>(
-    preferences?.providers ?? null,
-  )
-  const [typesetting, setTypesetting] = useState<TypesettingConfig | null>(
-    preferences?.typesetting ?? null,
-  )
-  const translation = pipeline?.translation ?? null
+  const [draft, setDraft] = useState<Preferences | null>(preferences)
   const lastSaved = useRef<string | null>(null)
-  const lastSavedProviders = useRef<string | null>(null)
-  const saveGeneration = useRef(0)
-  const saveQueue = useRef<Promise<void>>(Promise.resolve())
-  const lastPending = useRef<{ serialized: string; promise: Promise<Preferences> } | null>(null)
-  const currentDraft = useRef<string | null>(null)
-  currentDraft.current =
-    pipeline && providers && typesetting ? JSON.stringify([pipeline, providers, typesetting]) : null
+  const pending = useRef<Promise<unknown>>(Promise.resolve())
 
-  const saveDraft = useCallback(
-    async (
-      pipeline: PipelineConfig,
-      providers: ProviderSettings,
-      typesetting: TypesettingConfig,
-    ) => {
-      const serialized = JSON.stringify([pipeline, providers, typesetting])
-      if (serialized === lastSaved.current) {
-        const pending = lastPending.current
-        if (pending?.serialized === serialized) await pending.promise
-        return
-      }
-      lastSaved.current = serialized
-      const serializedProviders = JSON.stringify(providers)
-      const providersChanged = serializedProviders !== lastSavedProviders.current
-      const generation = ++saveGeneration.current
-      const pending = saveQueue.current
-        .catch(() => undefined)
-        .then(() => savePreferences(pipeline, providers, typesetting))
-      lastPending.current = { serialized, promise: pending }
-      saveQueue.current = pending.then(
-        () => undefined,
-        () => undefined,
-      )
-      let saved: Preferences
-      try {
-        saved = await pending
-      } catch (error) {
-        if (lastSaved.current === serialized) lastSaved.current = null
-        throw error
-      }
-      if (generation !== saveGeneration.current || currentDraft.current !== serialized) return
-      receivePreferences(saved)
-      if (providersChanged) {
-        lastSavedProviders.current = serializedProviders
-        void refreshTranslationModels(true).catch(() => undefined)
-      }
-    },
-    [],
-  )
+  const saveDraft = useCallback((next: Preferences) => {
+    const serialized = JSON.stringify(next)
+    if (serialized === lastSaved.current) return pending.current
+    lastSaved.current = serialized
+    pending.current = savePreferences(next).catch((error: unknown) => {
+      if (lastSaved.current === serialized) lastSaved.current = null
+      throw error
+    })
+    return pending.current
+  }, [])
 
   useEffect(() => {
     if (!open) return
     void refreshPreferences().catch(() => undefined)
-    void refreshTranslationModels().catch(() => undefined)
+    void refreshModels().catch(() => undefined)
   }, [open])
 
   useEffect(() => {
-    if (!open) return
-    setPipeline(preferences?.pipeline ?? null)
-    setProviders(preferences?.providers ?? null)
-    setTypesetting(preferences?.typesetting ?? null)
-    if (preferences) {
-      lastSaved.current = JSON.stringify([
-        preferences.pipeline,
-        preferences.providers,
-        preferences.typesetting,
-      ])
-      lastSavedProviders.current = JSON.stringify(preferences.providers)
-    }
+    if (!open || !preferences) return
+    const serialized = JSON.stringify(preferences)
+    // The file's state replaces the draft only when it isn't this draft's own save coming back.
+    if (serialized === lastSaved.current) return
+    lastSaved.current = serialized
+    setDraft(preferences)
   }, [open, preferences])
 
   useEffect(() => {
-    if (!open || !pipeline || !providers || !typesetting) return
-    const serialized = JSON.stringify([pipeline, providers, typesetting])
-    if (serialized === lastSaved.current) return
-    const timeout = window.setTimeout(() => {
-      void saveDraft(pipeline, providers, typesetting).catch(() => undefined)
-    }, 260)
+    if (!open || !draft) return
+    if (JSON.stringify(draft) === lastSaved.current) return
+    const timeout = window.setTimeout(() => void saveDraft(draft).catch(() => undefined), 260)
     return () => window.clearTimeout(timeout)
-  }, [open, pipeline, providers, saveDraft, typesetting])
+  }, [draft, open, saveDraft])
 
   if (!open) return null
 
@@ -172,11 +91,11 @@ export function SettingsPage() {
           variant='ghost'
           className='mb-5 h-9 justify-start gap-2 rounded-lg px-2 text-[12px] text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
           onClick={() => {
-            if (!pipeline || !providers || !typesetting) {
+            if (!draft) {
               setOpen(false)
               return
             }
-            void saveDraft(pipeline, providers, typesetting)
+            void saveDraft(draft)
               .then(() => setOpen(false))
               .catch(() => undefined)
           }}
@@ -209,46 +128,26 @@ export function SettingsPage() {
         <ScrollArea className='min-h-0 flex-1'>
           <div className='mx-auto w-full max-w-4xl px-10 py-10'>
             {tab === 'appearance' && <AppearancePreferences />}
-            {tab === 'pipeline' &&
-              (pipeline ? (
-                <PipelinePreferences value={pipeline} onChange={setPipeline} />
-              ) : (
-                <LoadingPreferences />
-              ))}
-            {tab === 'providers' &&
-              (providers ? (
-                <ProviderPreferences value={providers} onChange={setProviders} />
-              ) : (
-                <LoadingPreferences />
-              ))}
-            {tab === 'translation' &&
-              (translation ? (
-                <TranslationPreferences
-                  value={translation}
-                  modelChoices={translationModels}
-                  providers={providers?.entries ?? []}
-                  languages={preferences?.languages ?? []}
-                  onChange={(translation) =>
-                    setPipeline((current) => (current ? { ...current, translation } : current))
-                  }
-                />
-              ) : (
-                <LoadingPreferences />
-              ))}
-            {tab === 'models' &&
-              (providers ? (
-                <LocalModelPreferences value={providers} onChange={setProviders} />
-              ) : (
-                <LoadingPreferences />
-              ))}
-            {tab === 'typesetting' &&
-              (typesetting ? (
-                <TypesettingPreferences value={typesetting} onChange={setTypesetting} />
-              ) : (
-                <LoadingPreferences />
-              ))}
-            {tab === 'features' && <FeaturesPreferences />}
-            {tab === 'shortcuts' && <ShortcutPreferences />}
+            {tab !== 'appearance' && !draft && <LoadingPreferences />}
+            {tab === 'pipeline' && draft && (
+              <PipelinePreferences
+                value={draft.pipeline}
+                models={models}
+                onChange={(pipeline) => setDraft({ ...draft, pipeline })}
+              />
+            )}
+            {tab === 'providers' && draft && (
+              <ProviderPreferences
+                value={draft.providers}
+                onChange={(providers) => setDraft({ ...draft, providers })}
+              />
+            )}
+            {tab === 'typesetting' && draft && (
+              <TypesettingPreferences
+                value={draft.renderer}
+                onChange={(renderer) => setDraft({ ...draft, renderer })}
+              />
+            )}
           </div>
         </ScrollArea>
       </main>
@@ -279,66 +178,65 @@ function AppearancePreferences() {
           description={t('settings.appearance.themeDescription')}
         >
           <div className='grid grid-cols-3 rounded-xl border border-input bg-background p-0.5'>
-            {themes.map(([value, Icon]) => (
-              <Button
-                key={value}
-                type='button'
-                variant='ghost'
-                size='sm'
-                data-active={theme === value}
-                className='h-9 gap-1.5 text-[10px] text-muted-foreground hover:text-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:hover:bg-primary/90 data-[active=true]:hover:text-primary-foreground'
-                onClick={() => setTheme(value)}
-              >
-                <Icon className='size-3.5' /> {t(`settings.appearance.themes.${value}`)}
-              </Button>
-            ))}
+            {themes.map(([value, Icon]) => {
+              // The ghost variant's dark hover outranks any active override, so the
+              // chosen theme is a default button instead.
+              const active = theme === value
+              return (
+                <Button
+                  key={value}
+                  type='button'
+                  variant={active ? 'default' : 'ghost'}
+                  size='sm'
+                  className={
+                    active
+                      ? 'h-9 gap-1.5 text-[10px]'
+                      : 'h-9 gap-1.5 text-[10px] text-muted-foreground'
+                  }
+                  onClick={() => setTheme(value)}
+                >
+                  <Icon className='size-3.5' /> {t(`settings.appearance.themes.${value}`)}
+                </Button>
+              )
+            })}
           </div>
         </PreferenceRow>
         <PreferenceRow
           title={t('settings.appearance.colorTheme')}
           description={t('settings.appearance.colorThemeDescription')}
-          align='start'
         >
-          <div
-            role='radiogroup'
-            aria-label={t('settings.appearance.colorTheme')}
-            className='grid grid-cols-2 gap-2'
+          <Select
+            value={colorTheme}
+            items={Object.fromEntries(
+              colorThemes.map((id) => [id, t(`settings.appearance.colorThemes.${id}`)]),
+            )}
+            onValueChange={(id) => {
+              const selected = colorThemes.find((theme) => theme === id)
+              if (selected) setPreference('colorTheme', selected)
+            }}
           >
-            {colorThemes.map((id) => (
-              <Button
-                key={id}
-                type='button'
-                variant='ghost'
-                role='radio'
-                aria-checked={colorTheme === id}
-                data-active={colorTheme === id}
-                className='h-auto flex-col items-stretch gap-2 rounded-xl border border-border p-1.5 text-left hover:bg-foreground/[0.04] data-[active=true]:border-primary data-[active=true]:ring-2 data-[active=true]:ring-primary/20'
-                onClick={() => setPreference('colorTheme', id)}
-              >
-                {/* The preview carries the theme itself, so it shows the real tokens in the current mode. */}
-                <span
-                  data-palette={id}
-                  aria-hidden='true'
-                  className='grid h-16 grid-cols-[14px_1fr] grid-rows-[10px_1fr] overflow-hidden rounded-lg border border-border bg-[var(--surface-titlebar)]'
-                >
-                  <span className='col-span-2' />
-                  <span />
-                  <span className='flex flex-col gap-1.5 rounded-tl-md bg-[var(--surface-canvas)] p-2'>
-                    <span className='h-1.5 w-12 rounded-full bg-foreground/70' />
-                    <span className='h-1.5 w-8 rounded-full bg-muted-foreground/50' />
-                    <span className='mt-auto flex gap-1'>
-                      <span className='h-3 w-9 rounded-sm bg-primary' />
-                      <span className='h-3 w-6 rounded-sm bg-accent' />
-                    </span>
+            <SelectTrigger
+              aria-label={t('settings.appearance.colorTheme')}
+              className='h-8 w-full text-[11px]'
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {colorThemes.map((id) => (
+                <SelectItem key={id} value={id}>
+                  <span
+                    data-palette={id}
+                    aria-hidden='true'
+                    className='flex gap-0.5 rounded border border-border bg-background p-0.5'
+                  >
+                    <span className='size-2.5 rounded-sm bg-primary' />
+                    <span className='size-2.5 rounded-sm bg-accent' />
                   </span>
-                </span>
-                <span className='flex items-center justify-between gap-2 px-1 pb-0.5 text-[11px] font-medium text-foreground'>
-                  <span className='truncate'>{t(`settings.appearance.colorThemes.${id}`)}</span>
-                  {colorTheme === id && <Check className='size-3.5 shrink-0 text-primary' />}
-                </span>
-              </Button>
-            ))}
-          </div>
+                  {t(`settings.appearance.colorThemes.${id}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </PreferenceRow>
         <PreferenceRow
           title={t('settings.appearance.animations')}
@@ -377,70 +275,7 @@ function AppearancePreferences() {
   )
 }
 
-function ShortcutPreferences() {
-  const { t } = useTranslation()
-  const shortcuts = useKoharuStore((state) => state.shortcuts)
-  const setShortcut = useKoharuStore((state) => state.setShortcut)
-  const row = (action: ShortcutAction) => (
-    <PreferenceRow key={action} title={t(shortcutKeys[action])}>
-      <Input
-        aria-label={t('settings.shortcuts.inputLabel', { action: t(shortcutKeys[action]) })}
-        maxLength={1}
-        value={shortcuts[action]}
-        className='ml-auto h-8 w-14 text-center text-[12px] uppercase'
-        onChange={(event) => setShortcut(action, event.currentTarget.value)}
-      />
-    </PreferenceRow>
-  )
-  const actions: ShortcutAction[] = [
-    'select',
-    'text',
-    'shape',
-    'draw',
-    'fill',
-    'eraser',
-    'color_picker',
-    'remove',
-    'manual_ocr_box',
-    'manual_ocr_lasso',
-    'manual_ocr_clean',
-    'pan',
-    'fit',
-  ]
-  return (
-    <PreferencePage
-      title={t('settings.shortcuts.title')}
-      description={t('settings.shortcuts.description')}
-    >
-      <PreferenceSection title={t('settings.shortcuts.tools')}>
-        {actions.map(row)}
-      </PreferenceSection>
-      <PreferenceSection title={t('settings.shortcuts.pages')}>
-        {(['previous_page', 'next_page'] as const).map(row)}
-      </PreferenceSection>
-    </PreferencePage>
-  )
-}
-
 function LoadingPreferences() {
   const { t } = useTranslation()
   return <p className='py-10 text-[12px] text-muted-foreground'>{t('settings.loading')}</p>
-}
-
-const shortcutKeys: Record<ShortcutAction, string> = {
-  select: 'tools.select',
-  text: 'tools.text',
-  shape: 'tools.shape',
-  draw: 'tools.draw',
-  fill: 'tools.fill',
-  eraser: 'tools.eraser',
-  color_picker: 'tools.color_picker',
-  remove: 'tools.remove',
-  manual_ocr_box: 'tools.manual_ocr_box',
-  manual_ocr_lasso: 'tools.manual_ocr_lasso',
-  manual_ocr_clean: 'tools.manual_ocr_clean',
-  pan: 'tools.pan',
-  fit: 'canvas.fit',
-  previous_page: 'settings.shortcuts.previousPage',
-  next_page: 'settings.shortcuts.nextPage',
 }

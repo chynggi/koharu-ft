@@ -4,13 +4,11 @@
     "packages/*"
   ],
   "scripts": {
-    "release": "bun tauri build && cargo build --release -p koharu -j 6",
     "tauri": "cargo tauri",
-    "postinstall": "cargo install tauri-cli --git https://github.com/chynggi/tauri --rev af7fedb9cf1e837b2b1dda5457ddffd5f9ed130c --locked",
+    "postinstall": "cargo install tauri-cli --git https://github.com/tauri-apps/tauri --rev 17a527316d3aee46f7185c178d3b3122d8ebfd7b --locked",
     "predev": "kill-port 3000",
     "dev": "cargo tauri dev",
     "build": "cargo tauri build --no-bundle",
-    "build:linux": "bash scripts/build-linux.sh",
     "docs": "bun run --filter @koharu/docs dev",
     "lint": "bun run --filter '@koharu/*' lint",
     "test": "bun run --filter @koharu/app test",
@@ -32,7 +30,7 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "react": "^19.3.0",
+    "react": "^19.3.1",
     "sharp": "^0.35.5"
   }
 }

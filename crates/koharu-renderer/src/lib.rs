@@ -1,30 +1,17 @@
-//! Retained rendering of one semantic Koharu page.
+//! Renders Koharu scene pages with vello: layout, retained layer content,
+//! and the GPU passes that draw it.
 
-mod bubble;
 mod config;
-mod error;
-mod fonts;
+pub mod fonts;
 mod frame;
-mod images;
-mod layout;
+mod gpu;
+mod pixels;
 mod renderer;
 mod script;
-mod segment;
-mod shape;
-// Public because Task 7 rasterizes shapes from `koharu-app` through
-// `koharu_renderer::shape_renderer::{shape_frame, shape_layer_path}`.
-pub mod shape_renderer;
-mod text_renderer;
-mod types;
+mod text;
 
-pub use config::TypesettingConfig;
-pub use error::{Error, Result};
-pub use frame::{
-    Frame, ImageKind, ImageMetadata, Layer, LayerKind, Presentation, RasterImage, RenderBounds,
-    RenderDependency, RenderDiagnostic, RetentionStats, ShapeMetadata, TextMetadata,
-};
-pub use layout::WritingMode;
+pub use config::RendererConfig;
+pub use frame::{Drawn, Frame, Raster};
+pub use gpu::{Drawing, Gpu};
 pub use renderer::Renderer;
-pub use types::{FontFace, FontFamily, FontMetadata, FontRange, FontSource, FontStyle, TextAlign};
-
-pub(crate) use layout::{HyphenationPolicy, LayoutRun, TextLayout};
+pub use text::{Label, Lettering, ResolvedText, TextRun};

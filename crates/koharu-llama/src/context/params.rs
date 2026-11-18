@@ -1,4 +1,4 @@
-﻿//! A safe wrapper around `llama_context_params`.
+//! A safe wrapper around `llama_context_params`.
 mod get_set;
 
 /// A rusty wrapper around `rope_scaling_type`.
@@ -118,43 +118,6 @@ impl From<LlamaAttentionType> for i32 {
             LlamaAttentionType::Causal => 0,
             LlamaAttentionType::NonCausal => 1,
             LlamaAttentionType::Unspecified => -1,
-        }
-    }
-}
-
-/// A rusty wrapper around `llama_flash_attn_type`.
-#[repr(i8)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub enum LlamaFlashAttentionType {
-    /// llama.cpp decides per backend and model.
-    #[default]
-    Auto = -1,
-    /// Flash attention is never used.
-    Disabled = 0,
-    /// Flash attention is requested; llama.cpp fails the context when the
-    /// backend cannot provide it.
-    Enabled = 1,
-}
-
-/// Create a `LlamaFlashAttentionType` from a `c_int` - returns
-/// `LlamaFlashAttentionType::Auto` if the value is not recognized.
-impl From<i32> for LlamaFlashAttentionType {
-    fn from(value: i32) -> Self {
-        match value {
-            0 => Self::Disabled,
-            1 => Self::Enabled,
-            _ => Self::Auto,
-        }
-    }
-}
-
-/// Create a `c_int` from a `LlamaFlashAttentionType`.
-impl From<LlamaFlashAttentionType> for i32 {
-    fn from(value: LlamaFlashAttentionType) -> Self {
-        match value {
-            LlamaFlashAttentionType::Disabled => 0,
-            LlamaFlashAttentionType::Enabled => 1,
-            LlamaFlashAttentionType::Auto => -1,
         }
     }
 }
@@ -317,18 +280,6 @@ impl From<koharu_llama_sys::ggml_type> for KvCacheType {
 /// A safe wrapper around `llama_context_params`.
 ///
 /// Generally this should be created with [`Default::default()`] and then modified with `with_*` methods.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// # use std::num::NonZeroU32;
-/// # use koharu_llama::context::params::LlamaContextParams;
-///
-/// let ctx_params = LlamaContextParams::default()
-///     .with_n_ctx(NonZeroU32::new(2048));
-///
-/// assert_eq!(ctx_params.n_ctx(), NonZeroU32::new(2048));
-/// ```
 #[derive(Debug, Clone)]
 #[allow(
     missing_docs,
@@ -344,13 +295,6 @@ unsafe impl Send for LlamaContextParams {}
 unsafe impl Sync for LlamaContextParams {}
 
 /// Default parameters for `LlamaContext`. (as defined in llama.cpp by `llama_context_default_params`)
-/// ```no_run
-/// # use std::num::NonZeroU32;
-/// # use koharu_llama::context::params::{LlamaContextParams, RopeScalingType};
-/// let params = LlamaContextParams::default();
-/// assert_eq!(params.n_ctx(), NonZeroU32::new(512), "n_ctx should be 512");
-/// assert_eq!(params.rope_scaling_type(), RopeScalingType::Unspecified);
-/// ```
 impl Default for LlamaContextParams {
     fn default() -> Self {
         let context_params = unsafe { koharu_llama_sys::llama_context_default_params() };

@@ -3,197 +3,172 @@
 import { create } from 'zustand'
 
 import type {
-  CanvasState,
-  Download,
-  EntityId,
-  Job,
+  Bounds,
+  ExportProgress,
+  LayerId,
   Model,
-  Frame,
+  PageId,
+  PipelineEvent,
   Preferences,
+  Rgba,
+  RunId,
+  Size,
+  RampAlong,
   Stage,
-  StartupState,
-  ModelResources,
-  PageSize,
-  ShapeStyle,
-  BrushRamp,
-} from '@koharu/bridge/protocol'
+  Tool,
+  Transfer,
+  Typed,
+} from '@koharu/ipc/protocol'
 import { toast } from '@koharu/ui/components/toast'
 
-import { defaultShapeStyle, type ShapeKind } from './shapes'
-
-export type CanvasTool =
-  | 'select'
-  | 'text'
-  | 'shape'
-  | 'draw'
-  | 'fill'
-  | 'eraser'
-  | 'color_picker'
-  | 'remove'
-  | 'manual_ocr_box'
-  | 'manual_ocr_lasso'
-  | 'manual_ocr_clean'
-  | 'pan'
+export type CanvasTool = Tool
 export const MIN_BRUSH_DIAMETER = 1
-export function maxBrushDiameter(size: PageSize): number {
+export function maxBrushDiameter(size: Size): number {
   // Assume that for all sizes below 2048 width, 128 is sufficient.
   // For anything above, scale by percentage greater than 2048 width.
   return Math.round(Math.max(size.width / 2048, 1.0) * 128)
 }
 
-export function isBrushTool(tool: CanvasTool): boolean {
-  return tool === 'draw' || tool === 'eraser' || tool === 'remove'
+/** Each tool's key, Photoshop's for its counterpart: the Move tool's V, the Direct Selection
+ * tool's A, the Type tool's T, the shape tools' U, the Brush's B, the Eraser's E, the Paint
+ * Bucket's G, the Eyedropper's I, the Remove tool's J, and the Hand's H. A key two tools share goes on to the next of them. */
+export const toolKeys: Record<CanvasTool, string> = {
+  select: 'v',
+  direct_select: 'a',
+  marquee: 'm',
+  lasso: 'l',
+  text: 't',
+  rectangle: 'u',
+  ellipse: 'u',
+  draw: 'b',
+  eraser: 'e',
+  bucket: 'g',
+  color_picker: 'i',
+  remove: 'j',
+  pan: 'h',
 }
 
 export interface CanvasBrush {
   diameter: number
   color: string
-  /**
-   * The ramp that replaces `color` while it is set. It is a command argument,
-   * not persisted state, so it survives only as long as this session's brush.
-   */
-  ramp: BrushRamp | null
+  /** The colour the draw tool fades to, and where; `null` paints one colour. */
+  ramp: { to: string; along: RampAlong } | null
 }
-export type InspectorSection = 'copy' | 'type' | 'layers'
-export type SidebarPanel = 'properties' | 'agent' | 'find'
-export type ShortcutAction = CanvasTool | 'fit' | 'previous_page' | 'next_page'
-export type Shortcuts = Record<ShortcutAction, string>
-export type PipelineScope = 'page' | 'selected-pages' | 'project'
-export const pipelineStages: readonly Stage[] = ['detection', 'ocr', 'translation', 'inpainting']
+
+/** Where the page shows: a page point `p` sits at `p * zoom + (x, y)` in CSS pixels from the
+ * canvas element's corner, as the native canvas publishes it. */
+export interface Camera {
+  zoom: number
+  x: number
+  y: number
+}
+
+/** The right pane's tabs. */
+export type Panel = 'layers' | 'story' | 'agent' | 'find'
+export type PipelineScope = 'selected-pages' | 'project'
+export const pipelineStages: readonly Stage[] = ['detect', 'recognize', 'inpaint', 'translate']
+
+/** A pipeline run as the activity center shows it, from the pipeline's events. */
+export interface Job {
+  id: RunId
+  state: 'running' | 'done' | 'failed' | 'stopped'
+  /** The page stages done, of `total`. */
+  completed: number
+  total: number
+  /** The stage started last, and its page. */
+  stage: Stage | null
+  page: PageId | null
+  error: string | null
+}
 
 interface KoharuStore {
   initialized: boolean
   preferences: Preferences | null
-  translationModels: Model[]
-  resources: ModelResources | null
+  models: Model[]
   jobs: Record<string, Job>
-  downloads: Record<string, Download>
-  camera: { zoom: number; translation: [number, number]; fitted: boolean }
-  canvasPage: EntityId | null
-  canvasRevision: number | null
-  canvasGeneration: number
-  canvasSize: [number, number]
-  fitCanvasRequest: number
-  layerFrames: Record<EntityId, Frame>
-  selectedLayers: EntityId[]
-  copiedTextLayers: EntityId[]
-  selectedPages: EntityId[]
+  downloads: Record<string, Transfer>
+  /** The export writing, by its pages written; `null` when none is. */
+  exporting: ExportProgress | null
+  camera: Camera
+  /** Where the canvas's selection lies on the page as it's laid out, a point text's lines
+   * included. */
+  selectionBounds: Bounds | null
+  /** Where the area the canvas's marquee and lasso marked lies on the page. */
+  area: Bounds | null
+  /** The text the canvas is typing into, and its selected characters' style. */
+  typing: Typed | null
+  /** The colour the canvas's picker picked last, numbered so a repeat counts. */
+  picked: { color: string; serial: number } | null
+  selectedLayers: LayerId[]
+  /** The selection the canvas has, so one it published isn't sent back to it. */
+  canvasSelection: LayerId[]
+  selectedPages: PageId[]
   tool: CanvasTool
   brush: CanvasBrush
-  // The bucket fill keeps its own colour: it is a different operation from
-  // painting, so sharing `brush.color` would make each tool silently retarget
-  // the other's colour.
-  fillColor: string
-  shapeKind: ShapeKind
-  shapeStyle: ShapeStyle
-  inspector: InspectorSection
+  /** The right pane's tab, which the canvas numbers the texts for while it's Story. */
+  panel: Panel
+  /** The text whose Story entry the pointer is over, outlined on the canvas. */
+  storyHover: LayerId | null
   processingScope: PipelineScope
   processingStages: Stage[]
   settingsOpen: boolean
-  sidebarPanel: SidebarPanel
-  shortcuts: Shortcuts
-  selectPages: (pages: EntityId[]) => void
-  showInspector: (section: InspectorSection) => void
+  /** Whether the History window shows over the canvas. */
+  historyOpen: boolean
+  selectPages: (pages: PageId[]) => void
+  showPanel: (panel: Panel) => void
+  setStoryHover: (layer: LayerId | null) => void
   setProcessingScope: (scope: PipelineScope) => void
   setProcessingStages: (stages: Stage[]) => void
   setSettingsOpen: (open: boolean) => void
-  setSidebarPanel: (panel: SidebarPanel) => void
-  selectLayers: (layers: EntityId[]) => void
-  setCopiedTextLayers: (layers: EntityId[]) => void
-  setTool: (tool: CanvasTool, cleanupLayer?: EntityId) => void
+  setHistoryOpen: (open: boolean) => void
+  selectLayers: (layers: LayerId[]) => void
+  setTool: (tool: CanvasTool) => void
   setBrush: (brush: CanvasBrush) => void
-  setFillColor: (color: string) => void
-  setShapeKind: (kind: ShapeKind) => void
-  setShapeStyle: (style: ShapeStyle) => void
-  setShortcut: (action: ShortcutAction, key: string) => void
-  requestCanvasFit: () => void
   dismissJob: (id: string) => void
   dismissDownload: (id: number) => void
-}
-
-export const defaultShortcuts: Shortcuts = {
-  select: 'v',
-  text: 't',
-  shape: 'r',
-  draw: 'b',
-  fill: 'g',
-  eraser: 'e',
-  color_picker: 'i',
-  remove: 'j',
-  manual_ocr_box: 'o',
-  manual_ocr_lasso: 'l',
-  manual_ocr_clean: 'k',
-  pan: 'h',
-  fit: '0',
-  previous_page: 'a',
-  next_page: 'd',
+  setExporting: (exporting: ExportProgress | null) => void
 }
 
 export const useKoharuStore = create<KoharuStore>()((set) => ({
   initialized: false,
   preferences: null,
-  translationModels: [],
-  resources: null,
+  models: [],
   jobs: {},
   downloads: {},
-  camera: { zoom: 1, translation: [0, 0], fitted: true },
-  canvasPage: null,
-  canvasRevision: null,
-  canvasGeneration: 0,
-  canvasSize: [0, 0],
-  fitCanvasRequest: 0,
-  layerFrames: {},
+  exporting: null,
+  camera: { zoom: 1, x: 0, y: 0 },
+  selectionBounds: null,
+  area: null,
+  typing: null,
+  picked: null,
   selectedLayers: [],
-  copiedTextLayers: [],
+  canvasSelection: [],
   selectedPages: [],
   tool: 'select',
   brush: { diameter: 48, color: '#FFFFFF', ramp: null },
-  fillColor: '#000000',
-  shapeKind: 'rectangle',
-  shapeStyle: defaultShapeStyle('rectangle'),
-  inspector: 'copy',
-  processingScope: 'selected-pages',
+  panel: 'layers',
+  storyHover: null,
+  processingScope: 'project',
   processingStages: [...pipelineStages],
   settingsOpen: false,
-  sidebarPanel: 'properties',
-  shortcuts: defaultShortcuts,
+  historyOpen: false,
   selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
-  showInspector: (inspector) => set({ inspector }),
+  showPanel: (panel) => set({ panel, storyHover: null }),
+  setStoryHover: (storyHover) => set({ storyHover }),
   setProcessingScope: (processingScope) => set({ processingScope }),
   setProcessingStages: (processingStages) => set({ processingStages }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  setSidebarPanel: (sidebarPanel) => set({ sidebarPanel }),
+  setHistoryOpen: (historyOpen) => set({ historyOpen }),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
-  setCopiedTextLayers: (copiedTextLayers) => set({ copiedTextLayers: [...copiedTextLayers] }),
-  // 붓·지우개로 넘어갈 때만 cleanup 레이어를 고른다. 다른 도구는 선택을 건드리지
-  // 않으므로 이전 상태를 읽을 필요가 없다.
-  setTool: (tool, cleanupLayer) =>
-    set({
-      tool,
-      ...(cleanupLayer && (tool === 'draw' || tool === 'eraser')
-        ? { selectedLayers: [cleanupLayer] }
-        : {}),
-    }),
-  // The whole brush object is replaced, so a caller that changes one field must
-  // spread the current brush. That is what keeps `ramp` alive when the colour
-  // picker samples a pixel, rather than silently dropping back to a flat stroke.
+  setTool: (tool) => set({ tool }),
   setBrush: (brush) => set({ brush }),
-  setFillColor: (fillColor) => set({ fillColor }),
-  // Each kind ships the style that can actually draw it, so switching to a line
-  // never leaves the fill-only style of a rectangle behind.
-  setShapeKind: (shapeKind) => set({ shapeKind, shapeStyle: defaultShapeStyle(shapeKind) }),
-  setShapeStyle: (shapeStyle) => set({ shapeStyle }),
-  setShortcut: (action, key) =>
-    set((state) => ({
-      shortcuts: { ...state.shortcuts, [action]: key.toLowerCase().slice(0, 1) },
-    })),
-  requestCanvasFit: () => set((state) => ({ fitCanvasRequest: state.fitCanvasRequest + 1 })),
   dismissJob: (id) =>
     set((state) => {
       const jobs = { ...state.jobs }
       delete jobs[id]
       return { jobs }
     }),
+  setExporting: (exporting) => set({ exporting }),
   dismissDownload: (id) =>
     set((state) => {
       const downloads = { ...state.downloads }
@@ -202,61 +177,97 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
     }),
 }))
 
-export function receiveStartupState(state: StartupState): void {
-  useKoharuStore.setState({
-    initialized: true,
-    preferences: state.preferences,
-    jobs: byId(state.jobs),
-    ...canvasSnapshot(state.canvas),
-  })
+/** Every run's events so far, as the editor loads. */
+export function receiveRuns(events: PipelineEvent[]): void {
+  const jobs: Record<string, Job> = {}
+  for (const event of events) jobs[String(event.run)] = fold(jobs[String(event.run)], event)
+  useKoharuStore.setState({ initialized: true, jobs })
 }
 
-export function receiveCanvas(canvas: CanvasState): void {
-  useKoharuStore.setState(canvasSnapshot(canvas))
+export function receivePipeline(event: PipelineEvent): void {
+  useKoharuStore.setState((state) => ({
+    jobs: { ...state.jobs, [String(event.run)]: fold(state.jobs[String(event.run)], event) },
+  }))
 }
 
-export function receiveJob(job: Job): void {
-  useKoharuStore.setState((state) => ({ jobs: { ...state.jobs, [job.id]: job } }))
+function fold(job: Job | undefined, event: PipelineEvent): Job {
+  const current: Job = job ?? {
+    id: event.run,
+    state: 'running',
+    completed: 0,
+    total: 0,
+    stage: null,
+    page: null,
+    error: null,
+  }
+  switch (event.kind) {
+    case 'queued':
+      return { ...current, total: event.steps }
+    case 'started':
+      return { ...current, stage: event.stage, page: event.page }
+    case 'finished':
+      return { ...current, completed: current.completed + 1 }
+    case 'ended':
+      // A failure names its own page and stage: the last started may be another page in flight.
+      return event.outcome.kind === 'failed'
+        ? {
+            ...current,
+            state: 'failed',
+            stage: event.outcome.stage,
+            page: event.outcome.page,
+            error: event.outcome.reason,
+          }
+        : { ...current, state: event.outcome.kind, error: null }
+  }
 }
 
-export function receiveDownload(download: Download): void {
+export function receiveDownload(download: Transfer): void {
   useKoharuStore.setState((state) => {
     const downloads = { ...state.downloads }
-    if (download.state === 'finished' || download.state === 'cancelled')
-      delete downloads[String(download.id)]
+    if (download.state === 'Finished') delete downloads[String(download.id)]
     else downloads[String(download.id)] = download
     return { downloads }
   })
+}
+
+/** A selection the canvas made. */
+export function receiveCanvasSelection(layers: LayerId[]): void {
+  useKoharuStore.setState({ selectedLayers: [...new Set(layers)], canvasSelection: layers })
+}
+
+export function receivePickedColor(color: string): void {
+  useKoharuStore.setState((state) => ({
+    picked: { color, serial: (state.picked?.serial ?? 0) + 1 },
+  }))
 }
 
 export function receivePreferences(preferences: Preferences): void {
   useKoharuStore.setState({ preferences })
 }
 
-export function receiveTranslationModels(translationModels: Model[]): void {
-  useKoharuStore.setState({ translationModels })
-}
-
-export function receiveResources(resources: ModelResources): void {
-  useKoharuStore.setState({ resources })
+export function receiveModels(models: Model[]): void {
+  useKoharuStore.setState({ models })
 }
 
 export function receiveError(message: string): void {
   toast.add({ type: 'error', title: 'Could not complete that action', description: message })
 }
 
-function canvasSnapshot(canvas: CanvasState) {
-  return {
-    canvasPage: canvas.page,
-    canvasRevision: canvas.revision,
-    canvasGeneration: canvas.generation,
-    canvasSize: canvas.size,
-    layerFrames: Object.fromEntries(
-      canvas.element_frames.map(({ element, frame }) => [element, frame]),
-    ),
-  }
+/** A CSS hex colour as the canvas's straight RGBA, from 0 to 1. */
+export function hexToRgba(hex: string): Rgba {
+  const value = hex.replace('#', '')
+  const channel = (start: number) => Number.parseInt(value.slice(start, start + 2), 16) / 255
+  return [channel(0), channel(2), channel(4), 1]
 }
 
-function byId<T extends { id: string | number }>(items: T[]): Record<string, T> {
-  return Object.fromEntries(items.map((item) => [String(item.id), item]))
+/** The canvas's RGBA as a CSS hex colour, its alpha left out. */
+export function rgbaToHex(color: Rgba): string {
+  return `#${color
+    .slice(0, 3)
+    .map((channel) =>
+      Math.round(Math.min(1, Math.max(0, channel)) * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`.toUpperCase()
 }

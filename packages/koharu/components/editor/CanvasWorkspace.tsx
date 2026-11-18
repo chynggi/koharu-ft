@@ -1,545 +1,203 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useColorSampling } from '@/components/controls/ColorSampling'
 import { CanvasCommandBar } from '@/components/editor/CanvasCommandBar'
-import { CanvasOverlay } from '@/components/editor/CanvasOverlay'
+import { FillBar } from '@/components/editor/FillBar'
+import { HistoryWindow } from '@/components/editor/HistoryWindow'
+import { ShapeBar } from '@/components/editor/ShapeBar'
 import { StatusBar } from '@/components/editor/StatusBar'
 import { ToolBar } from '@/components/editor/ToolBar'
-import { useCanvas } from '@/components/editor/useCanvas'
-import { call } from '@/lib/backend'
-import { rememberColor } from '@/lib/colorHistory'
-import { expandLayerSelection } from '@/lib/document'
-import {
-  controlFrame,
-  draftFrame,
-  frameInsideRect,
-  hitTestLayers,
-  pagePoint,
-  physicalPoint,
-  selectableLayer,
-  translateFrames,
-} from '@/lib/geometry'
-import {
-  copySelectedTextLayers,
-  duplicateSelectedTextLayers,
-  hasSelectedTextLayers,
-  pasteCopiedTextLayers,
-} from '@/lib/layerClipboard'
-import {
-  pageKey,
-  pagesKey,
-  preparedPageKey,
-  projectKey,
-  queryClient,
-  refresh,
-  usePage,
-  usePages,
-} from '@/lib/queries'
-import { shapeGeometry, shapePolygon, shapePreviewPath, type ShapeKind } from '@/lib/shapes'
-import {
-  isBrushTool,
-  maxBrushDiameter,
-  MIN_BRUSH_DIAMETER,
-  receiveError,
-  useKoharuStore,
-  type CanvasTool,
-} from '@/lib/store'
-import {
-  prefetchCanvasPages,
-  workspaceColor,
-  type CanvasColor,
-  type CanvasPath,
-} from '@koharu/bridge/canvas'
-import {
-  commands,
-  type BrushRamp,
-  type Frame,
-  type Point,
-  type ShapeStyle,
-  type TransformFrame,
-} from '@koharu/bridge/protocol'
-import { Button } from '@koharu/ui/components/button'
+import { TypeBar } from '@/components/editor/TypeBar'
+import { call, dispatch } from '@/lib/backend'
+import { usePage } from '@/lib/queries'
+import { copiedLayers, deleteSelection, duplicateLayers } from '@/lib/scene'
+import { hexToRgba, toolKeys, useKoharuStore, type CanvasTool } from '@/lib/store'
+import { commands, type LayerId, type PageId, type Rgba } from '@koharu/ipc/protocol'
 
-const BRUSH_DIAMETER_STEP = 4
-const arrowKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
-
-const canvasCursors = {
-  select: undefined,
-  text: 'text',
-  shape: 'crosshair',
-  draw: 'none',
-  fill: 'crosshair',
-  eraser: 'none',
-  color_picker: 'crosshair',
-  remove: 'none',
-  manual_ocr_box: 'crosshair',
-  manual_ocr_lasso: 'crosshair',
-  manual_ocr_clean: 'crosshair',
-  pan: 'grab',
-} as const satisfies Record<CanvasTool, string | undefined>
-
-// Freeform lasso points are sampled at this page-space spacing so the polygon
-// stays small enough to send without losing the drawn shape.
-const LASSO_POINT_SPACING = 8
-
-// A shape has to clear this drag before it becomes a layer, so a stray click
-// with the shape tool does not leave a degenerate rectangle behind.
-const SHAPE_MINIMUM_DRAG = 4
-
-type Gesture =
-  | { kind: 'pan'; pointer: number; start: Point; translation: [number, number] }
-  | { kind: 'brush_size'; pointer: number; start: Point; diameter: number }
-  | {
-      kind: 'select'
-      pointer: number
-      start: Point
-      current: Point
-      additive: boolean
-    }
-  | { kind: 'move'; pointer: number; start: Point; originals: TransformFrame[] }
-  | { kind: 'text'; pointer: number; start: Point; frame: Frame }
-  | {
-      kind: 'shape'
-      pointer: number
-      revision: number
-      start: Point
-      frame: Frame
-      shapeKind: ShapeKind
-      style: ShapeStyle
-    }
-  | { kind: 'manual_box'; pointer: number; start: Point; frame: Frame; clean: boolean }
-  | { kind: 'lasso'; pointer: number; points: Point[] }
-  | StrokeGesture
-
-interface StrokeGesture {
-  kind: 'paint' | 'erase' | 'inpaint'
-  pointer: number
-  revision: number
-  layer: string | null
-  points: Point[]
-  diameter: number
-  color?: CanvasColor
-  /** Captured when the stroke begins so the commit matches the preview. */
-  ramp?: BrushRamp | null
-}
-
-interface CanvasView {
-  zoom: number
-  translation: [number, number]
-}
-
-interface StrokeUpdate {
-  kind: 'paint' | 'erase' | 'inpaint'
-  points: Point[]
-}
-
+/** The canvas's place in the window. The native canvas draws the page under the web interface
+ * wherever this element and its ancestors paint nothing, and takes the pointer there; the
+ * interface sets its tool, brush, and colours, and hears its camera and selection. */
 export function CanvasWorkspace() {
   const { t } = useTranslation()
   const surface = useRef<HTMLDivElement>(null)
-  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null)
-  const gesture = useRef<Gesture | null>(null)
-  const previousPageIndex = useRef<number | null>(null)
-  const spaceHeld = useRef(false)
-  const heldArrows = useRef(new Set<string>())
-  const nudgeTimer = useRef<number | null>(null)
-  const transformActive = useRef(false)
-  const transformRevision = useRef<number | null>(null)
-  const transformFinal = useRef<TransformFrame[]>([])
-  const commitPending = useRef(false)
-  const commandQueue = useRef<Promise<void>>(Promise.resolve())
-  const [previews, setPreviews] = useState<Record<string, Frame>>({})
-  const [selectionRect, setSelectionRect] = useState<Frame | null>(null)
-  const [draft, setDraft] = useState<Frame | null>(null)
-  const [lasso, setLasso] = useState<Point[] | null>(null)
-  const [hovered, setHovered] = useState<string | null>(null)
-  const [cursor, setCursor] = useState<Point | null>(null)
-  const colorSampling = useColorSampling()
-
   const page = usePage().data
-  const pages = usePages().data
-  const canvasPage = useKoharuStore((state) => state.canvasPage)
-  const canvasRevision = useKoharuStore((state) => state.canvasRevision)
-  const canvasGeneration = useKoharuStore((state) => state.canvasGeneration)
-  const canvasSize = useKoharuStore((state) => state.canvasSize)
-  const fitCanvasRequest = useKoharuStore((state) => state.fitCanvasRequest)
-  const layerFrames = useKoharuStore((state) => state.layerFrames)
   const tool = useKoharuStore((state) => state.tool)
   const brush = useKoharuStore((state) => state.brush)
-  const fillColor = useKoharuStore((state) => state.fillColor)
-  const selected = useKoharuStore((state) => state.selectedLayers)
-  const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const setTool = useKoharuStore((state) => state.setTool)
-  const setBrush = useKoharuStore((state) => state.setBrush)
-  const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
-  const canvasState = useCanvas(canvasElement, canvasRevision, canvasGeneration)
-  const canvas = canvasState.canvas
-  const pageId = page?.id
-  const pageWidth = canvasSize[0] || page?.size.width
-  const pageHeight = canvasSize[1] || page?.size.height
-  const activeRaster =
-    selected.length === 1
-      ? page?.layers.find((layer) => layer.id === selected[0] && layer.type === 'raster')
-      : undefined
-  const cleanupLayer = page?.layers.find(
-    (layer) => layer.type === 'raster' && layer.kind === 'cleanup',
-  )
-
-  const enqueue = useCallback(<Result,>(operation: () => Promise<Result>): Promise<Result> => {
-    const pending = commandQueue.current.then(operation)
-    commandQueue.current = pending.then(
-      () => undefined,
-      () => undefined,
-    )
-    return pending
-  }, [])
-
-  const transformUpdates = useFrameCommand((elements: TransformFrame[]) =>
-    canvas?.updateTransform(elements),
-  )
-  const strokeUpdates = useFrameCommand(
-    ({ points }: StrokeUpdate) => canvas?.extendStroke(points),
-    mergeStrokeUpdates,
-  )
-  const shapeUpdates = useFrameCommand((path: CanvasPath) => canvas?.updateShape(path))
-
-  const beginTransform = useCallback(
-    (elements: TransformFrame[]) => {
-      if (
-        !canvas ||
-        canvasRevision === null ||
-        !elements.length ||
-        transformActive.current ||
-        commitPending.current
-      )
-        return
-      transformUpdates.clear()
-      transformActive.current = true
-      transformRevision.current = canvasRevision
-      transformFinal.current = elements
-      setPreviews(Object.fromEntries(elements.map(({ element, frame }) => [element, frame])))
-      try {
-        canvas.beginTransform(elements)
-      } catch (error) {
-        transformActive.current = false
-        receiveError(errorMessage(error))
-      }
-    },
-    [canvas, canvasRevision, transformUpdates],
-  )
-
-  const updateTransform = useCallback(
-    (elements: TransformFrame[]) => {
-      if (!transformActive.current) return
-      transformFinal.current = elements
-      setPreviews(Object.fromEntries(elements.map(({ element, frame }) => [element, frame])))
-      transformUpdates.schedule(elements)
-    },
-    [transformUpdates],
-  )
-
-  const nudge = useCallback(() => {
-    if (!transformActive.current) return
-
-    const keys = heldArrows.current
-    const x = Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft'))
-    const y = Number(keys.has('ArrowDown')) - Number(keys.has('ArrowUp'))
-
-    if (x || y) {
-      updateTransform(translateFrames(transformFinal.current, { x, y }))
-    }
-  }, [updateTransform])
-
-  const finishTransform = useCallback(() => {
-    if (nudgeTimer.current !== null) window.clearTimeout(nudgeTimer.current)
-    nudgeTimer.current = null
-    heldArrows.current.clear()
-    if (!transformActive.current) return
-    transformUpdates.commit()
-    transformActive.current = false
-    const revision = transformRevision.current
-    const elements = transformFinal.current
-    transformRevision.current = null
-    try {
-      canvas?.finishTransform()
-    } catch (error) {
-      receiveError(errorMessage(error))
-      setPreviews({})
-      return
-    }
-    if (revision === null) {
-      canvas?.cancelTransform()
-      setPreviews({})
-      return
-    }
-    commitPending.current = true
-    void enqueue(() => call(commands.commitTransform, revision, elements))
-      .then((revision) => (revision === null ? undefined : refresh(projectKey, pagesKey, pageKey)))
-      .catch(() => canvas?.cancelTransform())
-      .finally(() => {
-        commitPending.current = false
-        setPreviews({})
-      })
-  }, [canvas, enqueue, transformUpdates])
-
-  const cancelGesture = useCallback(() => {
-    if (nudgeTimer.current !== null) window.clearTimeout(nudgeTimer.current)
-    nudgeTimer.current = null
-    heldArrows.current.clear()
-    const current = gesture.current
-    gesture.current = null
-    if (current?.kind === 'paint' || current?.kind === 'erase' || current?.kind === 'inpaint') {
-      strokeUpdates.clear()
-      canvas?.cancelStroke()
-    }
-    if (current?.kind === 'shape') {
-      shapeUpdates.clear()
-      canvas?.cancelShape()
-    }
-    if (current?.kind === 'brush_size') {
-      const { brush, setBrush } = useKoharuStore.getState()
-      setBrush({ ...brush, diameter: current.diameter })
-    }
-    if (transformActive.current) {
-      transformUpdates.clear()
-      transformActive.current = false
-      transformRevision.current = null
-      canvas?.cancelTransform()
-    }
-    setDraft(null)
-    setLasso(null)
-    setPreviews({})
-    setSelectionRect(null)
-  }, [canvas, shapeUpdates, strokeUpdates, transformUpdates])
-
-  const fitCanvas = useCallback(() => {
-    const element = surface.current
-    if (!element || !pageId || pageWidth === undefined || pageHeight === undefined) return
-    const bounds = element.getBoundingClientRect()
-    const dpr = window.devicePixelRatio
-    const next = containCamera(bounds.width * dpr, bounds.height * dpr, pageWidth, pageHeight)
-    useKoharuStore.setState({ camera: { ...next, fitted: true } })
-  }, [pageHeight, pageId, pageWidth])
-
-  const report = useCallback(() => {
-    const element = surface.current
-    if (!element || !canvas) return
-    const bounds = element.getBoundingClientRect()
-    canvas.resize(bounds.width, bounds.height, window.devicePixelRatio, workspaceColor())
-    if (useKoharuStore.getState().camera.fitted) fitCanvas()
-  }, [canvas, fitCanvas])
-
-  const setZoom = useCallback((zoom: number) => {
-    const element = surface.current
-    if (!element) return
-    const bounds = element.getBoundingClientRect()
-    const dpr = window.devicePixelRatio
-    const current = useKoharuStore.getState().camera
-    const center = { x: bounds.width * dpr * 0.5, y: bounds.height * dpr * 0.5 }
-    const pageX = (center.x - current.translation[0]) / current.zoom
-    const pageY = (center.y - current.translation[1]) / current.zoom
-    useKoharuStore.setState({
-      camera: {
-        zoom,
-        translation: [center.x - pageX * zoom, center.y - pageY * zoom],
-        fitted: false,
-      },
-    })
-  }, [])
+  const colorSampling = useColorSampling()
+  /** The layers Ctrl+C took, which Ctrl+V copies onto the page shown. */
+  const clipboard = useRef<{ page: PageId; layers: LayerId[] } | null>(null)
 
   useEffect(() => {
     const element = surface.current
     if (!element) return
+    const report = () => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      dispatch(commands.setViewport, x, y, width, height)
+    }
     report()
     const resize = new ResizeObserver(report)
-    const theme = new MutationObserver(report)
     resize.observe(element)
-    theme.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class', 'data-palette'],
-    })
     window.addEventListener('resize', report)
     window.visualViewport?.addEventListener('resize', report)
     return () => {
       resize.disconnect()
-      theme.disconnect()
       window.removeEventListener('resize', report)
       window.visualViewport?.removeEventListener('resize', report)
+      // Nothing to draw while the editor is away, as under the preferences.
+      dispatch(commands.setViewport, 0, 0, 0, 0)
     }
-  }, [report])
+  }, [])
 
-  // The camera reaches the canvas from the store, not from a render: a passive effect lands a
-  // frame late under continuous input and halves the presented rate.
+  useEffect(() => dispatch(commands.setTool, tool), [tool])
+  // The canvas numbers the texts and outlines their frames while Story shows.
+  const panel = useKoharuStore((state) => state.panel)
+  const storyHover = useKoharuStore((state) => state.storyHover)
+  useEffect(
+    () => dispatch(commands.setStory, { shown: panel === 'story', hovered: storyHover }),
+    [panel, storyHover],
+  )
+
+  useEffect(
+    () =>
+      dispatch(commands.setBrush, {
+        diameter: brush.diameter,
+        color: hexToRgba(brush.color),
+        ramp: brush.ramp && { to: hexToRgba(brush.ramp.to), along: brush.ramp.along },
+      }),
+    [brush],
+  )
+
   useEffect(() => {
-    if (!canvas) return
-    const apply = ({ zoom, translation }: CanvasView) => {
-      try {
-        canvas.setView(zoom, translation)
-      } catch (error) {
-        receiveError(errorMessage(error))
-      }
-    }
-    apply(useKoharuStore.getState().camera)
-    return useKoharuStore.subscribe((state, previous) => {
-      if (state.camera !== previous.camera) apply(state.camera)
+    const send = () =>
+      dispatch(commands.setColors, {
+        workspace: cssColor('--workspace-background'),
+        selection: cssColor('--canvas-selection'),
+      })
+    send()
+    const theme = new MutationObserver(send)
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-palette'],
     })
-  }, [canvas])
+    return () => theme.disconnect()
+  }, [])
+
+  // A selection the interface made reaches the canvas; one the canvas published doesn't go back.
+  useEffect(
+    () =>
+      useKoharuStore.subscribe((state, previous) => {
+        if (state.selectedLayers === previous.selectedLayers) return
+        if (sameLayers(state.selectedLayers, state.canvasSelection)) return
+        useKoharuStore.setState({ canvasSelection: state.selectedLayers })
+        dispatch(commands.select, state.selectedLayers)
+      }),
+    [],
+  )
 
   useEffect(() => {
-    if (
-      !pageId ||
-      canvasPage !== pageId ||
-      canvasState.generation !== canvasGeneration ||
-      canvasState.status !== 'ready' ||
-      !pages?.length
-    )
-      return
-    const index = pages.findIndex((candidate) => candidate.id === pageId)
-    if (index < 0) return
-    const previous = previousPageIndex.current
-    previousPageIndex.current = index
-    const direction = previous !== null && index < previous ? -1 : 1
-    const adjacent = pages[index + direction]?.id ?? pages[index - direction]?.id
-    if (adjacent) {
-      void prefetchCanvasPages([adjacent])
-        .then((prepared) => {
-          for (const page of prepared) {
-            queryClient.setQueryData(preparedPageKey(page.page.id), page)
-          }
-        })
-        .catch(() => undefined)
-    }
-  }, [canvasGeneration, canvasPage, canvasState.generation, canvasState.status, pageId, pages])
-
-  useEffect(() => {
-    fitCanvas()
-  }, [fitCanvas, fitCanvasRequest])
-
-  useEffect(() => cancelGesture, [cancelGesture, canvasGeneration, canvasRevision, page?.id, tool])
-
-  useEffect(() => {
-    // Text entry keeps every key. Other inputs, such as a slider or checkbox that keeps focus
-    // after a click, also keep their own keys (Space, arrows, Enter, Delete and modified
-    // shortcuts), but a bare tool key such as V or T means nothing to them, so it still switches
-    // tools. Treating every input as text entry left the tool shortcuts silently disabled until
-    // the canvas was clicked again (koharu#1181).
-    const textEntryTypes = new Set(['text', 'search', 'number', 'email', 'url', 'password', 'tel'])
-    const textEntry = (target: EventTarget | null) =>
-      (target instanceof HTMLInputElement && textEntryTypes.has(target.type)) ||
+    const editable = (target: EventTarget | null) =>
+      target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||
-      target instanceof HTMLSelectElement ||
       (target instanceof HTMLElement && target.isContentEditable)
-
-    const toolShortcut = (key: string) => {
-      const { shortcuts } = useKoharuStore.getState()
-      const lower = key.toLowerCase()
-      if (lower === shortcuts.fit) {
-        requestCanvasFit()
-        return
-      }
-      const next = (
-        [
-          'select',
-          'text',
-          'shape',
-          'draw',
-          'fill',
-          'eraser',
-          'color_picker',
-          'remove',
-          'manual_ocr_box',
-          'manual_ocr_lasso',
-          'manual_ocr_clean',
-          'pan',
-        ] as const
-      ).find((action) => shortcuts[action] === lower)
-      if (next) setTool(next, cleanupLayer?.id)
-    }
+    // The tool Space replaced, put back when it's released, as Photoshop's hand tool.
+    let held: CanvasTool | null = null
 
     const down = (event: KeyboardEvent) => {
       if (event.key === 'Alt') {
         event.preventDefault()
         return
       }
-      // A focused control or an IME composition that already handled the key keeps it.
-      if (event.defaultPrevented || event.isComposing || textEntry(event.target)) return
-      if (event.target instanceof HTMLInputElement) {
-        const modified = event.ctrlKey || event.metaKey || event.altKey
-        if (!modified && event.key.length === 1 && event.key !== ' ') toolShortcut(event.key)
-        return
-      }
+      if (editable(event.target)) return
       const state = useKoharuStore.getState()
       if (event.code === 'Space') {
-        spaceHeld.current = true
         event.preventDefault()
+        if (held === null && state.tool !== 'pan') {
+          held = state.tool
+          state.setTool('pan')
+        }
         return
       }
       const command = event.ctrlKey || event.metaKey
-      if (command && event.key.toLowerCase() === 'c') {
-        if (copySelectedTextLayers(page ?? undefined)) event.preventDefault()
-        return
-      }
-      if (command && event.key.toLowerCase() === 'v') {
-        if (useKoharuStore.getState().copiedTextLayers.length > 0 && page) {
-          event.preventDefault()
-          void pasteCopiedTextLayers(page).catch(() => undefined)
-        }
-        return
-      }
-      if (command && event.key.toLowerCase() === 'd') {
-        // Duplication only ever touches text layers, so a shape or raster
-        // selection must leave the browser's bookmark shortcut alone.
-        if (hasSelectedTextLayers(page ?? undefined)) {
-          event.preventDefault()
-          void duplicateSelectedTextLayers(page ?? undefined).catch(() => undefined)
-        }
-        return
-      }
       if (command && event.key.toLowerCase() === 'z') {
         event.preventDefault()
-        void call(event.shiftKey ? commands.redo : commands.undo)
-          .then(() => refresh(projectKey, pagesKey, pageKey))
-          .catch(() => undefined)
+        dispatch(event.shiftKey ? commands.redo : commands.undo)
         return
       }
       if (command && event.key.toLowerCase() === 'a' && page) {
         event.preventDefault()
-        selectLayers(page.layers.filter(selectableLayer).map((layer) => layer.id))
+        state.selectLayers(page.layers.map((layer) => layer.id))
         return
       }
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        state.selectedLayers.length > 0
-      ) {
+      if (command && event.key.toLowerCase() === 'c' && page) {
+        const layers = copiedLayers(state.selectedLayers, page.layers)
+        if (!layers.length) return
         event.preventDefault()
-        void call(commands.deleteLayers, state.selectedLayers)
-          .then(() => refresh(projectKey, pagesKey, pageKey))
+        clipboard.current = { page: page.id, layers }
+        return
+      }
+      // A paste onto the page copied from lands above each original, as Photoshop's Duplicate
+      // Layer (Ctrl+J) does; onto another page, at its top.
+      const copy = (layers: LayerId[], onto: PageId | null) => {
+        void call(duplicateLayers, layers, onto)
+          .then((copies) => useKoharuStore.getState().selectLayers(copies))
           .catch(() => undefined)
+      }
+      if (command && event.key.toLowerCase() === 'v' && page && clipboard.current) {
+        event.preventDefault()
+        const { page: from, layers } = clipboard.current
+        copy(layers, from === page.id ? null : page.id)
+        return
+      }
+      if (command && event.key.toLowerCase() === 'j' && page) {
+        const layers = copiedLayers(state.selectedLayers, page.layers)
+        if (!layers.length) return
+        event.preventDefault()
+        copy(layers, null)
+        return
+      }
+      // Photoshop's Deselect, of the area the marquee and the lasso marked.
+      if (command && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        dispatch(commands.deselect)
+        return
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedLayers.length) {
+        event.preventDefault()
+        dispatch(deleteSelection, state.selectedLayers, page?.layers ?? [])
+        return
+      }
+      // Photoshop's Fit on Screen.
+      if (command && event.key === '0') {
+        event.preventDefault()
+        dispatch(commands.fit)
         return
       }
       if (event.key === 'Escape') {
-        cancelGesture()
         colorSampling?.cancel()
-        selectLayers([])
+        state.selectLayers([])
         return
       }
-      toolShortcut(event.key)
+      if (command || event.altKey) return
+      const key = event.key.toLowerCase()
+      const keyed = (Object.keys(toolKeys) as CanvasTool[]).filter((tool) => toolKeys[tool] === key)
+      const next = keyed[(keyed.indexOf(state.tool) + 1) % keyed.length]
+      if (next) state.setTool(next)
     }
 
     const up = (event: KeyboardEvent) => {
       if (event.key === 'Alt') event.preventDefault()
-      if (event.code === 'Space') spaceHeld.current = false
-
-      if (heldArrows.current.delete(event.key) && heldArrows.current.size === 0) {
-        finishTransform()
+      if (event.code === 'Space' && held !== null) {
+        useKoharuStore.getState().setTool(held)
+        held = null
       }
     }
     const blur = () => {
-      spaceHeld.current = false
-      if (heldArrows.current.size) finishTransform()
-      cancelGesture()
+      if (held === null) return
+      useKoharuStore.getState().setTool(held)
+      held = null
     }
 
     window.addEventListener('keydown', down)
@@ -550,717 +208,24 @@ export function CanvasWorkspace() {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [
-    cancelGesture,
-    cleanupLayer?.id,
-    colorSampling,
-    finishTransform,
-    page,
-    requestCanvasFit,
-    selectLayers,
-    setTool,
-  ])
-
-  const clientPagePoint = (clientX: number, clientY: number) =>
-    pagePoint(
-      clientX,
-      clientY,
-      surface.current!.getBoundingClientRect(),
-      useKoharuStore.getState().camera,
-    )
-
-  const clientPhysicalPoint = (clientX: number, clientY: number) =>
-    physicalPoint(clientX, clientY, surface.current!.getBoundingClientRect())
-
-  const framesFor = (layers: string[]): TransformFrame[] =>
-    expandLayerSelection(page?.layers ?? [], layers).flatMap((id) => {
-      const layer = page?.layers.find((candidate) => candidate.id === id)
-      const frame = layer && selectableLayer(layer) ? controlFrame(layer, layerFrames) : null
-      return frame ? [{ element: id, frame }] : []
-    })
-
-  const moveGesture = (
-    pointer: number,
-    samples: ReadonlyArray<{ clientX: number; clientY: number }>,
-  ) => {
-    const current = gesture.current
-    const sample = samples.at(-1)
-    if (!page || !sample) return
-    const physical = clientPhysicalPoint(sample.clientX, sample.clientY)
-    setCursor(physical)
-    if (!current || current.pointer !== pointer) {
-      if (tool === 'select') {
-        setHovered(
-          hitTestLayers(page.layers, clientPagePoint(sample.clientX, sample.clientY), layerFrames)
-            ?.id ?? null,
-        )
-      }
-      return
-    }
-
-    if (current.kind === 'pan') {
-      const { zoom } = useKoharuStore.getState().camera
-      const bounds = surface.current!.getBoundingClientRect()
-      const dpr = window.devicePixelRatio
-      let translation: [number, number] = [
-        current.translation[0] + physical.x - current.start.x,
-        current.translation[1] + physical.y - current.start.y,
-      ]
-      translation = clampCameraTranslation(
-        translation,
-        zoom,
-        pageWidth ?? page.size.width,
-        pageHeight ?? page.size.height,
-        bounds.width * dpr,
-        bounds.height * dpr,
-        dpr,
-      )
-      useKoharuStore.setState({ camera: { zoom, translation, fitted: false } })
-      return
-    }
-
-    if (current.kind === 'brush_size') {
-      // The circle stays where the drag began and its edge follows the
-      // pointer, so the radius grows by the horizontal travel.
-      setCursor(current.start)
-      const { brush: currentBrush, camera } = useKoharuStore.getState()
-      const diameter = clamp(
-        Math.round(current.diameter + (2 * (physical.x - current.start.x)) / camera.zoom),
-        MIN_BRUSH_DIAMETER,
-        maxBrushDiameter(page.size),
-      )
-      if (diameter !== currentBrush.diameter) setBrush({ ...currentBrush, diameter })
-      return
-    }
-
-    const points = samples.map((value) => clientPagePoint(value.clientX, value.clientY))
-    const point = points.at(-1)!
-    if (current.kind === 'select') {
-      const x = Math.min(current.start.x, point.x)
-      const y = Math.min(current.start.y, point.y)
-      const width = Math.abs(point.x - current.start.x)
-      const height = Math.abs(point.y - current.start.y)
-
-      current.current = point
-      setSelectionRect({
-        x,
-        y,
-        width,
-        height,
-        angle_degrees: 0,
-      })
-    } else if (current.kind === 'move') {
-      updateTransform(
-        translateFrames(current.originals, {
-          x: point.x - current.start.x,
-          y: point.y - current.start.y,
-        }),
-      )
-    } else if (current.kind === 'text') {
-      current.frame = draftFrame(current.start, point)
-      setDraft(current.frame)
-    } else if (current.kind === 'shape') {
-      current.frame = draftFrame(current.start, point)
-      setDraft(current.frame)
-      shapeUpdates.schedule(shapePreviewPath(current.shapeKind, current.frame, current.style))
-    } else if (current.kind === 'manual_box') {
-      current.frame = draftFrame(current.start, point)
-      setDraft(current.frame)
-    } else if (current.kind === 'lasso') {
-      for (const sample of points) {
-        const last = current.points.at(-1)
-        if (!last || Math.hypot(sample.x - last.x, sample.y - last.y) >= LASSO_POINT_SPACING) {
-          current.points.push(sample)
-        }
-      }
-      setLasso([...current.points])
-    } else if (current.kind === 'paint' || current.kind === 'erase' || current.kind === 'inpaint') {
-      current.points.push(...points)
-      strokeUpdates.schedule({ kind: current.kind, points })
-    }
-  }
-
-  const finishGesture = () => {
-    const current = gesture.current
-    gesture.current = null
-    if (!current || !page) return
-    if (current.kind === 'select') {
-      const x = Math.min(current.start.x, current.current.x)
-      const y = Math.min(current.start.y, current.current.y)
-      const width = Math.abs(current.current.x - current.start.x)
-      const height = Math.abs(current.current.y - current.start.y)
-
-      const rect = { x, y, width, height }
-      const selectedInRect = page.layers
-        .filter(selectableLayer)
-        .filter((layer) => {
-          const frame = controlFrame(layer, layerFrames)
-          return frame ? frameInsideRect(frame, rect) : false
-        })
-        .map((layer) => layer.id)
-
-      selectLayers(
-        current.additive ? [...new Set([...selected, ...selectedInRect])] : selectedInRect,
-      )
-      setSelectionRect(null)
-    } else if (current.kind === 'move') {
-      finishTransform()
-    } else if (current.kind === 'text') {
-      const { zoom } = useKoharuStore.getState().camera
-      const pointText = current.frame.width < 4 / zoom && current.frame.height < 4 / zoom
-      setDraft(null)
-      void (
-        pointText
-          ? call(commands.addPointText, current.start)
-          : call(commands.addTextBox, current.frame)
-      )
-        .then((result) => {
-          selectLayers([result.layer])
-          return refresh(projectKey, pagesKey, pageKey)
-        })
-        .catch(() => undefined)
-    } else if (current.kind === 'shape') {
-      const frame = current.frame
-      setDraft(null)
-      // A click without a drag has no shape to draw, so it only cancels the
-      // preview the pointer-down started. The gate is the drag's actual length:
-      // a horizontal line and a vertical line each leave one axis at the
-      // `draftFrame` floor, and requiring both axes would silently discard the
-      // two most natural line gestures.
-      const { zoom } = useKoharuStore.getState().camera
-      if (Math.hypot(frame.width, frame.height) < SHAPE_MINIMUM_DRAG / zoom) {
-        shapeUpdates.clear()
-        canvas?.cancelShape()
-        return
-      }
-      // Flush the last drag position before the preview is frozen. `finishShape`
-      // marks it pending, and only the committed frame replaces it.
-      shapeUpdates.commit()
-      try {
-        canvas?.finishShape()
-      } catch (error) {
-        // The native edit stays active until it is cancelled, and its guard
-        // rejects every later edit while it is. Release it before reporting.
-        canvas?.cancelShape()
-        receiveError(errorMessage(error))
-        return
-      }
-      const points = shapePolygon(current.shapeKind, frame).points
-      commitPending.current = true
-      void enqueue(() =>
-        call(
-          commands.addShape,
-          current.revision,
-          page.id,
-          { points },
-          shapeGeometry(current.shapeKind, points),
-          current.style,
-          frame.angle_degrees,
-        ),
-      )
-        .then((result) => {
-          selectLayers([result.layer])
-          return refresh(projectKey, pagesKey, pageKey)
-        })
-        .catch(() => canvas?.cancelShape())
-        .finally(() => (commitPending.current = false))
-    } else if (current.kind === 'manual_box') {
-      const frame = current.frame
-      setDraft(null)
-      const { zoom } = useKoharuStore.getState().camera
-      if (frame.width < 4 / zoom || frame.height < 4 / zoom) return
-      const corners = [
-        { x: frame.x, y: frame.y },
-        { x: frame.x + frame.width, y: frame.y + frame.height },
-      ]
-      if (current.clean) {
-        void call(commands.cleanManualOcr, corners).catch(() => undefined)
-        return
-      }
-      void call(commands.manualOcr, corners)
-        .then((result) => {
-          selectLayers([result.layer])
-          return refresh(projectKey, pagesKey, pageKey)
-        })
-        .catch(() => undefined)
-    } else if (current.kind === 'lasso') {
-      const points = current.points
-      setLasso(null)
-      const bbox = points.length >= 3 ? boundsOf(points) : null
-      const { zoom } = useKoharuStore.getState().camera
-      if (!bbox || bbox.width < 4 / zoom || bbox.height < 4 / zoom) return
-      void call(commands.manualOcr, points)
-        .then((result) => {
-          selectLayers([result.layer])
-          return refresh(projectKey, pagesKey, pageKey)
-        })
-        .catch(() => undefined)
-    } else if (current.kind === 'paint' || current.kind === 'erase' || current.kind === 'inpaint') {
-      strokeUpdates.commit()
-      try {
-        canvas?.finishStroke()
-      } catch (error) {
-        receiveError(errorMessage(error))
-        return
-      }
-      const operation =
-        current.kind === 'paint'
-          ? enqueue(() =>
-              call(commands.commitPaint, current.revision, current.layer, current.points, {
-                diameter: current.diameter,
-                color: current.color!,
-                // The commit must carry the same ramp the preview drew with.
-                // Omitting it would ramp the screen and land flat in the document.
-                ramp: current.ramp ?? null,
-              }),
-            ).then((result) => {
-              selectLayers([result.layer])
-              return refresh(projectKey, pagesKey, pageKey)
-            })
-          : current.kind === 'erase'
-            ? enqueue(() =>
-                call(
-                  commands.commitErase,
-                  current.revision,
-                  current.layer!,
-                  current.points,
-                  current.diameter,
-                ),
-              ).then((result) => {
-                selectLayers([result.layer])
-                return refresh(projectKey, pagesKey, pageKey)
-              })
-            : enqueue(() =>
-                call(commands.commitInpaint, current.revision, current.points, current.diameter),
-              )
-      commitPending.current = true
-      void operation
-        .catch(() => canvas?.cancelStroke())
-        .finally(() => (commitPending.current = false))
-    }
-  }
+  }, [colorSampling, page])
 
   return (
-    <main className='relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-2xl bg-[var(--surface-canvas)]'>
+    <main className='relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-2xl'>
       <CanvasCommandBar />
       <div className='relative flex min-h-0 min-w-0 flex-1'>
         <ToolBar />
         <div
           ref={surface}
-          tabIndex={0}
-          aria-label={t('canvas.surface')}
-          aria-busy={page ? canvasState.status !== 'ready' : undefined}
-          className='relative min-h-0 min-w-0 flex-1 touch-none overflow-hidden bg-[rgb(var(--workspace-background-rgb))] outline-none'
-          style={{
-            cursor: page && canvasState.status === 'ready' ? canvasCursors[tool] : undefined,
-          }}
-          onKeyDown={(event) => {
-            const keys = heldArrows.current
-            if (
-              !arrowKeys.includes(event.key) ||
-              event.defaultPrevented ||
-              event.target !== event.currentTarget ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.altKey ||
-              event.shiftKey ||
-              canvasState.status != 'ready' ||
-              canvasPage !== pageId ||
-              gesture.current ||
-              (transformActive.current && keys.size === 0)
-            )
-              return
-
-            if (event.repeat || keys.has(event.key)) {
-              if (keys.has(event.key)) event.preventDefault()
-              return
-            }
-
-            if (keys.size === 0) {
-              beginTransform(
-                framesFor(
-                  selected.filter((id) =>
-                    page?.layers.some((layer) => layer.id === id && layer.type === 'text'),
-                  ),
-                ),
-              )
-              if (!transformActive.current) return
-            }
-            keys.add(event.key)
-            event.preventDefault()
-            nudge()
-            if (nudgeTimer.current === null) {
-              const repeat = () => {
-                nudgeTimer.current = null
-                if (heldArrows.current.size === 0 || !transformActive.current) return
-                nudge()
-                nudgeTimer.current = window.setTimeout(repeat, 30)
-              }
-              nudgeTimer.current = window.setTimeout(repeat, 300)
-            }
-          }}
-          onBlur={() => {
-            if (heldArrows.current.size) finishTransform()
-          }}
-
-          onContextMenu={(event) => event.preventDefault()}
-          onPointerDown={(event) => {
-            if (
-              !page ||
-              !canvas ||
-              canvasState.status !== 'ready' ||
-              canvasRevision === null ||
-              commitPending.current ||
-              event.button > 1
-            )
-              return
-            if (event.target instanceof Element && event.target.closest('[data-canvas-control]'))
-              return
-            event.currentTarget.focus()
-            event.currentTarget.setPointerCapture(event.pointerId)
-            const physical = clientPhysicalPoint(event.clientX, event.clientY)
-            const point = clientPagePoint(event.clientX, event.clientY)
-            setCursor(physical)
-
-            if (event.button === 0 && event.ctrlKey && event.altKey && isBrushTool(tool)) {
-              // Clip Studio's brush resize; Photoshop uses the same keys on macOS.
-              gesture.current = {
-                kind: 'brush_size',
-                pointer: event.pointerId,
-                start: physical,
-                diameter: brush.diameter,
-              }
-            } else if (event.button === 1 || tool === 'pan' || spaceHeld.current) {
-              gesture.current = {
-                kind: 'pan',
-                pointer: event.pointerId,
-                start: physical,
-                translation: useKoharuStore.getState().camera.translation,
-              }
-            } else if (tool === 'select') {
-              const target = hitTestLayers(page.layers, point, layerFrames)
-              const additive = event.shiftKey || event.ctrlKey || event.metaKey
-              if (!target) {
-                gesture.current = {
-                  kind: 'select',
-                  pointer: event.pointerId,
-                  start: point,
-                  current: point,
-                  additive,
-                }
-                setSelectionRect({
-                  x: point.x,
-                  y: point.y,
-                  width: 0,
-                  height: 0,
-                  angle_degrees: 0,
-                })
-                return
-              }
-              const next = additive
-                ? selected.includes(target.id)
-                  ? selected.filter((id) => id !== target.id)
-                  : [...selected, target.id]
-                : selected.includes(target.id)
-                  ? selected
-                  : [target.id]
-              selectLayers(next)
-              if (!next.includes(target.id)) return
-              const originals = framesFor(next)
-              if (!originals.length) return
-              gesture.current = { kind: 'move', pointer: event.pointerId, start: point, originals }
-              beginTransform(originals)
-            } else if (tool === 'text') {
-              const frame = draftFrame(point, point)
-              gesture.current = { kind: 'text', pointer: event.pointerId, start: point, frame }
-              setDraft(frame)
-            } else if (tool === 'manual_ocr_box' || tool === 'manual_ocr_clean') {
-              const frame = draftFrame(point, point)
-              gesture.current = {
-                kind: 'manual_box',
-                pointer: event.pointerId,
-                start: point,
-                frame,
-                clean: tool === 'manual_ocr_clean',
-              }
-              setDraft(frame)
-            } else if (tool === 'shape') {
-              const frame = draftFrame(point, point)
-              const current = useKoharuStore.getState()
-              const next: Gesture = {
-                kind: 'shape',
-                pointer: event.pointerId,
-                revision: canvasRevision,
-                start: point,
-                frame,
-                shapeKind: current.shapeKind,
-                style: current.shapeStyle,
-              }
-              setDraft(frame)
-              shapeUpdates.clear()
-              try {
-                canvas.beginShape(shapePreviewPath(next.shapeKind, frame, next.style))
-                gesture.current = next
-              } catch (error) {
-                receiveError(errorMessage(error))
-              }
-            } else if (tool === 'manual_ocr_lasso') {
-              gesture.current = { kind: 'lasso', pointer: event.pointerId, points: [point] }
-              setLasso([point])
-            } else if (tool === 'draw') {
-              strokeUpdates.clear()
-              const color = hexToRgba(brush.color)
-              // The ramp is snapshotted with the rest of the gesture: editing it
-              // mid-stroke must not make the preview and the commit disagree.
-              const ramp = brush.ramp
-              gesture.current = {
-                kind: 'paint',
-                pointer: event.pointerId,
-                revision: canvasRevision,
-                layer: activeRaster?.id ?? null,
-                points: [point],
-                diameter: brush.diameter,
-                color,
-                ramp,
-              }
-              try {
-                canvas.beginStroke({
-                  kind: 'paint',
-                  layer: activeRaster?.id ?? null,
-                  point,
-                  diameter: brush.diameter,
-                  color,
-                  ramp,
-                })
-              } catch (error) {
-                gesture.current = null
-                receiveError(errorMessage(error))
-              }
-            } else if (tool === 'eraser') {
-              if (!activeRaster) {
-                receiveError('Select a paint or cleanup layer before using the Eraser.')
-                return
-              }
-              strokeUpdates.clear()
-              gesture.current = {
-                kind: 'erase',
-                pointer: event.pointerId,
-                revision: canvasRevision,
-                layer: activeRaster.id,
-                points: [point],
-                diameter: brush.diameter,
-              }
-              try {
-                canvas.beginStroke({
-                  kind: 'erase',
-                  layer: activeRaster.id,
-                  point,
-                  diameter: brush.diameter,
-                })
-              } catch (error) {
-                gesture.current = null
-                receiveError(errorMessage(error))
-              }
-            } else if (tool === 'remove') {
-              strokeUpdates.clear()
-              gesture.current = {
-                kind: 'inpaint',
-                pointer: event.pointerId,
-                revision: canvasRevision,
-                layer: null,
-                points: [point],
-                diameter: brush.diameter,
-              }
-              try {
-                canvas.beginStroke({
-                  kind: 'inpaint',
-                  layer: null,
-                  point,
-                  diameter: brush.diameter,
-                })
-              } catch (error) {
-                gesture.current = null
-                receiveError(errorMessage(error))
-              }
-            } else if (tool === 'fill') {
-              // The command is raster-only. Without a single selected raster
-              // layer there is no legal target, and saying so on every click in
-              // empty space would be noise — the tool simply does nothing.
-              if (!activeRaster) return
-              const target = activeRaster.id
-              commitPending.current = true
-              void call(commands.fillRaster, canvasRevision, target, point, hexToRgba(fillColor))
-                .then(() => refresh(projectKey, pagesKey, pageKey))
-                .catch(() => undefined)
-                .finally(() => (commitPending.current = false))
-            } else if (tool === 'color_picker') {
-              void canvas
-                .sampleColor(physical)
-                .then((color) => {
-                  const hex = rgbaToHex(color)
-                  if (!colorSampling?.complete(hex)) {
-                    rememberColor(hex)
-                    setBrush({ ...brush, color: hex })
-                  }
-                })
-                .catch((error: unknown) => receiveError(errorMessage(error)))
-            }
-            event.preventDefault()
-          }}
-          onPointerDownCapture={(event) => {
-            if (heldArrows.current.size) {
-              event.preventDefault()
-              event.stopPropagation()
-            }
-          }}
-          onPointerMove={(event) => {
-            if (!page) return
-            const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
-            moveGesture(event.pointerId, coalesced.length ? coalesced : [event.nativeEvent])
-          }}
-          onPointerUp={(event) => {
-            moveGesture(event.pointerId, [event.nativeEvent])
-            finishGesture()
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-              event.currentTarget.releasePointerCapture(event.pointerId)
-            }
-          }}
-          onPointerCancel={() => cancelGesture()}
-          onPointerLeave={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
-              setHovered(null)
-              setCursor(null)
-            }
-          }}
-          onWheel={(event) => {
-            if (!page) return
-            event.preventDefault()
-            if (event.altKey && isBrushTool(tool)) {
-              if (event.deltaY !== 0) {
-                const currentBrush = useKoharuStore.getState().brush
-                const delta = event.deltaY < 0 ? BRUSH_DIAMETER_STEP : -BRUSH_DIAMETER_STEP
-                const nextDiameter = clamp(
-                  currentBrush.diameter + delta,
-                  MIN_BRUSH_DIAMETER,
-                  maxBrushDiameter(page.size),
-                )
-                if (nextDiameter !== currentBrush.diameter) {
-                  setBrush({ ...currentBrush, diameter: nextDiameter })
-                }
-              }
-              return
-            }
-            const point = clientPhysicalPoint(event.clientX, event.clientY)
-            const current = useKoharuStore.getState().camera
-            let zoom = current.zoom
-            let translation = current.translation
-            if (event.ctrlKey) {
-              zoom = clamp(current.zoom * Math.exp(-event.deltaY * 0.0015), 0.02, 16)
-              const pageX = (point.x - current.translation[0]) / current.zoom
-              const pageY = (point.y - current.translation[1]) / current.zoom
-              translation = [point.x - pageX * zoom, point.y - pageY * zoom]
-            } else {
-              const dpr = window.devicePixelRatio
-              let deltaX = event.deltaX
-              let deltaY = event.deltaY
-              if (event.shiftKey && deltaX === 0) {
-                deltaX = deltaY
-                deltaY = 0
-              }
-              translation = [
-                current.translation[0] - deltaX * dpr,
-                current.translation[1] - deltaY * dpr,
-              ]
-            }
-            const bounds = event.currentTarget.getBoundingClientRect()
-            const dpr = window.devicePixelRatio
-            translation = clampCameraTranslation(
-              translation,
-              zoom,
-              pageWidth ?? page.size.width,
-              pageHeight ?? page.size.height,
-              bounds.width * dpr,
-              bounds.height * dpr,
-              dpr,
-            )
-            useKoharuStore.setState({ camera: { zoom, translation, fitted: false } })
-          }}
+          data-testid='canvas-viewport'
+          // Clipped, never scrolled: a focused control past its edge would scroll it, and every
+          // overlay with it, off the canvas the overlays sit on.
+          className='relative min-h-0 min-w-0 flex-1 overflow-clip'
         >
-          {selectionRect &&
-            (() => {
-              // Every drag step sets `selectionRect` and re-renders, so reading the camera here
-              // keeps the rectangle current without subscribing the workspace to camera changes.
-              const { zoom, translation } = useKoharuStore.getState().camera
-              return (
-                <div
-                  data-testid='selection-rectangle'
-                  className='pointer-events-none absolute z-10 border border-[var(--canvas-selection)] bg-[var(--canvas-selection)]/10'
-                  style={{
-                    left: (selectionRect.x * zoom + translation[0]) / window.devicePixelRatio,
-                    top: (selectionRect.y * zoom + translation[1]) / window.devicePixelRatio,
-                    width: (selectionRect.width * zoom) / window.devicePixelRatio,
-                    height: (selectionRect.height * zoom) / window.devicePixelRatio,
-                  }}
-                />
-              )
-            })()}
-          <canvas
-            ref={setCanvasElement}
-            data-testid='webgpu-canvas'
-            aria-hidden
-            className='pointer-events-none absolute inset-0 block size-full'
-          />
-          {page && canvasState.status === 'ready' && (
-            <CanvasOverlay
-              page={page}
-              selected={selected}
-              hovered={hovered}
-              frames={layerFrames}
-              previews={previews}
-              draft={draft}
-              lasso={lasso}
-              cursor={cursor}
-              brushSize={brush.diameter}
-              showBrushCursor={isBrushTool(tool)}
-              onTransformStart={beginTransform}
-              onTransformFrame={updateTransform}
-              onTransformEnd={finishTransform}
-            />
-          )}
-          {page && canvasState.status === 'error' && (
-            <div
-              role='alert'
-              className={
-                canvasState.hasFrame
-                  ? 'absolute inset-x-0 top-3 z-20 flex justify-center px-3'
-                  : 'absolute inset-0 z-20 grid place-items-center bg-[var(--surface-canvas)]/90 p-6'
-              }
-            >
-              <div
-                className={
-                  canvasState.hasFrame
-                    ? 'flex max-w-sm flex-col items-center gap-2 rounded-md border border-border bg-popover/95 p-3 text-center shadow-sm'
-                    : 'flex max-w-sm flex-col items-center gap-2 text-center'
-                }
-              >
-                <p className='text-sm font-medium text-foreground'>{t('canvas.unavailable')}</p>
-                {canvasState.error && (
-                  <p className='text-xs leading-relaxed text-muted-foreground'>
-                    {canvasState.error.message}
-                  </p>
-                )}
-                <Button
-                  data-canvas-control
-                  size='sm'
-                  variant='outline'
-                  className='mt-1'
-                  onClick={canvasState.retry}
-                >
-                  {t('errors.tryAgain')}
-                </Button>
-              </div>
-            </div>
-          )}
+          {page && <TypeBar />}
+          {page && <ShapeBar />}
+          {page && <FillBar />}
+          {page && <HistoryWindow />}
           {!page && (
             <div className='pointer-events-none absolute inset-0 grid place-items-center'>
               <p className='text-[12px] text-muted-foreground'>{t('canvas.empty')}</p>
@@ -1268,156 +233,24 @@ export function CanvasWorkspace() {
           )}
         </div>
       </div>
-      <StatusBar onZoomChange={setZoom} />
+      <StatusBar onZoomChange={(zoom) => dispatch(commands.setZoom, zoom)} />
     </main>
   )
 }
 
-function hexToRgba(hex: string): [number, number, number, number] {
-  const value = hex.replace('#', '')
-  return [
-    Number.parseInt(value.slice(0, 2), 16),
-    Number.parseInt(value.slice(2, 4), 16),
-    Number.parseInt(value.slice(4, 6), 16),
-    255,
-  ]
+function sameLayers(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((layer, index) => layer === b[index])
 }
 
-function rgbaToHex(color: [number, number, number, number]): string {
-  return `#${color
-    .slice(0, 3)
-    .map((channel) => channel.toString(16).padStart(2, '0'))
-    .join('')}`.toUpperCase()
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value))
-}
-
-function boundsOf(points: Point[]): Frame {
-  const xs = points.map((point) => point.x)
-  const ys = points.map((point) => point.y)
-  const x = Math.min(...xs)
-  const y = Math.min(...ys)
-  return {
-    x,
-    y,
-    width: Math.max(...xs) - x,
-    height: Math.max(...ys) - y,
-    angle_degrees: 0,
-  }
-}
-
-function containCamera(
-  viewportWidth: number,
-  viewportHeight: number,
-  pageWidth: number,
-  pageHeight: number,
-): CanvasView {
-  if (viewportWidth <= 0 || viewportHeight <= 0 || pageWidth <= 0 || pageHeight <= 0) {
-    return { zoom: 1, translation: [0, 0] }
-  }
-  const zoom = Math.max(
-    Number.EPSILON,
-    Math.min(viewportWidth / pageWidth, viewportHeight / pageHeight),
-  )
-  return {
-    zoom,
-    translation: [
-      (viewportWidth - pageWidth * zoom) * 0.5,
-      (viewportHeight - pageHeight * zoom) * 0.5,
-    ],
-  }
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return typeof error === 'string' ? error : 'The WebGPU canvas returned an unknown error.'
-}
-
-function clampCameraTranslation(
-  translation: [number, number],
-  zoom: number,
-  pageWidth: number,
-  pageHeight: number,
-  viewportWidth: number,
-  viewportHeight: number,
-  dpr: number,
-): [number, number] {
-  const minOverlap = 100 * dpr
-  const minX = minOverlap - pageWidth * zoom
-  const minY = minOverlap - pageHeight * zoom
-  const maxX = viewportWidth - minOverlap
-  const maxY = viewportHeight - minOverlap
-
-  const x =
-    minX <= maxX ? clamp(translation[0], minX, maxX) : (viewportWidth - pageWidth * zoom) * 0.5
-  const y =
-    minY <= maxY ? clamp(translation[1], minY, maxY) : (viewportHeight - pageHeight * zoom) * 0.5
-  return [x, y]
-}
-
-function mergeStrokeUpdates(current: StrokeUpdate, next: StrokeUpdate): StrokeUpdate {
-  if (current.kind !== next.kind) return next
-  current.points.push(...next.points)
-  return current
-}
-
-function useFrameCommand<Value>(
-  execute: (value: Value) => void | Promise<unknown>,
-  merge?: (current: Value, next: Value) => Value,
-): FrameCommand<Value> {
-  const executeRef = useRef(execute)
-  executeRef.current = execute
-  const command = useRef<FrameCommand<Value> | null>(null)
-  command.current ??= new FrameCommand((value) => executeRef.current(value), merge)
-
-  useEffect(() => () => command.current?.clear(), [])
-  return command.current
-}
-
-class FrameCommand<Value> {
-  private pending: Value | undefined
-  private frame: number | null = null
-
-  constructor(
-    private readonly execute: (value: Value) => void | Promise<unknown>,
-    private readonly merge: (current: Value, next: Value) => Value = (_current, next) => next,
-  ) {}
-
-  schedule(value: Value): void {
-    this.pending = this.pending === undefined ? value : this.merge(this.pending, value)
-    if (this.frame !== null) return
-    this.frame = requestAnimationFrame(() => {
-      this.frame = null
-      this.executePending()
-    })
-  }
-
-  commit(): void {
-    if (this.frame !== null) {
-      cancelAnimationFrame(this.frame)
-      this.frame = null
-    }
-    this.executePending()
-  }
-
-  clear(): void {
-    if (this.frame !== null) cancelAnimationFrame(this.frame)
-    this.frame = null
-    this.pending = undefined
-  }
-
-  private executePending(): void {
-    const value = this.pending
-    if (value === undefined) return
-    this.pending = undefined
-    try {
-      void Promise.resolve(this.execute(value)).catch((error: unknown) =>
-        receiveError(errorMessage(error)),
-      )
-    } catch (error) {
-      receiveError(errorMessage(error))
-    }
-  }
+/** A theme colour, whatever CSS notation it's written in, as the canvas's RGBA. */
+function cssColor(variable: string): Rgba {
+  const probe = document.createElement('canvas')
+  probe.width = probe.height = 1
+  const context = probe.getContext('2d', { willReadFrequently: true })
+  if (!context) return [0, 0, 0, 1]
+  context.fillStyle =
+    getComputedStyle(document.documentElement).getPropertyValue(variable).trim() || '#000000'
+  context.fillRect(0, 0, 1, 1)
+  const [r = 0, g = 0, b = 0, a = 255] = context.getImageData(0, 0, 1, 1).data
+  return [r / 255, g / 255, b / 255, a / 255]
 }

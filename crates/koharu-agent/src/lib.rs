@@ -1,16 +1,13 @@
-//! Koharu's in-process agent, driven by Codex or a Chat Completions provider.
+//! Koharu's agent and its tools on an open project.
+
+// Proving a tool's future `Send` walks the renderer's wgpu types deeper than
+// the default 128.
+#![recursion_limit = "256"]
 
 mod agent;
-mod backend;
-mod chat;
-mod codex;
-mod config;
-mod control;
-mod tool;
+mod mcp;
+mod tools;
 
-pub use agent::{Agent, Event, Message, Role, RunId, RunResult};
-pub use backend::AgentModel;
-pub use codex::{Account, Codex, LoginEvent};
-pub use config::{Backend, Config, Reasoning};
-pub use control::Control;
-pub use tool::{Host, Invocation, Tool, ToolCall, ToolImage};
+pub use agent::{Agent, AgentConfig, Event};
+pub use mcp::McpServer;
+pub use tools::Tools;

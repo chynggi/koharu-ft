@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { queryClient } from '@/lib/queries'
-import { defaultShortcuts, useKoharuStore } from '@/lib/store'
+import { useKoharuStore } from '@/lib/store'
 
 vi.mock('react-i18next', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-i18next')>()
@@ -72,27 +72,24 @@ beforeEach(() => {
     ...initial,
     initialized: false,
     preferences: null,
-    translationModels: [],
-    resources: null,
+    models: [],
     jobs: {},
     downloads: {},
-    camera: { zoom: 1, translation: [0, 0], fitted: true },
-    canvasPage: null,
-    canvasRevision: null,
-    canvasGeneration: 0,
-    canvasSize: [0, 0],
-    fitCanvasRequest: 0,
-    layerFrames: {},
+    camera: { zoom: 1, x: 0, y: 0 },
+    selectionBounds: null,
+    typing: null,
+    picked: null,
     selectedLayers: [],
+    canvasSelection: [],
     selectedPages: [],
     tool: 'select',
     brush: { diameter: 48, color: '#FFFFFF', ramp: null },
-    inspector: 'copy',
-    processingScope: 'selected-pages',
-    processingStages: ['detection', 'ocr', 'translation', 'inpainting'],
+    panel: 'layers',
+    storyHover: null,
+    processingScope: 'project',
+    processingStages: ['detect', 'recognize', 'inpaint', 'translate'],
     settingsOpen: false,
-    sidebarPanel: 'properties',
-    shortcuts: defaultShortcuts,
+    historyOpen: false,
   })
 })
 

@@ -3,19 +3,20 @@
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 mod mallinfo;
 
+use std::io::IsTerminal as _;
+
+use ::sentry::integrations::tracing::{BreadcrumbLayer, ErrorLayer, LogLayer, SpanLayer};
 use clap::Parser as _;
 use koharu::panic;
 use koharu::sentry;
-use koharu_app as app;
-use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::{Layer as _, filter::LevelFilter, layer::SubscriberExt as _};
 
 #[derive(clap::Parser)]
 #[command(version, about)]
 struct Cli {}
 
-#[tokio::main]
 #[tauri_runtime_cef::cef_entry_point]
-async fn main() {
+fn main() {
     #[cfg(target_os = "windows")]
     {
         // SAFETY: This only requests the existing parent console. It does not allocate one.
@@ -26,66 +27,45 @@ async fn main() {
         };
     }
 
-    let _cli = Cli::parse();
+    // First, before the runtime and the arguments: see `sentry::initialize`.
     let _guard = sentry::initialize();
+    let _cli = Cli::parse();
     panic::install();
-
-    // HTTP API + static frontend, served from the desktop process; the main
-    // window loads its UI from here. Port defaults to `DEFAULT_RPC_PORT` but
-    // can be overridden with `KOHARU_RPC_PORT`. The static frontend directory
-    // defaults to the workspace's exported `packages/koharu/out` (dev
-    // workflow) but can be overridden with `KOHARU_STATIC_DIR`.
-    // Must match `devUrl` and the main window's `url` in tauri.conf.json: the
-    // CEF window's initial navigation races the async browser-creation callback
-    // (window.navigate() silently no-ops if called before it), so the
-    // config-baked URL is what actually loads when KOHARU_RPC_PORT isn't
-    // overridden. In a production build `devUrl` is ignored and the window's
-    // `url` decides; that entry keeps the window on the koharu-rpc-served UI
-    // (and its relative `/api/v1`) instead of Tauri's built-in
-    // `tauri.localhost` static server, which has no API routes and answers
-    // every `/api/v1/*` request with `index.html`.
-    const DEFAULT_RPC_PORT: u16 = 47823;
-    let port = std::env::var("KOHARU_RPC_PORT")
-        .ok()
-        .and_then(|port| port.parse().ok())
-        .unwrap_or(DEFAULT_RPC_PORT);
-    let static_dir = std::env::var("KOHARU_STATIC_DIR")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/koharu/out")
-        });
-    // Defaults to loopback-only, matching the desktop window's own connection.
-    // Set KOHARU_RPC_HOST=0.0.0.0 (e.g. inside a container) to accept remote
-    // connections; KOHARU_API_TOKEN is then required by the server for every
-    // /api/v1/* request (see koharu_rpc::api::require_token) to avoid exposing
-    // provider secrets and project data with no authentication.
-    let host = std::env::var("KOHARU_RPC_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let api_token = std::env::var("KOHARU_API_TOKEN").ok();
-    if host != "127.0.0.1" && api_token.is_none() {
-        panic!(
-            "KOHARU_RPC_HOST is set to a non-loopback address ({host}) but KOHARU_API_TOKEN is \
-             unset; refusing to expose the API without authentication"
-        );
-    }
-    koharu_app::extend_setup(move |handle| {
-        koharu_rpc::serve(handle, &host, port, Some(static_dir), api_token)
-    });
-    let frontend_url: tauri::Url = format!("http://127.0.0.1:{port}/")
-        .parse()
-        .expect("the generated frontend URL is always valid");
-
     tracing::subscriber::set_global_default(
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::filter::EnvFilter::builder()
                     .with_default_directive(tracing::Level::INFO.into())
-                    .from_env_lossy(),
+                    .from_env_lossy()
+                    // Tauri runs an async command inside its own DEBUG span,
+                    // made where the commands are dispatched; it carries the
+                    // command's span, and with it the interface's trace, into
+                    // the command's task.
+                    .add_directive(
+                        "koharu_desktop::commands=debug"
+                            .parse()
+                            .expect("the directive parses"),
+                    )
+                    // The `cef` crate's texture importer logs every frame.
+                    .add_directive("cef=warn".parse().expect("the directive parses")),
             )
-            .with(sentry::tracing_layer())
-            .with(koharu::tracing::TimingLayer::new()),
+            // INFO and up as spans, logs, and breadcrumbs, since a crash report
+            // carries breadcrumbs and not logs; errors as issues.
+            .with(SpanLayer::new().with_filter(LevelFilter::INFO))
+            .with(LogLayer::new().with_filter(LevelFilter::INFO))
+            .with(BreadcrumbLayer::new().with_filter(LevelFilter::INFO))
+            .with(ErrorLayer::new().with_filter(LevelFilter::ERROR))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stderr)
+                    .with_ansi(std::io::stderr().is_terminal()),
+            ),
     )
     .expect("failed to set the global tracing subscriber");
-    tokio::task::block_in_place(|| app::run(tauri::generate_context!(), frontend_url))
-        .expect("failed to run the desktop application");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start the async runtime");
+    let _runtime = runtime.enter();
+    koharu_desktop::run(tauri::generate_context!()).expect("failed to run the desktop application");
 }

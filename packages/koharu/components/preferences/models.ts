@@ -1,187 +1,48 @@
-import type {
-  DetectionModel,
-  InpaintingModel,
-  OcrModel,
-  PipelineConfig,
-  Stage,
-} from '@koharu/bridge/protocol'
+import type { TFunction } from 'i18next'
 
-export type PipelineModel = DetectionModel | OcrModel | InpaintingModel
-export type ModelStage = Exclude<Stage, 'translation'>
-export type ModelName = PipelineModel['model']
+import type { Detector, Inpainter, Recognizer } from '@koharu/ipc/protocol'
 
-export const modelOptions = {
-  detection: ['koharu-layout-rfdetr-seg-2xl'],
-  ocr: [
-    'paddleocr-vl-1.6',
-    'paddleocr-vl-1.6-manga-lora',
-    'manga-ocr',
-    'manga-ocr-cpt-flex',
-    'baberu-ocr',
-    'hayai-ocr',
-  ],
-  inpainting: [
-    'lama',
-    'mi-gan',
-    'manga-inpaintor',
-    'aot-inpainting',
-    'flux2-klein',
-    'flux3-klein',
-    'rorem-mixed',
-    'powerpaint',
-  ],
-} satisfies Record<ModelStage, ModelName[]>
+/** The pipeline's models by id, as the backend names them; product names stay untranslated. */
+export const detectors: Record<Detector, string> = {
+  'koharu-layout-highres': 'Koharu Layout HighRes',
+}
 
-export const modelNames: Record<ModelName, string> = {
-  'koharu-layout-rfdetr-seg-2xl': 'Koharu Layout RF-DETR Seg 2XL',
-  'paddleocr-vl-1.6': 'PaddleOCR-VL 1.6',
-  'paddleocr-vl-1.6-manga-lora': 'PaddleOCR-VL 1.6 Manga LoRA',
-  'manga-ocr': 'Manga OCR',
+export const recognizers: Record<Recognizer, string> = {
+  'manga-ocr-ar': 'Manga OCR AR',
   'manga-ocr-cpt-flex': 'Manga OCR CPT-flex',
   'baberu-ocr': 'Baberu OCR',
   'hayai-ocr': 'Hayai OCR',
+}
+
+export const inpainters: Record<Inpainter, string> = {
   lama: 'LaMa',
+  'manga-inpainting': 'Manga Inpainting',
   'mi-gan': 'MI-GAN',
-  'manga-inpaintor': 'Manga Inpaintor',
-  'aot-inpainting': 'AOT Inpainting',
-  'flux2-klein': 'FLUX.2 Klein',
-  'flux3-klein': 'FLUX 3 Image Klein',
-  'rorem-mixed': 'RORem Mixed',
   powerpaint: 'PowerPaint',
+  'flux3-klein': 'FLUX.3 Klein',
+  'moss-image': 'MOSS-Image',
+  'qwen-image': 'Qwen-Image 2.1',
 }
 
-export function defaultModel(model: ModelName): PipelineModel {
-  switch (model) {
-    case 'koharu-layout-rfdetr-seg-2xl':
-      return { model, text_threshold: null, bubble_threshold: null, panel_threshold: null }
-    case 'paddleocr-vl-1.6':
-    case 'paddleocr-vl-1.6-manga-lora':
-    case 'manga-ocr':
-    case 'manga-ocr-cpt-flex':
-    case 'baberu-ocr':
-    case 'hayai-ocr':
-    case 'lama':
-    case 'mi-gan':
-    case 'manga-inpaintor':
-    case 'aot-inpainting':
-      return { model }
-    case 'flux2-klein':
-      return { model, prompt: 'Remove the text and reconstruct the background.' }
-    case 'flux3-klein':
-      return {
-        model,
-        request: 'Remove all text and lettering, and reconstruct the background behind it.',
-      }
-    case 'rorem-mixed':
-      return { model }
-    case 'powerpaint':
-      return { model, model_path: undefined } as PipelineModel
-  }
+/** Vendors by rig's names, as their makers write them; others show their own name. */
+export const vendorNames: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  'gcp.gemini': 'Google Gemini',
+  xai: 'xAI',
+  deepseek: 'DeepSeek',
+  minimax: 'MiniMax',
+  openrouter: 'OpenRouter',
+  chatgpt: 'ChatGPT',
+  grok: 'Grok',
+  ollama: 'Ollama',
+  lmstudio: 'LM Studio',
+  koharu: 'Koharu',
 }
 
-export function stageModel(config: PipelineConfig, stage: ModelStage): PipelineModel {
-  const selected =
-    stage === 'detection' ? config.detection : stage === 'ocr' ? config.ocr : config.inpainting
-  if (selected) {
-    const profile = config.processor?.[selected.model as keyof typeof config.processor]
-    return profile ? ({ model: selected.model, ...profile } as PipelineModel) : selected
-  }
-  return defaultModel(modelOptions[stage][0]!)
-}
-
-export function replaceStage(
-  config: PipelineConfig,
-  stage: ModelStage,
-  model: PipelineModel,
-): PipelineConfig {
-  switch (stage) {
-    case 'detection':
-      return {
-        ...config,
-        detection: model as DetectionModel,
-        processor: {
-          ...config.processor,
-          'koharu-layout-rfdetr-seg-2xl':
-            model.model === 'koharu-layout-rfdetr-seg-2xl'
-              ? {
-                  text_threshold: model.text_threshold ?? null,
-                  bubble_threshold: model.bubble_threshold ?? null,
-                  panel_threshold: model.panel_threshold ?? null,
-                }
-              : (config.processor?.['koharu-layout-rfdetr-seg-2xl'] ?? null),
-        },
-      }
-    case 'ocr':
-      return {
-        ...config,
-        ocr: model as OcrModel,
-        processor: {
-          ...config.processor,
-          ...(model.model === 'paddleocr-vl-1.6-manga-lora'
-            ? {
-                'paddleocr-vl-1.6-manga-lora': {
-                  lora: model.lora ?? undefined,
-                  projector: model.projector ?? undefined,
-                  scale: model.scale ?? undefined,
-                },
-              }
-            : {}),
-        },
-      }
-    case 'inpainting':
-      return {
-        ...config,
-        inpainting: model as InpaintingModel,
-        processor: {
-          ...config.processor,
-          ...(model.model === 'lama'
-            ? { lama: { source: model.source ?? undefined, format: model.format ?? undefined } }
-            : {}),
-          ...(model.model === 'mi-gan'
-            ? { 'mi-gan': { source: model.source ?? undefined } }
-            : {}),
-          ...(model.model === 'manga-inpaintor'
-            ? {
-                'manga-inpaintor': {
-                  inpaintor: model.inpaintor ?? undefined,
-                  line: model.line ?? undefined,
-                },
-              }
-            : {}),
-          ...(model.model === 'flux2-klein'
-            ? { 'flux2-klein': { prompt: model.prompt ?? undefined } }
-            : {}),
-          ...(model.model === 'flux3-klein'
-            ? {
-                'flux3-klein': {
-                  request: model.request ?? undefined,
-                  source: model.source ?? undefined,
-                  steps: model.steps ?? undefined,
-                  strength: model.strength ?? undefined,
-                  seed: model.seed ?? undefined,
-                  padding_mask_crop: model.padding_mask_crop ?? undefined,
-                  max_pixels: model.max_pixels ?? undefined,
-                },
-              }
-            : {}),
-          ...(model.model === 'rorem-mixed'
-            ? {
-                'rorem-mixed': {
-                  prompt: model.prompt ?? undefined,
-                  negative_prompt: model.negative_prompt ?? undefined,
-                },
-              }
-            : {}),
-          ...(model.model === 'powerpaint'
-            ? {
-                powerpaint: {
-                  model_path: model.model_path ?? undefined,
-                  embeddings_dir: model.embeddings_dir ?? undefined,
-                  steps: model.steps ?? undefined,
-                },
-              }
-            : {}),
-        },
-      }
-  }
+/** The vendor's name: its maker's, or for an OpenAI-compatible server, which no one makes, a
+ * description in the interface's language. */
+export function vendorName(vendor: string, t: TFunction): string {
+  if (vendor === 'openai-compatible') return t('settings.providers.openaiCompatible')
+  return vendorNames[vendor] ?? vendor
 }

@@ -1,0 +1,133 @@
+//! Reads for tools. Answers serialize the project's own values, so a tool
+//! sees a layer as the file stores it.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+use crate::{Background, History, Layer, LayerId, Page, PageId, ProjectId, Result, Session, Size};
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type, JsonSchema)]
+#[serde(tag = "query", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Query {
+    /// List the pages in order, with their sizes and backgrounds.
+    GetProject,
+    /// Get one page with its layers, each holding its children, masks among
+    /// them.
+    GetPage { page: PageId },
+    /// Get one layer with everything inside it.
+    GetLayer { layer: LayerId },
+    /// List the texts a reader sees on a page, in reading order: each block
+    /// and text layer that shows.
+    GetStory { page: PageId },
+    /// Find literal text in translations and text layers across the project.
+    FindText {
+        text: String,
+        #[serde(default)]
+        match_case: bool,
+    },
+    /// Get the undo and redo labels.
+    GetHistory,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(untagged)]
+pub enum Answer {
+    Project(ProjectAnswer),
+    Page(Page),
+    Layer(Box<Layer>),
+    Story(Vec<LayerId>),
+    History(History),
+    Matches(Vec<TextMatch>),
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct ProjectAnswer {
+    pub id: ProjectId,
+    /// The format version the file holds.
+    pub version: String,
+    pub pages: Vec<PageSummary>,
+}
+
+/// A page without its layers, which `get_page` answers.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct PageSummary {
+    pub id: PageId,
+    pub name: String,
+    pub chapter: Option<String>,
+    pub size: Size,
+    pub background: Option<Background>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct TextMatch {
+    pub page: PageId,
+    pub layer: LayerId,
+    pub text: String,
+    pub count: usize,
+}
+
+/// A literal expression with Unicode case matching, shared by search and replace.
+pub(crate) fn expression(text: &str, match_case: bool) -> Result<regex::Regex> {
+    if text.is_empty() {
+        return Err(crate::Error::Rejected(
+            "search text must not be empty".into(),
+        ));
+    }
+    regex::RegexBuilder::new(&regex::escape(text))
+        .case_insensitive(!match_case)
+        .build()
+        .map_err(|error| crate::Error::Rejected(error.to_string()))
+}
+
+impl Session {
+    pub fn query(&self, query: Query) -> Result<Answer> {
+        let project = self.project();
+        Ok(match query {
+            Query::GetProject => Answer::Project(ProjectAnswer {
+                id: project.id(),
+                version: self.version()?,
+                pages: project
+                    .pages()
+                    .map(|page| PageSummary {
+                        id: page.id,
+                        name: page.name.clone(),
+                        chapter: page.chapter.clone(),
+                        size: page.size,
+                        background: page.background,
+                    })
+                    .collect(),
+            }),
+            Query::GetPage { page } => Answer::Page(project.page(page)?.clone()),
+            Query::GetLayer { layer } => Answer::Layer(Box::new(project.layer(layer)?.clone())),
+            Query::GetStory { page } => Answer::Story(project.story(page)?),
+            Query::GetHistory => Answer::History(self.history()),
+            Query::FindText { text, match_case } => {
+                let expression = expression(&text, match_case)?;
+                let mut found = Vec::new();
+                for page in project.pages() {
+                    for layer in project.layers_of(page.id)? {
+                        let text = match &layer.content {
+                            crate::Content::Text(text) => Some(text.as_ref()),
+                            crate::Content::Block(block) => block.translation.as_ref(),
+                            _ => None,
+                        };
+                        if let Some(text) = text {
+                            let text = text.content.text();
+                            let count = expression.find_iter(&text).count();
+                            if count > 0 {
+                                found.push(TextMatch {
+                                    page: page.id,
+                                    layer: layer.id,
+                                    text,
+                                    count,
+                                });
+                            }
+                        }
+                    }
+                }
+                Answer::Matches(found)
+            }
+        })
+    }
+}
