@@ -65,7 +65,6 @@ impl Context {
         options.set("clip_g_path", params.clip_g)?;
         options.set("llm_path", params.llm)?;
         options.set("llm_vision_path", params.llm_vision)?;
-        options.set("tokenizer", params.tokenizer)?;
         options.set(
             "embeddings",
             crate::options::Value::Embeddings(params.embeddings),

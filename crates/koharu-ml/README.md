@@ -27,7 +27,6 @@ to the code that makes it.
 | MI-GAN, 512 Places2 | inpainting | libtorch | [MI-GAN], as [IOPaint] runs it |
 | PowerPaint v1 | inpainting | stable-diffusion.cpp | [PowerPaint], as [IOPaint] runs it |
 | FLUX.3 Image Klein | inpainting and generation | stable-diffusion.cpp | [FLUX.3 Klein] |
-| MOSS-Image SFT, with Qwen3.5 9B | inpainting and generation | stable-diffusion.cpp | [MOSS-Image] |
 | Qwen-Image 2.1 Turbo, with Qwen3-VL 8B | inpainting, generation, and editing | stable-diffusion.cpp | [Qwen-Image] |
 
 Weights come from Hugging Face at a pinned commit, downloaded the first time a
@@ -59,7 +58,7 @@ page's pixels can run off the device's thread.
 - **OCR** returns each crop's text.
 - **Inpainting** returns the image redrawn under its mask.
 
-FLUX.3 and MOSS-Image ship no inpainting pipeline, so both inpaint as diffusers'
+FLUX.3 ships no inpainting pipeline, so it inpaints as diffusers'
 flow-matching image-to-image does with a mask [diffusers Flux2 Klein inpaint]:
 the image fitted under a megapixel, optionally cropped around the mask, and the
 result blended back by the mask. Qwen-Image 2.1 Turbo edits by generating from
@@ -73,7 +72,7 @@ Read in November 2026.
 - Layout: [RF-DETR], [Koharu Layout]
 - OCR: [manga-ocr-ar], [Baberu OCR], [Hayai OCR]
 - Inpainting and generation: [LaMa], [IOPaint], [Manga Inpainting], [MangaLineExtraction], [MI-GAN], [PowerPaint], [FLUX.3 Klein],
-  [MOSS-Image], [Qwen-Image], [diffusers Flux2 Klein inpaint], [diffusers
+  [Qwen-Image], [diffusers Flux2 Klein inpaint], [diffusers
   Qwen-Image inpaint]
 
 [RF-DETR]: https://github.com/roboflow/rf-detr/tree/4ab7c18729de9d02ffd0495795d0831b5630f01b
@@ -88,7 +87,6 @@ Read in November 2026.
 [MI-GAN]: https://github.com/Picsart-AI-Research/MI-GAN/tree/2b793c5ece43f4253e32d4afc257120a5deed6f5
 [PowerPaint]: https://huggingface.co/Sanster/PowerPaint-V1-stable-diffusion-inpainting/tree/4104236baefdb2a1dd0f32812d8edbbfc4efd164
 [FLUX.3 Klein]: https://github.com/black-forest-labs/flux-3-image-klein/tree/62e90b9278b73ecc52927770c6965dc6b1966498
-[MOSS-Image]: https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT
 [Qwen-Image]: https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo/tree/fc13ba1986fcb905854dc8de2f52eee395f49b5b
 [diffusers Flux2 Klein inpaint]: https://github.com/huggingface/diffusers/blob/a37f6f8394ac2a7ee8360c3abea811efe54512b1/src/diffusers/pipelines/flux2/pipeline_flux2_klein_inpaint.py
 [diffusers Qwen-Image inpaint]: https://github.com/huggingface/diffusers/blob/74fb49b5506a6960d55de0f7e6f4e0631213dc63/src/diffusers/pipelines/qwenimage/pipeline_qwenimage_edit_inpaint.py

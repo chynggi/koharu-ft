@@ -457,7 +457,6 @@ export type Inpainter =
   | 'mi-gan'
   | 'powerpaint'
   | 'flux3-klein'
-  | 'moss-image'
   | 'qwen-image'
 
 export type InpainterConfig = {

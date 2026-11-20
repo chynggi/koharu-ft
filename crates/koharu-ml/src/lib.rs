@@ -13,7 +13,6 @@ pub mod manga_inpainting;
 pub mod manga_ocr_ar;
 pub mod manga_ocr_cpt;
 pub mod mi_gan;
-pub mod moss_image;
 pub mod powerpaint;
 pub mod qwen_image;
 

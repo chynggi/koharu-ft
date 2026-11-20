@@ -20,7 +20,6 @@ export const inpainters: Record<Inpainter, string> = {
   'mi-gan': 'MI-GAN',
   powerpaint: 'PowerPaint',
   'flux3-klein': 'FLUX.3 Klein',
-  'moss-image': 'MOSS-Image',
   'qwen-image': 'Qwen-Image 2.1 Turbo',
 }
 

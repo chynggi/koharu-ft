@@ -5,7 +5,6 @@ use koharu_ml::{
     lama::{self, Lama},
     manga_inpainting::{self, MangaInpainting},
     mi_gan::MiGan,
-    moss_image::{self, MossImage},
     powerpaint::PowerPaint,
     qwen_image::{self, QwenImage},
 };
@@ -32,8 +31,6 @@ pub enum Inpainter {
     PowerPaint,
     #[strum(to_string = "FLUX.3 Klein")]
     Flux3Klein,
-    #[strum(to_string = "MOSS-Image")]
-    MossImage,
     #[strum(to_string = "Qwen-Image 2.1 Turbo")]
     QwenImage,
 }
@@ -148,29 +145,6 @@ impl Inpaint for Flux3Klein {
     }
 }
 
-impl Inpaint for MossImage {
-    fn canceller(&self) -> Option<Canceller> {
-        Some(MossImage::canceller(self))
-    }
-
-    fn inference(
-        &self,
-        image: &RgbImage,
-        mask: &GrayImage,
-        prompt: &str,
-    ) -> anyhow::Result<RgbImage> {
-        let options = moss_image::InpaintOptions::default();
-        let redrawn = MossImage::inpaint(
-            self,
-            prompt,
-            &DynamicImage::ImageRgb8(image.clone()),
-            &DynamicImage::ImageLuma8(mask.clone()),
-            &options,
-        )?;
-        Ok(fitted(redrawn, image))
-    }
-}
-
 impl Inpaint for QwenImage {
     fn canceller(&self) -> Option<Canceller> {
         Some(QwenImage::canceller(self))
@@ -212,7 +186,6 @@ pub(super) async fn load(model: Inpainter, device: &'static Device) -> anyhow::R
         Inpainter::MiGan => Box::new(MiGan::load(device).await?),
         Inpainter::PowerPaint => Box::new(PowerPaint::load(device).await?),
         Inpainter::Flux3Klein => Box::new(Flux3Klein::load(device).await?),
-        Inpainter::MossImage => Box::new(MossImage::load(device).await?),
         Inpainter::QwenImage => Box::new(QwenImage::load(device).await?),
     })
 }

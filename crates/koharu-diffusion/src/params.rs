@@ -43,9 +43,6 @@ pub struct ContextParams<'a> {
     /// The text encoder's vision projector, for a model whose text encoder
     /// reads its condition images, such as Qwen-Image 2.1's Qwen3-VL.
     pub llm_vision: Option<&'a Path>,
-    /// A `tokenizer.json` for a text encoder whose vocabulary sd.cpp doesn't
-    /// hold, such as MOSS-Image's Qwen3.5.
-    pub tokenizer: Option<&'a Path>,
     /// Textual inversions, each a word a prompt names it by and its file.
     pub embeddings: &'a [(&'a str, &'a Path)],
     pub vae_format: Option<VaeFormat>,
