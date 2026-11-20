@@ -21,7 +21,7 @@ export const inpainters: Record<Inpainter, string> = {
   powerpaint: 'PowerPaint',
   'flux3-klein': 'FLUX.3 Klein',
   'moss-image': 'MOSS-Image',
-  'qwen-image': 'Qwen-Image 2.1',
+  'qwen-image': 'Qwen-Image 2.1 Turbo',
 }
 
 /** Vendors by rig's names, as their makers write them; others show their own name. */

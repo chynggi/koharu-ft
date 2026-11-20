@@ -20,8 +20,8 @@ use std::sync::Mutex;
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use image::{GrayImage, RgbImage, imageops};
-use koharu_diffusion::{Context, ContextParams, ImageParams, SampleMethod, Scheduler};
-use koharu_runtime::{Backend, Repository};
+use koharu_diffusion::{Canceller, Context, ContextParams, ImageParams, SampleMethod, Scheduler};
+use koharu_runtime::Repository;
 
 const REPOSITORY: Repository = Repository::model(
     "Sanster/PowerPaint-V1-stable-diffusion-inpainting",
@@ -42,9 +42,14 @@ const SEED: i64 = 42;
 #[derive(Debug)]
 pub struct PowerPaint {
     context: Mutex<Context>,
+    canceller: Canceller,
 }
 
 impl PowerPaint {
+    pub fn canceller(&self) -> Canceller {
+        self.canceller.clone()
+    }
+
     pub async fn load(device: &crate::Device) -> Result<Self> {
         let [unet, vae, text_encoder, added] = REPOSITORY
             .resolve([
@@ -56,7 +61,6 @@ impl PowerPaint {
             .await
             .context("failed to resolve PowerPaint's files")?;
         let tokens = tokens::split(&text_encoder, &added)?;
-        let cuda = matches!(device.backend, Backend::Cuda { .. });
         let embeddings: Vec<(&str, &std::path::Path)> = tokens
             .embeddings
             .iter()
@@ -69,12 +73,11 @@ impl PowerPaint {
             embeddings: &embeddings,
             device: Some(&device.name),
             mmap: true,
-            flash_attention: cuda,
-            conv_direct: cuda,
             ..ContextParams::default()
         })
         .context("failed to load PowerPaint")?;
         Ok(Self {
+            canceller: context.canceller(),
             context: Mutex::new(context),
         })
     }

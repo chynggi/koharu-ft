@@ -79,7 +79,8 @@ a later start.
 
 Read in November 2026.
 
-- [HF cache], [TheRock]
+- [HF cache], [TheRock], [Clip Studio Paint user data]
 
 [HF cache]: https://huggingface.co/docs/huggingface_hub/guides/manage-cache
+[Clip Studio Paint user data]: https://support.clip-studio.com/en-us/faq/articles/20210039
 [TheRock]: https://github.com/ROCm/TheRock

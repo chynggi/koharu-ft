@@ -20,6 +20,7 @@ use bytesize::ByteSize;
 use koharu_runtime::Device;
 use koharu_torch::Cuda;
 use tokio::runtime::Handle;
+use tokio_util::sync::CancellationToken;
 
 use crate::{Error, Result, Stage, scheduler::Priority};
 
@@ -42,11 +43,20 @@ pub(crate) struct Gpu(mpsc::Sender<(Turn, Work)>);
 impl Gpu {
     pub(crate) fn spawn(runtime: Handle) -> Self {
         let (sender, receiver) = mpsc::channel::<(Turn, Work)>();
+        // Cancelled when the runtime shuts down, which drops its tasks before
+        // it stops its timers.
+        let shutdown = CancellationToken::new();
+        let guard = shutdown.clone().drop_guard();
+        runtime.spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
         std::thread::Builder::new()
             .name("koharu-pipeline-gpu".to_owned())
             .spawn(move || {
                 let mut models = Models {
                     runtime,
+                    shutdown,
                     loaded: HashMap::new(),
                 };
                 let mut queue = BinaryHeap::new();
@@ -77,6 +87,23 @@ impl Gpu {
     pub(crate) fn run(&self, turn: Turn, work: impl FnOnce(&mut Models) + Send + 'static) {
         // The thread ends only once every handle has dropped.
         let _ = self.0.send((turn, Box::new(work)));
+    }
+
+    /// Gives back to the device what libtorch's caching allocator keeps of
+    /// the tensors calls freed, ahead of the calls queued. The cache grows
+    /// page by page, as pages need different sizes, and the device counts
+    /// it as used. It's left while no model is loaded: before the first,
+    /// the runtime hasn't loaded libtorch, as a project opening stops what
+    /// isn't running.
+    pub(crate) fn empty_cache(&self) {
+        self.run(Turn::Upkeep, |models| {
+            if !models.loaded.is_empty()
+                && Cuda::device_count() > 0
+                && let Err(error) = Cuda::empty_cache()
+            {
+                tracing::warn!("libtorch's cache wasn't emptied: {error}");
+            }
+        });
     }
 }
 
@@ -118,6 +145,7 @@ pub(crate) struct Key {
 /// The loaded models, which the GPU thread owns.
 pub(crate) struct Models {
     runtime: Handle,
+    shutdown: CancellationToken,
     loaded: HashMap<Key, Box<dyn Any + Send>>,
 }
 
@@ -131,17 +159,26 @@ impl Models {
     {
         if !self.loaded.contains_key(key) {
             let _span = tracing::info_span!("load", model = %key.name).entered();
-            let model = match self.runtime.block_on(loaded(key, &load)) {
-                Ok(model) => model,
-                // `loaded` samples the device afresh, after the cache is
-                // emptied, so the retry sees what unloading freed.
-                Err(error) if !self.loaded.is_empty() => {
-                    tracing::warn!(%error, "loading alone, the other models unloaded");
-                    self.loaded.clear();
-                    self.runtime.block_on(loaded(key, &load))?
+            // This thread isn't the runtime's, so a load here outlives its
+            // shutdown, and Tokio panics on a timer polled after, as a
+            // download waiting to retry polls one.
+            let shutdown = &self.shutdown;
+            let model = self.runtime.block_on(async {
+                tokio::select! {
+                    biased;
+                    () = shutdown.cancelled() => Err(Error::Shutdown),
+                    model = async {
+                        match loaded(key, &load).await {
+                            Err(error) if !self.loaded.is_empty() => {
+                                tracing::warn!(%error, "loading alone, the other models unloaded");
+                                self.loaded.clear();
+                                loaded(key, &load).await
+                            }
+                            result => result,
+                        }
+                    } => model,
                 }
-                Err(error) => return Err(error),
-            };
+            })?;
             self.loaded.insert(key.clone(), Box::new(model));
         }
         Ok(self.loaded[key]

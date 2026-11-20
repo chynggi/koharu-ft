@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use glifo::FontEmbolden;
-use kurbo::{Affine, Diagonal2, Join};
+use kurbo::{Affine, Diagonal2, Join, Stroke};
 use vello_gpu::peniko::Color;
 
 use super::TextLayout;
@@ -66,15 +66,34 @@ pub(crate) fn draw(
                 ),
                 false => skew,
             };
-            drawing.scene.set_paint(Color::from(paint));
-            drawing.glyphs(
-                font,
-                run.size,
-                turn,
-                FontEmbolden::new(Diagonal2::new(bold + expansion, bold + expansion))
-                    .with_join(join),
-                &glyphs.glyphs,
-            )?;
+            // Glyphs grow under a stroke twice as wide, as Skia fakes a bold,
+            // not by glifo's embolden: kurbo 0.13.1's `expand_path` fits one
+            // cubic to each segment's offset, so a short handle turning back,
+            // as many comic fonts have, sends the outline far off the glyph,
+            // and it grows every contour one way, by the glyph's area, so a
+            // contour wound against the rest, like some fonts' dots on i and
+            // j, shrinks instead (koharu-rs/koharu#1073).
+            let grow = bold + expansion;
+            let stroke = (grow > 0.0).then(|| Stroke::new(2.0 * grow).with_join(join));
+            // The stroke overlaps the fill inside the outline, so a
+            // translucent paint draws opaque in a layer of its alpha, or the
+            // overlap would show darker.
+            let color = Color::from(paint);
+            let alpha = color.components[3];
+            let layered = stroke.is_some() && alpha < 1.0;
+            if layered {
+                drawing.scene.push_opacity_layer(alpha);
+            }
+            drawing.scene.set_paint(match layered {
+                true => color.with_alpha(1.0),
+                false => color,
+            });
+            let inset =
+                (grow < 0.0).then(|| FontEmbolden::new(Diagonal2::new(grow, grow)).with_join(join));
+            drawing.glyphs(font, run.size, turn, stroke, inset, &glyphs.glyphs)?;
+            if layered {
+                drawing.scene.pop_layer();
+            }
         }
     }
     Ok(())
