@@ -124,9 +124,9 @@ describe('font favorites', () => {
       render(
         <FontPicker ariaLabel='Font family' value='' families={families} onChange={onChange} />,
       )
-      await user.click(screen.getByRole('button', { name: 'Font family' }))
-      const alpha = await screen.findByRole('button', { name: 'Alpha' })
-      const zeta = screen.getByRole('button', { name: 'Zeta' })
+      await user.click(screen.getByRole('combobox', { name: 'Font family' }))
+      const alpha = await screen.findByRole('option', { name: 'Alpha' })
+      const zeta = screen.getByRole('option', { name: 'Zeta' })
       expect(alpha.compareDocumentPosition(zeta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
       await user.click(screen.getByRole('button', { name: /Zeta.*favorite|favorite.*Zeta/i }))
@@ -146,7 +146,7 @@ describe('font favorites', () => {
 })
 
 describe('page shortcuts', () => {
-  it('uses the rail selection and leaves arrows to a focused field', () => {
+  it('uses the rail selection and leaves arrows to a focused field', async () => {
     const show = vi.spyOn(commands, 'show').mockResolvedValue(null)
     const first = { id: 'first', size: { width: 100, height: 100 }, background: null, layers: [] }
     const second = { ...first, id: 'second' }
@@ -163,11 +163,12 @@ describe('page shortcuts', () => {
     const field = document.body.appendChild(document.createElement('input'))
     field.focus()
     fireEvent.keyDown(field, { key: 'ArrowRight' })
+    expect(useKoharuStore.getState().selectedPages).toEqual(['first'])
     expect(show).not.toHaveBeenCalled()
 
     field.remove()
     fireEvent.keyDown(document.body, { key: 'ArrowRight' })
-    expect(show).toHaveBeenCalledWith('second')
+    await waitFor(() => expect(show).toHaveBeenCalledExactlyOnceWith('second'))
     expect(useKoharuStore.getState().selectedPages).toEqual(['second'])
     expect(useKoharuStore.getState().selectedLayers).toEqual([])
   })

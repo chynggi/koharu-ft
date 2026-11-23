@@ -17,6 +17,17 @@
     "stop": "Detener",
     "title": "Actividad"
   },
+  "adjust": {
+    "apply": "Aplicar",
+    "brightness_contrast": "Brillo/Contraste",
+    "brightness": "Brillo",
+    "contrast": "Contraste",
+    "levels": "Niveles",
+    "levelsLow": "Negro de entrada",
+    "levelsHigh": "Blanco de entrada",
+    "hue": "Tono",
+    "grayscale": "Desaturar"
+  },
   "agent": {
     "cancel": "Cancelar",
     "cancelled": "Cancelado.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "Color del pincel",
     "hexCode": "Código de color hexadecimal",
+    "recent": "Colores recientes",
+    "recentColor": "Color reciente {{color}}",
     "sampleCanvas": "Elegir un color del lienzo",
     "transparent": "Transparente"
   },
@@ -58,8 +71,29 @@
     "loading": "Cargando…"
   },
   "errors": {
+    "actionFailed": "No se pudo completar la acción",
     "fatalTitle": "Koharu no pudo continuar",
-    "tryAgain": "Intentar de nuevo"
+    "tryAgain": "Intentar de nuevo",
+    "unknown": "La aplicación nativa devolvió un error desconocido."
+  },
+  "export": {
+    "cancel": "Cancelar",
+    "cbzHint": "Un solo archivo con las páginas PNG, con el nombre del proyecto.",
+    "description": "Renderiza las páginas como archivos de imagen.",
+    "formats": "Formatos",
+    "pattern": "Patrón de nombre",
+    "patternError": {
+      "separator": "El patrón no puede contener un separador de ruta ni '..'.",
+      "token": "Token desconocido. Usa {index} o {label}.",
+      "unclosed": "Llave sin cerrar en el patrón.",
+      "width": "El número de dígitos tiene que ser un número."
+    },
+    "scope": "Páginas",
+    "scopeAll": "Todas las páginas ({{count}})",
+    "scopeSelected": "Seleccionadas ({{count}})",
+    "start": "Exportar",
+    "subfolders": "Carpetas separadas por formato",
+    "title": "Exportar páginas"
   },
   "feedback": {
     "addScreenshot": "Añadir captura de pantalla",
@@ -92,16 +126,32 @@
     "prompt": "Describe qué añadir (opcional)",
     "title": "Relleno generativo"
   },
+  "find": {
+    "matchCase": "Coincidir mayúsculas y minúsculas",
+    "noResults": "Ninguna traducción contiene este texto.",
+    "page": "Página {{number}}",
+    "placeholder": "Buscar en las traducciones",
+    "replace": "Reemplazar",
+    "replaceAll": "Reemplazar todo",
+    "replacePlaceholder": "Reemplazar por",
+    "searching": "Buscando…",
+    "summary": "{{count}} coincidencias en {{pages}} página(s)",
+    "summary_one": "{{count}} coincidencia en {{pages}} página(s)",
+    "summary_other": "{{count}} coincidencias en {{pages}} página(s)",
+    "title": "Buscar"
+  },
   "fontPicker": {
+    "addFavorite": "Añadir {{name}} a favoritas",
     "choose": "Elegir una fuente",
+    "favoritesOnly": "Mostrar fuentes favoritas",
     "fontCount": "{{count}} fuentes",
     "fontCount_one": "{{count}} fuente",
     "fontCount_other": "{{count}} fuentes",
     "fonts": "Fuentes",
+    "noFavorites": "Aún no hay fuentes favoritas",
     "noResults": "Ninguna fuente coincide con esta búsqueda",
-    "search": "Buscar fuentes",
-    "addFavorite": "Agregar {{family}} a favoritos",
-    "removeFavorite": "Quitar {{family}} de favoritos"
+    "removeFavorite": "Quitar {{name}} de favoritas",
+    "search": "Buscar fuentes"
   },
   "history": {
     "close": "Cerrar historia",
@@ -182,8 +232,9 @@
     "border": "Contorno",
     "borderColor": "Color del contorno",
     "borderWidth": "Ancho del contorno",
+    "chooseBorderWidth": "Elegir ancho del contorno",
     "chooseFontSize": "Elegir tamaño de fuente",
-    "decreaseBorderWidth": "Reducir ancho del contorno",
+    "decreaseSecondBorderWidth": "Reducir ancho del segundo contorno",
     "font": "Fuente",
     "fontSize": "Tamaño de fuente",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "Grosor de fuente",
     "horizontal": "Horizontal",
-    "increaseBorderWidth": "Aumentar ancho del contorno",
-    "opacity": "Opacidad",
-    "selectPage": "Selecciona una página para inspeccionar sus capas.",
-    "source": "Texto original",
-    "text": "Texto",
-    "textColor": "Color del texto",
-    "textDirection": "Dirección del texto",
-    "translation": "Traducción",
-    "type": "Tipografía",
-    "vertical": "Vertical",
-    "decreaseSecondBorderWidth": "Reducir ancho del segundo contorno",
     "increaseSecondBorderWidth": "Aumentar ancho del segundo contorno",
+    "opacity": "Opacidad",
     "outlineBevel": "Biseladas",
     "outlineCenter": "Centro",
     "outlineInside": "Interior",
@@ -214,21 +255,15 @@
     "outlineRound": "Redondas",
     "secondBorder": "2.º contorno",
     "secondBorderColor": "Color del segundo contorno",
-    "secondBorderWidth": "Ancho del segundo contorno"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "Ancho del segundo contorno",
+    "selectPage": "Selecciona una página para inspeccionar sus capas.",
+    "source": "Texto original",
+    "text": "Texto",
+    "textColor": "Color del texto",
+    "textDirection": "Dirección del texto",
+    "translation": "Traducción",
+    "type": "Tipografía",
+    "vertical": "Vertical"
   },
   "layers": {
     "delete": "Eliminar {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "Acerca de",
+    "adjustments": "Ajustes",
     "closeProject": "Cerrar proyecto",
     "delete": "Eliminar selección",
     "discord": "Discord",
+    "donate": "Donar",
     "edit": "Editar",
     "export": "Exportar proyecto",
     "feedback": "Enviar comentarios",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "Ayuda",
     "history": "Historia",
+    "image": "Imagen",
     "import": "Importar páginas",
     "redo": "Rehacer",
     "selectAllLayers": "Seleccionar todas las capas",
     "settings": "Ajustes",
     "undo": "Deshacer",
     "unloadModels": "Liberar los modelos",
-    "view": "Ver",
-    "adjustments": "Ajustes",
-    "image": "Imagen"
+    "view": "Ver"
   },
   "model": {
     "baseUrl": "URL base",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "Acciones para {{page}}",
+    "chapterStart": "Inicio del capítulo",
     "delete": "Eliminar",
     "deleteDescription": "Esto elimina “{{page}}” y sus capas. Puedes deshacerlo.",
     "deleteTitle": "¿Eliminar página?",
@@ -312,9 +349,16 @@
     "importFolder": "Carpeta…",
     "importing": "Importando páginas…",
     "importingAction": "Importando…",
+    "mergeAsSpread": "Combinar en una página doble",
+    "mergeLeftToRight": "De izquierda a derecha",
+    "mergeRightToLeft": "De derecha a izquierda",
     "noImage": "Sin imagen",
+    "pageName": "Nombre de página",
     "pageNumber": "Página {{number}}",
     "pages": "Páginas",
+    "rename": "Cambiar nombre",
+    "renameDescription": "Elige un nombre nuevo para esta página.",
+    "renameTitle": "Cambiar nombre de página",
     "run": {
       "detect": "Detectar",
       "inpaint": "Rellenar",
@@ -322,16 +366,11 @@
       "translate": "Traducir"
     },
     "selected": "{{count}} seleccionadas",
-    "chapterStart": "Inicio del capítulo",
-    "mergeAsSpread": "Combinar en una página doble",
-    "mergeLeftToRight": "De izquierda a derecha",
-    "mergeRightToLeft": "De derecha a izquierda",
-    "pageName": "Nombre de página",
-    "rename": "Cambiar nombre",
-    "renameDescription": "Elige un nombre nuevo para esta página.",
-    "renameTitle": "Cambiar nombre de página"
+    "translated": "{{translated}} de {{total}} traducidos"
   },
   "outputPicker": {
+    "noResults": "Ningún idioma coincide con esta búsqueda.",
+    "search": "Buscar idiomas",
     "targetLanguage": "Idioma de destino",
     "title": "Salida de traducción"
   },
@@ -442,6 +481,7 @@
       "configured": "Configurado",
       "connections": "Conexiones",
       "connectionsDescription": "Las credenciales se almacenan de forma segura en este dispositivo.",
+      "contextWindow": "Longitud del contexto (tokens)",
       "credential": "Credencial",
       "credentialLabel": "Credencial de {{provider}}",
       "description": "Conecta proveedores de traducción y modelos de lenguaje.",
@@ -465,18 +505,42 @@
     },
     "title": "Ajustes",
     "typesetting": {
+      "addFallback": "Añadir una alternativa",
       "addFamily": "Añadir familia tipográfica",
-      "defaultFamilies": "Familias tipográficas predeterminadas",
       "description": "Define la pila ordenada de fuentes usada cuando una capa de texto no tiene una familia asignada.",
       "empty": "No hay familias predeterminadas. Koharu usará la alternativa del sistema.",
+      "fallbacks": "Alternativas",
+      "fallbacksDescription": "Se usan en orden para los caracteres que le faltan a la principal. Arrastra para reordenar, o sobre Principal para intercambiarlas.",
       "familyLabel": "Familia tipográfica predeterminada {{index}}",
       "fontFallback": "Fuentes preferidas",
       "fontFallbackDescription": "Koharu usa la primera familia disponible compatible con el texto.",
       "loadError": "No se pudieron cargar las fuentes. Las familias existentes aún se pueden eliminar.",
       "loadingFonts": "Cargando fuentes…",
+      "primary": "Principal",
       "removeFamily": "Eliminar {{family}}",
       "title": "Renderizador"
     }
+  },
+  "shape": {
+    "title": "Forma",
+    "fill": "Relleno",
+    "fillNone": "Sin relleno",
+    "fillSolid": "Color sólido",
+    "fillLinear": "Degradado lineal",
+    "fillRadial": "Degradado radial",
+    "fillSweep": "Degradado angular",
+    "fillPattern": "Motivo",
+    "fillColor": "Color de relleno",
+    "choosePattern": "Elegir imagen…",
+    "angle": "Ángulo",
+    "stopColor": "Color de la parada {{index}}",
+    "stopPosition": "Posición de la parada {{index}}",
+    "removeStop": "Quitar la parada {{index}}",
+    "addStop": "Añadir parada",
+    "strokeColor": "Color del trazo",
+    "strokeWidth": "Grosor del trazo",
+    "decrease": "Reducir {{name}}",
+    "increase": "Aumentar {{name}}"
   },
   "start": {
     "create": "Crear",
@@ -491,10 +555,12 @@
     "loadingProjects": "Cargando proyectos…",
     "newDescription": "Crea un espacio de trabajo limpio para tus páginas, traducciones y exportaciones.",
     "newProject": "Nuevo proyecto",
+    "noResults": "Ningún proyecto coincide con esta búsqueda.",
     "projectKind": "Proyecto de Koharu",
     "projectList": "Proyectos",
     "projectName": "Nombre del proyecto",
     "projectNamePlaceholder": "Mi nuevo proyecto",
+    "search": "Buscar proyectos",
     "storageHint": "Los proyectos se guardan localmente en este ordenador.",
     "title": "Proyectos",
     "yourProjects": "Tus proyectos"
@@ -565,70 +631,5 @@
     "maximize": "Maximizar",
     "minimize": "Minimizar",
     "restore": "Restaurar"
-  },
-  "find": {
-    "matchCase": "Coincidir mayúsculas y minúsculas",
-    "noResults": "Ninguna traducción contiene este texto.",
-    "page": "Página {{number}}",
-    "placeholder": "Buscar en las traducciones",
-    "replace": "Reemplazar",
-    "replaceAll": "Reemplazar todo",
-    "replacePlaceholder": "Reemplazar por",
-    "searching": "Buscando…",
-    "summary": "{{count}} coincidencias en {{pages}} página(s)",
-    "summary_one": "{{count}} coincidencia en {{pages}} página(s)",
-    "summary_other": "{{count}} coincidencias en {{pages}} página(s)",
-    "title": "Buscar"
-  },
-  "adjust": {
-    "apply": "Aplicar",
-    "brightness_contrast": "Brillo/Contraste",
-    "brightness": "Brillo",
-    "contrast": "Contraste",
-    "levels": "Niveles",
-    "levelsLow": "Negro de entrada",
-    "levelsHigh": "Blanco de entrada",
-    "hue": "Tono",
-    "grayscale": "Desaturar"
-  },
-  "shape": {
-    "title": "Forma",
-    "fill": "Relleno",
-    "fillNone": "Sin relleno",
-    "fillSolid": "Color sólido",
-    "fillLinear": "Degradado lineal",
-    "fillRadial": "Degradado radial",
-    "fillSweep": "Degradado angular",
-    "fillPattern": "Motivo",
-    "fillColor": "Color de relleno",
-    "choosePattern": "Elegir imagen…",
-    "angle": "Ángulo",
-    "stopColor": "Color de la parada {{index}}",
-    "stopPosition": "Posición de la parada {{index}}",
-    "removeStop": "Quitar la parada {{index}}",
-    "addStop": "Añadir parada",
-    "strokeColor": "Color del trazo",
-    "strokeWidth": "Grosor del trazo",
-    "decrease": "Reducir {{name}}",
-    "increase": "Aumentar {{name}}"
-  },
-  "export": {
-    "cancel": "Cancelar",
-    "cbzHint": "Un solo archivo con las páginas PNG, con el nombre del proyecto.",
-    "description": "Renderiza las páginas como archivos de imagen.",
-    "formats": "Formatos",
-    "pattern": "Patrón de nombre",
-    "patternError": {
-      "separator": "El patrón no puede contener un separador de ruta ni '..'.",
-      "token": "Token desconocido. Usa {index} o {label}.",
-      "unclosed": "Llave sin cerrar en el patrón.",
-      "width": "El número de dígitos tiene que ser un número."
-    },
-    "scope": "Páginas",
-    "scopeAll": "Todas las páginas ({{count}})",
-    "scopeSelected": "Seleccionadas ({{count}})",
-    "start": "Exportar",
-    "subfolders": "Carpetas separadas por formato",
-    "title": "Exportar páginas"
   }
 }

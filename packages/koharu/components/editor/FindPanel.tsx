@@ -1,11 +1,10 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { CaseSensitive, LoaderCircle, Replace, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { call } from '@/lib/backend'
 import { pageKey, projectKey, refresh, usePages, useProject } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type TextMatch } from '@koharu/ipc/protocol'
@@ -30,7 +29,6 @@ export function FindPanel() {
   const [search, setSearch] = useState('')
   const [replacement, setReplacement] = useState('')
   const [matchCase, setMatchCase] = useState(false)
-  const [replacing, setReplacing] = useState(false)
 
   useEffect(() => {
     if (open) input.current?.focus()
@@ -59,7 +57,7 @@ export function FindPanel() {
   const results = useQuery({
     queryKey: ['find-translations', search, matchCase, project],
     queryFn: async () =>
-      (await call(commands.query, {
+      (await commands.query({
         query: 'find_text',
         text: search,
         match_case: matchCase,
@@ -76,27 +74,29 @@ export function FindPanel() {
     return [...byPage.values()]
   }, [matches])
 
+  const replacementMutation = useMutation({
+    mutationFn: (layers: string[] | null) =>
+      commands.edit({
+        label: 'replace_text',
+        ops: [{ op: 'replace_text', text: search, replacement, match_case: matchCase, layers }],
+      }),
+    onSuccess: () => refresh(projectKey, pageKey),
+  })
+  const replacing = replacementMutation.isPending
   const replace = (layers: string[] | null) => {
-    if (!search || replacing) return
-    setReplacing(true)
-    void call(commands.edit, {
-      label: 'replace_text',
-      ops: [{ op: 'replace_text', text: search, replacement, match_case: matchCase, layers }],
-    })
-      .then(() => refresh(projectKey, pageKey))
-      .catch(() => undefined)
-      .finally(() => setReplacing(false))
+    if (search && !replacing) replacementMutation.mutate(layers)
   }
 
-  const reveal = (match: TextMatch) => {
-    const store = useKoharuStore.getState()
-    store.selectPages([match.page])
-    store.selectLayers([])
-    void call(commands.show, match.page)
-      .then(() => refresh(projectKey, pageKey))
-      .then(() => selectLayers([match.layer]))
-      .catch(() => undefined)
-  }
+  const reveal = useMutation({
+    mutationFn: async (match: TextMatch) => {
+      const store = useKoharuStore.getState()
+      store.selectPages([match.page])
+      store.selectLayers([])
+      await commands.show(match.page)
+      await refresh(projectKey, pageKey)
+      selectLayers([match.layer])
+    },
+  })
 
   return (
     <div className='flex h-full min-h-0 flex-col gap-2 p-2.5 text-[11px]'>
@@ -176,7 +176,7 @@ export function FindPanel() {
                     <button
                       type='button'
                       className='min-w-0 flex-1 text-left text-[11px] leading-4 break-words text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/25'
-                      onClick={() => reveal(match)}
+                      onClick={() => reveal.mutate(match)}
                     >
                       {highlight(match.text, search, matchCase)}
                     </button>

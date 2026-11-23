@@ -1654,26 +1654,12 @@ fn deleting_anchors_joins_their_neighbours_and_never_opens_a_frame() {
     );
 }
 
-fn arrow(key: NamedKey, code: Code, state: KeyState, repeat: bool, shift: bool) -> KeyboardEvent {
-    let mut modifiers = Modifiers::default();
-    modifiers.set(Modifiers::SHIFT, shift);
-    KeyboardEvent {
-        state,
-        key: Key::Named(key),
-        code,
-        modifiers,
-        repeat,
-        ..KeyboardEvent::default()
-    }
-}
-
 #[test]
-fn arrows_nudge_the_selection_a_pixel_or_ten_with_shift() {
+fn nudges_move_the_selection_by_the_requested_distance() {
     let Some(mut fixture) = unscaled(vec![shape(0, (50.0, 50.0, 40.0, 40.0), json!({}))]) else {
         return;
     };
-    let right = |state, repeat| arrow(NamedKey::ArrowRight, Code::ArrowRight, state, repeat, false);
-    let down = |state, repeat| arrow(NamedKey::ArrowDown, Code::ArrowDown, state, repeat, true);
+    let right = Vec2::new(1.0, 0.0);
     let origin = |fixture: &Fixture| {
         let path = layer(fixture, layers(fixture)[0])["path"]
             .as_str()
@@ -1684,56 +1670,21 @@ fn arrows_nudge_the_selection_a_pixel_or_ten_with_shift() {
             .bounding_box()
             .origin()
     };
-    // With nothing selected, an arrow is the host's, which turns the page.
-    assert!(
-        fixture
-            .canvas
-            .key(&right(KeyState::Down, false))
-            .unwrap()
-            .is_none()
-    );
+    assert!(fixture.canvas.nudge(right).is_empty());
 
     fixture.canvas.select(layers(&fixture));
-    let effects = fixture
-        .canvas
-        .key(&right(KeyState::Down, false))
-        .unwrap()
-        .expect("taken");
-    assert_eq!(apply(&mut fixture, effects), ["move"]);
-    // Held, each repeat nudges again.
-    let effects = fixture
-        .canvas
-        .key(&right(KeyState::Down, true))
-        .unwrap()
-        .expect("taken");
-    assert_eq!(apply(&mut fixture, effects), ["move"]);
-    assert!(
-        fixture
-            .canvas
-            .key(&right(KeyState::Up, false))
-            .unwrap()
-            .is_some()
-    );
+    for _ in 0..2 {
+        let effects = fixture.canvas.nudge(right);
+        assert_eq!(apply(&mut fixture, effects), ["move"]);
+    }
     assert!(close(origin(&fixture), Point::new(52.0, 50.0)));
 
-    let effects = fixture
-        .canvas
-        .key(&down(KeyState::Down, false))
-        .unwrap()
-        .expect("taken");
+    let effects = fixture.canvas.nudge(Vec2::new(0.0, 10.0));
     assert_eq!(apply(&mut fixture, effects), ["move"]);
-    fixture.canvas.key(&down(KeyState::Up, false)).unwrap();
     assert!(close(origin(&fixture), Point::new(52.0, 60.0)));
 
-    // Another tool leaves the arrows to the host.
     fixture.canvas.set_tool(Tool::Draw);
-    assert!(
-        fixture
-            .canvas
-            .key(&right(KeyState::Down, false))
-            .unwrap()
-            .is_none()
-    );
+    assert!(fixture.canvas.nudge(right).is_empty());
 }
 
 #[test]

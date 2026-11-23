@@ -17,6 +17,17 @@
     "stop": "Durdur",
     "title": "Etkinlik"
   },
+  "adjust": {
+    "apply": "Uygula",
+    "brightness_contrast": "Parlaklık/Kontrast",
+    "brightness": "Parlaklık",
+    "contrast": "Kontrast",
+    "levels": "Düzeyler",
+    "levelsLow": "Giriş siyahı",
+    "levelsHigh": "Giriş beyazı",
+    "hue": "Ton",
+    "grayscale": "Doygunluğu azalt"
+  },
   "agent": {
     "cancel": "İptal",
     "cancelled": "İptal edildi.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "Fırça rengi",
     "hexCode": "Onaltılık renk kodu",
+    "recent": "Son kullanılan renkler",
+    "recentColor": "Son kullanılan renk {{color}}",
     "sampleCanvas": "Tuvalden renk seç",
     "transparent": "Şeffaf"
   },
@@ -58,8 +71,29 @@
     "loading": "Yükleniyor…"
   },
   "errors": {
+    "actionFailed": "İşlem tamamlanamadı",
     "fatalTitle": "Koharu devam edemedi",
-    "tryAgain": "Tekrar dene"
+    "tryAgain": "Tekrar dene",
+    "unknown": "Yerel uygulama bilinmeyen bir hata döndürdü."
+  },
+  "export": {
+    "cancel": "İptal",
+    "cbzHint": "PNG sayfalarını tek bir arşivde toplar; dosya adı proje adıdır.",
+    "description": "Sayfaları görüntü dosyaları olarak işler.",
+    "formats": "Biçimler",
+    "pattern": "Dosya adı deseni",
+    "patternError": {
+      "separator": "Desen yol ayırıcısı veya '..' içeremez.",
+      "token": "Bilinmeyen belirteç. {index} veya {label} kullanın.",
+      "unclosed": "Desende eşleşmeyen süslü parantez.",
+      "width": "Basamak sayısı bir sayı olmalı."
+    },
+    "scope": "Sayfalar",
+    "scopeAll": "Tüm sayfalar ({{count}})",
+    "scopeSelected": "Seçili ({{count}})",
+    "start": "Dışa aktar",
+    "subfolders": "Her biçim için ayrı klasör",
+    "title": "Sayfaları dışa aktar"
   },
   "feedback": {
     "addScreenshot": "Ekran görüntüsü ekle",
@@ -92,16 +126,32 @@
     "prompt": "Ne ekleneceğini açıklayın (isteğe bağlı)",
     "title": "Üretken Dolgu"
   },
+  "find": {
+    "matchCase": "Büyük/küçük harf duyarlı",
+    "noResults": "Bu metni içeren çeviri yok.",
+    "page": "Sayfa {{number}}",
+    "placeholder": "Çevirilerde bul",
+    "replace": "Değiştir",
+    "replaceAll": "Tümünü değiştir",
+    "replacePlaceholder": "Şununla değiştir",
+    "searching": "Aranıyor…",
+    "summary": "{{pages}} sayfada {{count}} eşleşme",
+    "summary_one": "{{pages}} sayfada {{count}} eşleşme",
+    "summary_other": "{{pages}} sayfada {{count}} eşleşme",
+    "title": "Bul"
+  },
   "fontPicker": {
+    "addFavorite": "{{name}} yazı tipini favorilere ekle",
     "choose": "Yazı tipi seç",
+    "favoritesOnly": "Favori yazı tiplerini göster",
     "fontCount": "{{count}} yazı tipi",
     "fontCount_one": "{{count}} yazı tipi",
     "fontCount_other": "{{count}} yazı tipi",
     "fonts": "Yazı tipleri",
+    "noFavorites": "Henüz favori yazı tipi yok",
     "noResults": "Bu aramayla eşleşen yazı tipi yok",
-    "search": "Yazı tipi ara",
-    "addFavorite": "{{family}} favorilere ekle",
-    "removeFavorite": "{{family}} favorilerden çıkar"
+    "removeFavorite": "{{name}} yazı tipini favorilerden çıkar",
+    "search": "Yazı tipi ara"
   },
   "history": {
     "close": "Geçmişi kapat",
@@ -182,8 +232,9 @@
     "border": "Kenarlık",
     "borderColor": "Kenarlık rengi",
     "borderWidth": "Kenarlık genişliği",
+    "chooseBorderWidth": "Kenarlık genişliğini seç",
     "chooseFontSize": "Yazı tipi boyutunu seç",
-    "decreaseBorderWidth": "Kenarlık genişliğini azalt",
+    "decreaseSecondBorderWidth": "İkinci kenarlık genişliğini azalt",
     "font": "Yazı tipi",
     "fontSize": "Yazı tipi boyutu",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "Yazı tipi kalınlığı",
     "horizontal": "Yatay",
-    "increaseBorderWidth": "Kenarlık genişliğini artır",
-    "opacity": "Opaklık",
-    "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
-    "source": "Kaynak metin",
-    "text": "Metin",
-    "textColor": "Metin rengi",
-    "textDirection": "Metin yönü",
-    "translation": "Çeviri",
-    "type": "Tipografi",
-    "vertical": "Dikey",
-    "decreaseSecondBorderWidth": "İkinci kenarlık genişliğini azalt",
     "increaseSecondBorderWidth": "İkinci kenarlık genişliğini artır",
+    "opacity": "Opaklık",
     "outlineBevel": "Pah",
     "outlineCenter": "Ortada",
     "outlineInside": "İçte",
@@ -214,21 +255,15 @@
     "outlineRound": "Yuvarlak",
     "secondBorder": "2. kenarlık",
     "secondBorderColor": "İkinci kenarlık rengi",
-    "secondBorderWidth": "İkinci kenarlık genişliği"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "İkinci kenarlık genişliği",
+    "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
+    "source": "Kaynak metin",
+    "text": "Metin",
+    "textColor": "Metin rengi",
+    "textDirection": "Metin yönü",
+    "translation": "Çeviri",
+    "type": "Tipografi",
+    "vertical": "Dikey"
   },
   "layers": {
     "delete": "{{name}} öğesini sil",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "Hakkında",
+    "adjustments": "Ayarlamalar",
     "closeProject": "Projeyi Kapat",
     "delete": "Seçilenleri Sil",
     "discord": "Discord",
+    "donate": "Bağış yap",
     "edit": "Düzenle",
     "export": "Projeyi Dışa Aktar",
     "feedback": "Geri bildirim gönder",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "Yardım",
     "history": "Geçmiş",
+    "image": "Görüntü",
     "import": "Sayfaları İçe Aktar",
     "redo": "Yinele",
     "selectAllLayers": "Tüm Katmanları Seç",
     "settings": "Ayarlar",
     "undo": "Geri Al",
     "unloadModels": "Modelleri bellekten kaldır",
-    "view": "Görünüm",
-    "adjustments": "Ayarlamalar",
-    "image": "Görüntü"
+    "view": "Görünüm"
   },
   "model": {
     "baseUrl": "Temel URL",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "{{page}} için eylemler",
+    "chapterStart": "Bölüm başlangıcı",
     "delete": "Sil",
     "deleteDescription": "“{{page}}” ve katmanları silinir. Bu işlemi geri alabilirsiniz.",
     "deleteTitle": "Sayfa silinsin mi?",
@@ -312,9 +349,16 @@
     "importFolder": "Klasör…",
     "importing": "Sayfalar içe aktarılıyor…",
     "importingAction": "İçe aktarılıyor…",
+    "mergeAsSpread": "Çift sayfada birleştir",
+    "mergeLeftToRight": "Soldan sağa",
+    "mergeRightToLeft": "Sağdan sola",
     "noImage": "Görüntü yok",
+    "pageName": "Sayfa adı",
     "pageNumber": "Sayfa {{number}}",
     "pages": "Sayfalar",
+    "rename": "Yeniden adlandır",
+    "renameDescription": "Bu sayfa için yeni bir ad seçin.",
+    "renameTitle": "Sayfayı yeniden adlandır",
     "run": {
       "detect": "Algıla",
       "inpaint": "Doldur",
@@ -322,16 +366,11 @@
       "translate": "Çevir"
     },
     "selected": "{{count}} seçili",
-    "chapterStart": "Bölüm başlangıcı",
-    "mergeAsSpread": "Çift sayfada birleştir",
-    "mergeLeftToRight": "Soldan sağa",
-    "mergeRightToLeft": "Sağdan sola",
-    "pageName": "Sayfa adı",
-    "rename": "Yeniden adlandır",
-    "renameDescription": "Bu sayfa için yeni bir ad seçin.",
-    "renameTitle": "Sayfayı yeniden adlandır"
+    "translated": "{{translated}}/{{total}} çevrildi"
   },
   "outputPicker": {
+    "noResults": "Bu aramayla eşleşen dil yok.",
+    "search": "Dil ara",
     "targetLanguage": "Hedef dil",
     "title": "Çeviri çıktısı"
   },
@@ -442,6 +481,7 @@
       "configured": "Yapılandırıldı",
       "connections": "Bağlantılar",
       "connectionsDescription": "Kimlik bilgileri bu cihazda güvenli bir şekilde saklanır.",
+      "contextWindow": "Bağlam uzunluğu (token)",
       "credential": "Kimlik bilgisi",
       "credentialLabel": "{{provider}} kimlik bilgisi",
       "description": "Çeviri ve dil modeli sağlayıcılarını bağlayın.",
@@ -465,18 +505,42 @@
     },
     "title": "Ayarlar",
     "typesetting": {
+      "addFallback": "Yedek ekle",
       "addFamily": "Yazı tipi ailesi ekle",
-      "defaultFamilies": "Varsayılan yazı tipi aileleri",
       "description": "Bir metin katmanına aile atanmadığında kullanılacak sıralı yazı tipi yığınını ayarlayın.",
       "empty": "Varsayılan aile yok. Koharu sistem yedeğini kullanacak.",
+      "fallbacks": "Yedekler",
+      "fallbacksDescription": "Birincil yazı tipinde olmayan karakterler için sırayla kullanılır. Sıralamak için sürükleyin ya da yer değiştirmek için Birincil'in üzerine bırakın.",
       "familyLabel": "Varsayılan yazı tipi ailesi {{index}}",
       "fontFallback": "Tercih edilen yazı tipleri",
       "fontFallbackDescription": "Koharu, metni destekleyen ilk kullanılabilir aileyi kullanır.",
       "loadError": "Yazı tipleri yüklenemedi. Mevcut aileler yine de kaldırılabilir.",
       "loadingFonts": "Yazı tipleri yükleniyor…",
+      "primary": "Birincil",
       "removeFamily": "{{family}} ailesini kaldır",
       "title": "Oluşturucu"
     }
+  },
+  "shape": {
+    "title": "Şekil",
+    "fill": "Dolgu",
+    "fillNone": "Dolgu yok",
+    "fillSolid": "Düz renk",
+    "fillLinear": "Doğrusal degrade",
+    "fillRadial": "Radyal degrade",
+    "fillSweep": "Açısal degrade",
+    "fillPattern": "Desen",
+    "fillColor": "Dolgu rengi",
+    "choosePattern": "Görüntü seç…",
+    "angle": "Açı",
+    "stopColor": "Durak {{index}} rengi",
+    "stopPosition": "Durak {{index}} konumu",
+    "removeStop": "Durak {{index}} kaldır",
+    "addStop": "Durak ekle",
+    "strokeColor": "Kontur rengi",
+    "strokeWidth": "Kontur kalınlığı",
+    "decrease": "{{name}} azalt",
+    "increase": "{{name}} artır"
   },
   "start": {
     "create": "Oluştur",
@@ -491,10 +555,12 @@
     "loadingProjects": "Projeler yükleniyor…",
     "newDescription": "Sayfalarınız, çevirileriniz ve dışa aktarımlarınız için temiz bir çalışma alanı oluşturun.",
     "newProject": "Yeni proje",
+    "noResults": "Bu aramayla eşleşen proje yok.",
     "projectKind": "Koharu projesi",
     "projectList": "Projeler",
     "projectName": "Proje adı",
     "projectNamePlaceholder": "Yeni projem",
+    "search": "Proje ara",
     "storageHint": "Projeler bu bilgisayarda yerel olarak saklanır.",
     "title": "Projeler",
     "yourProjects": "Projeleriniz"
@@ -565,70 +631,5 @@
     "maximize": "Ekranı kapla",
     "minimize": "Simge durumuna küçült",
     "restore": "Geri yükle"
-  },
-  "find": {
-    "matchCase": "Büyük/küçük harf duyarlı",
-    "noResults": "Bu metni içeren çeviri yok.",
-    "page": "Sayfa {{number}}",
-    "placeholder": "Çevirilerde bul",
-    "replace": "Değiştir",
-    "replaceAll": "Tümünü değiştir",
-    "replacePlaceholder": "Şununla değiştir",
-    "searching": "Aranıyor…",
-    "summary": "{{pages}} sayfada {{count}} eşleşme",
-    "summary_one": "{{pages}} sayfada {{count}} eşleşme",
-    "summary_other": "{{pages}} sayfada {{count}} eşleşme",
-    "title": "Bul"
-  },
-  "adjust": {
-    "apply": "Uygula",
-    "brightness_contrast": "Parlaklık/Kontrast",
-    "brightness": "Parlaklık",
-    "contrast": "Kontrast",
-    "levels": "Düzeyler",
-    "levelsLow": "Giriş siyahı",
-    "levelsHigh": "Giriş beyazı",
-    "hue": "Ton",
-    "grayscale": "Doygunluğu azalt"
-  },
-  "shape": {
-    "title": "Şekil",
-    "fill": "Dolgu",
-    "fillNone": "Dolgu yok",
-    "fillSolid": "Düz renk",
-    "fillLinear": "Doğrusal degrade",
-    "fillRadial": "Radyal degrade",
-    "fillSweep": "Açısal degrade",
-    "fillPattern": "Desen",
-    "fillColor": "Dolgu rengi",
-    "choosePattern": "Görüntü seç…",
-    "angle": "Açı",
-    "stopColor": "Durak {{index}} rengi",
-    "stopPosition": "Durak {{index}} konumu",
-    "removeStop": "Durak {{index}} kaldır",
-    "addStop": "Durak ekle",
-    "strokeColor": "Kontur rengi",
-    "strokeWidth": "Kontur kalınlığı",
-    "decrease": "{{name}} azalt",
-    "increase": "{{name}} artır"
-  },
-  "export": {
-    "cancel": "İptal",
-    "cbzHint": "PNG sayfalarını tek bir arşivde toplar; dosya adı proje adıdır.",
-    "description": "Sayfaları görüntü dosyaları olarak işler.",
-    "formats": "Biçimler",
-    "pattern": "Dosya adı deseni",
-    "patternError": {
-      "separator": "Desen yol ayırıcısı veya '..' içeremez.",
-      "token": "Bilinmeyen belirteç. {index} veya {label} kullanın.",
-      "unclosed": "Desende eşleşmeyen süslü parantez.",
-      "width": "Basamak sayısı bir sayı olmalı."
-    },
-    "scope": "Sayfalar",
-    "scopeAll": "Tüm sayfalar ({{count}})",
-    "scopeSelected": "Seçili ({{count}})",
-    "start": "Dışa aktar",
-    "subfolders": "Her biçim için ayrı klasör",
-    "title": "Sayfaları dışa aktar"
   }
 }

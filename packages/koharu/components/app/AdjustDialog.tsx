@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { dispatch } from '@/lib/backend'
+import { send } from '@/lib/queries'
 import { adjustColors } from '@/lib/scene'
 import type { ColorAdjust, LayerId } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
@@ -20,7 +20,15 @@ import { Slider } from '@koharu/ui/components/slider'
 export type Adjustment = 'brightness_contrast' | 'levels' | 'hue'
 
 /** Each value's label key, range, and starting value, by the adjustment asking for it. */
-const fields: Record<Adjustment, { key: string; min: number; max: number; start: number }[]> = {
+const fields: Record<
+  Adjustment,
+  {
+    key: 'brightness' | 'contrast' | 'levelsLow' | 'levelsHigh' | 'hue'
+    min: number
+    max: number
+    start: number
+  }[]
+> = {
   brightness_contrast: [
     { key: 'brightness', min: -150, max: 150, start: 0 },
     { key: 'contrast', min: -100, max: 100, start: 0 },
@@ -112,7 +120,7 @@ function Values({
         <Button
           disabled={!valid || chosen.length === 0}
           onClick={() => {
-            dispatch(adjustColors, layers, chosen)
+            send(adjustColors, layers, chosen)
             onClose()
           }}
         >

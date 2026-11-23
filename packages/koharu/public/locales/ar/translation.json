@@ -17,6 +17,17 @@
     "stop": "إيقاف",
     "title": "النشاط"
   },
+  "adjust": {
+    "apply": "تطبيق",
+    "brightness_contrast": "السطوع/التباين",
+    "brightness": "السطوع",
+    "contrast": "التباين",
+    "levels": "المستويات",
+    "levelsLow": "أسود الإدخال",
+    "levelsHigh": "أبيض الإدخال",
+    "hue": "تدرج اللون",
+    "grayscale": "إزالة التشبع"
+  },
   "agent": {
     "cancel": "إلغاء",
     "cancelled": "أُلغي.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "لون الفرشاة",
     "hexCode": "رمز اللون الست عشري",
+    "recent": "الألوان المستخدمة مؤخرًا",
+    "recentColor": "لون مستخدم مؤخرًا {{color}}",
     "sampleCanvas": "اختيار لون من اللوحة",
     "transparent": "شفاف"
   },
@@ -58,8 +71,29 @@
     "loading": "جارٍ التحميل…"
   },
   "errors": {
+    "actionFailed": "تعذّر إكمال هذا الإجراء",
     "fatalTitle": "تعذّر على Koharu المتابعة",
-    "tryAgain": "أعد المحاولة"
+    "tryAgain": "أعد المحاولة",
+    "unknown": "أعاد التطبيق الأصلي خطأً غير معروف."
+  },
+  "export": {
+    "cancel": "إلغاء",
+    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
+    "description": "تصيير الصفحات إلى ملفات صور.",
+    "formats": "التنسيقات",
+    "pattern": "نمط اسم الملف",
+    "patternError": {
+      "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
+      "token": "رمز غير معروف. استخدم {index} أو {label}.",
+      "unclosed": "قوس غير مغلق في النمط.",
+      "width": "يجب أن يكون عدد الخانات رقمًا."
+    },
+    "scope": "الصفحات",
+    "scopeAll": "كل الصفحات ({{count}})",
+    "scopeSelected": "المحدد ({{count}})",
+    "start": "تصدير",
+    "subfolders": "مجلد منفصل لكل تنسيق",
+    "title": "تصدير الصفحات"
   },
   "feedback": {
     "addScreenshot": "إضافة لقطة شاشة",
@@ -92,16 +126,32 @@
     "prompt": "صِف ما تريد إضافته (اختياري)",
     "title": "التعبئة التوليدية"
   },
+  "find": {
+    "matchCase": "مطابقة حالة الأحرف",
+    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
+    "page": "الصفحة {{number}}",
+    "placeholder": "البحث في الترجمات",
+    "replace": "استبدال",
+    "replaceAll": "استبدال الكل",
+    "replacePlaceholder": "الاستبدال بـ",
+    "searching": "جارٍ البحث…",
+    "summary": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
+    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
+    "title": "بحث"
+  },
   "fontPicker": {
+    "addFavorite": "إضافة {{name}} إلى المفضلة",
     "choose": "اختر خطًا",
+    "favoritesOnly": "عرض الخطوط المفضلة",
     "fontCount": "{{count}} خط",
     "fontCount_one": "{{count}} خط",
     "fontCount_other": "{{count}} خط",
     "fonts": "الخطوط",
+    "noFavorites": "لا توجد خطوط مفضلة بعد",
     "noResults": "لا توجد خطوط تطابق هذا البحث",
-    "search": "ابحث عن خطوط",
-    "addFavorite": "إضافة {{family}} إلى المفضلة",
-    "removeFavorite": "إزالة {{family}} من المفضلة"
+    "removeFavorite": "إزالة {{name}} من المفضلة",
+    "search": "ابحث عن خطوط"
   },
   "history": {
     "close": "إغلاق السجل",
@@ -182,8 +232,9 @@
     "border": "الحدود",
     "borderColor": "لون الحدود",
     "borderWidth": "عرض الحدود",
+    "chooseBorderWidth": "اختر عرض الحدود",
     "chooseFontSize": "اختر حجم الخط",
-    "decreaseBorderWidth": "تقليل عرض الحدود",
+    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
     "font": "الخط",
     "fontSize": "حجم الخط",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "وزن الخط",
     "horizontal": "أفقي",
-    "increaseBorderWidth": "زيادة عرض الحدود",
-    "opacity": "العتامة",
-    "selectPage": "اختر صفحة لعرض طبقاتها.",
-    "source": "النص المصدر",
-    "text": "نص",
-    "textColor": "لون النص",
-    "textDirection": "اتجاه النص",
-    "translation": "الترجمة",
-    "type": "النوع",
-    "vertical": "عمودي",
-    "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
     "increaseSecondBorderWidth": "زيادة عرض الحدود الثانية",
+    "opacity": "العتامة",
     "outlineBevel": "مشطوفة",
     "outlineCenter": "الوسط",
     "outlineInside": "الداخل",
@@ -214,21 +255,15 @@
     "outlineRound": "مستديرة",
     "secondBorder": "الحدود 2",
     "secondBorderColor": "لون الحدود الثانية",
-    "secondBorderWidth": "عرض الحدود الثانية"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "عرض الحدود الثانية",
+    "selectPage": "اختر صفحة لعرض طبقاتها.",
+    "source": "النص المصدر",
+    "text": "نص",
+    "textColor": "لون النص",
+    "textDirection": "اتجاه النص",
+    "translation": "الترجمة",
+    "type": "النوع",
+    "vertical": "عمودي"
   },
   "layers": {
     "delete": "حذف {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "عن البرنامج",
+    "adjustments": "تعديلات",
     "closeProject": "إغلاق المشروع",
     "delete": "حذف المحدّد",
     "discord": "Discord",
+    "donate": "تبرّع",
     "edit": "تحرير",
     "export": "تصدير المشروع",
     "feedback": "إرسال ملاحظات",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "مساعدة",
     "history": "السجل",
+    "image": "صورة",
     "import": "استيراد الصفحات",
     "redo": "إعادة",
     "selectAllLayers": "تحديد كل الطبقات",
     "settings": "الإعدادات",
     "undo": "تراجع",
     "unloadModels": "إلغاء تحميل النماذج",
-    "view": "عرض",
-    "adjustments": "تعديلات",
-    "image": "صورة"
+    "view": "عرض"
   },
   "model": {
     "baseUrl": "عنوان URL الأساسي",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "إجراءات {{page}}",
+    "chapterStart": "بداية الفصل",
     "delete": "حذف",
     "deleteDescription": "يؤدي هذا إلى حذف «{{page}}» وطبقاتها. يمكنك التراجع عن ذلك.",
     "deleteTitle": "حذف الصفحة؟",
@@ -312,9 +349,16 @@
     "importFolder": "مجلد…",
     "importing": "جارٍ استيراد الصفحات…",
     "importingAction": "جارٍ الاستيراد…",
+    "mergeAsSpread": "دمج في صفحة مزدوجة",
+    "mergeLeftToRight": "من اليسار إلى اليمين",
+    "mergeRightToLeft": "من اليمين إلى اليسار",
     "noImage": "لا توجد صورة",
+    "pageName": "اسم الصفحة",
     "pageNumber": "الصفحة {{number}}",
     "pages": "الصفحات",
+    "rename": "إعادة تسمية",
+    "renameDescription": "اختر اسمًا جديدًا لهذه الصفحة.",
+    "renameTitle": "إعادة تسمية الصفحة",
     "run": {
       "detect": "كشف",
       "inpaint": "ترميم",
@@ -322,16 +366,11 @@
       "translate": "ترجمة"
     },
     "selected": "{{count}} محدّد",
-    "chapterStart": "بداية الفصل",
-    "mergeAsSpread": "دمج في صفحة مزدوجة",
-    "mergeLeftToRight": "من اليسار إلى اليمين",
-    "mergeRightToLeft": "من اليمين إلى اليسار",
-    "pageName": "اسم الصفحة",
-    "rename": "إعادة تسمية",
-    "renameDescription": "اختر اسمًا جديدًا لهذه الصفحة.",
-    "renameTitle": "إعادة تسمية الصفحة"
+    "translated": "تمت ترجمة {{translated}} من {{total}}"
   },
   "outputPicker": {
+    "noResults": "لا توجد لغات تطابق هذا البحث.",
+    "search": "البحث في اللغات",
     "targetLanguage": "اللغة المستهدفة",
     "title": "مخرجات الترجمة"
   },
@@ -442,6 +481,7 @@
       "configured": "مهيّأ",
       "connections": "الاتصالات",
       "connectionsDescription": "تُخزَّن مفاتيح API بأمان على هذا الجهاز.",
+      "contextWindow": "طول السياق (رموز)",
       "credential": "API key",
       "credentialLabel": "API key لـ {{provider}}",
       "description": "اربط مزوّدي الترجمة والنماذج اللغوية.",
@@ -465,18 +505,42 @@
     },
     "title": "الإعدادات",
     "typesetting": {
+      "addFallback": "إضافة خط بديل",
       "addFamily": "إضافة عائلة خطوط",
-      "defaultFamilies": "عائلات الخطوط الافتراضية",
       "description": "عيّن مجموعة الخطوط المرتّبة المستخدمة عندما لا يكون لطبقة النص عائلة معيّنة.",
       "empty": "لا توجد عائلات افتراضية. سيستخدم Koharu البديل من النظام.",
+      "fallbacks": "البدائل",
+      "fallbacksDescription": "تُستخدم بالترتيب للأحرف التي يفتقدها الخط الأساسي. اسحب لإعادة الترتيب، أو إلى الأساسي للتبديل.",
       "familyLabel": "عائلة الخطوط الافتراضية {{index}}",
       "fontFallback": "الخطوط المفضلة",
       "fontFallbackDescription": "يستخدم Koharu أول عائلة متاحة تدعم النص.",
       "loadError": "تعذّر تحميل الخطوط. لا يزال بإمكانك إزالة العائلات الحالية.",
       "loadingFonts": "جارٍ تحميل الخطوط…",
+      "primary": "أساسي",
       "removeFamily": "إزالة {{family}}",
       "title": "محرك العرض"
     }
+  },
+  "shape": {
+    "title": "شكل",
+    "fill": "التعبئة",
+    "fillNone": "بلا تعبئة",
+    "fillSolid": "لون خالص",
+    "fillLinear": "تدرج خطي",
+    "fillRadial": "تدرج شعاعي",
+    "fillSweep": "تدرج زاوي",
+    "fillPattern": "نقش",
+    "fillColor": "لون التعبئة",
+    "choosePattern": "اختيار صورة…",
+    "angle": "الزاوية",
+    "stopColor": "لون النقطة {{index}}",
+    "stopPosition": "موضع النقطة {{index}}",
+    "removeStop": "إزالة النقطة {{index}}",
+    "addStop": "إضافة نقطة",
+    "strokeColor": "لون الحد",
+    "strokeWidth": "عرض الحد",
+    "decrease": "إنقاص {{name}}",
+    "increase": "زيادة {{name}}"
   },
   "start": {
     "create": "إنشاء",
@@ -491,10 +555,12 @@
     "loadingProjects": "جارٍ تحميل المشاريع…",
     "newDescription": "أنشئ مساحة عمل نظيفة لصفحاتك وترجماتك وعمليات التصدير.",
     "newProject": "مشروع جديد",
+    "noResults": "لا توجد مشاريع تطابق هذا البحث.",
     "projectKind": "مشروع Koharu",
     "projectList": "المشاريع",
     "projectName": "اسم المشروع",
     "projectNamePlaceholder": "مشروعي الجديد",
+    "search": "البحث في المشاريع",
     "storageHint": "تُخزَّن المشاريع محليًا على هذا الكمبيوتر.",
     "title": "المشاريع",
     "yourProjects": "مشاريعك"
@@ -565,70 +631,5 @@
     "maximize": "تكبير",
     "minimize": "تصغير",
     "restore": "استعادة"
-  },
-  "find": {
-    "matchCase": "مطابقة حالة الأحرف",
-    "noResults": "لا توجد ترجمة تحتوي على هذا النص.",
-    "page": "الصفحة {{number}}",
-    "placeholder": "البحث في الترجمات",
-    "replace": "استبدال",
-    "replaceAll": "استبدال الكل",
-    "replacePlaceholder": "الاستبدال بـ",
-    "searching": "جارٍ البحث…",
-    "summary": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_one": "النتائج: {{count}} في {{pages}} صفحة",
-    "summary_other": "النتائج: {{count}} في {{pages}} صفحة",
-    "title": "بحث"
-  },
-  "adjust": {
-    "apply": "تطبيق",
-    "brightness_contrast": "السطوع/التباين",
-    "brightness": "السطوع",
-    "contrast": "التباين",
-    "levels": "المستويات",
-    "levelsLow": "أسود الإدخال",
-    "levelsHigh": "أبيض الإدخال",
-    "hue": "تدرج اللون",
-    "grayscale": "إزالة التشبع"
-  },
-  "shape": {
-    "title": "شكل",
-    "fill": "التعبئة",
-    "fillNone": "بلا تعبئة",
-    "fillSolid": "لون خالص",
-    "fillLinear": "تدرج خطي",
-    "fillRadial": "تدرج شعاعي",
-    "fillSweep": "تدرج زاوي",
-    "fillPattern": "نقش",
-    "fillColor": "لون التعبئة",
-    "choosePattern": "اختيار صورة…",
-    "angle": "الزاوية",
-    "stopColor": "لون النقطة {{index}}",
-    "stopPosition": "موضع النقطة {{index}}",
-    "removeStop": "إزالة النقطة {{index}}",
-    "addStop": "إضافة نقطة",
-    "strokeColor": "لون الحد",
-    "strokeWidth": "عرض الحد",
-    "decrease": "إنقاص {{name}}",
-    "increase": "زيادة {{name}}"
-  },
-  "export": {
-    "cancel": "إلغاء",
-    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
-    "description": "تصيير الصفحات إلى ملفات صور.",
-    "formats": "التنسيقات",
-    "pattern": "نمط اسم الملف",
-    "patternError": {
-      "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
-      "token": "رمز غير معروف. استخدم {index} أو {label}.",
-      "unclosed": "قوس غير مغلق في النمط.",
-      "width": "يجب أن يكون عدد الخانات رقمًا."
-    },
-    "scope": "الصفحات",
-    "scopeAll": "كل الصفحات ({{count}})",
-    "scopeSelected": "المحدد ({{count}})",
-    "start": "تصدير",
-    "subfolders": "مجلد منفصل لكل تنسيق",
-    "title": "تصدير الصفحات"
   }
 }

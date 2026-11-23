@@ -5,11 +5,11 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ColorWell } from '@/components/controls/ColorWell'
-import { dispatch } from '@/lib/backend'
+import { toHex, toRgba } from '@/lib/color'
 import { expandLayerSelection, walkLayers } from '@/lib/document'
-import { usePage } from '@/lib/queries'
+import { send, usePage } from '@/lib/queries'
 import { setFill, setStroke } from '@/lib/scene'
-import { hexToRgba, rgbaToHex, useKoharuStore, type CanvasTool } from '@/lib/store'
+import { useKoharuStore, type CanvasTool } from '@/lib/store'
 import {
   commands,
   type Gradient,
@@ -38,14 +38,14 @@ type ShapeLayer = Extract<Layer, { kind: 'shape' }>
 type FillKind = 'none' | 'solid' | 'linear' | 'radial' | 'sweep' | 'pattern'
 
 /** Each fill kind's label key, in the order the menu lists them. */
-const fillKinds: Record<FillKind, string> = {
+const fillKinds = {
   none: 'fillNone',
   solid: 'fillSolid',
   linear: 'fillLinear',
   radial: 'fillRadial',
   sweep: 'fillSweep',
   pattern: 'fillPattern',
-}
+} as const satisfies Record<FillKind, string>
 const BLACK: Rgba = [0, 0, 0, 1]
 const WHITE: Rgba = [1, 1, 1, 1]
 /** The scene's bounds on a gradient's stops. */
@@ -106,7 +106,7 @@ export function ShapeBar() {
   const color = Array.isArray(fill) ? fill : (stops?.[0]?.color ?? BLACK)
   const stroke = current.stroke ?? null
 
-  const fillWith = (next: ShapeFill | null) => dispatch(setFill, ids, next)
+  const fillWith = (next: ShapeFill | null) => send(setFill, ids, next)
   const withStops = (next: GradientStop[]) =>
     gradient &&
     fillWith({
@@ -116,7 +116,7 @@ export function ShapeBar() {
   const choose = (next: FillKind) => {
     if (next === kind) return
     if (next === 'pattern') {
-      dispatch(commands.fillWithPattern, ids)
+      send(commands.fillWithPattern, ids)
       return
     }
     if (next === 'none') return fillWith(null)
@@ -159,8 +159,8 @@ export function ShapeBar() {
         <ColorWell
           label={t('shape.fillColor')}
           size='sm'
-          value={rgbaToHex(color)}
-          onChange={(next) => fillWith(hexToRgba(next))}
+          value={toHex(color)}
+          onChange={(next) => fillWith(toRgba(next))}
         />
       )}
       {kind === 'pattern' && (
@@ -169,7 +169,7 @@ export function ShapeBar() {
           variant='outline'
           size='sm'
           className='h-6 gap-1 px-2 text-[11px]'
-          onClick={() => dispatch(commands.fillWithPattern, ids)}
+          onClick={() => send(commands.fillWithPattern, ids)}
         >
           <ImagePlus className='size-3' />
           {t('shape.choosePattern')}
@@ -190,11 +190,11 @@ export function ShapeBar() {
           <ColorWell
             label={t('shape.stopColor', { index: index + 1 })}
             size='sm'
-            value={rgbaToHex(stop.color)}
+            value={toHex(stop.color)}
             onChange={(next) =>
               withStops(
                 stops.map((other, at) =>
-                  at === index ? { ...other, color: hexToRgba(next) } : other,
+                  at === index ? { ...other, color: toRgba(next) } : other,
                 ),
               )
             }
@@ -251,12 +251,12 @@ export function ShapeBar() {
         label={t('shape.strokeColor')}
         size='sm'
         allowTransparent
-        value={stroke ? rgbaToHex(stroke.color) : null}
+        value={stroke ? toHex(stroke.color) : null}
         onChange={(next) =>
-          dispatch(
+          send(
             setStroke,
             ids,
-            next === null ? null : { color: hexToRgba(next), width: strokeWidth || 2 },
+            next === null ? null : { color: toRgba(next), width: strokeWidth || 2 },
           )
         }
       />
@@ -267,7 +267,7 @@ export function ShapeBar() {
         max={200}
         step={1}
         onChange={(width) =>
-          dispatch(setStroke, ids, width > 0 ? { color: stroke?.color ?? BLACK, width } : null)
+          send(setStroke, ids, width > 0 ? { color: stroke?.color ?? BLACK, width } : null)
         }
       />
     </div>

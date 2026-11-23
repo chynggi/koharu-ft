@@ -27,7 +27,9 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use image::{DynamicImage, RgbaImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
-use koharu_canvas::{Brush, Camera, Canvas, Colors, Effect, Rect, Snapshot, Story, Tool, Typed};
+use koharu_canvas::{
+    Brush, Camera, Canvas, Colors, Effect, Rect, Snapshot, Story, Tool, Typed, Vec2,
+};
 use koharu_renderer::Gpu;
 use koharu_scene::{Bounds, CharStyle, LayerId, PageId};
 use tauri::{
@@ -248,6 +250,15 @@ impl Screen {
             main.canvas
                 .as_mut()
                 .map_or_else(Vec::new, |canvas| canvas.select(layers))
+        });
+    }
+
+    /// An arrow key's move of the selection.
+    pub fn nudge(&self, app: Arc<App>, by: Vec2) {
+        self.answer(app, move |main| {
+            main.canvas
+                .as_mut()
+                .map_or_else(Vec::new, |canvas| canvas.nudge(by))
         });
     }
 
@@ -823,6 +834,8 @@ pub fn open(
         .build()
         .context("failed to create the main window")?;
     add_webview(&window, config.url.clone(), shared)?;
+    #[cfg(target_os = "macos")]
+    keys::take_edit_chords();
     window.show()?;
     window.set_focus()?;
     Ok(())
@@ -850,6 +863,9 @@ fn add_webview(window: &tauri::Window<CefRuntime>, url: WebviewUrl, shared: bool
         .size(size)
         // The canvas shows through where the page paints nothing.
         .transparent(true)
+        // The app's window opens no DevTools window, debug builds' Ctrl+Shift+I included;
+        // their DevTools protocol on port 4000 is the runtime's, and stays.
+        .devtools(false)
         .on_page_load(|_, payload| {
             if payload.event() == PageLoadEvent::Started {
                 focus_page();

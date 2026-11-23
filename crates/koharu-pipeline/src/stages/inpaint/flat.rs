@@ -14,7 +14,7 @@ use imageproc::{distance_transform::Norm, morphology::dilate};
 use koharu_scene::Rect;
 use kurbo::{BezPath, Point, Shape as _};
 
-use super::{masked, telea};
+use super::{inside, masked, telea};
 
 /// How far past the grown mask its surroundings are read.
 const RING: u32 = 4;
@@ -155,7 +155,7 @@ impl<'a> Page<'a> {
                     .into_iter()
                     .all(|(dx, dy)| outline.contains(Point::new(at.x + dx, at.y + dy)))
                 }
-                (None, Some(panel)) => contains(panel, x, y),
+                (None, Some(panel)) => inside(panel, x, y),
                 (None, None) => true,
             })
             .collect()
@@ -328,12 +328,6 @@ impl Plane {
 
 fn centre(x: u32, y: u32) -> Point {
     Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5)
-}
-
-fn contains(rect: Rect, x: u32, y: u32) -> bool {
-    let (x, y) = (i64::from(x), i64::from(y));
-    (i64::from(rect.x)..i64::from(rect.x) + i64::from(rect.width)).contains(&x)
-        && (i64::from(rect.y)..i64::from(rect.y) + i64::from(rect.height)).contains(&y)
 }
 
 /// `rect` grown by `by` on every side, within a `width` by `height` page.

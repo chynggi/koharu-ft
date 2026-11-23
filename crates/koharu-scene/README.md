@@ -154,8 +154,11 @@ So a set size comes from the source text, not from the balloon, and the
 balloon only bounds it. A translation is the exception: it can't know the
 page's dialogue size, and its length differs from its source's, so it's
 written `best` and takes the size its room holds, as Publisher's Best Fit
-fills a box [Publisher copyfitting]. Setting a size and `shrink` gives it one
-again. Start and end on the block axis follow the writing
+fills a box [Publisher copyfitting]. Typing a size gives it one again, drawn at
+that size, so it turns the fitting off with `none`, as Photoshop and Clip Studio
+Paint draw a text at the size it's set [Photoshop type] [CSP text]: two texts
+set alike look alike, and one too long for its frame runs past it until the
+frame is resized. Start and end on the block axis follow the writing
 direction, as `align` does: top and bottom for horizontal text, right and left
 for vertical text.
 
@@ -387,7 +390,8 @@ Each model also writes its `c2pa` action on the layers it wrote.
 
 - **A block is one text**, with its own mask and clean-up ([Blocks](#blocks)).
   A run on part of a page writes only the tiles it changes, so a block's
-  clean-up stores no more than its area.
+  clean-up stores its area, and from an edit model the context it was redrawn
+  in, which hiding its mask shows.
 - **Panels and balloons are kinds with their own outlines**, so a tool reads a
   balloon's outline from the balloon, and the texts in it are its children, as Clip Studio Paint keeps a balloon's texts in its balloon layer
   [CSP balloons].
@@ -423,10 +427,10 @@ Each model also writes its `c2pa` action on the layers it wrote.
 
 ### How the app shows it
 
-- **Layers panel:** the tree first to last, which is reading order, so the top
-  row is read first and the bottom row draws on top, where Photoshop's and Clip
-  Studio Paint's layer palettes list the topmost layer first. A block's row shows its clean-up and its mask, and
-  painting goes to whichever is selected.
+- **Layers panel:** the tree last to first, so the top row draws on top, as
+  Photoshop's and Clip Studio Paint's layer palettes list the topmost layer
+  first; the Story panel shows reading order. A block's row shows its clean-up
+  and its mask, and painting goes to whichever is selected.
 - **Story panel:** each page's shown blocks and texts in reading order, a
   block with its source's wording and its translation's, as Clip Studio Paint's
   Story Editor "shows all text on each page" in text fields, leaving out what

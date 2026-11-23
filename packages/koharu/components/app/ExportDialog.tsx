@@ -27,7 +27,9 @@ const DEFAULT_PATTERN = '{index:04}_{label}'
  * 누른 뒤가 아니라 타이핑하는 동안 오류를 보게 하려는 것이다. 규칙이
  * 어긋나면 서버가 잡는다.
  */
-export function previewPattern(pattern: string): { name: string } | { error: string } {
+export function previewPattern(
+  pattern: string,
+): { name: string } | { error: 'unclosed' | 'width' | 'token' | 'separator' } {
   let out = ''
   let rest = pattern
   while (rest.includes('{')) {

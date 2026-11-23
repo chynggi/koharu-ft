@@ -17,6 +17,17 @@
     "stop": "Arrêter",
     "title": "Activité"
   },
+  "adjust": {
+    "apply": "Appliquer",
+    "brightness_contrast": "Luminosité/Contraste",
+    "brightness": "Luminosité",
+    "contrast": "Contraste",
+    "levels": "Niveaux",
+    "levelsLow": "Noir d’entrée",
+    "levelsHigh": "Blanc d’entrée",
+    "hue": "Teinte",
+    "grayscale": "Désaturation"
+  },
   "agent": {
     "cancel": "Annuler",
     "cancelled": "Annulé.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "Couleur du pinceau",
     "hexCode": "Code couleur hexadécimal",
+    "recent": "Couleurs récentes",
+    "recentColor": "Couleur récente {{color}}",
     "sampleCanvas": "Prélever une couleur sur le canevas",
     "transparent": "Transparent"
   },
@@ -58,8 +71,29 @@
     "loading": "Chargement…"
   },
   "errors": {
+    "actionFailed": "Impossible de terminer cette action",
     "fatalTitle": "Koharu ne peut pas continuer",
-    "tryAgain": "Réessayer"
+    "tryAgain": "Réessayer",
+    "unknown": "L’application native a renvoyé une erreur inconnue."
+  },
+  "export": {
+    "cancel": "Annuler",
+    "cbzHint": "Une archive des pages PNG, nommée d'après le projet.",
+    "description": "Rendre les pages en fichiers image.",
+    "formats": "Formats",
+    "pattern": "Modèle de nom de fichier",
+    "patternError": {
+      "separator": "Le modèle ne peut pas contenir de séparateur de chemin ni '..'.",
+      "token": "Jeton inconnu. Utilisez {index} ou {label}.",
+      "unclosed": "Accolade non fermée dans le modèle.",
+      "width": "Le nombre de chiffres doit être un nombre."
+    },
+    "scope": "Pages",
+    "scopeAll": "Toutes les pages ({{count}})",
+    "scopeSelected": "Sélection ({{count}})",
+    "start": "Exporter",
+    "subfolders": "Un dossier par format",
+    "title": "Exporter les pages"
   },
   "feedback": {
     "addScreenshot": "Ajouter une capture d’écran",
@@ -92,16 +126,32 @@
     "prompt": "Décrivez ce qu’il faut ajouter (facultatif)",
     "title": "Remplissage génératif"
   },
+  "find": {
+    "matchCase": "Respecter la casse",
+    "noResults": "Aucune traduction ne contient ce texte.",
+    "page": "Page {{number}}",
+    "placeholder": "Rechercher dans les traductions",
+    "replace": "Remplacer",
+    "replaceAll": "Tout remplacer",
+    "replacePlaceholder": "Remplacer par",
+    "searching": "Recherche…",
+    "summary": "{{count}} résultats sur {{pages}} page(s)",
+    "summary_one": "{{count}} résultat sur {{pages}} page(s)",
+    "summary_other": "{{count}} résultats sur {{pages}} page(s)",
+    "title": "Rechercher"
+  },
   "fontPicker": {
+    "addFavorite": "Ajouter {{name}} aux favoris",
     "choose": "Choisir une police",
+    "favoritesOnly": "Afficher les polices favorites",
     "fontCount": "{{count}} polices",
     "fontCount_one": "{{count}} police",
     "fontCount_other": "{{count}} polices",
     "fonts": "Polices",
+    "noFavorites": "Aucune police favorite pour l’instant",
     "noResults": "Aucune police ne correspond à cette recherche",
-    "search": "Rechercher des polices",
-    "addFavorite": "Ajouter {{family}} aux favoris",
-    "removeFavorite": "Retirer {{family}} des favoris"
+    "removeFavorite": "Retirer {{name}} des favoris",
+    "search": "Rechercher des polices"
   },
   "history": {
     "close": "Fermer l’historique",
@@ -182,8 +232,9 @@
     "border": "Contour",
     "borderColor": "Couleur du contour",
     "borderWidth": "Épaisseur du contour",
+    "chooseBorderWidth": "Choisir l’épaisseur du contour",
     "chooseFontSize": "Choisir la taille de police",
-    "decreaseBorderWidth": "Réduire l’épaisseur du contour",
+    "decreaseSecondBorderWidth": "Réduire l’épaisseur du second contour",
     "font": "Police",
     "fontSize": "Taille de police",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "Graisse",
     "horizontal": "Horizontal",
-    "increaseBorderWidth": "Augmenter l’épaisseur du contour",
-    "opacity": "Opacité",
-    "selectPage": "Sélectionnez une page pour inspecter ses calques.",
-    "source": "Texte source",
-    "text": "Texte",
-    "textColor": "Couleur du texte",
-    "textDirection": "Sens du texte",
-    "translation": "Traduction",
-    "type": "Type",
-    "vertical": "Vertical",
-    "decreaseSecondBorderWidth": "Réduire l’épaisseur du second contour",
     "increaseSecondBorderWidth": "Augmenter l’épaisseur du second contour",
+    "opacity": "Opacité",
     "outlineBevel": "Biseautés",
     "outlineCenter": "Centre",
     "outlineInside": "Intérieur",
@@ -214,21 +255,15 @@
     "outlineRound": "Arrondis",
     "secondBorder": "2ᵉ contour",
     "secondBorderColor": "Couleur du second contour",
-    "secondBorderWidth": "Épaisseur du second contour"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "Épaisseur du second contour",
+    "selectPage": "Sélectionnez une page pour inspecter ses calques.",
+    "source": "Texte source",
+    "text": "Texte",
+    "textColor": "Couleur du texte",
+    "textDirection": "Sens du texte",
+    "translation": "Traduction",
+    "type": "Type",
+    "vertical": "Vertical"
   },
   "layers": {
     "delete": "Supprimer {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "À propos",
+    "adjustments": "Réglages",
     "closeProject": "Fermer le projet",
     "delete": "Supprimer la sélection",
     "discord": "Discord",
+    "donate": "Faire un don",
     "edit": "Édition",
     "export": "Exporter le projet",
     "feedback": "Envoyer un commentaire",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "Aide",
     "history": "Historique",
+    "image": "Image",
     "import": "Importer des pages",
     "redo": "Rétablir",
     "selectAllLayers": "Sélectionner tous les calques",
     "settings": "Paramètres",
     "undo": "Annuler",
     "unloadModels": "Décharger les modèles",
-    "view": "Affichage",
-    "adjustments": "Réglages",
-    "image": "Image"
+    "view": "Affichage"
   },
   "model": {
     "baseUrl": "URL de base",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "Actions pour {{page}}",
+    "chapterStart": "Début de chapitre",
     "delete": "Supprimer",
     "deleteDescription": "Cette action supprime « {{page}} » et ses calques. Vous pouvez l’annuler.",
     "deleteTitle": "Supprimer la page ?",
@@ -312,9 +349,16 @@
     "importFolder": "Dossier…",
     "importing": "Importation des pages…",
     "importingAction": "Importation…",
+    "mergeAsSpread": "Fusionner en double page",
+    "mergeLeftToRight": "De gauche à droite",
+    "mergeRightToLeft": "De droite à gauche",
     "noImage": "Aucune image",
+    "pageName": "Nom de la page",
     "pageNumber": "Page {{number}}",
     "pages": "Pages",
+    "rename": "Renommer",
+    "renameDescription": "Choisissez un nouveau nom pour cette page.",
+    "renameTitle": "Renommer la page",
     "run": {
       "detect": "Détecter",
       "inpaint": "Retoucher",
@@ -322,16 +366,11 @@
       "translate": "Traduire"
     },
     "selected": "Sélection : {{count}}",
-    "chapterStart": "Début de chapitre",
-    "mergeAsSpread": "Fusionner en double page",
-    "mergeLeftToRight": "De gauche à droite",
-    "mergeRightToLeft": "De droite à gauche",
-    "pageName": "Nom de la page",
-    "rename": "Renommer",
-    "renameDescription": "Choisissez un nouveau nom pour cette page.",
-    "renameTitle": "Renommer la page"
+    "translated": "{{translated}} sur {{total}} traduits"
   },
   "outputPicker": {
+    "noResults": "Aucune langue ne correspond à cette recherche.",
+    "search": "Rechercher une langue",
     "targetLanguage": "Langue cible",
     "title": "Sortie de traduction"
   },
@@ -442,6 +481,7 @@
       "configured": "Configuré",
       "connections": "Connexions",
       "connectionsDescription": "Les identifiants sont stockés de façon sécurisée sur cet appareil.",
+      "contextWindow": "Longueur du contexte (jetons)",
       "credential": "Identifiants",
       "credentialLabel": "Identifiants {{provider}}",
       "description": "Connectez des fournisseurs de traduction et de modèles de langage.",
@@ -465,18 +505,42 @@
     },
     "title": "Paramètres",
     "typesetting": {
+      "addFallback": "Ajouter une police de secours",
       "addFamily": "Ajouter une famille de polices",
-      "defaultFamilies": "Familles de polices par défaut",
       "description": "Définissez la liste ordonnée de polices utilisée lorsqu’aucune famille n’est attribuée à un calque de texte.",
       "empty": "Aucune famille par défaut. Koharu utilisera la police de secours du système.",
+      "fallbacks": "Polices de secours",
+      "fallbacksDescription": "Utilisées dans l’ordre pour les caractères absents de la police principale. Faites glisser pour réordonner, ou sur Principale pour les échanger.",
       "familyLabel": "Famille de polices par défaut {{index}}",
       "fontFallback": "Polices préférées",
       "fontFallbackDescription": "Koharu utilise la première famille disponible qui prend en charge le texte.",
       "loadError": "Impossible de charger les polices. Les familles existantes peuvent toujours être supprimées.",
       "loadingFonts": "Chargement des polices…",
+      "primary": "Principale",
       "removeFamily": "Retirer {{family}}",
       "title": "Moteur de rendu"
     }
+  },
+  "shape": {
+    "title": "Forme",
+    "fill": "Remplissage",
+    "fillNone": "Aucun remplissage",
+    "fillSolid": "Couleur unie",
+    "fillLinear": "Dégradé linéaire",
+    "fillRadial": "Dégradé radial",
+    "fillSweep": "Dégradé angulaire",
+    "fillPattern": "Motif",
+    "fillColor": "Couleur de remplissage",
+    "choosePattern": "Choisir une image…",
+    "angle": "Angle",
+    "stopColor": "Couleur de l’arrêt {{index}}",
+    "stopPosition": "Position de l’arrêt {{index}}",
+    "removeStop": "Supprimer l’arrêt {{index}}",
+    "addStop": "Ajouter un arrêt",
+    "strokeColor": "Couleur du contour",
+    "strokeWidth": "Épaisseur du contour",
+    "decrease": "Diminuer {{name}}",
+    "increase": "Augmenter {{name}}"
   },
   "start": {
     "create": "Créer",
@@ -491,10 +555,12 @@
     "loadingProjects": "Chargement des projets…",
     "newDescription": "Créez un espace de travail vierge pour vos pages, traductions et exports.",
     "newProject": "Nouveau projet",
+    "noResults": "Aucun projet ne correspond à cette recherche.",
     "projectKind": "Projet Koharu",
     "projectList": "Projets",
     "projectName": "Nom du projet",
     "projectNamePlaceholder": "Mon nouveau projet",
+    "search": "Rechercher un projet",
     "storageHint": "Les projets sont stockés localement sur cet ordinateur.",
     "title": "Projets",
     "yourProjects": "Vos projets"
@@ -565,70 +631,5 @@
     "maximize": "Agrandir",
     "minimize": "Réduire",
     "restore": "Restaurer"
-  },
-  "find": {
-    "matchCase": "Respecter la casse",
-    "noResults": "Aucune traduction ne contient ce texte.",
-    "page": "Page {{number}}",
-    "placeholder": "Rechercher dans les traductions",
-    "replace": "Remplacer",
-    "replaceAll": "Tout remplacer",
-    "replacePlaceholder": "Remplacer par",
-    "searching": "Recherche…",
-    "summary": "{{count}} résultats sur {{pages}} page(s)",
-    "summary_one": "{{count}} résultat sur {{pages}} page(s)",
-    "summary_other": "{{count}} résultats sur {{pages}} page(s)",
-    "title": "Rechercher"
-  },
-  "adjust": {
-    "apply": "Appliquer",
-    "brightness_contrast": "Luminosité/Contraste",
-    "brightness": "Luminosité",
-    "contrast": "Contraste",
-    "levels": "Niveaux",
-    "levelsLow": "Noir d’entrée",
-    "levelsHigh": "Blanc d’entrée",
-    "hue": "Teinte",
-    "grayscale": "Désaturation"
-  },
-  "shape": {
-    "title": "Forme",
-    "fill": "Remplissage",
-    "fillNone": "Aucun remplissage",
-    "fillSolid": "Couleur unie",
-    "fillLinear": "Dégradé linéaire",
-    "fillRadial": "Dégradé radial",
-    "fillSweep": "Dégradé angulaire",
-    "fillPattern": "Motif",
-    "fillColor": "Couleur de remplissage",
-    "choosePattern": "Choisir une image…",
-    "angle": "Angle",
-    "stopColor": "Couleur de l’arrêt {{index}}",
-    "stopPosition": "Position de l’arrêt {{index}}",
-    "removeStop": "Supprimer l’arrêt {{index}}",
-    "addStop": "Ajouter un arrêt",
-    "strokeColor": "Couleur du contour",
-    "strokeWidth": "Épaisseur du contour",
-    "decrease": "Diminuer {{name}}",
-    "increase": "Augmenter {{name}}"
-  },
-  "export": {
-    "cancel": "Annuler",
-    "cbzHint": "Une archive des pages PNG, nommée d'après le projet.",
-    "description": "Rendre les pages en fichiers image.",
-    "formats": "Formats",
-    "pattern": "Modèle de nom de fichier",
-    "patternError": {
-      "separator": "Le modèle ne peut pas contenir de séparateur de chemin ni '..'.",
-      "token": "Jeton inconnu. Utilisez {index} ou {label}.",
-      "unclosed": "Accolade non fermée dans le modèle.",
-      "width": "Le nombre de chiffres doit être un nombre."
-    },
-    "scope": "Pages",
-    "scopeAll": "Toutes les pages ({{count}})",
-    "scopeSelected": "Sélection ({{count}})",
-    "start": "Exporter",
-    "subfolders": "Un dossier par format",
-    "title": "Exporter les pages"
   }
 }

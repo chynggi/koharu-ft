@@ -17,6 +17,17 @@
     "stop": "Stop",
     "title": "Activity"
   },
+  "adjust": {
+    "apply": "Apply",
+    "brightness_contrast": "Brightness/Contrast",
+    "brightness": "Brightness",
+    "contrast": "Contrast",
+    "levels": "Levels",
+    "levelsLow": "Input black",
+    "levelsHigh": "Input white",
+    "hue": "Hue",
+    "grayscale": "Desaturate"
+  },
   "agent": {
     "cancel": "Cancel",
     "cancelled": "Cancelled.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "Brush color",
     "hexCode": "Hex color code",
+    "recent": "Recent colors",
+    "recentColor": "Recent color {{color}}",
     "sampleCanvas": "Pick color from canvas",
     "transparent": "Transparent"
   },
@@ -58,8 +71,29 @@
     "loading": "Loading…"
   },
   "errors": {
+    "actionFailed": "Could not complete that action",
     "fatalTitle": "Koharu could not continue",
-    "tryAgain": "Try again"
+    "tryAgain": "Try again",
+    "unknown": "The native application returned an unknown error."
+  },
+  "export": {
+    "cancel": "Cancel",
+    "cbzHint": "One archive of PNG pages, named after the project.",
+    "description": "Render the pages to image files.",
+    "formats": "Formats",
+    "pattern": "Filename pattern",
+    "patternError": {
+      "separator": "The pattern cannot contain a path separator or '..'.",
+      "token": "Unknown token. Use {index} or {label}.",
+      "unclosed": "Unmatched brace in the pattern.",
+      "width": "The digit count has to be a number."
+    },
+    "scope": "Pages",
+    "scopeAll": "All pages ({{count}})",
+    "scopeSelected": "Selected ({{count}})",
+    "start": "Export",
+    "subfolders": "Separate folders per format",
+    "title": "Export pages"
   },
   "feedback": {
     "addScreenshot": "Add a screenshot",
@@ -92,16 +126,32 @@
     "prompt": "Describe what to add (optional)",
     "title": "Generative Fill"
   },
+  "find": {
+    "matchCase": "Match case",
+    "noResults": "No translation contains this text.",
+    "page": "Page {{number}}",
+    "placeholder": "Find in translations",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "replacePlaceholder": "Replace with",
+    "searching": "Searching…",
+    "summary": "{{count}} matches on {{pages}} pages",
+    "summary_one": "{{count}} match on {{pages}} page(s)",
+    "summary_other": "{{count}} matches on {{pages}} page(s)",
+    "title": "Find"
+  },
   "fontPicker": {
+    "addFavorite": "Add {{name}} to favorites",
     "choose": "Choose a font",
+    "favoritesOnly": "Show favorite fonts",
     "fontCount": "{{count}} fonts",
     "fontCount_one": "{{count}} font",
     "fontCount_other": "{{count}} fonts",
     "fonts": "Fonts",
+    "noFavorites": "No favorite fonts yet",
     "noResults": "No fonts match this search",
-    "search": "Search fonts",
-    "addFavorite": "Add {{family}} to favorites",
-    "removeFavorite": "Remove {{family}} from favorites"
+    "removeFavorite": "Remove {{name}} from favorites",
+    "search": "Search fonts"
   },
   "history": {
     "close": "Close history",
@@ -182,8 +232,9 @@
     "border": "Border",
     "borderColor": "Border color",
     "borderWidth": "Border width",
+    "chooseBorderWidth": "Choose border width",
     "chooseFontSize": "Choose font size",
-    "decreaseBorderWidth": "Decrease border width",
+    "decreaseSecondBorderWidth": "Decrease second border width",
     "font": "Font",
     "fontSize": "Font size",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "Font weight",
     "horizontal": "Horizontal",
-    "increaseBorderWidth": "Increase border width",
-    "opacity": "Opacity",
-    "selectPage": "Select a page to inspect its layers.",
-    "source": "Source text",
-    "text": "Text",
-    "textColor": "Text color",
-    "textDirection": "Text direction",
-    "translation": "Translation",
-    "type": "Type",
-    "vertical": "Vertical",
-    "decreaseSecondBorderWidth": "Decrease second border width",
     "increaseSecondBorderWidth": "Increase second border width",
+    "opacity": "Opacity",
     "outlineBevel": "Bevel",
     "outlineCenter": "Center",
     "outlineInside": "Inside",
@@ -214,21 +255,15 @@
     "outlineRound": "Round",
     "secondBorder": "2nd border",
     "secondBorderColor": "Second border color",
-    "secondBorderWidth": "Second border width"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "Second border width",
+    "selectPage": "Select a page to inspect its layers.",
+    "source": "Source text",
+    "text": "Text",
+    "textColor": "Text color",
+    "textDirection": "Text direction",
+    "translation": "Translation",
+    "type": "Type",
+    "vertical": "Vertical"
   },
   "layers": {
     "delete": "Delete {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "About",
+    "adjustments": "Adjustments",
     "closeProject": "Close Project",
     "delete": "Delete Selected",
     "discord": "Discord",
+    "donate": "Donate",
     "edit": "Edit",
     "export": "Export Project",
     "feedback": "Send Feedback",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "Help",
     "history": "History",
+    "image": "Image",
     "import": "Import Pages",
     "redo": "Redo",
     "selectAllLayers": "Select All Layers",
     "settings": "Settings",
     "undo": "Undo",
     "unloadModels": "Unload Models",
-    "view": "View",
-    "adjustments": "Adjustments",
-    "image": "Image"
+    "view": "View"
   },
   "model": {
     "baseUrl": "Base URL",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "Actions for {{page}}",
+    "chapterStart": "Chapter start",
     "delete": "Delete",
     "deleteDescription": "This deletes “{{page}}” and its layers. You can undo it.",
     "deleteTitle": "Delete page?",
@@ -312,9 +349,16 @@
     "importFolder": "Folder…",
     "importing": "Importing pages…",
     "importingAction": "Importing…",
+    "mergeAsSpread": "Merge into spread",
+    "mergeLeftToRight": "Left to right",
+    "mergeRightToLeft": "Right to left",
     "noImage": "No image",
+    "pageName": "Page name",
     "pageNumber": "Page {{number}}",
     "pages": "Pages",
+    "rename": "Rename",
+    "renameDescription": "Choose a new name for this page.",
+    "renameTitle": "Rename page",
     "run": {
       "detect": "Detect",
       "inpaint": "Inpaint",
@@ -322,16 +366,11 @@
       "translate": "Translate"
     },
     "selected": "{{count}} selected",
-    "chapterStart": "Chapter start",
-    "mergeAsSpread": "Merge into spread",
-    "mergeLeftToRight": "Left to right",
-    "mergeRightToLeft": "Right to left",
-    "pageName": "Page name",
-    "rename": "Rename",
-    "renameDescription": "Choose a new name for this page.",
-    "renameTitle": "Rename page"
+    "translated": "{{translated}} of {{total}} translated"
   },
   "outputPicker": {
+    "noResults": "No languages match this search.",
+    "search": "Search languages",
     "targetLanguage": "Target language",
     "title": "Translation output"
   },
@@ -442,6 +481,7 @@
       "configured": "Configured",
       "connections": "Connections",
       "connectionsDescription": "Credentials are stored securely on this device.",
+      "contextWindow": "Context length (tokens)",
       "credential": "Credential",
       "credentialLabel": "{{provider}} credential",
       "description": "Connect translation and language-model providers.",
@@ -465,18 +505,42 @@
     },
     "title": "Settings",
     "typesetting": {
+      "addFallback": "Add a fallback",
       "addFamily": "Add font family",
-      "defaultFamilies": "Default font families",
       "description": "Set the ordered font stack used when a text layer has no assigned family.",
       "empty": "No default families. Koharu will use the system fallback.",
+      "fallbacks": "Fallbacks",
+      "fallbacksDescription": "Used in order for characters the primary lacks. Drag to reorder, or onto Primary to swap.",
       "familyLabel": "Default font family {{index}}",
       "fontFallback": "Preferred fonts",
       "fontFallbackDescription": "Koharu uses the first available family that supports the text.",
       "loadError": "Fonts could not be loaded. Existing families can still be removed.",
       "loadingFonts": "Loading fonts…",
+      "primary": "Primary",
       "removeFamily": "Remove {{family}}",
       "title": "Renderer"
     }
+  },
+  "shape": {
+    "title": "Shape",
+    "fill": "Fill",
+    "fillNone": "No fill",
+    "fillSolid": "Solid color",
+    "fillLinear": "Linear gradient",
+    "fillRadial": "Radial gradient",
+    "fillSweep": "Angle gradient",
+    "fillPattern": "Pattern",
+    "fillColor": "Fill color",
+    "choosePattern": "Choose image…",
+    "angle": "Angle",
+    "stopColor": "Stop {{index}} color",
+    "stopPosition": "Stop {{index}} position",
+    "removeStop": "Remove stop {{index}}",
+    "addStop": "Add stop",
+    "strokeColor": "Stroke color",
+    "strokeWidth": "Stroke width",
+    "decrease": "Decrease {{name}}",
+    "increase": "Increase {{name}}"
   },
   "start": {
     "create": "Create",
@@ -491,10 +555,12 @@
     "loadingProjects": "Loading projects…",
     "newDescription": "Create a clean workspace for your pages, translations, and exports.",
     "newProject": "New project",
+    "noResults": "No projects match this search.",
     "projectKind": "Koharu project",
     "projectList": "Projects",
     "projectName": "Project name",
     "projectNamePlaceholder": "My new project",
+    "search": "Search projects",
     "storageHint": "Projects are stored locally on this computer.",
     "title": "Projects",
     "yourProjects": "Your projects"
@@ -565,70 +631,5 @@
     "maximize": "Maximize",
     "minimize": "Minimize",
     "restore": "Restore"
-  },
-  "find": {
-    "matchCase": "Match case",
-    "noResults": "No translation contains this text.",
-    "page": "Page {{number}}",
-    "placeholder": "Find in translations",
-    "replace": "Replace",
-    "replaceAll": "Replace all",
-    "replacePlaceholder": "Replace with",
-    "searching": "Searching…",
-    "summary": "{{count}} matches on {{pages}} pages",
-    "summary_one": "{{count}} match on {{pages}} page(s)",
-    "summary_other": "{{count}} matches on {{pages}} page(s)",
-    "title": "Find"
-  },
-  "adjust": {
-    "apply": "Apply",
-    "brightness_contrast": "Brightness/Contrast",
-    "brightness": "Brightness",
-    "contrast": "Contrast",
-    "levels": "Levels",
-    "levelsLow": "Input black",
-    "levelsHigh": "Input white",
-    "hue": "Hue",
-    "grayscale": "Desaturate"
-  },
-  "shape": {
-    "title": "Shape",
-    "fill": "Fill",
-    "fillNone": "No fill",
-    "fillSolid": "Solid color",
-    "fillLinear": "Linear gradient",
-    "fillRadial": "Radial gradient",
-    "fillSweep": "Angle gradient",
-    "fillPattern": "Pattern",
-    "fillColor": "Fill color",
-    "choosePattern": "Choose image…",
-    "angle": "Angle",
-    "stopColor": "Stop {{index}} color",
-    "stopPosition": "Stop {{index}} position",
-    "removeStop": "Remove stop {{index}}",
-    "addStop": "Add stop",
-    "strokeColor": "Stroke color",
-    "strokeWidth": "Stroke width",
-    "decrease": "Decrease {{name}}",
-    "increase": "Increase {{name}}"
-  },
-  "export": {
-    "cancel": "Cancel",
-    "cbzHint": "One archive of PNG pages, named after the project.",
-    "description": "Render the pages to image files.",
-    "formats": "Formats",
-    "pattern": "Filename pattern",
-    "patternError": {
-      "separator": "The pattern cannot contain a path separator or '..'.",
-      "token": "Unknown token. Use {index} or {label}.",
-      "unclosed": "Unmatched brace in the pattern.",
-      "width": "The digit count has to be a number."
-    },
-    "scope": "Pages",
-    "scopeAll": "All pages ({{count}})",
-    "scopeSelected": "Selected ({{count}})",
-    "start": "Export",
-    "subfolders": "Separate folders per format",
-    "title": "Export pages"
   }
 }

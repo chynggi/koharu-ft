@@ -17,6 +17,17 @@
     "stop": "停止",
     "title": "活動"
   },
+  "adjust": {
+    "apply": "套用",
+    "brightness_contrast": "亮度/對比",
+    "brightness": "亮度",
+    "contrast": "對比",
+    "levels": "色階",
+    "levelsLow": "輸入黑色",
+    "levelsHigh": "輸入白色",
+    "hue": "色相",
+    "grayscale": "去除飽和度"
+  },
   "agent": {
     "cancel": "取消",
     "cancelled": "已取消。",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "筆刷顏色",
     "hexCode": "十六進位色彩代碼",
+    "recent": "最近使用的色彩",
+    "recentColor": "最近使用的色彩 {{color}}",
     "sampleCanvas": "從畫布選取色彩",
     "transparent": "透明"
   },
@@ -58,8 +71,29 @@
     "loading": "正在載入…"
   },
   "errors": {
+    "actionFailed": "無法完成該操作",
     "fatalTitle": "Koharu 無法繼續執行",
-    "tryAgain": "再試一次"
+    "tryAgain": "再試一次",
+    "unknown": "原生應用程式傳回了未知錯誤。"
+  },
+  "export": {
+    "cancel": "取消",
+    "cbzHint": "將所有 PNG 頁面打包為一個壓縮檔，檔名使用專案名稱。",
+    "description": "將頁面算繪為影像檔案。",
+    "formats": "格式",
+    "pattern": "檔案名稱模式",
+    "patternError": {
+      "separator": "模式不能包含路徑分隔符號或 '..'。",
+      "token": "未知的標記。請使用 {index} 或 {label}。",
+      "unclosed": "模式中存在未配對的大括號。",
+      "width": "位數必須為數字。"
+    },
+    "scope": "頁面",
+    "scopeAll": "全部頁面（{{count}}）",
+    "scopeSelected": "所選頁面（{{count}}）",
+    "start": "匯出",
+    "subfolders": "按格式分資料夾",
+    "title": "匯出頁面"
   },
   "feedback": {
     "addScreenshot": "新增螢幕截圖",
@@ -92,16 +126,32 @@
     "prompt": "描述要加入的內容（選填）",
     "title": "生成填色"
   },
+  "find": {
+    "matchCase": "區分大小寫",
+    "noResults": "沒有譯文包含此文字。",
+    "page": "第 {{number}} 頁",
+    "placeholder": "在譯文中尋找",
+    "replace": "取代",
+    "replaceAll": "全部取代",
+    "replacePlaceholder": "取代為",
+    "searching": "正在尋找…",
+    "summary": "{{pages}} 頁中共 {{count}} 處",
+    "summary_one": "{{pages}} 頁中共 {{count}} 處",
+    "summary_other": "{{pages}} 頁中共 {{count}} 處",
+    "title": "尋找"
+  },
   "fontPicker": {
+    "addFavorite": "將 {{name}} 加入我的最愛",
     "choose": "選擇字型",
+    "favoritesOnly": "顯示我的最愛字型",
     "fontCount": "{{count}} 種字型",
     "fontCount_one": "{{count}} 種字型",
     "fontCount_other": "{{count}} 種字型",
     "fonts": "字型",
+    "noFavorites": "尚無我的最愛字型",
     "noResults": "沒有符合此搜尋的字型",
-    "search": "搜尋字型",
-    "addFavorite": "將{{family}}加入收藏",
-    "removeFavorite": "從收藏中移除{{family}}"
+    "removeFavorite": "將 {{name}} 從我的最愛移除",
+    "search": "搜尋字型"
   },
   "history": {
     "close": "關閉步驟記錄",
@@ -182,8 +232,9 @@
     "border": "描邊",
     "borderColor": "描邊色彩",
     "borderWidth": "描邊寬度",
+    "chooseBorderWidth": "選擇描邊寬度",
     "chooseFontSize": "選擇字型大小",
-    "decreaseBorderWidth": "減少描邊寬度",
+    "decreaseSecondBorderWidth": "減少第二描邊寬度",
     "font": "字體",
     "fontSize": "字型大小",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "字型粗細",
     "horizontal": "橫排",
-    "increaseBorderWidth": "增加描邊寬度",
-    "opacity": "不透明度",
-    "selectPage": "選擇頁面以檢查其圖層。",
-    "source": "原文",
-    "text": "文字",
-    "textColor": "文字色彩",
-    "textDirection": "文字方向",
-    "translation": "譯文",
-    "type": "排版",
-    "vertical": "直排",
-    "decreaseSecondBorderWidth": "減少第二描邊寬度",
     "increaseSecondBorderWidth": "增加第二描邊寬度",
+    "opacity": "不透明度",
     "outlineBevel": "斜角",
     "outlineCenter": "置中",
     "outlineInside": "內側",
@@ -214,21 +255,15 @@
     "outlineRound": "圓角",
     "secondBorder": "第二描邊",
     "secondBorderColor": "第二描邊顏色",
-    "secondBorderWidth": "第二描邊寬度"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "第二描邊寬度",
+    "selectPage": "選擇頁面以檢查其圖層。",
+    "source": "原文",
+    "text": "文字",
+    "textColor": "文字色彩",
+    "textDirection": "文字方向",
+    "translation": "譯文",
+    "type": "排版",
+    "vertical": "直排"
   },
   "layers": {
     "delete": "刪除 {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "關於",
+    "adjustments": "調整",
     "closeProject": "關閉專案",
     "delete": "刪除所選項目",
     "discord": "Discord",
+    "donate": "贊助",
     "edit": "編輯",
     "export": "匯出專案",
     "feedback": "傳送意見回饋",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "說明",
     "history": "步驟記錄",
+    "image": "影像",
     "import": "匯入頁面",
     "redo": "重做",
     "selectAllLayers": "選取所有圖層",
     "settings": "設定",
     "undo": "復原",
     "unloadModels": "卸載模型",
-    "view": "檢視",
-    "adjustments": "調整",
-    "image": "影像"
+    "view": "檢視"
   },
   "model": {
     "baseUrl": "基礎 URL",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "{{page}} 的操作",
+    "chapterStart": "章節開始",
     "delete": "刪除",
     "deleteDescription": "這將刪除「{{page}}」及其圖層。此操作可以復原。",
     "deleteTitle": "刪除頁面？",
@@ -312,9 +349,16 @@
     "importFolder": "資料夾…",
     "importing": "正在匯入頁面…",
     "importingAction": "正在匯入…",
+    "mergeAsSpread": "合併為跨頁",
+    "mergeLeftToRight": "從左到右",
+    "mergeRightToLeft": "從右到左",
     "noImage": "無影像",
+    "pageName": "頁面名稱",
     "pageNumber": "第 {{number}} 頁",
     "pages": "頁面",
+    "rename": "重新命名",
+    "renameDescription": "為此頁面選擇新名稱。",
+    "renameTitle": "重新命名頁面",
     "run": {
       "detect": "偵測",
       "inpaint": "修補",
@@ -322,16 +366,11 @@
       "translate": "翻譯"
     },
     "selected": "已選擇 {{count}}",
-    "chapterStart": "章節開始",
-    "mergeAsSpread": "合併為跨頁",
-    "mergeLeftToRight": "從左到右",
-    "mergeRightToLeft": "從右到左",
-    "pageName": "頁面名稱",
-    "rename": "重新命名",
-    "renameDescription": "為此頁面選擇新名稱。",
-    "renameTitle": "重新命名頁面"
+    "translated": "已翻譯 {{translated}}/{{total}}"
   },
   "outputPicker": {
+    "noResults": "沒有符合此搜尋的語言。",
+    "search": "搜尋語言",
     "targetLanguage": "目標語言",
     "title": "翻譯輸出"
   },
@@ -442,6 +481,7 @@
       "configured": "已設定",
       "connections": "連線",
       "connectionsDescription": "認證資訊會安全地儲存在此裝置上。",
+      "contextWindow": "上下文長度（token）",
       "credential": "認證資訊",
       "credentialLabel": "{{provider}} 認證資訊",
       "description": "連線翻譯和語言模型提供者。",
@@ -465,18 +505,42 @@
     },
     "title": "設定",
     "typesetting": {
+      "addFallback": "新增備用字型",
       "addFamily": "新增字型家族",
-      "defaultFamilies": "預設字型家族",
       "description": "設定文字圖層未指定字型家族時使用的有序字型堆疊。",
       "empty": "沒有預設字型家族。Koharu 將使用系統後備字型。",
+      "fallbacks": "備用字型",
+      "fallbacksDescription": "主要字型缺少的字元會依序使用備用字型。拖曳可調整順序，拖到主要字型上即可互換。",
       "familyLabel": "預設字型家族 {{index}}",
       "fontFallback": "偏好字型",
       "fontFallbackDescription": "Koharu 使用第一個支援該文字的可用字型家族。",
       "loadError": "無法載入字型。仍可移除現有字型家族。",
       "loadingFonts": "正在載入字型…",
+      "primary": "主要字型",
       "removeFamily": "移除 {{family}}",
       "title": "渲染器"
     }
+  },
+  "shape": {
+    "title": "形狀",
+    "fill": "填色",
+    "fillNone": "無填色",
+    "fillSolid": "純色",
+    "fillLinear": "線性漸層",
+    "fillRadial": "放射漸層",
+    "fillSweep": "角度漸層",
+    "fillPattern": "圖樣",
+    "fillColor": "填色顏色",
+    "choosePattern": "選擇影像…",
+    "angle": "角度",
+    "stopColor": "色標 {{index}} 顏色",
+    "stopPosition": "色標 {{index}} 位置",
+    "removeStop": "刪除色標 {{index}}",
+    "addStop": "新增色標",
+    "strokeColor": "筆畫顏色",
+    "strokeWidth": "筆畫寬度",
+    "decrease": "減少{{name}}",
+    "increase": "增加{{name}}"
   },
   "start": {
     "create": "建立",
@@ -491,10 +555,12 @@
     "loadingProjects": "正在載入專案…",
     "newDescription": "為頁面、翻譯和匯出建立乾淨的工作區。",
     "newProject": "新建專案",
+    "noResults": "沒有符合此搜尋的專案。",
     "projectKind": "Koharu 專案",
     "projectList": "專案",
     "projectName": "專案名稱",
     "projectNamePlaceholder": "我的新專案",
+    "search": "搜尋專案",
     "storageHint": "專案會儲存在這台電腦上。",
     "title": "專案",
     "yourProjects": "你的專案"
@@ -565,70 +631,5 @@
     "maximize": "最大化",
     "minimize": "最小化",
     "restore": "還原"
-  },
-  "find": {
-    "matchCase": "區分大小寫",
-    "noResults": "沒有譯文包含此文字。",
-    "page": "第 {{number}} 頁",
-    "placeholder": "在譯文中尋找",
-    "replace": "取代",
-    "replaceAll": "全部取代",
-    "replacePlaceholder": "取代為",
-    "searching": "正在尋找…",
-    "summary": "{{pages}} 頁中共 {{count}} 處",
-    "summary_one": "{{pages}} 頁中共 {{count}} 處",
-    "summary_other": "{{pages}} 頁中共 {{count}} 處",
-    "title": "尋找"
-  },
-  "adjust": {
-    "apply": "套用",
-    "brightness_contrast": "亮度/對比",
-    "brightness": "亮度",
-    "contrast": "對比",
-    "levels": "色階",
-    "levelsLow": "輸入黑色",
-    "levelsHigh": "輸入白色",
-    "hue": "色相",
-    "grayscale": "去除飽和度"
-  },
-  "shape": {
-    "title": "形狀",
-    "fill": "填色",
-    "fillNone": "無填色",
-    "fillSolid": "純色",
-    "fillLinear": "線性漸層",
-    "fillRadial": "放射漸層",
-    "fillSweep": "角度漸層",
-    "fillPattern": "圖樣",
-    "fillColor": "填色顏色",
-    "choosePattern": "選擇影像…",
-    "angle": "角度",
-    "stopColor": "色標 {{index}} 顏色",
-    "stopPosition": "色標 {{index}} 位置",
-    "removeStop": "刪除色標 {{index}}",
-    "addStop": "新增色標",
-    "strokeColor": "筆畫顏色",
-    "strokeWidth": "筆畫寬度",
-    "decrease": "減少{{name}}",
-    "increase": "增加{{name}}"
-  },
-  "export": {
-    "cancel": "取消",
-    "cbzHint": "將所有 PNG 頁面打包為一個壓縮檔，檔名使用專案名稱。",
-    "description": "將頁面算繪為影像檔案。",
-    "formats": "格式",
-    "pattern": "檔案名稱模式",
-    "patternError": {
-      "separator": "模式不能包含路徑分隔符號或 '..'。",
-      "token": "未知的標記。請使用 {index} 或 {label}。",
-      "unclosed": "模式中存在未配對的大括號。",
-      "width": "位數必須為數字。"
-    },
-    "scope": "頁面",
-    "scopeAll": "全部頁面（{{count}}）",
-    "scopeSelected": "所選頁面（{{count}}）",
-    "start": "匯出",
-    "subfolders": "按格式分資料夾",
-    "title": "匯出頁面"
   }
 }

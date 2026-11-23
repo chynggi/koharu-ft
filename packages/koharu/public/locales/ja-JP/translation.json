@@ -17,6 +17,17 @@
     "stop": "停止",
     "title": "アクティビティ"
   },
+  "adjust": {
+    "apply": "適用",
+    "brightness_contrast": "明るさ・コントラスト",
+    "brightness": "明るさ",
+    "contrast": "コントラスト",
+    "levels": "レベル補正",
+    "levelsLow": "入力の黒",
+    "levelsHigh": "入力の白",
+    "hue": "色相",
+    "grayscale": "彩度を下げる"
+  },
   "agent": {
     "cancel": "キャンセル",
     "cancelled": "キャンセルしました。",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "ブラシカラー",
     "hexCode": "16進カラーコード",
+    "recent": "最近使った色",
+    "recentColor": "最近使った色 {{color}}",
     "sampleCanvas": "キャンバスから色を選択",
     "transparent": "透明"
   },
@@ -58,8 +71,29 @@
     "loading": "読み込み中…"
   },
   "errors": {
+    "actionFailed": "操作を完了できませんでした",
     "fatalTitle": "Koharuを続行できませんでした",
-    "tryAgain": "再試行"
+    "tryAgain": "再試行",
+    "unknown": "ネイティブアプリケーションが不明なエラーを返しました。"
+  },
+  "export": {
+    "cancel": "キャンセル",
+    "cbzHint": "PNGページを1つのアーカイブにまとめます。ファイル名はプロジェクト名になります。",
+    "description": "ページを画像ファイルとして書き出します。",
+    "formats": "形式",
+    "pattern": "ファイル名パターン",
+    "patternError": {
+      "separator": "パターンにパス区切り文字や '..' は使えません。",
+      "token": "不明なトークンです。{index} または {label} を使ってください。",
+      "unclosed": "パターンの波かっこが対応していません。",
+      "width": "桁数は数値で指定してください。"
+    },
+    "scope": "ページ",
+    "scopeAll": "すべてのページ ({{count}})",
+    "scopeSelected": "選択中 ({{count}})",
+    "start": "書き出す",
+    "subfolders": "形式ごとにフォルダーを分ける",
+    "title": "ページの書き出し"
   },
   "feedback": {
     "addScreenshot": "スクリーンショットを追加",
@@ -92,16 +126,32 @@
     "prompt": "追加する内容を入力（任意）",
     "title": "生成塗りつぶし"
   },
+  "find": {
+    "matchCase": "大文字と小文字を区別",
+    "noResults": "この文字列を含む翻訳はありません。",
+    "page": "{{number}} ページ",
+    "placeholder": "翻訳を検索",
+    "replace": "置換",
+    "replaceAll": "すべて置換",
+    "replacePlaceholder": "置換後の文字列",
+    "searching": "検索中…",
+    "summary": "{{pages}} ページで {{count}} 件",
+    "summary_one": "{{pages}} ページで {{count}} 件",
+    "summary_other": "{{pages}} ページで {{count}} 件",
+    "title": "検索"
+  },
   "fontPicker": {
+    "addFavorite": "{{name}} をお気に入りに追加",
     "choose": "フォントを選択",
+    "favoritesOnly": "お気に入りのフォントを表示",
     "fontCount": "{{count}}個のフォント",
     "fontCount_one": "{{count}}個のフォント",
     "fontCount_other": "{{count}}個のフォント",
     "fonts": "フォント",
+    "noFavorites": "お気に入りのフォントはまだありません",
     "noResults": "この検索に一致するフォントはありません",
-    "search": "フォントを検索",
-    "addFavorite": "{{family}}をお気に入りに追加",
-    "removeFavorite": "お気に入りから{{family}}を削除"
+    "removeFavorite": "{{name}} をお気に入りから削除",
+    "search": "フォントを検索"
   },
   "history": {
     "close": "ヒストリーを閉じる",
@@ -182,8 +232,9 @@
     "border": "縁取り",
     "borderColor": "縁取りの色",
     "borderWidth": "縁取り幅",
+    "chooseBorderWidth": "縁取り幅を選択",
     "chooseFontSize": "フォントサイズを選択",
-    "decreaseBorderWidth": "縁取り幅を縮小",
+    "decreaseSecondBorderWidth": "外側の縁取り幅を縮小",
     "font": "フォント",
     "fontSize": "フォントサイズ",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "フォントの太さ",
     "horizontal": "横書き",
-    "increaseBorderWidth": "縁取り幅を拡大",
-    "opacity": "不透明度",
-    "selectPage": "ページを選択してレイヤーを確認します。",
-    "source": "原文",
-    "text": "テキスト",
-    "textColor": "文字色",
-    "textDirection": "文字方向",
-    "translation": "翻訳",
-    "type": "タイポグラフィ",
-    "vertical": "縦書き",
-    "decreaseSecondBorderWidth": "外側の縁取り幅を縮小",
     "increaseSecondBorderWidth": "外側の縁取り幅を拡大",
+    "opacity": "不透明度",
     "outlineBevel": "面取り",
     "outlineCenter": "中央",
     "outlineInside": "内側",
@@ -214,21 +255,15 @@
     "outlineRound": "丸形",
     "secondBorder": "2重縁取り",
     "secondBorderColor": "外側の縁取りの色",
-    "secondBorderWidth": "外側の縁取り幅"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "外側の縁取り幅",
+    "selectPage": "ページを選択してレイヤーを確認します。",
+    "source": "原文",
+    "text": "テキスト",
+    "textColor": "文字色",
+    "textDirection": "文字方向",
+    "translation": "翻訳",
+    "type": "タイポグラフィ",
+    "vertical": "縦書き"
   },
   "layers": {
     "delete": "{{name}}を削除",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "Koharuについて",
+    "adjustments": "色調補正",
     "closeProject": "プロジェクトを閉じる",
     "delete": "選択項目を削除",
     "discord": "Discord",
+    "donate": "寄付する",
     "edit": "編集",
     "export": "プロジェクトを書き出す",
     "feedback": "フィードバックを送信",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "ヘルプ",
     "history": "ヒストリー",
+    "image": "イメージ",
     "import": "ページを読み込む",
     "redo": "やり直す",
     "selectAllLayers": "すべてのレイヤーを選択",
     "settings": "設定",
     "undo": "元に戻す",
     "unloadModels": "モデルをアンロード",
-    "view": "表示",
-    "adjustments": "色調補正",
-    "image": "イメージ"
+    "view": "表示"
   },
   "model": {
     "baseUrl": "ベース URL",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "{{page}}の操作",
+    "chapterStart": "章の開始",
     "delete": "削除",
     "deleteDescription": "「{{page}}」とそのレイヤーを削除します。元に戻せます。",
     "deleteTitle": "ページを削除しますか？",
@@ -312,9 +349,16 @@
     "importFolder": "フォルダー…",
     "importing": "ページを読み込み中…",
     "importingAction": "読み込み中…",
+    "mergeAsSpread": "見開きに結合",
+    "mergeLeftToRight": "左から右へ",
+    "mergeRightToLeft": "右から左へ",
     "noImage": "画像なし",
+    "pageName": "ページ名",
     "pageNumber": "{{number}}ページ目",
     "pages": "ページ",
+    "rename": "名前を変更",
+    "renameDescription": "このページの新しい名前を入力します。",
+    "renameTitle": "ページ名を変更",
     "run": {
       "detect": "検出",
       "inpaint": "インペイント",
@@ -322,16 +366,11 @@
       "translate": "翻訳"
     },
     "selected": "{{count}}件選択中",
-    "chapterStart": "章の開始",
-    "mergeAsSpread": "見開きに結合",
-    "mergeLeftToRight": "左から右へ",
-    "mergeRightToLeft": "右から左へ",
-    "pageName": "ページ名",
-    "rename": "名前を変更",
-    "renameDescription": "このページの新しい名前を入力します。",
-    "renameTitle": "ページ名を変更"
+    "translated": "{{total}} 件中 {{translated}} 件翻訳済み"
   },
   "outputPicker": {
+    "noResults": "この検索に一致する言語はありません。",
+    "search": "言語を検索",
     "targetLanguage": "対象言語",
     "title": "翻訳出力"
   },
@@ -442,6 +481,7 @@
       "configured": "設定済み",
       "connections": "接続",
       "connectionsDescription": "認証情報はこのデバイスに安全に保存されます。",
+      "contextWindow": "コンテキスト長（トークン）",
       "credential": "認証情報",
       "credentialLabel": "{{provider}}の認証情報",
       "description": "翻訳および言語モデルのプロバイダーに接続します。",
@@ -465,18 +505,42 @@
     },
     "title": "設定",
     "typesetting": {
+      "addFallback": "フォールバックを追加",
       "addFamily": "フォントファミリーを追加",
-      "defaultFamilies": "既定のフォントファミリー",
       "description": "テキストレイヤーにファミリーが指定されていない場合に使う、順序付きフォントスタックを設定します。",
       "empty": "既定のファミリーがありません。Koharuはシステムの代替フォントを使用します。",
+      "fallbacks": "フォールバック",
+      "fallbacksDescription": "メインにない文字に順番に使われます。ドラッグで並べ替え、メインに重ねると入れ替えられます。",
       "familyLabel": "既定のフォントファミリー {{index}}",
       "fontFallback": "優先フォント",
       "fontFallbackDescription": "Koharuは文字に対応する最初の利用可能なファミリーを使用します。",
       "loadError": "フォントを読み込めませんでした。既存のファミリーは削除できます。",
       "loadingFonts": "フォントを読み込み中…",
+      "primary": "メイン",
       "removeFamily": "{{family}}を削除",
       "title": "レンダラー"
     }
+  },
+  "shape": {
+    "title": "シェイプ",
+    "fill": "塗り",
+    "fillNone": "塗りなし",
+    "fillSolid": "単色",
+    "fillLinear": "線形グラデーション",
+    "fillRadial": "円形グラデーション",
+    "fillSweep": "角度グラデーション",
+    "fillPattern": "パターン",
+    "fillColor": "塗りの色",
+    "choosePattern": "画像を選択…",
+    "angle": "角度",
+    "stopColor": "分岐点 {{index}} の色",
+    "stopPosition": "分岐点 {{index}} の位置",
+    "removeStop": "分岐点 {{index}} を削除",
+    "addStop": "分岐点を追加",
+    "strokeColor": "線の色",
+    "strokeWidth": "線の幅",
+    "decrease": "{{name}}を減らす",
+    "increase": "{{name}}を増やす"
   },
   "start": {
     "create": "作成",
@@ -491,10 +555,12 @@
     "loadingProjects": "プロジェクトを読み込み中…",
     "newDescription": "ページ、翻訳、書き出し用の新しいワークスペースを作成します。",
     "newProject": "新規プロジェクト",
+    "noResults": "この検索に一致するプロジェクトはありません。",
     "projectKind": "Koharuプロジェクト",
     "projectList": "プロジェクト",
     "projectName": "プロジェクト名",
     "projectNamePlaceholder": "新しいプロジェクト",
+    "search": "プロジェクトを検索",
     "storageHint": "プロジェクトはこのコンピューターにローカル保存されます。",
     "title": "プロジェクト",
     "yourProjects": "プロジェクト一覧"
@@ -565,70 +631,5 @@
     "maximize": "最大化",
     "minimize": "最小化",
     "restore": "元のサイズに戻す"
-  },
-  "find": {
-    "matchCase": "大文字と小文字を区別",
-    "noResults": "この文字列を含む翻訳はありません。",
-    "page": "{{number}} ページ",
-    "placeholder": "翻訳を検索",
-    "replace": "置換",
-    "replaceAll": "すべて置換",
-    "replacePlaceholder": "置換後の文字列",
-    "searching": "検索中…",
-    "summary": "{{pages}} ページで {{count}} 件",
-    "summary_one": "{{pages}} ページで {{count}} 件",
-    "summary_other": "{{pages}} ページで {{count}} 件",
-    "title": "検索"
-  },
-  "adjust": {
-    "apply": "適用",
-    "brightness_contrast": "明るさ・コントラスト",
-    "brightness": "明るさ",
-    "contrast": "コントラスト",
-    "levels": "レベル補正",
-    "levelsLow": "入力の黒",
-    "levelsHigh": "入力の白",
-    "hue": "色相",
-    "grayscale": "彩度を下げる"
-  },
-  "shape": {
-    "title": "シェイプ",
-    "fill": "塗り",
-    "fillNone": "塗りなし",
-    "fillSolid": "単色",
-    "fillLinear": "線形グラデーション",
-    "fillRadial": "円形グラデーション",
-    "fillSweep": "角度グラデーション",
-    "fillPattern": "パターン",
-    "fillColor": "塗りの色",
-    "choosePattern": "画像を選択…",
-    "angle": "角度",
-    "stopColor": "分岐点 {{index}} の色",
-    "stopPosition": "分岐点 {{index}} の位置",
-    "removeStop": "分岐点 {{index}} を削除",
-    "addStop": "分岐点を追加",
-    "strokeColor": "線の色",
-    "strokeWidth": "線の幅",
-    "decrease": "{{name}}を減らす",
-    "increase": "{{name}}を増やす"
-  },
-  "export": {
-    "cancel": "キャンセル",
-    "cbzHint": "PNGページを1つのアーカイブにまとめます。ファイル名はプロジェクト名になります。",
-    "description": "ページを画像ファイルとして書き出します。",
-    "formats": "形式",
-    "pattern": "ファイル名パターン",
-    "patternError": {
-      "separator": "パターンにパス区切り文字や '..' は使えません。",
-      "token": "不明なトークンです。{index} または {label} を使ってください。",
-      "unclosed": "パターンの波かっこが対応していません。",
-      "width": "桁数は数値で指定してください。"
-    },
-    "scope": "ページ",
-    "scopeAll": "すべてのページ ({{count}})",
-    "scopeSelected": "選択中 ({{count}})",
-    "start": "書き出す",
-    "subfolders": "形式ごとにフォルダーを分ける",
-    "title": "ページの書き出し"
   }
 }

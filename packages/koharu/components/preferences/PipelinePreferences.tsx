@@ -1,20 +1,21 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronDown, Eraser } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Choice } from '@/components/controls/Choice'
 import { ModelPicker } from '@/components/controls/ModelPicker'
-import { detectors, inpainters, recognizers, vendorName } from '@/components/preferences/models'
 import {
   NumberField,
   PreferencePage,
   PreferenceRow,
   PreferenceSection,
 } from '@/components/preferences/PreferenceFields'
-import { call } from '@/lib/backend'
-import { modelName, orderedLanguageChoices, REASONING, vendorOf } from '@/lib/translation'
+import { detectors, inpainters, modelName, REASONING, recognizers, vendorOf } from '@/lib/models'
+import { languageNames } from '@/lib/translation'
+import { vendorName } from '@/lib/vendors'
 import {
   commands,
   type Detector,
@@ -28,13 +29,6 @@ import { Badge } from '@koharu/ui/components/badge'
 import { Button } from '@koharu/ui/components/button'
 import { Input } from '@koharu/ui/components/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@koharu/ui/components/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@koharu/ui/components/select'
 import { Switch } from '@koharu/ui/components/switch'
 import { Textarea } from '@koharu/ui/components/textarea'
 
@@ -84,6 +78,7 @@ export function PipelinePreferences({
                 min={0}
                 max={1}
                 step={0.05}
+                placeholder={t('model.default')}
                 onChange={(next) =>
                   onChange({ ...value, detector: { ...detector, [threshold]: next } })
                 }
@@ -97,7 +92,7 @@ export function PipelinePreferences({
         model={
           <ModelSelect
             stage='recognize'
-            value={value.recognizer?.model ?? 'manga-ocr-ar'}
+            value={value.recognizer?.model ?? 'hayai-ocr'}
             names={recognizers}
             onChange={(model: Recognizer) => onChange({ ...value, recognizer: { model } })}
           />
@@ -124,7 +119,7 @@ export function PipelinePreferences({
           <Textarea
             aria-label={t('settings.pipeline.options.prompt')}
             value={inpainter.prompt ?? ''}
-            className='field-sizing-fixed min-h-28 resize-y overflow-y-auto text-[12px] leading-5'
+            className='min-h-28 resize-none text-[12px] leading-5'
             onChange={(event) =>
               onChange({
                 ...value,
@@ -168,17 +163,17 @@ function RemoteServer({ url, onChange }: { url: string; onChange: (url: string) 
   const [token, setToken] = useState('')
   const stored = useQuery({
     queryKey: ['server-token'],
-    queryFn: () => call(commands.hasServerToken),
+    queryFn: () => commands.hasServerToken(),
+  })
+  const storeToken = useMutation({
+    scope: { id: 'server-token' },
+    mutationFn: (next: string | null) => commands.setServerToken(next),
+    onSuccess: async () => {
+      setToken('')
+      await stored.refetch()
+    },
   })
   useEffect(() => setAddress(url), [url])
-
-  const storeToken = (next: string | null) =>
-    void call(commands.setServerToken, next)
-      .then(() => {
-        setToken('')
-        return stored.refetch()
-      })
-      .catch(() => undefined)
 
   return (
     <PreferenceSection
@@ -215,7 +210,7 @@ function RemoteServer({ url, onChange }: { url: string; onChange: (url: string) 
             className='h-8 min-w-0 flex-1 text-[12px] [-webkit-text-security:disc] [&::placeholder]:[-webkit-text-security:none]'
             value={token}
             onChange={(event) => setToken(event.currentTarget.value)}
-            onBlur={() => token && storeToken(token)}
+            onBlur={() => token && storeToken.mutate(token)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') event.currentTarget.blur()
             }}
@@ -226,7 +221,7 @@ function RemoteServer({ url, onChange }: { url: string; onChange: (url: string) 
               variant='outline'
               size='icon'
               aria-label={t('settings.pipeline.remote.clearToken')}
-              onClick={() => storeToken(null)}
+              onClick={() => storeToken.mutate(null)}
             >
               <Eraser />
             </Button>
@@ -271,29 +266,15 @@ function ModelSelect<Model extends Detector | Recognizer | Inpainter>({
   onChange: (model: Model) => void
 }) {
   const { t } = useTranslation()
-  const models = Object.keys(names) as Model[]
   return (
-    <Select
+    <Choice
       value={value}
-      items={names}
-      onValueChange={(model) => model && onChange(model as Model)}
-    >
-      <SelectTrigger
-        aria-label={t('settings.pipeline.modelLabel', {
-          stage: t(`settings.pipeline.stages.${stage}.title`),
-        })}
-        className='h-8 w-full text-[11px]'
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {models.map((model) => (
-          <SelectItem key={model} value={model}>
-            {names[model]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      choices={names}
+      label={t('settings.pipeline.modelLabel', {
+        stage: t(`settings.pipeline.stages.${stage}.title`),
+      })}
+      onChange={onChange}
+    />
   )
 }
 
@@ -331,7 +312,7 @@ function TranslatorModel({
       <PopoverContent
         align='start'
         sideOffset={4}
-        className='w-(--anchor-width) min-w-64 gap-0 overflow-hidden rounded-xl border border-border/50 p-1 shadow-sm ring-0'
+        className='w-(--anchor-width) min-w-64 gap-0 overflow-hidden p-1'
       >
         <ModelPicker
           value={value}
@@ -357,7 +338,7 @@ function TranslatorOptions({
   onChange: (value: TranslatorConfig) => void
 }) {
   const { t, i18n } = useTranslation()
-  const languageChoices = useMemo(() => orderedLanguageChoices(i18n.language), [i18n.language])
+  const languageChoices = useMemo(() => languageNames(i18n.language), [i18n.language])
   const reasoning = value.reasoning ?? 'default'
 
   return (
@@ -376,54 +357,28 @@ function TranslatorOptions({
         title={t('settings.pipeline.translator.reasoning')}
         description={t('settings.pipeline.translator.reasoningDescription')}
       >
-        <Select
+        <Choice
           value={reasoning}
-          items={Object.fromEntries([
+          choices={Object.fromEntries([
             ['default', t('inference.providerDefault')],
             ...REASONING.map((level) => [level, t(`reasoning.${level}`)]),
           ])}
-          onValueChange={(level) =>
-            level && onChange({ ...value, reasoning: level === 'default' ? null : level })
+          label={t('settings.pipeline.translator.reasoning')}
+          onChange={(level) =>
+            onChange({ ...value, reasoning: level === 'default' ? null : level })
           }
-        >
-          <SelectTrigger
-            aria-label={t('settings.pipeline.translator.reasoning')}
-            className='h-8 w-full text-[11px]'
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='default'>{t('inference.providerDefault')}</SelectItem>
-            {REASONING.map((level) => (
-              <SelectItem key={level} value={level}>
-                {t(`reasoning.${level}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </PreferenceRow>
       <PreferenceRow
         title={t('model.targetLanguage')}
         description={t('settings.pipeline.translator.targetLanguageDescription')}
       >
-        <Select
+        <Choice
           value={value.target ?? 'en'}
-          items={Object.fromEntries(
-            languageChoices.map((language) => [language.tag, language.name]),
-          )}
-          onValueChange={(target) => target && onChange({ ...value, target })}
-        >
-          <SelectTrigger aria-label={t('model.targetLanguage')} className='h-8 w-full text-[11px]'>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {languageChoices.map((language) => (
-              <SelectItem key={language.tag} value={language.tag}>
-                {language.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          choices={languageChoices}
+          label={t('model.targetLanguage')}
+          onChange={(target) => onChange({ ...value, target })}
+        />
       </PreferenceRow>
       <PreferenceRow
         title={t('settings.pipeline.translator.instructions')}
@@ -433,7 +388,7 @@ function TranslatorOptions({
         <Textarea
           aria-label={t('settings.pipeline.translator.instructions')}
           value={value.instructions ?? ''}
-          className='field-sizing-fixed min-h-28 resize-y overflow-y-auto text-[12px] leading-5'
+          className='min-h-28 resize-none text-[12px] leading-5'
           onChange={(event) => onChange({ ...value, instructions: event.currentTarget.value })}
         />
       </PreferenceRow>

@@ -17,6 +17,17 @@
     "stop": "Остановить",
     "title": "Активность"
   },
+  "adjust": {
+    "apply": "Применить",
+    "brightness_contrast": "Яркость/Контрастность",
+    "brightness": "Яркость",
+    "contrast": "Контрастность",
+    "levels": "Уровни",
+    "levelsLow": "Входной чёрный",
+    "levelsHigh": "Входной белый",
+    "hue": "Цветовой тон",
+    "grayscale": "Обесцветить"
+  },
   "agent": {
     "cancel": "Отмена",
     "cancelled": "Отменено.",
@@ -48,6 +59,8 @@
   "colorPicker": {
     "brushColor": "Цвет кисти",
     "hexCode": "Шестнадцатеричный код цвета",
+    "recent": "Недавние цвета",
+    "recentColor": "Недавний цвет {{color}}",
     "sampleCanvas": "Выбрать цвет с холста",
     "transparent": "Прозрачный"
   },
@@ -58,8 +71,29 @@
     "loading": "Загрузка…"
   },
   "errors": {
+    "actionFailed": "Не удалось выполнить действие",
     "fatalTitle": "Koharu не может продолжить работу",
-    "tryAgain": "Повторить"
+    "tryAgain": "Повторить",
+    "unknown": "Нативное приложение вернуло неизвестную ошибку."
+  },
+  "export": {
+    "cancel": "Отмена",
+    "cbzHint": "Один архив со страницами PNG, названный по проекту.",
+    "description": "Отрисовывает страницы в файлы изображений.",
+    "formats": "Форматы",
+    "pattern": "Шаблон имени файла",
+    "patternError": {
+      "separator": "Шаблон не может содержать разделитель пути или '..'.",
+      "token": "Неизвестный токен. Используйте {index} или {label}.",
+      "unclosed": "Непарная фигурная скобка в шаблоне.",
+      "width": "Количество цифр должно быть числом."
+    },
+    "scope": "Страницы",
+    "scopeAll": "Все страницы ({{count}})",
+    "scopeSelected": "Выбранные ({{count}})",
+    "start": "Экспортировать",
+    "subfolders": "Отдельные папки для каждого формата",
+    "title": "Экспорт страниц"
   },
   "feedback": {
     "addScreenshot": "Добавить снимок экрана",
@@ -92,16 +126,32 @@
     "prompt": "Опишите, что добавить (необязательно)",
     "title": "Генеративная заливка"
   },
+  "find": {
+    "matchCase": "Учитывать регистр",
+    "noResults": "Ни один перевод не содержит этот текст.",
+    "page": "Страница {{number}}",
+    "placeholder": "Искать в переводах",
+    "replace": "Заменить",
+    "replaceAll": "Заменить все",
+    "replacePlaceholder": "Заменить на",
+    "searching": "Поиск…",
+    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
+    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
+    "title": "Поиск"
+  },
   "fontPicker": {
+    "addFavorite": "Добавить {{name}} в избранное",
     "choose": "Выбрать шрифт",
+    "favoritesOnly": "Показать избранные шрифты",
     "fontCount": "Шрифтов: {{count}}",
     "fontCount_one": "Шрифт: {{count}}",
     "fontCount_other": "Шрифтов: {{count}}",
     "fonts": "Шрифты",
+    "noFavorites": "Избранных шрифтов пока нет",
     "noResults": "Нет шрифтов, соответствующих поиску",
-    "search": "Искать шрифты",
-    "addFavorite": "Добавить {{family}} в избранное",
-    "removeFavorite": "Удалить {{family}} из избранного"
+    "removeFavorite": "Удалить {{name}} из избранного",
+    "search": "Искать шрифты"
   },
   "history": {
     "close": "Закрыть историю",
@@ -182,8 +232,9 @@
     "border": "Обводка",
     "borderColor": "Цвет обводки",
     "borderWidth": "Ширина обводки",
+    "chooseBorderWidth": "Выбрать ширину обводки",
     "chooseFontSize": "Выбрать размер шрифта",
-    "decreaseBorderWidth": "Уменьшить ширину обводки",
+    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
     "font": "Шрифт",
     "fontSize": "Размер шрифта",
     "fontStyles": {
@@ -192,18 +243,8 @@
     },
     "fontWeight": "Насыщенность шрифта",
     "horizontal": "Горизонтально",
-    "increaseBorderWidth": "Увеличить ширину обводки",
-    "opacity": "Непрозрачность",
-    "selectPage": "Выберите страницу для просмотра её слоёв.",
-    "source": "Исходный текст",
-    "text": "Текст",
-    "textColor": "Цвет текста",
-    "textDirection": "Направление текста",
-    "translation": "Перевод",
-    "type": "Типографика",
-    "vertical": "Вертикально",
-    "decreaseSecondBorderWidth": "Уменьшить ширину второй обводки",
     "increaseSecondBorderWidth": "Увеличить ширину второй обводки",
+    "opacity": "Непрозрачность",
     "outlineBevel": "Скошенные",
     "outlineCenter": "По центру",
     "outlineInside": "Внутри",
@@ -214,21 +255,15 @@
     "outlineRound": "Скруглённые",
     "secondBorder": "2-я обводка",
     "secondBorderColor": "Цвет второй обводки",
-    "secondBorderWidth": "Ширина второй обводки"
-  },
-  "languages": {
-    "ar": "العربية",
-    "en-US": "English",
-    "es-ES": "Español",
-    "fr-FR": "Français",
-    "ja-JP": "日本語",
-    "ko-KR": "한국어",
-    "pt-BR": "Português brasileiro",
-    "ru-RU": "Русский",
-    "tr-TR": "Türkçe",
-    "wuu": "吴语",
-    "zh-CN": "简体中文",
-    "zh-TW": "繁體中文"
+    "secondBorderWidth": "Ширина второй обводки",
+    "selectPage": "Выберите страницу для просмотра её слоёв.",
+    "source": "Исходный текст",
+    "text": "Текст",
+    "textColor": "Цвет текста",
+    "textDirection": "Направление текста",
+    "translation": "Перевод",
+    "type": "Типографика",
+    "vertical": "Вертикально"
   },
   "layers": {
     "delete": "Удалить {{name}}",
@@ -266,9 +301,11 @@
   },
   "menu": {
     "about": "О программе",
+    "adjustments": "Коррекция",
     "closeProject": "Закрыть проект",
     "delete": "Удалить выбранное",
     "discord": "Discord",
+    "donate": "Поддержать",
     "edit": "Правка",
     "export": "Экспорт проекта",
     "feedback": "Отправить отзыв",
@@ -277,15 +314,14 @@
     "github": "GitHub",
     "help": "Справка",
     "history": "История",
+    "image": "Изображение",
     "import": "Импортировать страницы",
     "redo": "Повторить",
     "selectAllLayers": "Выбрать все слои",
     "settings": "Настройки",
     "undo": "Отменить",
     "unloadModels": "Выгрузить модели",
-    "view": "Вид",
-    "adjustments": "Коррекция",
-    "image": "Изображение"
+    "view": "Вид"
   },
   "model": {
     "baseUrl": "Базовый URL",
@@ -302,6 +338,7 @@
   },
   "navigator": {
     "actionsFor": "Действия для {{page}}",
+    "chapterStart": "Начало главы",
     "delete": "Удалить",
     "deleteDescription": "«{{page}}» и её слои будут удалены. Это действие можно отменить.",
     "deleteTitle": "Удалить страницу?",
@@ -312,9 +349,16 @@
     "importFolder": "Папка…",
     "importing": "Импорт страниц…",
     "importingAction": "Импорт…",
+    "mergeAsSpread": "Объединить в разворот",
+    "mergeLeftToRight": "Слева направо",
+    "mergeRightToLeft": "Справа налево",
     "noImage": "Нет изображения",
+    "pageName": "Название страницы",
     "pageNumber": "Страница {{number}}",
     "pages": "Страницы",
+    "rename": "Переименовать",
+    "renameDescription": "Выберите новое имя для страницы.",
+    "renameTitle": "Переименовать страницу",
     "run": {
       "detect": "Обнаружить",
       "inpaint": "Восстановить",
@@ -322,16 +366,11 @@
       "translate": "Перевести"
     },
     "selected": "Выбрано: {{count}}",
-    "chapterStart": "Начало главы",
-    "mergeAsSpread": "Объединить в разворот",
-    "mergeLeftToRight": "Слева направо",
-    "mergeRightToLeft": "Справа налево",
-    "pageName": "Название страницы",
-    "rename": "Переименовать",
-    "renameDescription": "Выберите новое имя для страницы.",
-    "renameTitle": "Переименовать страницу"
+    "translated": "Переведено {{translated}} из {{total}}"
   },
   "outputPicker": {
+    "noResults": "Нет языков, соответствующих запросу.",
+    "search": "Поиск языков",
     "targetLanguage": "Язык перевода",
     "title": "Вывод перевода"
   },
@@ -442,6 +481,7 @@
       "configured": "Настроено",
       "connections": "Подключения",
       "connectionsDescription": "Учётные данные безопасно хранятся на этом устройстве.",
+      "contextWindow": "Длина контекста (токены)",
       "credential": "Учётные данные",
       "credentialLabel": "Учётные данные {{provider}}",
       "description": "Подключите провайдеров перевода и языковых моделей.",
@@ -465,18 +505,42 @@
     },
     "title": "Настройки",
     "typesetting": {
+      "addFallback": "Добавить резервный шрифт",
       "addFamily": "Добавить семейство шрифтов",
-      "defaultFamilies": "Семейства шрифтов по умолчанию",
       "description": "Задайте упорядоченный стек шрифтов для текстового слоя без назначенного семейства.",
       "empty": "Нет семейств по умолчанию. Koharu будет использовать системный запасной шрифт.",
+      "fallbacks": "Резервные",
+      "fallbacksDescription": "Используются по порядку для символов, которых нет в основном шрифте. Перетащите, чтобы изменить порядок, или на «Основной», чтобы поменять их местами.",
       "familyLabel": "Семейство шрифтов по умолчанию {{index}}",
       "fontFallback": "Предпочитаемые шрифты",
       "fontFallbackDescription": "Koharu использует первое доступное семейство, поддерживающее текст.",
       "loadError": "Не удалось загрузить шрифты. Существующие семейства всё ещё можно удалить.",
       "loadingFonts": "Загрузка шрифтов…",
+      "primary": "Основной",
       "removeFamily": "Удалить {{family}}",
       "title": "Рендерер"
     }
+  },
+  "shape": {
+    "title": "Фигура",
+    "fill": "Заливка",
+    "fillNone": "Без заливки",
+    "fillSolid": "Сплошной цвет",
+    "fillLinear": "Линейный градиент",
+    "fillRadial": "Радиальный градиент",
+    "fillSweep": "Угловой градиент",
+    "fillPattern": "Узор",
+    "fillColor": "Цвет заливки",
+    "choosePattern": "Выбрать изображение…",
+    "angle": "Угол",
+    "stopColor": "Цвет точки {{index}}",
+    "stopPosition": "Положение точки {{index}}",
+    "removeStop": "Удалить точку {{index}}",
+    "addStop": "Добавить точку",
+    "strokeColor": "Цвет обводки",
+    "strokeWidth": "Толщина обводки",
+    "decrease": "Уменьшить: {{name}}",
+    "increase": "Увеличить: {{name}}"
   },
   "start": {
     "create": "Создать",
@@ -491,10 +555,12 @@
     "loadingProjects": "Загрузка проектов…",
     "newDescription": "Создайте чистое рабочее пространство для страниц, переводов и экспорта.",
     "newProject": "Новый проект",
+    "noResults": "Нет проектов, соответствующих запросу.",
     "projectKind": "Проект Koharu",
     "projectList": "Проекты",
     "projectName": "Имя проекта",
     "projectNamePlaceholder": "Мой новый проект",
+    "search": "Поиск проектов",
     "storageHint": "Проекты хранятся локально на этом компьютере.",
     "title": "Проекты",
     "yourProjects": "Ваши проекты"
@@ -565,70 +631,5 @@
     "maximize": "Развернуть",
     "minimize": "Свернуть",
     "restore": "Восстановить"
-  },
-  "find": {
-    "matchCase": "Учитывать регистр",
-    "noResults": "Ни один перевод не содержит этот текст.",
-    "page": "Страница {{number}}",
-    "placeholder": "Искать в переводах",
-    "replace": "Заменить",
-    "replaceAll": "Заменить все",
-    "replacePlaceholder": "Заменить на",
-    "searching": "Поиск…",
-    "summary": "Совпадений: {{count}}, страниц: {{pages}}",
-    "summary_one": "Совпадений: {{count}}, страниц: {{pages}}",
-    "summary_other": "Совпадений: {{count}}, страниц: {{pages}}",
-    "title": "Поиск"
-  },
-  "adjust": {
-    "apply": "Применить",
-    "brightness_contrast": "Яркость/Контрастность",
-    "brightness": "Яркость",
-    "contrast": "Контрастность",
-    "levels": "Уровни",
-    "levelsLow": "Входной чёрный",
-    "levelsHigh": "Входной белый",
-    "hue": "Цветовой тон",
-    "grayscale": "Обесцветить"
-  },
-  "shape": {
-    "title": "Фигура",
-    "fill": "Заливка",
-    "fillNone": "Без заливки",
-    "fillSolid": "Сплошной цвет",
-    "fillLinear": "Линейный градиент",
-    "fillRadial": "Радиальный градиент",
-    "fillSweep": "Угловой градиент",
-    "fillPattern": "Узор",
-    "fillColor": "Цвет заливки",
-    "choosePattern": "Выбрать изображение…",
-    "angle": "Угол",
-    "stopColor": "Цвет точки {{index}}",
-    "stopPosition": "Положение точки {{index}}",
-    "removeStop": "Удалить точку {{index}}",
-    "addStop": "Добавить точку",
-    "strokeColor": "Цвет обводки",
-    "strokeWidth": "Толщина обводки",
-    "decrease": "Уменьшить: {{name}}",
-    "increase": "Увеличить: {{name}}"
-  },
-  "export": {
-    "cancel": "Отмена",
-    "cbzHint": "Один архив со страницами PNG, названный по проекту.",
-    "description": "Отрисовывает страницы в файлы изображений.",
-    "formats": "Форматы",
-    "pattern": "Шаблон имени файла",
-    "patternError": {
-      "separator": "Шаблон не может содержать разделитель пути или '..'.",
-      "token": "Неизвестный токен. Используйте {index} или {label}.",
-      "unclosed": "Непарная фигурная скобка в шаблоне.",
-      "width": "Количество цифр должно быть числом."
-    },
-    "scope": "Страницы",
-    "scopeAll": "Все страницы ({{count}})",
-    "scopeSelected": "Выбранные ({{count}})",
-    "start": "Экспортировать",
-    "subfolders": "Отдельные папки для каждого формата",
-    "title": "Экспорт страниц"
   }
 }

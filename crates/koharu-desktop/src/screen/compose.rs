@@ -14,6 +14,9 @@ use winit::window::Window;
 
 use super::paint::{Paint, Painted};
 
+#[cfg(target_os = "linux")]
+mod x11;
+
 /// Draws a texture into a rectangle given in normalized device coordinates,
 /// as a four-vertex strip.
 const SHADER: &str = r"
@@ -47,6 +50,9 @@ fn fragment(vertex: Vertex) -> @location(0) vec4<f32> {
 
 pub struct Compositor {
     surface: wgpu::Surface<'static>,
+    /// On X11, the window the surface is on, inside the window's own.
+    #[cfg(target_os = "linux")]
+    child: Option<Arc<x11::Child>>,
     config: wgpu::SurfaceConfiguration,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -74,9 +80,18 @@ struct Source {
 
 impl Compositor {
     pub fn new(gpu: &Gpu, window: Arc<dyn Window>) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        let child = x11::Child::new(&window)?.map(Arc::new);
+        #[cfg(target_os = "linux")]
+        let target = match &child {
+            Some(child) => wgpu::SurfaceTarget::from(Arc::clone(child)),
+            None => window.into(),
+        };
+        #[cfg(not(target_os = "linux"))]
+        let target = window;
         let surface = gpu
             .instance
-            .create_surface(window)
+            .create_surface(target)
             .context("failed to create the window's surface")?;
         let capabilities = surface.get_capabilities(&gpu.adapter);
         let format = capabilities
@@ -188,6 +203,8 @@ impl Compositor {
         };
         Ok(Self {
             surface,
+            #[cfg(target_os = "linux")]
+            child,
             config,
             layout,
             sampler,
@@ -211,7 +228,11 @@ impl Compositor {
     ) -> Result<()> {
         if (self.config.width, self.config.height) != size {
             (self.config.width, self.config.height) = size;
-            self.surface.configure(&gpu.device, &self.config);
+            #[cfg(target_os = "linux")]
+            if let Some(child) = &self.child {
+                child.resize(size)?;
+            }
+            self.configure(gpu)?;
         }
         self.view.rect = match &painted.view_frame {
             Some(frame) => self
@@ -223,7 +244,7 @@ impl Compositor {
                 &self.sampler,
                 painted.view.as_mut(),
                 (0, 0),
-            ),
+            )?,
         };
         self.popup.rect = match (painted.popup_origin, &painted.popup_frame) {
             (Some(origin), Some(frame)) => {
@@ -236,7 +257,7 @@ impl Compositor {
                 &self.sampler,
                 painted.popup.as_mut(),
                 origin,
-            ),
+            )?,
             (None, _) => None,
         };
         self.canvas.rect = None;
@@ -256,13 +277,11 @@ impl Compositor {
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Outdated => {
-                self.surface.configure(&gpu.device, &self.config);
+                self.configure(gpu)?;
                 return Ok(());
             }
-            // wgpu drops a surface's configuration before applying a new one,
-            // so a configure that failed leaves it unconfigured, and every
-            // frame after fails validation; a lost surface takes a new one,
-            // as wgpu documents. Either way the caller draws on a new one.
+            // A lost surface takes a new one, as wgpu documents, and so does
+            // one failing validation: the caller draws on a new one.
             wgpu::CurrentSurfaceTexture::Lost => bail!("the window's surface was lost"),
             wgpu::CurrentSurfaceTexture::Validation => {
                 bail!("the window's surface failed validation")
@@ -281,6 +300,17 @@ impl Compositor {
             }
         }
         Ok(())
+    }
+
+    /// Configures the surface for `config`. wgpu reports a failed configure
+    /// to the device rather than to the call, and drops the configuration
+    /// first, so the surface it leaves unconfigured would panic on the next
+    /// frame; this fails instead.
+    fn configure(&self, gpu: &Gpu) -> Result<()> {
+        gpu.catch(|| {
+            self.surface.configure(&gpu.device, &self.config);
+            Ok(())
+        })
     }
 
     fn draw(&self, gpu: &Gpu, target: &wgpu::TextureView) {
@@ -323,20 +353,22 @@ impl Compositor {
 
     /// The frame again, drawn into a texture and read back as RGBA.
     fn capture(&self, gpu: &Gpu, (width, height): (u32, u32)) -> Result<RgbaImage> {
-        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("koharu capture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
+        let texture = gpu.catch(|| {
+            Ok(gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("koharu capture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            }))
+        })?;
         self.draw(
             gpu,
             &texture.create_view(&wgpu::TextureViewDescriptor::default()),
@@ -357,7 +389,8 @@ impl Compositor {
 
 impl Layer {
     /// Uploads what changed of `paint`, drawn at `origin`, and answers where
-    /// it goes; a new texture takes all of it.
+    /// it goes; a new texture takes all of it. Fails when the GPU has no
+    /// memory for a new one, which the layer then doesn't keep.
     fn upload(
         &mut self,
         gpu: &Gpu,
@@ -365,8 +398,10 @@ impl Layer {
         sampler: &wgpu::Sampler,
         paint: Option<&mut Paint>,
         origin: (i32, i32),
-    ) -> Option<Rect> {
-        let paint = paint?;
+    ) -> Result<Option<Rect>> {
+        let Some(paint) = paint else {
+            return Ok(None);
+        };
         // A shared frame's texture, which takes no uploads, is replaced too.
         let sized = self.source.as_ref().is_some_and(|source| {
             (source.texture.width(), source.texture.height()) == (paint.width, paint.height)
@@ -376,20 +411,22 @@ impl Layer {
                     .contains(wgpu::TextureUsages::COPY_DST)
         });
         if !sized {
-            let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("koharu web paint"),
-                size: wgpu::Extent3d {
-                    width: paint.width,
-                    height: paint.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
+            let texture = gpu.catch(|| {
+                Ok(gpu.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("koharu web paint"),
+                    size: wgpu::Extent3d {
+                        width: paint.width,
+                        height: paint.height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                }))
+            })?;
             self.source = Some(self.source(gpu, layout, sampler, texture));
             paint.dirty.clear();
             paint.dirty.push(super::paint::PixelRect {
@@ -399,7 +436,9 @@ impl Layer {
                 height: paint.height,
             });
         }
-        let source = self.source.as_ref()?;
+        let Some(source) = self.source.as_ref() else {
+            return Ok(None);
+        };
         let stride = paint.width * 4;
         for rect in paint.dirty.drain(..) {
             let start = (rect.y * stride + rect.x * 4) as usize;
@@ -428,12 +467,12 @@ impl Layer {
             );
         }
         let (x, y) = (f64::from(origin.0), f64::from(origin.1));
-        Some(Rect::new(
+        Ok(Some(Rect::new(
             x,
             y,
             x + f64::from(paint.width),
             y + f64::from(paint.height),
-        ))
+        )))
     }
 
     /// Samples `frame`, a frame CEF shared, drawn at `origin`, and answers
