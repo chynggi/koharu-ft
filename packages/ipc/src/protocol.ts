@@ -158,6 +158,19 @@ export type Camera = {
   y: number
 }
 
+/**
+ *  A list a site has besides its search, as Mihon's catalogue sources have
+ *  popular and latest.
+ */
+export type Catalog =
+  | 'popular'
+  /**  Recently updated. */
+  | 'latest'
+  /**  Books available to the signed-in account. */
+  | 'library'
+  /**  Series still running, as the site lists them. */
+  | 'ongoing'
+
 /**  What one edit, undo, or redo changed. */
 export type Change = {
   revision: Revision
@@ -170,6 +183,13 @@ export type Change = {
    */
   layers: LayerId[]
   history: History
+}
+
+export type ChapterLink = {
+  title: string
+  url: string
+  /**  Paid and not bought, or otherwise not readable by the signed-in user. */
+  locked: boolean
 }
 
 /**  One of the values a character's style holds. */
@@ -326,6 +346,12 @@ export type ExportOptions = {
 export type ExportProgress = {
   completed: number
   total: number
+}
+
+/**  The page facing the shown one in a two-page spread, and its side. */
+export type FacingPage = {
+  page: PageId
+  side: Side
 }
 
 export type FillRule = 'non_zero' | 'even_odd'
@@ -555,6 +581,25 @@ export type Layer<
 /**  A layer; stored, so it survives undo. */
 export type LayerId = string
 
+/**  One page of a search or a catalog. */
+export type Listing = {
+  series: SeriesLink[]
+  /**
+   *  Where the next page starts, as only its extension reads it; `None`
+   *  on the last.
+   */
+  next: string | null
+}
+
+/**  How far a chapter's loading went, which the `chapter` event carries. */
+export type Loading = {
+  /**  Its pages in the project so far, and in the chapter. */
+  loaded: number
+  total: number
+  /**  Why it stopped, when it failed. */
+  error: string | null
+}
+
 /**
  *  Grey pixels that limit its parent's visibility, as Photoshop's and Clip
  *  Studio Paint's layer masks do; never drawn. Masks apply in order.
@@ -705,6 +750,12 @@ export type Op =
 /**  An opacity, from 0 to 1. */
 export type Opacity = number
 
+/**  A series the gallery opened. */
+export type Opened = {
+  url: string
+  series: Series
+}
+
 export type Outcome =
   | { kind: 'done' }
   /**  The first failure ends the run; what it finished stays. */
@@ -734,6 +785,9 @@ export type PageChanges = {
 
 /**  A page; stored, so it survives undo. */
 export type PageId = string
+
+/**  A side of a two-page spread. */
+export type PageSide = 'left' | 'right'
 
 /**
  *  A page without its layers, which `get_page` answers, and how far its
@@ -885,6 +939,25 @@ export type Raster = {
   offset?: Offset
 }
 
+/**
+ *  A chapter read into a project: the project, and how its pages read, as
+ *  its extension said, which the interface keeps for the reader.
+ */
+export type Reading = {
+  project: string
+  direction: ReadingDirection | null
+  /**  Which side of a two-page spread its first page takes. */
+  firstPage: PageSide | null
+}
+
+/**  How a chapter's pages turn. */
+export type ReadingDirection =
+  /**  Right to left, as Japanese manga turns. */
+  | 'rtl'
+  | 'ltr'
+  /**  One strip, top to bottom, as a webtoon scrolls. */
+  | 'vertical'
+
 /**  The recognizers, by id in the section and by name. */
 export type Recognizer = 'manga-ocr-ar' | 'manga-ocr-cpt-flex' | 'baberu-ocr' | 'hayai-ocr'
 
@@ -946,6 +1019,20 @@ export type Role = 'text' | 'sfx'
 /**  A run, numbered in the order runs were asked for. */
 export type RunId = number
 
+/**  A series: its chapters in reading order. */
+export type Series = {
+  title: string
+  cover: string | null
+  chapters: ChapterLink[]
+}
+
+/**  A series as a list shows it. */
+export type SeriesLink = {
+  title: string
+  url: string
+  cover?: string | null
+}
+
 /**  A vector path with an optional fill and stroke, in page coordinates. */
 export type Shape = {
   path: Path
@@ -965,6 +1052,9 @@ export type ShapeFill =
   | ({ gradient: Gradient } & { pattern?: never })
   | ({ pattern: Pattern } & { gradient?: never })
 
+/**  Which side of the canvas's own page a facing page is on. */
+export type Side = 'left' | 'right'
+
 /**
  *  What a sign-in asks of the user: to sign in on a page, entering a code
  *  there for a device code.
@@ -974,6 +1064,16 @@ export type SignInPrompt = {
   /**  Whether the browser was opened on the page already. */
   opened: boolean
   code: string | null
+}
+
+/**  A site the gallery searches and browses. */
+export type Site = {
+  id: string
+  name: string
+  /**  The catalogs it has besides its search. */
+  catalogs: Catalog[]
+  /**  Whether it has a sign-in. */
+  signIn: boolean
 }
 
 export type Size = {
@@ -1176,8 +1276,9 @@ export const commands = {
   /** The page the canvas shows. */
   getShownPage: () =>
     runner('get_shown_page', (options) => invoke<PageId | null>('get_shown_page', {}, options)),
-  /** Shows `page` on the canvas. */
-  show: (page: PageId) => runner('show', (options) => invoke<null>('show', { page }, options)),
+  /** Shows `page` on the canvas, with `facing` beside it in a two-page spread. */
+  show: (page: PageId, facing: FacingPage | null) =>
+    runner('show', (options) => invoke<null>('show', { page, facing }, options)),
   query: (query: Query) =>
     runner('query', (options) => invoke<Answer>('query', { query }, options)),
   edit: (edit: Edit) => runner('edit', (options) => invoke<Change>('edit', { edit }, options)),
@@ -1239,6 +1340,35 @@ export const commands = {
   /** Signs out of `vendor`: the vendor revokes the sign-in, and Koharu deletes it. */
   signOut: (vendor: string) =>
     runner('sign_out', (options) => invoke<null>('sign_out', { vendor }, options)),
+  /** Every site the built-in extensions read. */
+  listSites: () => runner('list_sites', (options) => invoke<Site[]>('list_sites', {}, options)),
+  /** The page of the site `site`'s search for `query` that `next` starts. */
+  searchSite: (site: string, query: string, next: string | null) =>
+    runner('search_site', (options) =>
+      invoke<Listing>('search_site', { site, query, next }, options),
+    ),
+  /** The page of the site `site`'s `catalog` that `next` starts. */
+  browseSite: (site: string, catalog: Catalog, next: string | null) =>
+    runner('browse_site', (options) =>
+      invoke<Listing>('browse_site', { site, catalog, next }, options),
+    ),
+  /** The series at `url`. */
+  openSeries: (url: string) =>
+    runner('open_series', (options) => invoke<Opened>('open_series', { url }, options)),
+  /** The cover at `url` of the series at `series`, through its extension, as sites refuse it to the main window's page. */
+  getCover: (series: string, url: string) =>
+    runner('get_cover', (options) => invoke<ArrayBuffer>('get_cover', { series, url }, options)),
+  /** Opens the sign-in page of the site `site` in a window of its own, and answers once the user closes it, signed in or not; while it's open, another call brings it forward and answers at once. */
+  signInSite: (site: string) =>
+    runner('sign_in_site', (options) => invoke<null>('sign_in_site', { site }, options)),
+  signOutSite: (site: string) =>
+    runner('sign_out_site', (options) => invoke<null>('sign_out_site', { site }, options)),
+  /** The name of the account signed in to the site `site`, `None` when no one is. */
+  getAccount: (site: string) =>
+    runner('get_account', (options) => invoke<string | null>('get_account', { site }, options)),
+  /** Opens the chapter at `url` as the open project, and loads its pages into it, which `chapter` tells how far it went with; says how it reads. */
+  readChapter: (url: string) =>
+    runner('read_chapter', (options) => invoke<Reading>('read_chapter', { url }, options)),
   listFonts: () =>
     runner('list_fonts', (options) => invoke<FontFamily[]>('list_fonts', {}, options)),
   /** `family`'s name set in it, as WebP. */
@@ -1328,4 +1458,6 @@ export const events = {
     listen<PipelineEvent>('pipeline', (event) => handler(event.payload)),
   download: (handler: (payload: Transfer) => void): Promise<UnlistenFn> =>
     listen<Transfer>('download', (event) => handler(event.payload)),
+  chapter: (handler: (payload: Loading) => void): Promise<UnlistenFn> =>
+    listen<Loading>('chapter', (event) => handler(event.payload)),
 }

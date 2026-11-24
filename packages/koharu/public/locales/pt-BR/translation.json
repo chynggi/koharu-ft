@@ -11,6 +11,7 @@
     "downloadingFiles": "Baixando {{count}} arquivos",
     "downloadingFiles_one": "Baixando {{count}} arquivos",
     "downloadingFiles_other": "Baixando {{count}} arquivos",
+    "loadingPages": "Carregando páginas: {{loaded}} de {{total}}",
     "modelDownload": "Download do modelo",
     "processing": "Processando",
     "processingFailed": "Falha no processamento.",
@@ -152,6 +153,31 @@
     "noResults": "Nenhuma fonte corresponde à busca",
     "removeFavorite": "Remover {{name}} dos favoritos",
     "search": "Buscar fontes"
+  },
+  "gallery": {
+    "back": "Voltar",
+    "chapters": "{{count}} capítulos",
+    "chapters_one": "{{count}} capítulo",
+    "chapters_other": "{{count}} capítulos",
+    "latest": "Recentes",
+    "library": "Meus livros",
+    "locked": "Bloqueado",
+    "noResults": "Nenhum resultado para “{{query}}”",
+    "noSeries": "Ainda não há séries",
+    "noSeriesHint": "Pesquise uma série acima ou cole o endereço dela.",
+    "onShelf": "Na sua estante",
+    "ongoing": "Em andamento",
+    "popular": "Populares",
+    "removeAction": "Remover série",
+    "removeDescription": "Isso remove “{{title}}” das suas séries. Os projetos dos capítulos continuam no Koharu.",
+    "removeLabel": "Remover {{title}}",
+    "removeTitle": "Remover série?",
+    "search": "Pesquisar",
+    "searchPlaceholder": "Pesquise uma série ou cole um endereço",
+    "searching": "Pesquisando…",
+    "seeAll": "Ver tudo",
+    "title": "Galeria",
+    "yourSeries": "Suas séries"
   },
   "history": {
     "close": "Fechar histórico",
@@ -391,6 +417,18 @@
     "cleanup": "Limpeza",
     "outline": "Contorno"
   },
+  "reader": {
+    "coverAlone": "Capa sozinha",
+    "edit": "Editar",
+    "loadFailed": "Não foi possível carregar o capítulo",
+    "ltr": "Da esquerda para a direita",
+    "mode": "Modo",
+    "next": "Próxima página",
+    "noPages": "Ainda não há páginas",
+    "previous": "Página anterior",
+    "read": "Ler",
+    "rtl": "Da direita para a esquerda"
+  },
   "reasoning": {
     "high": "Alto",
     "low": "Baixo",
@@ -425,6 +463,16 @@
       "animationsDescription": "Esmaece menus e caixas de diálogo e suaviza mudanças ao passar o cursor e em interruptores. Respeita a configuração do sistema para reduzir movimento."
     },
     "backToEditor": "Voltar ao editor",
+    "gallery": {
+      "accounts": "Contas",
+      "description": "Entre em um site para ler o que sua conta permite, como capítulos que você comprou.",
+      "noSignIn": "Não precisa de conta",
+      "signIn": "Entrar",
+      "signOut": "Sair",
+      "signOutLabel": "Sair de {{site}}",
+      "signedIn": "Conectado como {{name}}",
+      "title": "Galeria"
+    },
     "loading": "Carregando preferências…",
     "pipeline": {
       "description": "Escolha os modelos e opções usados para processar cada página.",
@@ -499,6 +547,7 @@
     },
     "tabs": {
       "appearance": "Aparência",
+      "gallery": "Galeria",
       "pipeline": "Pipeline",
       "providers": "Provedores",
       "typesetting": "Renderizador"
@@ -563,6 +612,7 @@
     "search": "Pesquisar projetos",
     "storageHint": "Os projetos são armazenados localmente neste computador.",
     "title": "Projetos",
+    "views": "Visualização",
     "yourProjects": "Seus projetos"
   },
   "startup": {

@@ -1,11 +1,13 @@
 'use client'
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 import type {
   Bounds,
   ExportProgress,
   LayerId,
+  Loading,
   PageId,
   PipelineEvent,
   RampAlong,
@@ -89,6 +91,12 @@ interface KoharuStore {
   settingsOpen: boolean
   /** Whether the History window shows over the canvas. */
   historyOpen: boolean
+  /** Whether the start view shows the gallery, not the projects. */
+  galleryOpen: boolean
+  /** Whether the main window reads the open project, not edits it. */
+  reading: boolean
+  /** How far an extension's chapter loading into the open project went. */
+  loading: Loading | null
   selectPages: (pages: PageId[]) => void
   showPanel: (panel: Panel) => void
   setStoryHover: (layer: LayerId | null) => void
@@ -96,6 +104,8 @@ interface KoharuStore {
   setProcessingStages: (stages: Stage[]) => void
   setSettingsOpen: (open: boolean) => void
   setHistoryOpen: (open: boolean) => void
+  setGalleryOpen: (open: boolean) => void
+  setReading: (reading: boolean) => void
   selectLayers: (layers: LayerId[]) => void
   setTool: (tool: CanvasTool) => void
   setBrush: (brush: CanvasBrush) => void
@@ -104,51 +114,72 @@ interface KoharuStore {
   setExporting: (exporting: ExportProgress | null) => void
 }
 
-export const useKoharuStore = create<KoharuStore>()((set) => ({
-  initialized: false,
-  jobs: {},
-  downloads: {},
-  exporting: null,
-  camera: { zoom: 1, x: 0, y: 0 },
-  selectionBounds: null,
-  area: null,
-  typing: null,
-  picked: null,
-  selectedLayers: [],
-  canvasSelection: [],
-  selectedPages: [],
-  tool: 'select',
-  brush: { diameter: 48, color: '#FFFFFF', ramp: null },
-  panel: 'layers',
-  storyHover: null,
-  processingScope: 'project',
-  processingStages: [...pipelineStages],
-  settingsOpen: false,
-  historyOpen: false,
-  selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
-  showPanel: (panel) => set({ panel, storyHover: null }),
-  setStoryHover: (storyHover) => set({ storyHover }),
-  setProcessingScope: (processingScope) => set({ processingScope }),
-  setProcessingStages: (processingStages) => set({ processingStages }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  setHistoryOpen: (historyOpen) => set({ historyOpen }),
-  selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
-  setTool: (tool) => set({ tool }),
-  setBrush: (brush) => set({ brush }),
-  dismissJob: (id) =>
-    set((state) => {
-      const jobs = { ...state.jobs }
-      delete jobs[id]
-      return { jobs }
+export const useKoharuStore = create<KoharuStore>()(
+  persist(
+    (set) => ({
+      initialized: false,
+      jobs: {},
+      downloads: {},
+      exporting: null,
+      camera: { zoom: 1, x: 0, y: 0 },
+      selectionBounds: null,
+      area: null,
+      typing: null,
+      picked: null,
+      selectedLayers: [],
+      canvasSelection: [],
+      selectedPages: [],
+      tool: 'select',
+      brush: { diameter: 48, color: '#FFFFFF', ramp: null },
+      panel: 'layers',
+      storyHover: null,
+      processingScope: 'project',
+      processingStages: [...pipelineStages],
+      settingsOpen: false,
+      historyOpen: false,
+      galleryOpen: false,
+      reading: false,
+      loading: null,
+      selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
+      showPanel: (panel) => set({ panel, storyHover: null }),
+      setStoryHover: (storyHover) => set({ storyHover }),
+      setProcessingScope: (processingScope) => set({ processingScope }),
+      setProcessingStages: (processingStages) => set({ processingStages }),
+      setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+      setHistoryOpen: (historyOpen) => set({ historyOpen }),
+      setGalleryOpen: (galleryOpen) => set({ galleryOpen }),
+      setReading: (reading) => set({ reading }),
+      selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
+      setTool: (tool) => set({ tool }),
+      setBrush: (brush) => set({ brush }),
+      dismissJob: (id) =>
+        set((state) => {
+          const jobs = { ...state.jobs }
+          delete jobs[id]
+          return { jobs }
+        }),
+      setExporting: (exporting) => set({ exporting }),
+      dismissDownload: (id) =>
+        set((state) => {
+          const downloads = { ...state.downloads }
+          delete downloads[String(id)]
+          return { downloads }
+        }),
     }),
-  setExporting: (exporting) => set({ exporting }),
-  dismissDownload: (id) =>
-    set((state) => {
-      const downloads = { ...state.downloads }
-      delete downloads[String(id)]
-      return { downloads }
-    }),
-}))
+    {
+      name: 'koharu.workspace',
+      // The choices a user makes once and expects again next time, as Photoshop keeps its tool
+      // and brush; what's selected, running, or open starts afresh.
+      partialize: ({ tool, brush, processingScope, processingStages, galleryOpen }) => ({
+        tool,
+        brush,
+        processingScope,
+        processingStages,
+        galleryOpen,
+      }),
+    },
+  ),
+)
 
 /** Every run's events so far, as the editor loads. */
 export function receiveRuns(events: PipelineEvent[]): void {

@@ -1,11 +1,12 @@
 'use client'
 
-import { ArrowLeft, Cpu, KeyRound, Monitor, Moon, Palette, Sun, Type } from 'lucide-react'
+import { ArrowLeft, Cpu, KeyRound, Library, Monitor, Moon, Palette, Sun, Type } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Choice } from '@/components/controls/Choice'
+import { GalleryPreferences } from '@/components/preferences/GalleryPreferences'
 import { PipelinePreferences } from '@/components/preferences/PipelinePreferences'
 import {
   PreferencePage,
@@ -44,6 +45,7 @@ const tabs = [
   ['pipeline', Cpu],
   ['providers', KeyRound],
   ['typesetting', Type],
+  ['gallery', Library],
 ] as const
 
 export function SettingsPage() {
@@ -121,6 +123,9 @@ export function SettingsPage() {
               ) : (
                 <LoadingPreferences />
               )}
+            </TabsContent>
+            <TabsContent value='gallery'>
+              <GalleryPreferences />
             </TabsContent>
             <TabsContent value='typesetting'>
               {preferences ? (

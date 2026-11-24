@@ -17,6 +17,7 @@ use koharu_renderer::{Drawing, Gpu, Label, Renderer};
 use koharu_scene::{CharStyle, Content, Layer, LayerId, PageId, Rgba, Session, Text};
 use kurbo::{Affine, Point, Rect, Shape as _, Size, TranslateScale, Vec2};
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use ui_events::keyboard::{Code, Key, KeyState, KeyboardEvent, NamedKey};
 use ui_events::pointer::{
     PointerButton, PointerButtonEvent, PointerEvent, PointerGesture, PointerGestureEvent,
@@ -41,6 +42,23 @@ use crate::{
 /// being typed.
 const TYPING_SLACK: f64 = 4.0;
 
+/// A page shown beside the canvas's own in a two-page spread, as a book's
+/// facing pages are, on its `side`. A spread is only read: while one shows,
+/// the canvas takes no input and draws no overlay, so its pages' places
+/// never meet the tools.
+pub struct Facing {
+    pub snapshot: Snapshot,
+    pub side: Side,
+}
+
+/// Which side of the canvas's own page a facing page is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Left,
+    Right,
+}
+
 /// The page viewport over one open project. It reads the project, never
 /// writes it: every change leaves as an `Effect::Edit` for the host.
 pub struct Canvas {
@@ -50,6 +68,7 @@ pub struct Canvas {
     view: View,
     colors: Colors,
     snapshot: Option<Snapshot>,
+    facing: Option<Facing>,
     tool: Tool,
     brush: Brush,
     story: Story,
@@ -120,6 +139,7 @@ impl Canvas {
             view: View::default(),
             colors: Colors::default(),
             snapshot: None,
+            facing: None,
             tool: Tool::default(),
             brush: Brush::default(),
             story: Story::default(),
@@ -181,6 +201,19 @@ impl Canvas {
             self.deselect();
         }
         self.snapshot = Some(snapshot);
+        self.generation += 1;
+        self.view.set_page(self.page_size(), other);
+    }
+
+    /// Shows `facing` beside the page, or no page beside it; another
+    /// facing page fits the camera to the spread.
+    pub fn face(&mut self, facing: Option<Facing>) {
+        let shown = |facing: Option<&Facing>| facing.map(|f| (f.snapshot.page().id, f.side));
+        let other = shown(self.facing.as_ref()) != shown(facing.as_ref());
+        if facing.is_some() {
+            self.gesture = None;
+        }
+        self.facing = facing;
         self.generation += 1;
         self.view.set_page(self.page_size(), other);
     }
@@ -398,6 +431,9 @@ impl Canvas {
     /// picked anchors, and Escape cancels a brush resize. A key whose press
     /// it took is its own until released, its repeats included.
     pub fn key(&mut self, event: &KeyboardEvent) -> anyhow::Result<Option<Vec<Effect>>> {
+        if self.facing.is_some() {
+            return Ok(None);
+        }
         if let Some(typing) = &mut self.typing {
             return Ok(match typing.key(event)? {
                 Keyed::Taken(effects) => Some(effects),
@@ -477,6 +513,9 @@ impl Canvas {
 
     /// A pointer event in the window's physical pixels.
     pub fn input(&mut self, event: PointerEvent) -> anyhow::Result<Vec<Effect>> {
+        if self.facing.is_some() {
+            return Ok(Vec::new());
+        }
         let effects = match event {
             PointerEvent::Down(PointerButtonEvent {
                 button,
@@ -804,7 +843,8 @@ impl Canvas {
         }
     }
 
-    /// The workspace around the page, and the page's white.
+    /// The workspace around the page, and the page's white, a spread's
+    /// both pages' as one sheet.
     fn base(&self, drawing: &mut Drawing) {
         let scene = &mut drawing.scene;
         scene.set_transform(Affine::IDENTITY);
@@ -813,6 +853,25 @@ impl Canvas {
         scene.set_transform(self.view.to_screen());
         scene.set_paint(Color::WHITE);
         scene.fill_rect(&self.page_size().to_rect());
+    }
+
+    /// Where the page and the facing page lie in the spread, each centred
+    /// on its height: the page at the origin when nothing faces it.
+    fn places(&self) -> (Vec2, Option<(&Snapshot, Vec2)>) {
+        let Some((snapshot, facing)) = self.snapshot.as_ref().zip(self.facing.as_ref()) else {
+            return (Vec2::ZERO, None);
+        };
+        let (page, beside) = (snapshot.size(), facing.snapshot.size());
+        let height = page.height.max(beside.height);
+        let top = |size: Size| (height - size.height) / 2.0;
+        let (page_x, beside_x) = match facing.side {
+            Side::Left => (beside.width, 0.0),
+            Side::Right => (0.0, page.width),
+        };
+        (
+            Vec2::new(page_x, top(page)),
+            Some((&facing.snapshot, Vec2::new(beside_x, top(beside)))),
+        )
     }
 
     /// The texture as last drawn.
@@ -830,6 +889,9 @@ impl Canvas {
     /// the selection's outlines and handles, following a drag, the hover,
     /// and the brush's ring.
     fn overlay(&self, drawing: &mut Drawing) -> anyhow::Result<()> {
+        if self.facing.is_some() {
+            return Ok(());
+        }
         let mut overlay = Overlay::new(drawing, &self.view, self.colors);
         let Some(cx) = self.context() else {
             return Ok(());
@@ -1000,8 +1062,16 @@ impl Canvas {
         Ok(())
     }
 
+    /// The page's size, or a spread's both pages' side by side.
     fn page_size(&self) -> Size {
-        self.snapshot.as_ref().map_or(Size::ZERO, Snapshot::size)
+        let page = self.snapshot.as_ref().map_or(Size::ZERO, Snapshot::size);
+        match &self.facing {
+            Some(facing) => {
+                let beside = facing.snapshot.size();
+                Size::new(page.width + beside.width, page.height.max(beside.height))
+            }
+            None => page,
+        }
     }
 
     /// The page as the viewport shows it, without the layers a gesture
@@ -1022,7 +1092,20 @@ impl Canvas {
             .and_then(|active| active.gesture.under())
             .or(typed.as_ref())
             .unwrap_or(snapshot.frame());
-        frame.paint(self.view.to_screen(), self.view.size().to_rect(), drawing)?;
+        let (place, facing) = self.places();
+        let viewport = self.view.size().to_rect();
+        frame.paint(
+            self.view.to_screen() * Affine::translate(place),
+            viewport,
+            drawing,
+        )?;
+        if let Some((facing, place)) = facing {
+            facing.frame().paint(
+                self.view.to_screen() * Affine::translate(place),
+                viewport,
+                drawing,
+            )?;
+        }
         if let Some(typing) = &self.typing {
             let transform = self.view.to_screen() * typing.transform();
             Overlay::new(drawing, &self.view, self.colors)

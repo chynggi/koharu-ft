@@ -92,7 +92,7 @@ export function FindPanel() {
       const store = useKoharuStore.getState()
       store.selectPages([match.page])
       store.selectLayers([])
-      await commands.show(match.page)
+      await commands.show(match.page, null)
       await refresh(projectKey, pageKey)
       selectLayers([match.layer])
     },

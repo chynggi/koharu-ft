@@ -16,6 +16,9 @@ export function ActivityCenter() {
   const jobs = useKoharuStore((state) => state.jobs)
   const downloads = useKoharuStore((state) => state.downloads)
   const exporting = useKoharuStore((state) => state.exporting)
+  // A chapter's pages still coming; a failure stops it, and its toast says why.
+  const loading = useKoharuStore((state) => state.loading)
+  const chapter = loading && !loading.error && loading.loaded < loading.total ? loading : null
   const activities = useMutationState({
     filters: { status: 'pending' },
     select: (mutation) => ({ id: mutation.mutationId, label: mutation.meta?.activity }),
@@ -32,7 +35,8 @@ export function ActivityCenter() {
     activities.length === 0 &&
     visibleJobs.length === 0 &&
     visibleDownloads.length === 0 &&
-    exporting === null
+    exporting === null &&
+    !chapter
   )
     return null
 
@@ -59,6 +63,14 @@ export function ActivityCenter() {
           <span className='truncate text-[11px] font-medium'>{t(activity.label)}</span>
         </div>
       ))}
+      {chapter && (
+        <ProgressRow
+          icon={<Download className='mt-0.5 size-3.5 justify-self-center text-primary' />}
+          label={t('activity.loadingPages', { loaded: chapter.loaded, total: chapter.total })}
+          completed={chapter.loaded}
+          total={chapter.total}
+        />
+      )}
       {runningDownloads.length > 1 ? (
         <DownloadGroup downloads={runningDownloads} />
       ) : (
