@@ -9,10 +9,8 @@ use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
 use rig_core::{
     catalog::{Catalog, ModelSpec, ReasoningSupport},
     error::BoxError,
-    providers::chatgpt::auth::{
-        self, AuthSource, Authenticator, DeviceCodeHandler, DeviceCodePrompt, SignInMethod,
-        TokenStore,
-    },
+    providers::auth::{DeviceCodeHandler, DeviceCodePrompt, TokenStore},
+    providers::chatgpt::auth::{self, AuthSource, Authenticator, SignInMethod},
     providers::registry::ProviderId,
     wasm_compat::WasmBoxedFuture,
 };
@@ -54,7 +52,7 @@ impl TokenStore for Secrets {
 }
 
 fn authenticator(device_code: DeviceCodeHandler) -> Authenticator {
-    Authenticator::new(AuthSource::OAuth, Secrets, device_code, true)
+    Authenticator::new(AuthSource::OAuth, Secrets, device_code, true).with_app_name("Koharu")
 }
 
 /// Signs in with the user's ChatGPT plan in the system browser, or with a

@@ -59,6 +59,7 @@ impl Run<'_, '_> {
                 format!("index {index} is past the end ({len})"),
             ));
         }
+        let given = id.is_some();
         let (uuid, label) = self.new_id(op, id)?;
         let id = LayerId(uuid);
         let mut layer = Layer::new(id, new.clone());
@@ -68,6 +69,7 @@ impl Run<'_, '_> {
             id,
             label: label.clone(),
         });
+        let label = label.or_else(|| given.then(|| uuid.to_string()));
         self.number_parts(op, &mut layer, label.as_deref())?;
         self.project.insert(page, &list, index, layer);
         Ok(())
@@ -211,7 +213,8 @@ impl Run<'_, '_> {
 
     /// Merges `patch` into the layer's own values as JSON and parses the
     /// result back, so a misspelt field or a value of the wrong shape fails
-    /// and nothing changes.
+    /// and nothing changes. A patch into a block's missing translation, such
+    /// as a style set before any words, merges into the one a text op adds.
     pub(super) fn update_layer(&mut self, op: usize, layer: &Ref, patch: &Value) -> Result<()> {
         let place = self.place(layer)?;
         let old = self.get(&place).own();
@@ -234,7 +237,15 @@ impl Run<'_, '_> {
                 format!("{:?} changes only through set_text", content.as_str()),
             ));
         }
-        let mut json = serde_json::to_value(&old).expect("layers serialize");
+        let mut base = old.clone();
+        if let Content::Block(block) = &mut base.content
+            && fields.get("translation").is_some_and(Value::is_object)
+        {
+            block
+                .translation
+                .get_or_insert_with(|| block.source.blank());
+        }
+        let mut json = serde_json::to_value(&base).expect("layers serialize");
         json_patch::merge(&mut json, patch);
         let new: Layer =
             serde_json::from_value(json).map_err(|error| Error::invalid(op, error.to_string()))?;

@@ -183,6 +183,7 @@
     "close": "작업 내역 닫기",
     "opened": "열었을 때",
     "steps": {
+      "add_layer": "새 레이어",
       "add_text": "텍스트 추가",
       "delete_layers": "레이어 삭제",
       "delete_pages": "페이지 삭제",
@@ -334,6 +335,7 @@
     "donate": "후원하기",
     "edit": "편집",
     "export": "프로젝트 내보내기",
+    "exportSelected": "선택한 페이지 내보내기",
     "feedback": "피드백 보내기",
     "file": "파일",
     "fit": "창에 맞춤",
@@ -342,6 +344,7 @@
     "history": "작업 내역",
     "image": "이미지",
     "import": "페이지 가져오기",
+    "original": "원본 보기",
     "redo": "다시 실행",
     "selectAllLayers": "모든 레이어 선택",
     "settings": "설정",
@@ -631,6 +634,7 @@
     "translate": "{{name}} 번역"
   },
   "tools": {
+    "block": "텍스트 블록",
     "brushSize": "브러시 크기",
     "brushSizeInput": "브러시 크기",
     "brushSizePixels": "브러시 크기: {{size}}픽셀",

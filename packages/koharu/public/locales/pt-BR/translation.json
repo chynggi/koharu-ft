@@ -183,6 +183,7 @@
     "close": "Fechar histórico",
     "opened": "Ao abrir",
     "steps": {
+      "add_layer": "Nova camada",
       "add_text": "Adicionar texto",
       "delete_layers": "Excluir camadas",
       "delete_pages": "Excluir páginas",
@@ -334,6 +335,7 @@
     "donate": "Doar",
     "edit": "Editar",
     "export": "Exportar projeto",
+    "exportSelected": "Exportar páginas selecionadas",
     "feedback": "Enviar feedback",
     "file": "Arquivo",
     "fit": "Ajustar à janela",
@@ -342,6 +344,7 @@
     "history": "Histórico",
     "image": "Imagem",
     "import": "Importar páginas",
+    "original": "Mostrar original",
     "redo": "Refazer",
     "selectAllLayers": "Selecionar todas as camadas",
     "settings": "Configurações",
@@ -631,6 +634,7 @@
     "translate": "Traduzir {{name}}"
   },
   "tools": {
+    "block": "Bloco de texto",
     "brushSize": "Tamanho do pincel",
     "brushSizeInput": "Tamanho do pincel",
     "brushSizePixels": "Tamanho do pincel: {{size}} pixels",

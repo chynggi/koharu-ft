@@ -13,12 +13,17 @@ export const shortcuts = {
   deselect: 'mod+d',
   /** Fit on Screen. */
   fit: 'mod+0',
+  /** Lightroom's Before and After. */
+  original: '\\',
+  /** Photoshop's Layers panel. */
+  layers: 'f7',
   delete: 'delete',
 } as const
 
 /** Each tool's key, Photoshop's for its counterpart: the Move tool's V, the Direct Selection
- * tool's A, the Type tool's T, the shapes' U, the Brush's B, the Eraser's E, the Paint
- * Bucket's G, the Eyedropper's I, the Remove tool's J, and the Hand's H. A shared key cycles tools. */
+ * tool's A, the Type tool's T, the shapes' U, the Frame tool's K, the Brush's B, the Eraser's E,
+ * the Paint Bucket's G, the Eyedropper's I, the Remove tool's J, and the Hand's H. A shared key
+ * cycles tools. */
 export const toolKeys: Record<Tool, string> = {
   select: 'v',
   direct_select: 'a',
@@ -27,6 +32,7 @@ export const toolKeys: Record<Tool, string> = {
   text: 't',
   rectangle: 'u',
   ellipse: 'u',
+  block: 'k',
   draw: 'b',
   eraser: 'e',
   bucket: 'g',

@@ -30,7 +30,7 @@ import {
   Type,
   X,
 } from 'lucide-react'
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type MouseEvent, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -40,8 +40,8 @@ import {
   isContainer,
   isLockedLayer,
   isTextLayer,
+  outermostLayers,
   plainText,
-  walkLayers,
   type BlockLayer,
   type Drop,
   type Part,
@@ -89,6 +89,19 @@ export function LayersPanel() {
   }, [selected])
 
   const rows = useMemo(() => (page ? displayedLayers(page.layers) : []), [page])
+  const pickedPart = (layer: Layer) =>
+    isBlockLayer(layer)
+      ? (['cleanup', 'mask'] as const).find((part) => selected.includes(layer[part]?.id ?? ''))
+      : undefined
+  // The topmost selected row scrolls into view; selecting more below it, as a range does, scrolls
+  // nothing.
+  const topmost = rows.find(
+    ({ placed: { layer } }) => selected.includes(layer.id) || pickedPart(layer),
+  )?.placed.layer.id
+  const topmostRow = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    topmostRow.current?.scrollIntoView({ block: 'nearest' })
+  }, [topmost])
   // A drag of rows: the layers it carries, in the scene's order, and where it would put them now.
   const [drag, setDrag] = useState<{ layers: LayerId[]; drop: Drop | null } | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
@@ -113,13 +126,10 @@ export function LayersPanel() {
     return layers.length > 1 ? `${name} +${layers.length - 1}` : name
   }
 
-  /** A drag carries every selected layer when it starts on a selected row, else that row's. */
+  /** A drag carries every selected layer, with those inside it, when it starts on a selected row,
+   * else that row's. */
   const carried = (layer: LayerId) =>
-    selected.includes(layer)
-      ? walkLayers(page.layers)
-          .map(({ layer }) => layer.id)
-          .filter((id) => selected.includes(id))
-      : [layer]
+    selected.includes(layer) ? outermostLayers(page.layers, selected) : [layer]
 
   /** Where the pointer is over the row under it: its top or bottom quarter puts the layers above
    * or below it, and a container's middle into it; another row's halves, above or below. Above is
@@ -211,17 +221,12 @@ export function LayersPanel() {
               return (
                 <LayerRow
                   key={layer.id}
+                  ref={layer.id === topmost ? topmostRow : undefined}
                   layer={layer}
                   index={index}
                   depth={depth}
                   selected={selected.includes(layer.id)}
-                  picked={
-                    isBlockLayer(layer)
-                      ? (['cleanup', 'mask'] as const).find((part) =>
-                          selected.includes(layer[part]?.id ?? ''),
-                        )
-                      : undefined
-                  }
+                  picked={pickedPart(layer)}
                   onPick={(part, toggle) => isBlockLayer(layer) && pickPart(layer, part, toggle)}
                   expanded={expandedLayer === layer.id}
                   onSelect={(event) =>
@@ -230,7 +235,7 @@ export function LayersPanel() {
                   onToggle={() => send(setVisibility, [layer.id], !layer.visible, null)}
                   onLock={() => send(setLocked, [layer.id], !layer.locked)}
                   movable={!isLockedLayer(placed)}
-                  carried={drag?.layers.includes(layer.id) ?? false}
+                  carried={[...placed.ancestors, layer].some(({ id }) => drag?.layers.includes(id))}
                   drop={drag?.drop?.target === layer.id ? drag.drop.zone : undefined}
                   onDelete={() => deletion.mutate(layer.id)}
                 />
@@ -252,6 +257,7 @@ export function LayersPanel() {
 }
 
 function LayerRow({
+  ref,
   layer,
   index,
   depth,
@@ -267,6 +273,7 @@ function LayerRow({
   drop,
   onDelete,
 }: {
+  ref: Ref<HTMLDivElement> | undefined
   layer: Layer
   index: number
   depth: number
@@ -295,7 +302,11 @@ function LayerRow({
   const handle = useDraggable({ id: layer.id, disabled: !movable })
   const target = useDroppable({ id: layer.id })
   return (
-    <div className='group min-w-0 px-1 py-px' style={{ paddingLeft: `${depth * 10 + 4}px` }}>
+    <div
+      ref={ref}
+      className='group min-w-0 px-1 py-px'
+      style={{ paddingLeft: `${depth * 10 + 4}px` }}
+    >
       <div
         data-selected={selected || picked !== undefined}
         data-expanded={expanded}
@@ -390,6 +401,12 @@ function LayerEditor({ layer, onDelete }: { layer: Layer; onDelete?: () => void 
   const { t } = useTranslation()
   const name = localizedLayerName(layer, 0, t)
   const [opacity, setOpacity] = useState(layer.opacity * 100)
+  const editor = useRef<HTMLDivElement>(null)
+
+  // It opens in view, under its row.
+  useEffect(() => {
+    editor.current?.scrollIntoView({ block: 'nearest' })
+  }, [])
 
   useEffect(() => {
     setOpacity(layer.opacity * 100)
@@ -401,7 +418,7 @@ function LayerEditor({ layer, onDelete }: { layer: Layer; onDelete?: () => void 
   })
 
   return (
-    <div className='grid min-w-0 gap-1.5 px-1.5 pt-0.5 pb-1.5'>
+    <div ref={editor} className='grid min-w-0 gap-1.5 px-1.5 pt-0.5 pb-1.5'>
       <div className='flex min-w-0 items-center gap-1.5'>
         <span className='shrink-0 text-[8px] font-medium text-muted-foreground uppercase'>
           {t('inspector.opacity')}

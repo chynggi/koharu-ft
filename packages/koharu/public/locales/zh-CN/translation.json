@@ -183,6 +183,7 @@
     "close": "关闭历史记录",
     "opened": "打开时",
     "steps": {
+      "add_layer": "新建图层",
       "add_text": "添加文字",
       "delete_layers": "删除图层",
       "delete_pages": "删除页面",
@@ -334,6 +335,7 @@
     "donate": "捐赠",
     "edit": "编辑",
     "export": "导出项目",
+    "exportSelected": "导出所选页面",
     "feedback": "发送反馈",
     "file": "文件",
     "fit": "适应窗口",
@@ -342,6 +344,7 @@
     "history": "历史记录",
     "image": "图像",
     "import": "导入页面",
+    "original": "显示原图",
     "redo": "重做",
     "selectAllLayers": "选择所有图层",
     "settings": "设置",
@@ -631,6 +634,7 @@
     "translate": "翻译 {{name}}"
   },
   "tools": {
+    "block": "文本块",
     "brushSize": "画笔大小",
     "brushSizeInput": "画笔大小",
     "brushSizePixels": "画笔大小：{{size}} 像素",

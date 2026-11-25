@@ -67,16 +67,19 @@ impl Default for InpainterConfig {
     }
 }
 
-/// A painted area to inpaint, and its own prompt.
+/// A painted area to inpaint, its own prompt, and the layer its result goes
+/// onto, or a new one's.
 pub(crate) struct AreaWork {
     pub(crate) area: Area,
     pub(crate) prompt: Option<String>,
+    pub(crate) layer: Option<LayerId>,
 }
 
 /// A page's scan as it's being filled, and what the model redraws in it.
 struct Work {
     image: RgbImage,
-    /// What the model redraws, over the page.
+    /// What the model redraws, with the letterings the run leaves, over the
+    /// page.
     mask: GrayImage,
     regions: Vec<Region>,
     target: Target,
@@ -101,9 +104,9 @@ struct Cleanup {
     old: Tiles,
     rect: Rect,
     mask: GrayImage,
-    /// The tier that filled it, or `None` when the model redraws it.
+    /// The tier that filled it, or `None` when the model redraws any of it.
     fill: Option<Fill>,
-    /// Its region, when the model redraws it.
+    /// Its region, when the model redraws any of it.
     region: Option<usize>,
 }
 
@@ -132,6 +135,7 @@ pub(crate) async fn inpaint(
     let model = config.inpainter.model;
     // An area's own prompt names its layer, as Photoshop names a Generative
     // Fill's layer after its prompt.
+    let layer = area.as_ref().and_then(|area| area.layer);
     let own = area.and_then(|area| area.prompt.clone());
     let name = own.clone().unwrap_or_default();
     let prompt = own.unwrap_or_else(|| config.inpainter.prompt.clone());
@@ -159,8 +163,8 @@ pub(crate) async fn inpaint(
     let parameters = (!prompt.trim().is_empty()).then(|| serde_json::json!({"prompt": prompt}));
     let made = action("c2pa.created", &model.to_string(), parameters);
     member
-        .apply(Stage::Inpaint, move |project| {
-            write::ops(project, page, work, &made, &name)
+        .apply(Stage::Inpaint, move |session| {
+            write::ops(session, page, work, layer, &made, &name)
         })
         .await
 }

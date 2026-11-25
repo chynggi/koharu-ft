@@ -105,7 +105,12 @@ impl Plan {
                     area: None,
                 }
             }
-            Target::Area { page, area, prompt } => {
+            Target::Area {
+                page,
+                area,
+                prompt,
+                layer,
+            } => {
                 if stages.iter().ne([Stage::Inpaint].iter()) {
                     return Err(Error::invalid("an area takes inpainting only"));
                 }
@@ -128,6 +133,7 @@ impl Plan {
                     area: Some(Arc::new(AreaWork {
                         area: area.clone(),
                         prompt: prompt.map(str::to_owned),
+                        layer: *layer,
                     })),
                 }
             }
@@ -251,6 +257,7 @@ mod tests {
                 pixels: vec![255, 0],
             },
             prompt: None,
+            layer: None,
         };
         assert!(Plan::new(&project, &area, &stages(&[Stage::Translate])).is_err());
         assert!(Plan::new(&project, &area, &stages(&[Stage::Inpaint])).is_ok());

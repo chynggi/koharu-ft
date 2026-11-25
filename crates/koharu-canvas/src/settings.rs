@@ -21,6 +21,8 @@ pub enum Tool {
     Text,
     Rectangle,
     Ellipse,
+    /// Draws a text block, for a text detection missed.
+    Block,
     Draw,
     Eraser,
     Bucket,
@@ -43,7 +45,7 @@ impl Tool {
             Self::Text => Some(CursorIcon::Text),
             Self::Rectangle | Self::Ellipse => Some(CursorIcon::Crosshair),
             Self::Draw | Self::Eraser | Self::Remove => None,
-            Self::Bucket | Self::Marquee | Self::Lasso | Self::ColorPicker => {
+            Self::Bucket | Self::Marquee | Self::Lasso | Self::Block | Self::ColorPicker => {
                 Some(CursorIcon::Crosshair)
             }
             Self::Pan => Some(CursorIcon::Grab),

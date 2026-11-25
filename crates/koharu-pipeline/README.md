@@ -23,7 +23,7 @@ only.
 |---|---|---|
 | the project, or some pages | any of detect, recognize, inpaint, and translate | one click; detection again with new thresholds |
 | some blocks | recognize, inpaint, and translate | reading a block you drew; translating again after fixing a line |
-| a painted area | inpaint, with an optional prompt | the remove brush, as Photoshop's Content-Aware Fill [Photoshop Content-Aware Fill] and Generative Fill [Photoshop Generative Fill] fill a selection |
+| a painted area | inpaint, with an optional prompt, onto a raster or a clean-up it names, or a new raster | the remove brush, as Photoshop's Content-Aware Fill [Photoshop Content-Aware Fill] and Generative Fill [Photoshop Generative Fill] fill a selection |
 
 - **A run starts fresh.** It runs every stage it's given on everything it
   names, replacing what's there. To go on with an unfinished chapter, run the
@@ -31,8 +31,10 @@ only.
 - **A stage never runs another.** A stage with nothing to do, such as
   recognition on a page of artwork, does nothing, and that isn't a failure.
 - **A model can overwrite anything,** the user's own edits included, and undo
-  is the way back. A locked panel, balloon, or block is the exception:
-  detection leaves it.
+  is the way back. A lock is the exception: no stage writes a block that is
+  locked or in a locked layer, and detection leaves a locked layer with the
+  panels and balloons holding it, and adds no second block over a block it
+  leaves.
 - **A request that can't run fails at once**: no stages, detection on blocks, a
   stage other than inpainting on an area, or a page or block the project
   doesn't hold.
@@ -52,7 +54,7 @@ more. Only a stage knows its models.
 |---|---|---|---|
 | detect | Koharu Layout HighRes | the scan | panels, balloons with outlines, and blocks in reading order, in place of the ones there; each block's source frame, tilt, direction, and mask |
 | recognize | Manga OCR AR | the scan inside each block's source frame, with other blocks' glyphs blanked | the source's wording and its language |
-| inpaint | LaMa | the scan, each block's mask, its balloon, and its panel; for an area, the page as drawn without its lettering | the block's clean-up under its mask; for an area, a new raster limited to it by a layer mask |
+| inpaint | LaMa | the scan, each block's mask, its balloon, and its panel; for an area, the page as drawn without its lettering | the block's clean-up under its mask; for an area, that part of the raster or the clean-up it names, whose mask opens there, or a new raster limited to it by a layer mask |
 | translate | Index-Translate 9B | the page's sources in reading order, and with vision the scan | each block's translation: wording, language, and placement |
 
 Every stage also records its C2PA action on the layers it wrote, and detection
@@ -89,9 +91,14 @@ mask:
 
 | Tier | When | Fill |
 |---|---|---|
-| one colour | the ring is within 10 levels of its median on average, with no pixel 64 away | the median |
+| one colour | every ring pixel, in its balloon or not, is within 16 levels of their median; or the ring is within 10 levels of its median on average, with no pixel 64 away | the median |
 | a smooth background | the same, after a plane fitted to the ring | Telea's fast marching, ported from OpenCV [OpenCV inpaint] |
 | the model | anything else: lettering crossing its balloon's outline, a line or art against it, screentone, or a ring too small to read | the inpainting model |
+
+The second is read again around each separate piece of the mask, since
+detection can mask a stray piece on other paper or on a balloon's line. What of
+a piece is past its balloon's outline, or is a line or art that goes on outside
+the mask, is left to the model.
 
 The model redraws in windows at the page's own scale, each lettering with 256
 pixels of context around it, merged with the windows it overlaps while the
@@ -113,9 +120,10 @@ Translation is one conversation per open project, a turn per page in page
 order, and translating blocks is a turn of the same conversation. Changing the
 model, the target, or the instructions starts a new one.
 
-- **A page** is its texts as a JSON object keyed by reading order, and the
-  answer must keep the keys. A broken answer, a missing key, or a blank
-  translation fails the page, which never enters the history.
+- **A page** is its unlocked texts as a JSON object keyed by reading order, and
+  the answer must keep the keys. A broken answer or a missing key is asked for
+  once more; a second one, or a blank translation, fails the page, which never
+  enters the history.
 - **An answer copying the page before's** for different texts is asked again
   without the history it copied.
 - **A text given back unchanged**, such as a copyright line, keeps its own

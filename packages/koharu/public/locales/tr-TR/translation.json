@@ -183,6 +183,7 @@
     "close": "Geçmişi kapat",
     "opened": "Açıldığında",
     "steps": {
+      "add_layer": "Yeni katman",
       "add_text": "Metin ekle",
       "delete_layers": "Katmanları sil",
       "delete_pages": "Sayfaları sil",
@@ -334,6 +335,7 @@
     "donate": "Bağış yap",
     "edit": "Düzenle",
     "export": "Projeyi Dışa Aktar",
+    "exportSelected": "Seçili Sayfaları Dışa Aktar",
     "feedback": "Geri bildirim gönder",
     "file": "Dosya",
     "fit": "Pencereye Sığdır",
@@ -342,6 +344,7 @@
     "history": "Geçmiş",
     "image": "Görüntü",
     "import": "Sayfaları İçe Aktar",
+    "original": "Orijinali Göster",
     "redo": "Yinele",
     "selectAllLayers": "Tüm Katmanları Seç",
     "settings": "Ayarlar",
@@ -631,6 +634,7 @@
     "translate": "{{name}} öğesini çevir"
   },
   "tools": {
+    "block": "Metin bloğu",
     "brushSize": "Fırça boyutu",
     "brushSizeInput": "Fırça boyutu",
     "brushSizePixels": "Fırça boyutu: {{size}} piksel",

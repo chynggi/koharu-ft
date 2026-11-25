@@ -1495,7 +1495,7 @@ checksum = "82f4b26e751e711a5302649417f2da046dce6391b2ea30a4820f37462314f0b9"
 dependencies = [
  "semver",
  "serde",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
 ]
 
 [[package]]
@@ -2835,7 +2835,7 @@ dependencies = [
  "cc",
  "memchr",
  "rustc_version",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
  "vswhom",
  "winreg",
 ]
@@ -3206,6 +3206,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "float-cmp"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "fluent"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3281,6 +3290,15 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
+name = "font-types"
 version = "0.12.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835ae9d781464a79026cde387f9cbc650c9a4909d7cf7e658b127e3c35d2f35d"
@@ -3339,9 +3357,9 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -5077,6 +5095,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "imagesize"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
+
+[[package]]
 name = "imbl"
 version = "7.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5497,16 +5521,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "json5"
-version = "1.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c1d229cedc4e210dd2e2a6cdc59e36ce28e7338fb69367d0d2566e26de7d599"
-dependencies = [
- "serde",
- "ucd-trie",
-]
-
-[[package]]
 name = "jsonptr"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5595,7 +5609,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "koharu"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "clap",
  "indoc",
@@ -5619,7 +5633,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-agent"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -5638,7 +5652,6 @@ dependencies = [
  "reqwest",
  "rig-agent",
  "rig-core",
- "rig-memory",
  "rmcp",
  "schemars 1.2.3",
  "serde",
@@ -5653,7 +5666,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-bindgen"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "bindgen",
  "fs-err",
@@ -5665,7 +5678,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-canvas"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -5696,7 +5709,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-config"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "age",
  "atomicwrites",
@@ -5710,14 +5723,14 @@ dependencies = [
  "serde_path_to_error",
  "tempfile",
  "thiserror 2.0.21",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
  "toml_edit",
  "tracing",
 ]
 
 [[package]]
 name = "koharu-desktop"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "alphanumeric-sort",
  "anyhow",
@@ -5743,6 +5756,7 @@ dependencies = [
  "koharu-runtime",
  "koharu-scene",
  "koharu-sentry",
+ "krilla",
  "kurbo",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -5783,7 +5797,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-diffusion"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "image",
  "koharu-diffusion-sys",
@@ -5793,7 +5807,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-diffusion-sys"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -5802,7 +5816,7 @@ dependencies = [
 [[package]]
 name = "koharu-extensions"
 version = "0.1.0"
-source = "git+https://github.com/koharu-rs/extensions?rev=814d90444b6ffa0b3afa1f78366a281b8383400f#814d90444b6ffa0b3afa1f78366a281b8383400f"
+source = "git+https://github.com/koharu-rs/extensions?rev=f5bb72d340c19c852d72a2598ab574cce8d6162f#f5bb72d340c19c852d72a2598ab574cce8d6162f"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -5811,7 +5825,6 @@ dependencies = [
  "futures",
  "hex",
  "image",
- "json5",
  "pbkdf2 0.13.0",
  "rand_xoshiro",
  "reqwest",
@@ -5826,7 +5839,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-leptonica"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "image",
  "thiserror 2.0.21",
@@ -5834,7 +5847,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llama"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "encoding_rs",
  "enumflags2",
@@ -5850,7 +5863,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llama-sys"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -5858,7 +5871,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llm"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -5887,14 +5900,14 @@ dependencies = [
  "serde_json",
  "specta",
  "tokio",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
  "tracing",
  "url",
 ]
 
 [[package]]
 name = "koharu-ml"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -5924,7 +5937,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-pipeline"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5966,7 +5979,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-psd"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -5984,7 +5997,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-renderer"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "fontique",
@@ -6022,7 +6035,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-runtime"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -6051,7 +6064,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-scene"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "blake3",
  "color",
@@ -6086,7 +6099,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-sentry"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "sentry",
  "serde",
@@ -6097,7 +6110,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-server"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -6116,7 +6129,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-torch"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "fs-err",
  "half",
@@ -6130,7 +6143,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-torch-sys"
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -6152,6 +6165,33 @@ name = "konst_proc_macros"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e037a2e1d8d5fdbd49b16a4ea09d5d6401c1f29eca5ff29d03d3824dba16256a"
+
+[[package]]
+name = "krilla"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27da593198b20eeba65caeb73c2bbeec3e53ab08fa549898312ce81c4fce5e33"
+dependencies = [
+ "base64 0.22.1",
+ "bumpalo",
+ "flate2",
+ "float-cmp",
+ "gif",
+ "image-webp",
+ "imagesize",
+ "indexmap 2.14.2",
+ "pdf-writer",
+ "png",
+ "rustc-hash 2.1.3",
+ "siphasher 1.0.4",
+ "skrifa 0.42.1",
+ "smallvec",
+ "subsetter",
+ "tiny-skia-path 0.12.0",
+ "xmp-writer",
+ "yoke",
+ "zune-jpeg",
+]
 
 [[package]]
 name = "kuchikiki"
@@ -8099,6 +8139,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdf-writer"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e456864a7a304047bff84977dc6fb162bd956475d40ba50b2dcecaada7f753"
+dependencies = [
+ "bitflags 2.13.2",
+ "itoa",
+ "memchr",
+ "ryu",
+]
+
+[[package]]
 name = "peniko"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9155,12 +9207,22 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
+version = "0.39.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
+dependencies = [
+ "bytemuck",
+ "font-types 0.11.3",
+]
+
+[[package]]
+name = "read-fonts"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
 dependencies = [
  "bytemuck",
- "font-types",
+ "font-types 0.12.7",
  "once_cell",
 ]
 
@@ -9171,7 +9233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "005c8acf251756c478b0bf402885bfd88a1476020c4c7e6060edc1aa68da38ea"
 dependencies = [
  "bytemuck",
- "font-types",
+ "font-types 0.12.7",
  "once_cell",
 ]
 
@@ -9183,7 +9245,7 @@ checksum = "bdaa4fffe9ff3ca2c353fa9729792805b9b3e324695ff5a081f860612e81b330"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
- "font-types",
+ "font-types 0.12.7",
  "once_cell",
  "smallvec",
  "yoke",
@@ -9197,7 +9259,7 @@ checksum = "a39d2f8f681030a7bcbbcf3e8568775ac2393afd51401a2e2133ee89e3953897"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
- "font-types",
+ "font-types 0.12.7",
  "once_cell",
  "smallvec",
  "yoke",
@@ -9432,9 +9494,9 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 
 [[package]]
 name = "rig-agent"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0175c1087b491593f47de7639fb349665b4a6caceb4f65e549e9dc42dc02b7ae"
+checksum = "ea6b192f9c616fdf289a63419142d9322bd66a3336a4f64f9253064e36f7f3e1"
 dependencies = [
  "async-stream",
  "futures",
@@ -9452,12 +9514,12 @@ dependencies = [
 
 [[package]]
 name = "rig-core"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c46316e31b3e80a050ad35790f1b612b4dfdb46982293cc78641caf4271f1b05"
+checksum = "d5b60ad1761accbb5ef3ef97a038903345d60768d7a5a5a09e01e16dfac0f699"
 dependencies = [
  "async-stream",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "fastrand",
  "futures",
@@ -9473,7 +9535,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
@@ -9484,9 +9546,9 @@ dependencies = [
 
 [[package]]
 name = "rig-http"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac927db714f03f383330e16ef360d4ab288fdf42eecab6156982fab90786d5bd"
+checksum = "041fa0a6e1d1236cbc502516e3fa71ac3dddbd91c3594a81436c6bee9c8acc41"
 dependencies = [
  "bytes",
  "futures",
@@ -9500,24 +9562,23 @@ dependencies = [
 
 [[package]]
 name = "rig-memory"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d4423dfa0337714345615cdfefee141605f166be1c174211139bdcbbe25403c"
+checksum = "f2f13b53e3b513ebd44e9cb9faf897d3792ec312751052e6788e5f4af7735114"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "memchr",
  "rig-core",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "rig-reqwest"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a203e5c50e5460024594cc4ccf6cfc99c7ff22aee57cbacef0fb52ea0c7abd10"
+checksum = "dab589224b5831dba19bc22784cd083aa5b7424d7068db515e631878da6f5309"
 dependencies = [
  "bytes",
  "futures",
@@ -10659,6 +10720,16 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skrifa"
+version = "0.42.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c34617370ae968efb7161bb2beb517d9084659aae19e24b89e3db25b46e4564"
+dependencies = [
+ "bytemuck",
+ "read-fonts 0.39.2",
+]
+
+[[package]]
+name = "skrifa"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
@@ -11055,6 +11126,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "subsetter"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38803281d1c23166c5ebcb455439a5d2afe711cc909cf88af72448c297756ad6"
+dependencies = [
+ "kurbo",
+ "rustc-hash 2.1.3",
+ "skrifa 0.42.1",
+ "write-fonts",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11175,7 +11258,7 @@ dependencies = [
  "cfg-expr",
  "heck",
  "pkg-config",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
  "version-compare",
 ]
 
@@ -11528,7 +11611,7 @@ dependencies = [
  "serde_with",
  "swift-rs",
  "thiserror 2.0.21",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
  "url",
  "urlpattern",
  "uuid",
@@ -11611,7 +11694,7 @@ checksum = "c52bb6904475a6ca662f15ef787f18ade61d5740a1ee12c45d3b748efdb6f796"
 dependencies = [
  "dunce",
  "embed-resource",
- "toml 1.2.1+spec-1.1.0",
+ "toml 1.2.2+spec-1.1.0",
 ]
 
 [[package]]
@@ -11772,7 +11855,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
- "tiny-skia-path",
+ "tiny-skia-path 0.11.4",
 ]
 
 [[package]]
@@ -11780,6 +11863,17 @@ name = "tiny-skia-path"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c9e7fc0c2e86a30b117d0462aa261b72b7a99b7ebd7deb3a14ceda95c5bdc93"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "strict-num",
+]
+
+[[package]]
+name = "tiny-skia-path"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edca365c3faccca67d06593c5980fa6c57687de727a03131735bb85f01fdeeb9"
 dependencies = [
  "arrayref",
  "bytemuck",
@@ -11971,9 +12065,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.2.1+spec-1.1.0"
+version = "1.2.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
+checksum = "5426cb1b964690d913f6c5c1a1ae0b42f428ec506bb4d452876d7a209c9bca3b"
 dependencies = [
  "indexmap 2.14.2",
  "serde_core",
@@ -11995,9 +12089,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.25.19+spec-1.1.0"
+version = "0.25.20+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd43688c4858d7264ae1cf9a9f874a67c3feb74a883b1cd7bebd6a4ea8307218"
+checksum = "e76360e201d6dbd6583e17795ba71a88f47365a9139c8450a7979c32303b8e73"
 dependencies = [
  "indexmap 2.14.2",
  "toml_datetime",
@@ -12008,9 +12102,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.5+spec-1.1.0"
+version = "1.1.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
+checksum = "e6769c452d71ba30696c6b37770c439a9cc9110f47f7d5cdbeda79840ef5ea31"
 dependencies = [
  "winnow",
 ]
@@ -12234,12 +12328,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "214ca0b2191785cbc06209b9ca1861e048e39b5ba33574b3cedd58363d5bb5f6"
 
 [[package]]
-name = "ucd-trie"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f20bdbfc9915686faa18fb5bbe8b4552778505defbf9f12289beefbc44092a6"
-
-[[package]]
 name = "uds"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12441,9 +12529,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -13795,6 +13883,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "write-fonts"
+version = "0.48.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb731d4c4d93eacc69a1ad2f270f905788a98e4a3438267bcafbe08d3431c8d8"
+dependencies = [
+ "font-types 0.11.3",
+ "indexmap 2.14.2",
+ "kurbo",
+ "log",
+ "read-fonts 0.39.2",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14050,6 +14151,12 @@ name = "xml-rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
+
+[[package]]
+name = "xmp-writer"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "y4m"

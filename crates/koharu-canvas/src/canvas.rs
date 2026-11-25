@@ -72,6 +72,7 @@ pub struct Canvas {
     tool: Tool,
     brush: Brush,
     story: Story,
+    original: bool,
     /// Story's numbers laid out, by number and whether it's a sound
     /// effect's, until the colours change.
     numbers: RefCell<HashMap<(usize, bool), Label>>,
@@ -113,6 +114,7 @@ struct Look {
     tool: Tool,
     brush: Brush,
     story: Story,
+    original: bool,
     selection: Vec<LayerId>,
     hover: Option<LayerId>,
     anchors: Vec<usize>,
@@ -143,6 +145,7 @@ impl Canvas {
             tool: Tool::default(),
             brush: Brush::default(),
             story: Story::default(),
+            original: false,
             numbers: RefCell::new(HashMap::new()),
             selection: Selection::default(),
             area: None,
@@ -186,7 +189,7 @@ impl Canvas {
         match typed {
             Some(_) if other => self.typing = None,
             Some(Some(layer)) => match typable(&snapshot.page().layers, layer) {
-                Some((text, _)) => {
+                Some(text) => {
                     if let Some(typing) = &mut self.typing
                         && typing.rebase(&text).is_err()
                     {
@@ -226,6 +229,11 @@ impl Canvas {
     /// What the Story panel shows, which the canvas numbers the texts for.
     pub fn set_story(&mut self, story: Story) {
         self.story = story;
+    }
+
+    /// Whether the page shows its scan alone, without its layers.
+    pub fn set_original(&mut self, original: bool) {
+        self.original = original;
     }
 
     pub fn camera(&self) -> TranslateScale {
@@ -627,11 +635,11 @@ impl Canvas {
         // The Type tool types into the text it's pressed on, as a double
         // click with the select tool does.
         let types = self.tool == Tool::Text || (self.tool == Tool::Select && sample.clicks >= 2);
-        if let Some((layer, text, untranslated)) = (primary && types)
+        if let Some((layer, text)) = (primary && types)
             .then(|| text_at(&cx, sample.page))
             .flatten()
         {
-            let mut typing = Typing::layer(&self.renderer, layer, &text, untranslated)?;
+            let mut typing = Typing::layer(&self.renderer, layer, &text)?;
             typing.press(sample.page, false, 1);
             typing.dragging = Some(pointer);
             self.typing = Some(typing);
@@ -657,6 +665,9 @@ impl Canvas {
             }
             (Tool::Bucket, Some(PointerButton::Primary)) => {
                 Press::answers(tools::bucket::fill(&cx, sample)?)
+            }
+            (Tool::Block, Some(PointerButton::Primary)) => {
+                Press::starts(Gesture::Block(Draft::new(sample)))
             }
             (Tool::ColorPicker, Some(PointerButton::Primary)) => {
                 Press::answers(tools::picker::pick(&cx, sample)?)
@@ -827,6 +838,7 @@ impl Canvas {
             tool: self.tool,
             brush: self.brush,
             story: self.story,
+            original: self.original,
             selection: self.selection.ids().to_vec(),
             hover: self.selection.hover(),
             anchors: self.selection.anchors().to_vec(),
@@ -1086,10 +1098,15 @@ impl Canvas {
             .as_ref()
             .and_then(Typing::target)
             .map(|layer| snapshot.frame().without(&[layer]));
-        let frame = self
+        let scan = snapshot.frame().background().filter(|_| self.original);
+        let scan = scan.map(|scan| scan.cropped());
+        let under = self
             .gesture
             .as_ref()
-            .and_then(|active| active.gesture.under())
+            .and_then(|active| active.gesture.under());
+        let frame = scan
+            .as_ref()
+            .or(under)
             .or(typed.as_ref())
             .unwrap_or(snapshot.frame());
         let (place, facing) = self.places();
@@ -1123,23 +1140,24 @@ fn id(pointer: &PointerInfo) -> u64 {
 
 /// The text a press at `page` types into: the topmost text or block it
 /// picks, with what `typable` gives for it.
-fn text_at(cx: &Context, page: Point) -> Option<(LayerId, Text, bool)> {
+fn text_at(cx: &Context, page: Point) -> Option<(LayerId, Text)> {
     let layer = cx.snapshot.hit(page)?.layer;
-    let (text, untranslated) = typable(&cx.snapshot.page().layers, layer)?;
-    Some((layer, text, untranslated))
+    let text = typable(&cx.snapshot.page().layers, layer)?;
+    Some((layer, text))
 }
 
 /// `layer`'s text as typing takes it: a text layer's, or a block's
-/// translation, and its source, standing in, when it has none, which the
-/// flag says.
-fn typable(layers: &[Layer], layer: LayerId) -> Option<(Text, bool)> {
+/// translation, as the scene starts it when it has none.
+fn typable(layers: &[Layer], layer: LayerId) -> Option<Text> {
     layers.iter().find_map(|found| match &found.content {
         _ if found.id != layer => typable(&found.children, layer),
-        Content::Text(text) => Some(((**text).clone(), false)),
-        Content::Block(block) => Some(match &block.translation {
-            Some(translation) => (translation.clone(), false),
-            None => (block.source.clone(), true),
-        }),
+        Content::Text(text) => Some((**text).clone()),
+        Content::Block(block) => Some(
+            block
+                .translation
+                .clone()
+                .unwrap_or_else(|| block.source.blank()),
+        ),
         _ => None,
     })
 }

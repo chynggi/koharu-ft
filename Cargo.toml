@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.94.0-ft.1"
+version = "0.95.2-ft.1"
 edition = "2024"
 description = "Manga translation tools"
 license = "MIT OR Apache-2.0"
@@ -91,7 +91,8 @@ jieba-rs = "0.11.0"
 json-patch = { version = "5.0.0", default-features = false }
 jsonptr = "0.8.2"
 keyring = "4.2.0"
-koharu-extensions = { git = "https://github.com/koharu-rs/extensions", rev = "814d90444b6ffa0b3afa1f78366a281b8383400f" }
+koharu-extensions = { git = "https://github.com/koharu-rs/extensions", rev = "f5bb72d340c19c852d72a2598ab574cce8d6162f" }
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
 kurbo = "0.13.1"
 libloading = "0.9.0"
 llguidance = "1.9.1"
@@ -123,10 +124,10 @@ rayon = "1.12.0"
 reqwest = { version = "0.13.5", features = ["stream", "json", "form", "blocking", "multipart", "cookies"] }
 rfd = "0.18.0"
 # rig breaks its API in every release.
-rig-agent = { version = "=0.46.0", default-features = false }
-rig-core = { version = "=0.46.0", default-features = false }
-rig-memory = { version = "=0.46.0", default-features = false }
-rig-reqwest = { version = "=0.46.0", default-features = false }
+rig-agent = { version = "=0.47.0", default-features = false }
+rig-core = { version = "=0.47.0", default-features = false }
+rig-memory = { version = "=0.47.0", default-features = false }
+rig-reqwest = { version = "=0.47.0", default-features = false }
 rmcp = { version = "3.10.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 safetensors = "0.8.0"

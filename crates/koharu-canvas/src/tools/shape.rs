@@ -76,7 +76,7 @@ impl ShapeDraft {
             fill: Some(ShapeFill::Solid(cx.brush.color)),
             stroke: None,
         };
-        let (id, add) = added(cx.snapshot.page(), Content::Shape(shape));
+        let (id, add) = added(cx.snapshot.page(), None, Content::Shape(shape));
         vec![
             Effect::Edit(Edit {
                 label: "add_shape".to_owned(),

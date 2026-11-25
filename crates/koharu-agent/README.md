@@ -25,7 +25,7 @@ can't. The scene and the pipeline know nothing of tools.
 | `run` | starts a pipeline run on the project, some pages, some blocks, or a painted area, and answers its id at once | no |
 | `wait` | waits up to 30 seconds for a run to end, and answers what it told so far | yes |
 | `stop` | stops every run, running and queued; what they finished stays | no |
-| `view_page` | the page as the editor draws it, as a JPEG at most 1,280 pixels on its longer side | yes |
+| `view_page` | the page as the editor draws it, or its scan alone, whole or a region of it, as a JPEG 1,280 pixels on its longer side | yes |
 
 - **Schemas** inline every subschema, because some providers refuse one that
   refers to definitions. `edit`'s schema leaves out what an agent never sends,
@@ -34,6 +34,11 @@ can't. The scene and the pipeline know nothing of tools.
 - **No undo history.** The scene's history query isn't a tool: an agent has no
   undo to act on it with, and each `edit` answers the history with what it
   changed.
+- **A region fills the view**, enlarged, as the zoom of Claude's computer use
+  scales one to fit its screenshots, so a model reads text too small for it on
+  the whole page [Claude computer use].
+- **The scan alone** shows what a block's source says after its clean-up covers
+  it, as the canvas shows it to the user.
 - **Errors reach the model word for word**, because the message is what lets it
   correct itself.
 - **No project, no call.** A tool finds the open project when it runs, not when
@@ -51,7 +56,7 @@ can't. The scene and the pipeline know nothing of tools.
 | request | the system prompt, Koharu's own and not a setting, since it describes Koharu's tools and project document, then the project's outline as a document ahead of the history, kept out of it, so the model sees only the project's latest state | |
 | turns | at most `max_turns` model calls a run | |
 | arguments | every call is held to its tool's schema before it runs, and a call that doesn't fit is skipped with the reason, since a local model has no grammar holding it to the schema | |
-| window | a run starts by fitting its conversation into the model's window; a turn over the threshold is sent with older tool outputs cleared, which needs no model call | Claude's context editing clears the oldest tool results once a conversation passes a threshold [Claude context editing] |
+| window | before each of a run's model calls, older messages are summarized if the call wouldn't fit the model's window, a tool call kept with its result | pi compacts before a prompt and before a request after tool results [pi compaction] |
 | too long | a request refused as too long before any tool ran compacts the conversation and starts over once; after a tool ran, the project may have changed, so the run fails | |
 | stopping | dropping a run stops it; an edit already applying finishes whole | |
 | after | the conversation keeps the run's messages, so the next request continues it | |
@@ -79,9 +84,10 @@ can't. The scene and the pipeline know nothing of tools.
 Read in November 2026.
 
 - Model Context Protocol: [MCP schema], [MCP transports]
-- Anthropic and OpenAI: [Claude context editing], [Codex unified exec]
+- Agents: [pi compaction], [Codex unified exec], [Claude computer use]
 
 [MCP schema]: https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations
 [MCP transports]: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
-[Claude context editing]: https://docs.claude.com/en/docs/build-with-claude/context-editing
+[pi compaction]: https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/compaction.md
 [Codex unified exec]: https://github.com/openai/codex/blob/71a4c070369fb761e51fd71009107f398d9f0f81/codex-rs/core/src/unified_exec/mod.rs#L66-L70
+[Claude computer use]: https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool

@@ -1,5 +1,5 @@
-//! Export: pages as PNG or PSD files in a folder, and as a CBZ of PNGs there,
-//! named by a filename pattern.
+//! Export: pages as PNG or PSD files in a folder, and as a CBZ of PNGs or a
+//! PDF there, named by a filename pattern.
 
 use std::{
     collections::HashSet,
@@ -13,10 +13,10 @@ use std::{
 
 use anyhow::Context as _;
 use fs_err::File;
-use image::ImageFormat;
+use image::{ImageFormat, RgbaImage};
 use koharu_psd::Labels;
-use koharu_renderer::Frame;
 use koharu_scene::{PageId, Session};
+use krilla::{Document, geom::Size, image::Image, page::PageSettings};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -24,7 +24,7 @@ use tauri::{State, Window, ipc::Channel};
 use tauri_runtime_cef::CefRuntime;
 
 use self::naming::{Names, Template};
-use super::Result;
+use super::{Result, import::PDF_SCALE};
 use crate::app::App;
 
 mod naming;
@@ -35,6 +35,7 @@ pub enum ExportFormat {
     Png,
     Psd,
     Cbz,
+    Pdf,
 }
 
 #[derive(Clone, Debug, Deserialize, Type)]
@@ -163,16 +164,23 @@ impl Job<'_> {
         };
         let png_folder = png_files.then(|| directory("png")).transpose()?;
         let psd_folder = psd_files.then(|| directory("psd")).transpose()?;
-        let archive_path = formats.contains(&ExportFormat::Cbz).then(|| {
+        let project_file = |extension: &str| {
             folder.join(match sanitize_filename::sanitize(name.trim()) {
-                stem if stem.is_empty() => "project.cbz".to_owned(),
-                stem => format!("{stem}.cbz"),
+                stem if stem.is_empty() => format!("project.{extension}"),
+                stem => format!("{stem}.{extension}"),
             })
-        });
+        };
+        let archive_path = formats
+            .contains(&ExportFormat::Cbz)
+            .then(|| project_file("cbz"));
         let mut archive = archive_path
             .as_ref()
             .map(|path| anyhow::Ok(::zip::ZipWriter::new(File::create(path)?)))
             .transpose()?;
+        let pdf_path = formats
+            .contains(&ExportFormat::Pdf)
+            .then(|| project_file("pdf"));
+        let mut pdf_document = pdf_path.is_some().then(Document::new);
         let total = u32::try_from(pages.len()).unwrap_or(u32::MAX);
         let _ = self.on_progress.send(ExportProgress {
             completed: 0,
@@ -190,19 +198,34 @@ impl Job<'_> {
                 return Ok(());
             }
             let stem = self.template.render(index, &label)?;
-            if png_folder.is_some() || archive.is_some() {
-                let png = png(&self.app.renderer.render(&self.session.lock(), page)?)?;
-                if let Some(directory) = &png_folder {
-                    let file = format!("{}.png", png_names.unique(stem.clone()));
-                    fs_err::write(directory.join(file), &png)?;
+            if png_folder.is_some() || archive.is_some() || pdf_document.is_some() {
+                let frame = self.app.renderer.render(&self.session.lock(), page)?;
+                let image = frame.rasterize()?.image;
+                if png_folder.is_some() || archive.is_some() {
+                    let png = png(&image)?;
+                    if let Some(directory) = &png_folder {
+                        let file = format!("{}.png", png_names.unique(stem.clone()));
+                        fs_err::write(directory.join(file), &png)?;
+                    }
+                    if let Some(archive) = &mut archive {
+                        // Already-compressed PNGs gain nothing from deflate.
+                        let options = ::zip::write::SimpleFileOptions::default()
+                            .compression_method(::zip::CompressionMethod::Stored);
+                        archive.start_file(
+                            format!("{}.png", entry_names.unique(stem.clone())),
+                            options,
+                        )?;
+                        archive.write_all(&png)?;
+                    }
                 }
-                if let Some(archive) = &mut archive {
-                    // Already-compressed PNGs gain nothing from deflate.
-                    let options = ::zip::write::SimpleFileOptions::default()
-                        .compression_method(::zip::CompressionMethod::Stored);
-                    archive
-                        .start_file(format!("{}.png", entry_names.unique(stem.clone())), options)?;
-                    archive.write_all(&png)?;
+                if let Some(pdf) = &mut pdf_document {
+                    let (width, height) = image.dimensions();
+                    // Import's own scale, so a page read back keeps its pixels.
+                    let size = Size::from_wh(width as f32 / PDF_SCALE, height as f32 / PDF_SCALE)
+                        .context("a page has no pixels")?;
+                    pdf.start_page_with(PageSettings::new(size))
+                        .surface()
+                        .draw_image(Image::from_rgba8(image.into_raw(), width, height), size);
                 }
             }
             if let Some(directory) = &psd_folder {
@@ -220,13 +243,15 @@ impl Job<'_> {
         if let Some(archive) = archive {
             archive.finish()?;
         }
+        if let (Some(path), Some(pdf)) = (pdf_path, pdf_document) {
+            fs_err::write(path, pdf.finish()?)?;
+        }
         Ok(())
     }
 }
 
-fn png(frame: &Frame) -> anyhow::Result<Vec<u8>> {
-    let raster = frame.rasterize()?;
+fn png(image: &RgbaImage) -> anyhow::Result<Vec<u8>> {
     let mut png = Cursor::new(Vec::new());
-    raster.image.write_to(&mut png, ImageFormat::Png)?;
+    image.write_to(&mut png, ImageFormat::Png)?;
     Ok(png.into_inner())
 }

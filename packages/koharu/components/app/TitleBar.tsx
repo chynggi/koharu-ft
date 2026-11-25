@@ -51,6 +51,8 @@ export function TitleBar() {
   const page = project ? (pageQuery.data ?? null) : null
   const pageNumber = page ? pages.findIndex((candidate) => candidate.id === page.id) + 1 : 0
   const history = project?.history
+  const original = useKoharuStore((state) => state.original)
+  const setOriginal = useKoharuStore((state) => state.setOriginal)
   const historyOpen = useKoharuStore((state) => state.historyOpen)
   const setHistoryOpen = useKoharuStore((state) => state.setHistoryOpen)
   const selectedPages = useKoharuStore((state) => state.selectedPages)
@@ -248,6 +250,15 @@ export function TitleBar() {
                 {t('menu.fit')}
                 <MenubarShortcut>{shortcutLabel(shortcuts.fit)}</MenubarShortcut>
               </MenubarItem>
+              <MenubarCheckboxItem
+                disabled={!page}
+                checked={original}
+                onCheckedChange={setOriginal}
+                closeOnClick
+              >
+                {t('menu.original')}
+                <MenubarShortcut>{shortcutLabel(shortcuts.original)}</MenubarShortcut>
+              </MenubarCheckboxItem>
               <MenubarCheckboxItem
                 disabled={!page}
                 checked={historyOpen}

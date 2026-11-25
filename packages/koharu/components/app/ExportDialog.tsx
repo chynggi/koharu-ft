@@ -72,6 +72,7 @@ export function ExportDialog({
   const [png, setPng] = useState(true)
   const [psd, setPsd] = useState(false)
   const [cbz, setCbz] = useState(false)
+  const [pdf, setPdf] = useState(false)
   const [scope, setScope] = useState<'all' | 'selected'>(selected.length ? 'selected' : 'all')
   const [pattern, setPattern] = useState(DEFAULT_PATTERN)
   const [subfolders, setSubfolders] = useState(false)
@@ -81,8 +82,9 @@ export function ExportDialog({
     if (png) chosen.push('png')
     if (psd) chosen.push('psd')
     if (cbz) chosen.push('cbz')
+    if (pdf) chosen.push('pdf')
     return chosen
-  }, [png, psd, cbz])
+  }, [png, psd, cbz, pdf])
 
   const preview = useMemo(() => previewPattern(pattern), [pattern])
   // 하위 폴더는 페이지마다 파일을 쓰는 형식이 둘일 때만 뜻이 있다. 아카이브는
@@ -153,6 +155,10 @@ export function ExportDialog({
             <div className='flex items-center gap-2'>
               <Checkbox id='export-cbz' checked={cbz} onCheckedChange={(v) => setCbz(v === true)} />
               <Label htmlFor='export-cbz'>CBZ</Label>
+            </div>
+            <div className='flex items-center gap-2'>
+              <Checkbox id='export-pdf' checked={pdf} onCheckedChange={(v) => setPdf(v === true)} />
+              <Label htmlFor='export-pdf'>PDF</Label>
             </div>
             <p className='text-[11px] text-muted-foreground'>{t('export.cbzHint')}</p>
           </fieldset>

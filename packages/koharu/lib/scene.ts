@@ -9,6 +9,7 @@ import {
   type LayerId,
   type Op,
   type PageId,
+  type PathFit,
   type ShapeFill,
   type Stroke,
   type TextStyle,
@@ -16,10 +17,10 @@ import {
 } from '@koharu/ipc/protocol'
 
 import {
-  findPart,
   isBlockLayer,
   isTextLayer,
   letteringOf,
+  outermostLayers,
   walkLayers,
   type Move,
   type Part,
@@ -69,12 +70,12 @@ export function deleteLayers(layers: LayerId[]): Promise<Change> {
   )
 }
 
-/** What Delete does when the page has the keys: deletes the selected layers, skipping a block's
- * selected part, which goes only with its block; the eraser clears a clean-up, and hiding a mask
- * stops it limiting the clean-up. */
+/** What Delete does when the page has the keys: deletes the selected layers with those inside
+ * them. A block's selected part goes only with its block; the eraser clears a clean-up, and hiding
+ * a mask stops it limiting the clean-up. */
 export async function deleteSelection(selected: LayerId[], layers: Layer[]): Promise<void> {
-  const whole = selected.filter((id) => !findPart(layers, id))
-  if (whole.length) await deleteLayers(whole)
+  const outermost = outermostLayers(layers, selected)
+  if (outermost.length) await deleteLayers(outermost)
 }
 
 /** Moves layers in one undo step, each under its parent, or to the page's top level, at its
@@ -123,6 +124,27 @@ export function setStyle(layers: Layer[], style: TextStyle): Promise<Change> {
         }))
         return [restyle, { op: 'set_rich_text', layer: layer.id, spans: unmarked }]
       }),
+  )
+}
+
+/** Sets the fit of each layer's own frame, a box or a path: a text's, or a block's translation's.
+ * Point text has no frame to fit, and a growing box draws its text at the set size already, so
+ * `none` leaves it growing. */
+export function setFit(layers: Layer[], fit: PathFit): Promise<Change> {
+  return edit(
+    'update_layer',
+    layers.flatMap((layer): Op[] => {
+      const frame = letteringOf(layer)?.frame
+      if (typeof frame !== 'object' || (fit === 'none' && frame.box?.fit === 'grow')) return []
+      const patch = { frame: { [frame.box ? 'box' : 'path']: { fit } } }
+      return [
+        {
+          op: 'update_layer',
+          layer: layer.id,
+          patch: isBlockLayer(layer) ? { translation: patch } : patch,
+        },
+      ]
+    }),
   )
 }
 
@@ -215,9 +237,12 @@ export function adjustColors(layers: LayerId[], adjusts: ColorAdjust[]): Promise
 /** The colour pictures among the selected layers that an adjustment takes: rasters, and blocks'
  * clean-ups. */
 export function adjustable(selected: LayerId[], layers: Layer[]): LayerId[] {
-  return selected.filter(
-    (id) =>
-      findPart(layers, id)?.part === 'cleanup' ||
-      walkLayers(layers).some(({ layer }) => layer.id === id && layer.kind === 'raster'),
+  const all = walkLayers(layers)
+  return selected.filter((id) =>
+    all.some(
+      ({ layer }) =>
+        (layer.kind === 'raster' && layer.id === id) ||
+        (isBlockLayer(layer) && layer.cleanup?.id === id),
+    ),
   )
 }

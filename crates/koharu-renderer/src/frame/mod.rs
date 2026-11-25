@@ -15,6 +15,12 @@ mod tree;
 
 pub(crate) use self::tree::{Content, MaskNode, Node, ShapePaint, ShapeVector};
 
+/// The longest side a raster draws in one piece, in pixels. vello_gpu's layer
+/// textures grow to the largest layer drawn and stay that large, so a layer
+/// across a large page, drawn whole, would hold that much of the GPU the
+/// models use until Koharu closes.
+const PIECE: u32 = 4096;
+
 /// A page at one revision, immutable and cheap to clone.
 #[derive(Clone)]
 pub struct Frame(pub(crate) Arc<FrameData>);
@@ -282,35 +288,49 @@ impl Frame {
     }
 
     /// `rect`, in page pixels, drawn at one output pixel per page pixel, its
-    /// corner rounded down to a whole pixel: in pieces when it's larger than
-    /// the GPU's largest texture.
+    /// corner rounded down to a whole pixel.
     pub fn rasterize_rect(&self, rect: Rect) -> Result<RgbaImage> {
         let (width, height) = (rect.width().ceil() as u32, rect.height().ceil() as u32);
         // What draws nothing, such as a block with no clean-up, is empty.
         if width == 0 || height == 0 {
             return Ok(RgbaImage::new(width, height));
         }
+        let corner = Affine::translate((-rect.x0.floor(), -rect.y0.floor()));
+        self.draw(corner, width, height)
+    }
+
+    /// The frame's area drawn at `width`×`height` pixels, as a thumbnail is.
+    pub fn rasterize_scaled(&self, width: u32, height: u32) -> Result<RgbaImage> {
+        let area = self.area();
+        let (x, y) = (
+            f64::from(width) / area.width(),
+            f64::from(height) / area.height(),
+        );
+        let corner = Affine::translate((-area.x0, -area.y0));
+        self.draw(Affine::scale_non_uniform(x, y) * corner, width, height)
+    }
+
+    /// The frame drawn through `to_output`, from page pixels to output pixels,
+    /// onto a `width`×`height` image: in pieces when it's larger than `PIECE`
+    /// or the GPU's largest texture.
+    fn draw(&self, to_output: Affine, width: u32, height: u32) -> Result<RgbaImage> {
         check_size(width, height)?;
         let gpu = Gpu::get()?;
-        let side = gpu.largest_texture();
-        let (x0, y0) = (rect.x0.floor(), rect.y0.floor());
-        let piece = |left: u32, top: u32| {
-            let (width, height) = (side.min(width - left), side.min(height - top));
-            let mut drawing = gpu.drawing(width as u16, height as u16);
-            self.paint(
-                Affine::translate((-(x0 + f64::from(left)), -(y0 + f64::from(top)))),
-                Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
-                &mut drawing,
-            )?;
-            drawing.read()
-        };
-        if width <= side && height <= side {
-            return piece(0, 0);
-        }
+        let side = PIECE.min(gpu.largest_texture());
         let mut image = RgbaImage::new(width, height);
+        // One drawing for all the pieces, so an image past `TEXTURE_BYTES`,
+        // which isn't kept, uploads once.
+        let mut drawing = gpu.drawing(side as u16, side as u16);
         for top in (0..height).step_by(side as usize) {
             for left in (0..width).step_by(side as usize) {
-                image::imageops::replace(&mut image, &piece(left, top)?, left.into(), top.into());
+                let (width, height) = (side.min(width - left), side.min(height - top));
+                drawing.scene.reset_and_resize(width as u16, height as u16);
+                self.paint(
+                    Affine::translate((-f64::from(left), -f64::from(top))) * to_output,
+                    Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
+                    &mut drawing,
+                )?;
+                drawing.read_into(&mut image, left, top)?;
             }
         }
         Ok(image)
@@ -397,6 +417,87 @@ mod tests {
         assert_eq!(fitted.dimensions(), (256, 256));
         let at = |x, y| fitted.get_pixel(x, y).0;
         assert_eq!((at(32, 32), at(96, 96), at(200, 200)), (WHITE, RED, WHITE));
+    }
+
+    /// A layer wider than vello_gpu allows its textures by default, 4096
+    /// pixels, draws in a view that wide, as on a 5K screen, and the same in
+    /// a raster's pieces.
+    #[test]
+    fn a_layer_past_vello_gpus_default_texture_size_draws() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+        let ops = vec![
+            json!({"op": "add_page", "id": "$page", "index": 0, "size": {"width": 5000, "height": 16}}),
+            json!({"op": "add_layer", "page": "$page", "index": 0, "layer": {
+                "kind": "shape", "path": "M0 0 H5000 V16 H0 Z", "fill": [1.0, 0.0, 0.0, 1.0],
+                "opacity": 0.5,
+            }}),
+        ];
+        let change = session
+            .apply(Edit {
+                label: "test".into(),
+                ops: ops
+                    .into_iter()
+                    .map(|op| serde_json::from_value(op).expect("an op"))
+                    .collect(),
+            })
+            .expect("an edit");
+        let Ok(gpu) = Gpu::get() else {
+            eprintln!("skipped without a GPU");
+            return;
+        };
+        let frame = Renderer::new(RendererConfig::default())
+            .render(&session, change.pages.added[0])
+            .expect("a frame");
+        let mut drawing = gpu.drawing(5000, 16);
+        frame
+            .paint(Affine::IDENTITY, frame.area(), &mut drawing)
+            .expect("drawn");
+        let view = drawing.read().expect("a view's pixels");
+        let raster = frame.rasterize().expect("a raster's pixels").image;
+        assert!(view.pixels().all(|pixel| pixel.0 == [255, 0, 0, 128]));
+        assert!(raster == view, "a raster draws what a view does");
+    }
+
+    /// A page drawn smaller than it is stays opaque to its edges, though an
+    /// odd side's halved level reaches past them.
+    #[test]
+    fn a_page_drawn_smaller_is_opaque_to_its_edges() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+        let ops = vec![
+            json!({"op": "add_page", "id": "$page", "index": 0, "size": {"width": 1001, "height": 1025}}),
+            json!({"op": "add_layer", "id": "$paper", "page": "$page", "index": 0, "layer": {"kind": "raster"}}),
+        ];
+        let mut ops: Vec<Op> = ops
+            .into_iter()
+            .map(|op| serde_json::from_value(op).expect("an op"))
+            .collect();
+        ops.push(Op::WritePixels {
+            layer: Ref::try_from("$paper".to_owned()).expect("a label"),
+            rect: PixelRect {
+                x: 0,
+                y: 0,
+                width: 1001,
+                height: 1025,
+            },
+            pixels: vec![255; 1001 * 1025 * 4],
+        });
+        let change = session
+            .apply(Edit {
+                label: "test".into(),
+                ops,
+            })
+            .expect("an edit");
+        if Gpu::get().is_err() {
+            eprintln!("skipped without a GPU");
+            return;
+        }
+        let image = Renderer::new(RendererConfig::default())
+            .render(&session, change.pages.added[0])
+            .and_then(|frame| frame.rasterize_scaled(250, 256))
+            .expect("pixels");
+        assert!(image.pixels().all(|pixel| pixel.0 == [255; 4]));
     }
 
     /// The canvas draws a frame without the layers a move is dragging, so

@@ -42,6 +42,11 @@ Use **Select** to pick layers. Click a layer, hold `Shift`, `Ctrl`, or `Command`
     does, and `Esc` drops it. Each time you type into a text is one undo step, and a new text is
     added only once it has characters. Then adjust [typography](/guides/typesetting).
   </Tab>
+  <Tab title='Text block'>
+    Drag with **Text block** over text that detection missed. It adds a text block with the box as
+    its frame and its mask, in the balloon or panel under it. Then read it with **OCR** from its
+    menu in **Story**. Paint its mask smaller to keep the art around the text.
+  </Tab>
   <Tab title='Brush and Eraser'>
     **Brush** paints with the chosen color and size on the selected raster layer, or creates a new
     raster layer at the top of the page when none is selected. **Eraser** needs a selected raster
@@ -55,9 +60,9 @@ Use **Select** to pick layers. Click a layer, hold `Shift`, `Ctrl`, or `Command`
     that field's color.
   </Tab>
   <Tab title='Remove'>
-    Paint over source marks with **Remove**. Releasing the stroke inpaints that area right away and
-    adds the result as a new raster layer limited to the painted area. See
-    [cleanup](/guides/cleanup).
+    Paint over source marks with **Remove**. Releasing the stroke inpaints that area right away. The
+    result goes onto the raster layer, or the text block's clean-up, selected in **Layers**, or onto
+    a new raster layer that stays selected for the next strokes. See [cleanup](/guides/cleanup).
   </Tab>
 </Tabs>
 

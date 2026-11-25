@@ -22,10 +22,11 @@ export function isContainer(layer: Layer): boolean {
   return layer.kind === 'group' || layer.kind === 'panel' || layer.kind === 'balloon'
 }
 
-/** The lettering a layer draws: a text's own, or a block's translation. */
+/** The lettering a layer draws: a text's own, or a block's translation, which starts as its source
+ * without the words. */
 export function letteringOf(layer: Layer): Text | null {
   if (isTextLayer(layer)) return layer
-  if (isBlockLayer(layer)) return layer.translation ?? null
+  if (isBlockLayer(layer)) return layer.translation ?? { ...layer.source, content: [] }
   return null
 }
 
@@ -41,21 +42,19 @@ export function findLayer(layers: Layer[], id: LayerId): Placed | undefined {
   return walkLayers(layers).find((placed) => placed.layer.id === id)
 }
 
+/** The page's layers among `selected`, in drawing order, leaving out those inside another, which
+ * go where it goes. */
+export function outermostLayers(layers: Layer[], selected: LayerId[]): LayerId[] {
+  return walkLayers(layers)
+    .filter(
+      ({ layer, ancestors }) =>
+        selected.includes(layer.id) && !ancestors.some(({ id }) => selected.includes(id)),
+    )
+    .map(({ layer }) => layer.id)
+}
+
 /** A block's own picture layers: its clean-up, and the mask it shows through. */
 export type Part = 'cleanup' | 'mask'
-
-/** The block whose part `id` names, and which part it is. */
-export function findPart(
-  layers: Layer[],
-  id: LayerId,
-): { block: BlockLayer; part: Part } | undefined {
-  for (const { layer } of walkLayers(layers)) {
-    if (!isBlockLayer(layer)) continue
-    if (layer.cleanup?.id === id) return { block: layer, part: 'cleanup' }
-    if (layer.mask?.id === id) return { block: layer, part: 'mask' }
-  }
-  return undefined
-}
 
 /** Where a drag over a Layers row puts what it carries: before the row's layer in the scene,
  * after it, or into it, as its last children, which draw on top. */

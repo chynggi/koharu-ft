@@ -183,6 +183,7 @@
     "close": "關閉步驟記錄",
     "opened": "開啟時",
     "steps": {
+      "add_layer": "新增圖層",
       "add_text": "新增文字",
       "delete_layers": "刪除圖層",
       "delete_pages": "刪除頁面",
@@ -334,6 +335,7 @@
     "donate": "贊助",
     "edit": "編輯",
     "export": "匯出專案",
+    "exportSelected": "匯出選取的頁面",
     "feedback": "傳送意見回饋",
     "file": "檔案",
     "fit": "適應視窗",
@@ -342,6 +344,7 @@
     "history": "步驟記錄",
     "image": "影像",
     "import": "匯入頁面",
+    "original": "顯示原圖",
     "redo": "重做",
     "selectAllLayers": "選取所有圖層",
     "settings": "設定",
@@ -631,6 +634,7 @@
     "translate": "翻譯 {{name}}"
   },
   "tools": {
+    "block": "文字區塊",
     "brushSize": "筆刷大小",
     "brushSizeInput": "筆刷大小",
     "brushSizePixels": "筆刷大小：{{size}} 像素",

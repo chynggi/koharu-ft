@@ -168,7 +168,7 @@ describe('page shortcuts', () => {
 
     field.remove()
     fireEvent.keyDown(document.body, { key: 'ArrowRight' })
-    await waitFor(() => expect(show).toHaveBeenCalledExactlyOnceWith('second'))
+    await waitFor(() => expect(show).toHaveBeenCalledExactlyOnceWith('second', null))
     expect(useKoharuStore.getState().selectedPages).toEqual(['second'])
     expect(useKoharuStore.getState().selectedLayers).toEqual([])
   })

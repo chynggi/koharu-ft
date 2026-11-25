@@ -27,6 +27,7 @@ same way and undo the same way.
 | what's shown | the frame the renderer last drew, the page and project it drew, and what each shown layer offers: its frame, its handles, and how it resizes and turns | |
 | selection | the selected layers, in the order they were picked, the one the select tool would pick under the pointer, the anchors the direct selection tool picked on the selected text's frame, and where the selected layers lie on the page as they're laid out, a point text's lines included, for the host to place its own controls beside, as Photoshop's Contextual Task Bar sits below a selection. A block's clean-up is picked only from the host's Layers, never by a click or a marquee | a layer mask is targeted by its thumbnail in the Layers panel, not on the canvas [Photoshop layer masks] |
 | area | what the marquee and the lasso marked of the page's pixels, a byte a pixel: a new shape replaces it, adds to it with Shift held at its press, or takes from it with Alt; a click without a drag, Deselect, or another page drops it. Its edge draws as marching ants, black dashes over white, held still rather than moving, and where it lies on the page goes to the host, which places Generative Fill below it. The host reads it for a fill, which runs as the pipeline's area run, and the area stays to fill again | Photoshop's selection tools make a new selection, add to it, or subtract from it [Photoshop marquee] [Photoshop lasso]; a dashed border shows a selection, which Deselect, Ctrl+D, drops [Photoshop selections]; Generative Fill in the Contextual Task Bar fills a selection after a prompt, or from what surrounds it with none [Photoshop Generative Fill] |
+| original | while the host asks for it, the page's scan alone, without its layers; the overlay stays | |
 | story | while the host shows the Story panel, each text's frame outlined faintly, and its number in the scene's reading order in a pill centred on the frame's top-left corner, filled for dialogue and outlined for a sound effect; the frame of the text whose entry the pointer is on drawn stronger. The frames draw under the selection's outlines and handles, and the numbers over them, so none hides behind a handle; the handles keep their place and their reach | |
 | overlay | outlines, handles, a frame's anchors, the marquee, and each gesture's preview, drawn over the page in screen pixels, so lines and handles keep their size at any zoom. A selected block's mask shows in place of its bounds as a half-red overlay over what it hides, and a selected clean-up with the rest of the page greyed out. A text that runs past its frame has a plus in a hollow square on the frame's top-left corner where the frame is outlined, or beside its Story number, which takes that corner, while Story shows; the text past it still draws, so no line goes missing from an export | selected anchors are filled squares and the rest hollow [Photoshop path selection]; a mask shows as a rubylith, a 50% red overlay [Photoshop layer masks]; "the overflow icon appears on the bounding box" when type doesn't fit it [Photoshop create type], on its lower-right corner, and hides the type past it |
 | settings | the tool, the brush, and the theme's colours, which the host owns and the canvas only reads, so the panels and the canvas show one value | |
@@ -43,8 +44,9 @@ pointer hits is what the user sees.
 | direct selection | reshapes the selected text's frame by its anchors: a press on an anchor or a segment drags what it picks, Shift adds to the picked anchors, and a marquee picks those it encloses; the text fits the new shape when the drag ends. A box becomes a path through its corners at its first edit. Delete removes the picked anchors and joins their neighbours, never leaving a ring fewer than three, so a frame stays closed | the Direct Selection tool reshapes a text's path by dragging its anchors [Photoshop text paths], picks segments and anchors by click or marquee, Shift adding [Photoshop path selection], and drags a segment [InDesign paths]; its Delete key would cut the segments at a point, where the Delete Anchor Point tool joins them [Photoshop anchor points] |
 | marquee, lasso | mark a rectangle, or a freehand shape closed as the pointer lifts, of the page's pixels as the area | the Rectangular Marquee [Photoshop marquee] and the Lasso, which closes its border on release [Photoshop lasso] |
 | text | types point text from a click and a text box over a drag, added when typing commits; a click on a text types into it at the click, as a double click with the select tool does | Photoshop's point type starts at the point you select on the canvas, and its paragraph type sits inside a bounding box [Photoshop type] |
+| text block | adds a block over the box a drag draws, in the balloon under the box's middle, else the panel, else the page; its source's frame and its mask are the box | a FineReader text area is drawn by dragging over the image [FineReader areas], and Clip Studio Paint's Rectangle frame adds a frame border folder where it's dragged [CSP frames] |
 | draw, eraser | paint and erase a raster's or a block's clean-up's pixels along a stroke; on a block's mask, the draw tool uncovers the clean-up whatever its colour, and the eraser hides it | a layer mask is drawn on an alpha scale: the eraser masks more, and any colour uncovers more [CSP layer masks] |
-| remove | paints the area for the inpainting model to redraw, as the pipeline's area run takes it | |
+| remove | paints the area for the inpainting model to redraw, as the pipeline's area run takes it, onto the selected raster or clean-up, or a raster it adds and selects | |
 | colour picker | the page's own pixel under the pointer, not the screen's | |
 | pan | drags the view; the wheel and a pinch move and zoom it | |
 
@@ -72,7 +74,8 @@ Read in November 2026.
   paths], [Photoshop path selection], [Photoshop anchor points], [InDesign paths], [Photoshop
   inline input], [Photoshop marquee], [Photoshop lasso], [Photoshop selections], [Photoshop
   Generative Fill]
-- Clip Studio Paint: [CSP layer masks]
+- Clip Studio Paint: [CSP layer masks], [CSP frames]
+- ABBYY: [FineReader areas]
 
 [Pointer Events]: https://www.w3.org/TR/pointerevents3/
 [UI Events key]: https://www.w3.org/TR/uievents-key/
@@ -86,6 +89,8 @@ Read in November 2026.
 [InDesign paths]: https://helpx.adobe.com/indesign/desktop/create-lines-and-shapes/edit-and-style-paths/edit-and-reshape-paths.html
 [Photoshop inline input]: https://community.adobe.com/bug-reports-711/p-characters-are-not-displayed-when-typing-japanese-in-photoshop-23-0-and-22-5-2-for-windows-658744
 [CSP layer masks]: https://help.clip-studio.com/en-us/manual_en/180_layers/Layer_masks.htm
+[CSP frames]: https://help.clip-studio.com/en-us/manual_en/540_comic/Frames_and_Panels.htm
+[FineReader areas]: https://help.abbyy.com/en-us/finereader/16/user_guide/editareas
 [Photoshop layer masks]: https://helpx.adobe.com/photoshop/using/masking-layers.html
 [Photoshop marquee]: https://helpx.adobe.com/photoshop/desktop/make-selections/get-started-selections/make-selections-with-marquee-tools.html
 [Photoshop lasso]: https://helpx.adobe.com/photoshop/desktop/make-selections/get-started-selections/isolate-specific-areas-in-images-with-lasso-tool.html
