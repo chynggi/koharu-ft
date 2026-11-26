@@ -87,7 +87,6 @@ const tools = [
   ['ellipse', Circle],
   ['block', ScanText],
   ['draw', Brush],
-  ['draw', Brush],
   ['eraser', Eraser],
   ['bucket', PaintBucket],
   ['color_picker', Pipette],
