@@ -265,6 +265,9 @@
     "font": "Шрифт",
     "fontSize": "Размер шрифта",
     "fontStyles": {
+      "bold": "Полужирный",
+      "fauxBold": "Псевдополужирный",
+      "fauxItalic": "Псевдокурсив",
       "italic": "Курсив",
       "oblique": "Наклонный"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2-я обводка",
     "secondBorderColor": "Цвет второй обводки",
     "secondBorderWidth": "Ширина второй обводки",
+    "removeRuby": "Убрать руби",
+    "ruby": "Руби",
     "selectPage": "Выберите страницу для просмотра её слоёв.",
     "source": "Исходный текст",
     "text": "Текст",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "О программе",
     "adjustments": "Коррекция",
+    "checkForUpdates": "Проверить обновления",
     "closeProject": "Закрыть проект",
     "delete": "Удалить выбранное",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "Ошибка обновления"
     },
     "later": "Позже",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> — последняя версия",
+      "title": "Обновлений нет"
+    },
     "noNotes": "Примечания к выпуску отсутствуют.",
     "retry": "Повторить",
     "update": "Обновить"

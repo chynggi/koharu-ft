@@ -25,10 +25,7 @@ export type Account = {
   name: string | null
 }
 
-/**
- *  `[agent]`: the agent's model, how much it reasons, and how long a run
- *  goes.
- */
+/**  `[agent]`: the agent's model and how much it reasons. */
 export type AgentConfig = {
   /**  A `vendor/model` reference, as koharu-llm connects one. */
   model?: string | null
@@ -39,10 +36,6 @@ export type AgentConfig = {
    *  can't stop reasoning.
    */
   reasoning?: string | null
-  /**  How many model calls a run makes at most. */
-  max_turns?: number
-  /**  How many times a run lets the model correct a call it wrote wrong. */
-  corrections?: number
 }
 
 /**
@@ -652,8 +645,8 @@ export type Offset = {
 }
 
 /**
- *  One op of an edit. Variants skipped by schemars carry bytes or the rich
- *  editor's spans, which tools never send.
+ *  One op of an edit. Variants skipped by schemars carry bytes, which tools
+ *  never send.
  */
 export type Op =
   /**
@@ -712,7 +705,17 @@ export type Op =
    *  block's translation. A patch into a missing one merges into the one
    *  `set_text` adds.
    */
-  | { op: 'update_layer'; layer: Ref; patch: Value }
+  | {
+      op: 'update_layer'
+      layer: Ref
+      /**
+       *  The values to change, as `add_layer` takes them, such as
+       *  `{"translation": {"style": {"chars": {"stroke_width": 8}}}}` for the
+       *  border of a block's lettering; not `kind`, `attributes`, or what
+       *  `set_text` writes.
+       */
+      patch: Value
+    }
   /**
    *  Transform a layer by an affine in page space, by its kind, as
    *  Photoshop's Free Transform does: a text's or an image's `transform`,
@@ -724,7 +727,7 @@ export type Op =
   /**
    *  Replace a text layer's text, or a block's translation. A block without
    *  one gets one with its source's frame, transform, direction, and style.
-   *  Styling on unchanged characters is kept.
+   *  Styling and ruby on unchanged characters are kept.
    */
   | { op: 'set_text'; layer: Ref; text: string }
   /**  Replace every literal match in translations and text layers as one edit. */
@@ -736,7 +739,11 @@ export type Op =
       /**  None selects the whole project. */
       layers?: LayerId[] | null
     }
-  /**  Replace a text's spans, from the rich editor. */
+  /**
+   *  Replace a text as `set_text` does, with spans, to style some of its
+   *  characters or set ruby over them. The spans are the whole text in order,
+   *  and a value a span's `attributes` leave out comes from the text's style.
+   */
   | { op: 'set_rich_text'; layer: Ref; spans: Span[] }
   /**
    *  Set one attribute of a layer, or remove it when `value` is null.
@@ -767,7 +774,10 @@ export type Opened = {
 
 export type Outcome =
   | { kind: 'done' }
-  /**  The first failure ends the run; what it finished stays. */
+  /**
+   *  A failure that isn't one page's alone ends the run; what it finished
+   *  stays.
+   */
   | { kind: 'failed'; page: PageId; stage: Stage; reason: string }
   | { kind: 'stopped' }
 
@@ -863,18 +873,20 @@ export type PipelineConfig = {
 }
 
 /**
- *  A run was queued, a stage started or finished on a page, or a run ended.
- *  A stage starts when the GPU takes it, or for a hosted translation when
- *  it's sent.
+ *  A run was queued, a stage started, finished, or failed on a page, or a run
+ *  ended. A stage starts when the GPU takes it, or for a hosted translation
+ *  when it's sent.
  */
 export type PipelineEvent =
   /**
    *  The run's first event: the page stages it does, each of which starts
-   *  and finishes once unless the run ends first.
+   *  once, and finishes or fails, unless the run ends first.
    */
   | { kind: 'queued'; run: RunId; steps: number }
   | { kind: 'started'; run: RunId; page: PageId; stage: Stage }
   | { kind: 'finished'; run: RunId; page: PageId; stage: Stage }
+  /**  A failure that is the page's alone: the run goes on. */
+  | { kind: 'failed'; run: RunId; page: PageId; stage: Stage; reason: string }
   | { kind: 'ended'; run: RunId; outcome: Outcome }
 
 export type Preferences = {
@@ -1021,6 +1033,11 @@ export type Rgba = [number, number, number, number]
 export type RichText = {
   insert: string
   attributes?: CharStyle
+  /**
+   *  The small text set beside `insert`, such as its reading. Neighbouring
+   *  spans with the same ruby are one base, which it's set over once.
+   */
+  ruby?: string | null
 }[]
 
 /**
@@ -1028,6 +1045,29 @@ export type RichText = {
  *  nature of its text.
  */
 export type Role = 'text' | 'sfx'
+
+/**
+ *  The characters a ruby goes over, as Clip Studio Paint shows a reading's
+ *  target string.
+ */
+export type RubyBase = {
+  text: string
+  ruby: string | null
+}
+
+/**  What the type bar's ruby field does to the text being typed. */
+export type RubyEdit =
+  /**
+   *  Opens on the selected characters, or on the base the caret is in, which
+   *  its ruby goes over until it closes.
+   */
+  | { kind: 'open' }
+  /**  Sets its ruby, or takes it off. */
+  | { kind: 'set'; ruby: string | null }
+  /**  Closes, keeping the ruby. */
+  | { kind: 'keep' }
+  /**  Closes, putting back the text as it opened on it. */
+  | { kind: 'cancel' }
 
 /**  A run, numbered in the order runs were asked for. */
 export type RunId = number
@@ -1094,10 +1134,15 @@ export type Size = {
   height: number
 }
 
-/**  A string with its character marks. */
+/**  A string with its character marks and its ruby. */
 export type Span = {
   insert: string
   attributes?: CharStyle
+  /**
+   *  The small text set beside `insert`, such as its reading. Neighbouring
+   *  spans with the same ruby are one base, which it's set over once.
+   */
+  ruby?: string | null
 }
 
 /**  A stage, in the order a page's stages run. */
@@ -1237,7 +1282,7 @@ export type TranslatorConfig = {
   /**
    *  Whether each page's turn shows the model the page itself beside its
    *  texts, as an image goes with a chat message to OpenAI's and Gemini's
-   *  models; only for a model that reads images.
+   *  models; a model that reads no images goes without it.
    */
   vision?: boolean
   /**
@@ -1263,6 +1308,16 @@ export type Typed = {
    *  empty.
    */
   mixed: CharKey[]
+  /**
+   *  The selected characters, or the base the caret is in; `None` at a caret
+   *  in none.
+   */
+  base: RubyBase | null
+  /**
+   *  Whether the ruby field is open on `base`: anything else that changes
+   *  the text or moves the caret closes it.
+   */
+  annotating: boolean
 }
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value }
@@ -1303,7 +1358,7 @@ export const commands = {
   redo: () => runner('redo', (options) => invoke<null>('redo', {}, options)),
   /** Goes to the project as it was after `step` steps, as a click in Photoshop's History panel does; 0 is the project as it opened. */
   goTo: (step: number) => runner('go_to', (options) => invoke<null>('go_to', { step }, options)),
-  /** The page as it renders, `HEIGHT` pixels tall, as WebP. */
+  /** The page as it renders, `HEIGHT` pixels tall, as WebP: drawn twice as large and shrunk, as masks' edges are jagged drawn at that size. */
   getPageThumbnail: (page: PageId) =>
     runner('get_page_thumbnail', (options) =>
       invoke<ArrayBuffer>('get_page_thumbnail', { page }, options),
@@ -1433,6 +1488,9 @@ export const commands = {
   /** The type bar's character settings for the text being typed: the selected characters take them, or at a caret the next ones typed. */
   styleTyping: (patch: CharStyle) =>
     runner('style_typing', (options) => invoke<null>('style_typing', { patch }, options)),
+  /** What the type bar's ruby field does to the text being typed: it opens on the selected characters, or on the base the caret is in, sets their ruby, and closes. */
+  annotateTyping: (edit: RubyEdit) =>
+    runner('annotate_typing', (options) => invoke<null>('annotate_typing', { edit }, options)),
   /** Fits the page in the canvas, as the fit shortcut does. */
   fit: () => runner('fit', (options) => invoke<null>('fit', {}, options)),
   /** Zooms about the canvas's centre, `zoom` CSS pixels to a page pixel, as the status bar's slider sets it. */

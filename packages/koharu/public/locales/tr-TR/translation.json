@@ -265,6 +265,9 @@
     "font": "Yazı tipi",
     "fontSize": "Yazı tipi boyutu",
     "fontStyles": {
+      "bold": "Kalın",
+      "fauxBold": "Sahte Kalın",
+      "fauxItalic": "Sahte İtalik",
       "italic": "İtalik",
       "oblique": "Eğik"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2. kenarlık",
     "secondBorderColor": "İkinci kenarlık rengi",
     "secondBorderWidth": "İkinci kenarlık genişliği",
+    "removeRuby": "Ruby kaldır",
+    "ruby": "Ruby",
     "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",
     "source": "Kaynak metin",
     "text": "Metin",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "Hakkında",
     "adjustments": "Ayarlamalar",
+    "checkForUpdates": "Güncellemeleri denetle",
     "closeProject": "Projeyi Kapat",
     "delete": "Seçilenleri Sil",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "Güncelleme başarısız"
     },
     "later": "Daha sonra",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> en son sürüm",
+      "title": "Güncelleme yok"
+    },
     "noNotes": "Sürüm notu sağlanmadı.",
     "retry": "Tekrar dene",
     "update": "Güncelle"

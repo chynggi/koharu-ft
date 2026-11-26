@@ -15,7 +15,7 @@ use icu_segmenter::{
 };
 use jieba_rs::Jieba;
 
-use super::{itemize::Orientation, shape::ShapedText};
+use super::{itemize::Orientation, ruby::Ruby, shape::ShapedText};
 
 static JIEBA: LazyLock<Jieba> = LazyLock::new(Jieba::new);
 
@@ -30,12 +30,14 @@ const HYPHENATION_KEEPS: usize = 2;
 /// What a mandatory break ends with, which belongs to no line.
 pub(super) const LINE_ENDS: [char; 5] = ['\n', '\r', '\u{0085}', '\u{2028}', '\u{2029}'];
 
-/// Where lines may break: between words, then also at hyphenation points.
+/// Where lines may break: between words, then also at each word's middle
+/// hyphenation point, so no word takes two hyphens, then at all of them.
 /// Never elsewhere in a word, as a letterer never splits one without a
 /// hyphen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Breaking {
     Words,
+    Halves,
     Hyphens,
 }
 
@@ -70,6 +72,8 @@ pub(super) struct Segment {
     pub punctuation: bool,
     /// Its largest span's size.
     pub size: f32,
+    /// How far its ruby reaches above its line's centre; 0 without any.
+    pub ruby: f32,
 }
 
 /// A piece of text between break opportunities: its range, without a line
@@ -77,9 +81,9 @@ pub(super) struct Segment {
 /// after it.
 type Cut = (Range<usize>, usize, Break);
 
-/// The text cut at its break opportunities. With `hyphenate`, a word also
-/// breaks at its hyphenation points.
-fn opportunities(text: &str, hyphenate: Option<Lang>) -> Vec<Cut> {
+/// The text cut at its break opportunities, as `breaking` allows with the
+/// hyphenation points of `lang`, when it has some.
+fn opportunities(text: &str, breaking: Breaking, lang: Option<Lang>) -> Vec<Cut> {
     let scripts = CodePointMapData::<IcuScript>::new();
     let mut options = LineBreakOptions::default();
     // Korean breaks between words, not syllables.
@@ -142,26 +146,22 @@ fn opportunities(text: &str, hyphenate: Option<Lang>) -> Vec<Cut> {
             true => start + text[start..next].trim_end_matches(LINE_ENDS).len(),
             false => next,
         };
-        match hyphenate {
-            Some(lang) if !mandatory(next) => {
-                hyphenated(text, start..end, next, after, lang, &mut pieces);
-            }
-            _ => pieces.push((start..end, next, after)),
+        let points = match lang {
+            Some(lang) if !mandatory(next) => points(text, start..end, breaking, lang),
+            _ => Vec::new(),
+        };
+        let mut start = start;
+        for point in points {
+            pieces.push((start..point, point, Break::Hyphen));
+            start = point;
         }
+        pieces.push((start..end, next, after));
     }
     pieces
 }
 
-/// Pushes a piece split at its word's hyphenation points, each part but the
-/// last ending in a hyphen break.
-fn hyphenated(
-    text: &str,
-    range: Range<usize>,
-    next: usize,
-    after: Break,
-    lang: Lang,
-    pieces: &mut Vec<Cut>,
-) {
+/// Where `breaking` lets a hyphen end a line inside the piece `range`.
+fn points(text: &str, range: Range<usize>, breaking: Breaking, lang: Lang) -> Vec<usize> {
     // A piece's word is its letters, between whatever else starts or ends
     // it. Photoshop hyphenates words of more than five letters.
     let piece = &text[range.clone()];
@@ -169,47 +169,43 @@ fn hyphenated(
     let start = range.start + piece.len() - piece.trim_start_matches(not_letter).len();
     let word = start..start + piece.trim_matches(not_letter).len();
     let letters = &text[word.clone()];
-    if !letters.chars().all(char::is_alphabetic) || letters.chars().count() < 6 {
-        pieces.push((range, next, after));
-        return;
+    if breaking == Breaking::Words
+        || !letters.chars().all(char::is_alphabetic)
+        || letters.chars().count() < 6
+    {
+        return Vec::new();
     }
-    let syllables = hyphenate_bounded(
-        &text[word.clone()],
-        lang,
-        HYPHENATION_KEEPS,
-        HYPHENATION_KEEPS,
-    );
-    let mut start = range.start;
     let mut end = word.start;
-    for syllable in syllables {
-        end += syllable.len();
-        if end < word.end {
-            pieces.push((start..end, end, Break::Hyphen));
-            start = end;
-        }
+    let points = hyphenate_bounded(letters, lang, HYPHENATION_KEEPS, HYPHENATION_KEEPS)
+        .map(|syllable| {
+            end += syllable.len();
+            end
+        })
+        .filter(|point| *point < word.end);
+    match breaking {
+        Breaking::Halves => points
+            .min_by_key(|point| (2 * point).abs_diff(word.start + word.end))
+            .into_iter()
+            .collect(),
+        _ => points.collect(),
     }
-    pieces.push((start..range.end, next, after));
 }
 
 /// The text's segments, broken as `breaking` allows and measured from the
 /// glyphs it shaped into.
 pub(super) fn segments(shaped: &ShapedText, breaking: Breaking) -> Vec<Segment> {
     let styled = shaped.styled;
-    let hyphenate = match breaking {
-        Breaking::Words => None,
-        Breaking::Hyphens => styled.hyphenation,
-    };
     // Where the text may break, where a run starts or ends or a cluster
-    // starts but not inside an upright group; and the advance of the text
-    // before each byte, each glyph's at its cluster and an upright group's
-    // cell at its start.
+    // starts but not inside an upright group or under a ruby; and the advance
+    // of the text before each byte, each glyph's at its cluster and an upright
+    // group's cell at its start.
     let mut breakable = vec![false; styled.text.len() + 1];
     let mut advances = vec![0.0; styled.text.len() + 1];
     for run in &shaped.runs {
         breakable[run.range.start] = true;
         breakable[run.range.end] = true;
         if run.orientation == Orientation::TateChuYoko {
-            advances[run.range.start] += f64::from(styled.spans[run.span].size);
+            advances[run.range.start] += f64::from(shaped.cell(run));
             continue;
         }
         for glyph in shaped.glyphs(run) {
@@ -217,15 +213,18 @@ pub(super) fn segments(shaped: &ShapedText, breaking: Breaking) -> Vec<Segment> 
             advances[glyph.cluster] += f64::from(glyph.advance);
         }
     }
+    for ruby in &styled.ruby {
+        breakable[ruby.base.start + 1..ruby.base.end].fill(false);
+    }
     let mut sum = 0.0;
     for value in &mut advances {
         (*value, sum) = (sum, sum + *value);
     }
-    // A cut inside a cluster, such as a ligature, or inside an upright group
-    // joins the next piece.
+    // A cut inside a cluster, such as a ligature, inside an upright group, or
+    // under a ruby joins the next piece.
     let mut segments = Vec::new();
     let mut joined = None;
-    for (range, next, after) in opportunities(&styled.text, hyphenate) {
+    for (range, next, after) in opportunities(&styled.text, breaking, styled.hyphenation) {
         let start = joined.take().unwrap_or(range.start);
         if matches!(after, Break::Mandatory | Break::End) || breakable[next] {
             segments.push(measure(shaped, &advances, start..range.end, after));
@@ -255,6 +254,12 @@ fn measure(shaped: &ShapedText, advances: &[f64], range: Range<usize>, after: Br
         // An empty paragraph has no runs, and keeps its span's leading, as
         // Photoshop's does.
         .unwrap_or_else(|| styled.spans[styled.span_at(range.start)].size);
+    let ruby = styled
+        .ruby
+        .iter()
+        .filter(|ruby| ruby.base.start < range.end && range.start < ruby.base.end)
+        .map(Ruby::rise)
+        .fold(0.0, f32::max);
     Segment {
         visible_end,
         advance: advance(range.clone()),
@@ -266,6 +271,7 @@ fn measure(shaped: &ShapedText, advances: &[f64], range: Range<usize>, after: Br
         after,
         punctuation,
         size,
+        ruby,
         range,
     }
 }
@@ -314,12 +320,13 @@ mod tests {
             hyphenation: None,
             chinese: false,
             frame: Frame::Point,
+            ruby: Vec::new(),
         }
     }
 
     /// The text of each piece.
-    fn pieces(text: &str, hyphenate: Option<Lang>) -> Vec<&str> {
-        opportunities(text, hyphenate)
+    fn pieces(text: &str, breaking: Breaking) -> Vec<&str> {
+        opportunities(text, breaking, Some(Lang::English))
             .into_iter()
             .map(|(range, ..)| &text[range])
             .collect()
@@ -329,7 +336,7 @@ mod tests {
     fn a_line_break_ends_its_piece_and_belongs_to_no_line() {
         let text = "Hello, \nWorld!";
         assert_eq!(
-            opportunities(text, None),
+            opportunities(text, Breaking::Words, None),
             [(0..7, 8, Break::Mandatory), (8..14, 14, Break::End)]
         );
     }
@@ -338,7 +345,7 @@ mod tests {
     fn chinese_word_segmentation_keeps_jieba_words_together() {
         let text = "\u{5357}\u{4eac}\u{5e02}\u{957f}\u{6c5f}\u{5927}\u{6865}";
         assert_eq!(
-            pieces(text, None),
+            pieces(text, Breaking::Words),
             vec![
                 "\u{5357}\u{4eac}\u{5e02}",
                 "\u{957f}\u{6c5f}\u{5927}\u{6865}",
@@ -350,14 +357,14 @@ mod tests {
     fn chinese_word_segmentation_does_not_resegment_kana_text() {
         let text = "\u{543e}\u{8f29}\u{306f}\u{732b}";
         assert_eq!(
-            pieces(text, None),
+            pieces(text, Breaking::Words),
             vec!["\u{543e}", "\u{8f29}", "\u{306f}", "\u{732b}",]
         );
     }
 
     #[test]
     fn hyphenation_does_not_invent_breaks_missing_from_the_patterns() {
-        assert_eq!(pieces("strength", Some(Lang::English)), ["strength"]);
+        assert_eq!(pieces("strength", Breaking::Hyphens), ["strength"]);
     }
 
     #[test]
@@ -365,8 +372,20 @@ mod tests {
         // English's own bounds keep three letters at a word's end, which
         // would leave "within" whole; "tower" has fewer than six letters.
         assert_eq!(
-            pieces("tower within", Some(Lang::English)),
+            pieces("tower within", Breaking::Hyphens),
             ["tower ", "with", "in"]
+        );
+    }
+
+    #[test]
+    fn a_halved_word_breaks_only_at_the_point_nearest_its_middle() {
+        assert_eq!(
+            pieces("Um... actually!", Breaking::Hyphens),
+            ["Um... ", "ac", "tu", "al", "ly!"]
+        );
+        assert_eq!(
+            pieces("Um... actually!", Breaking::Halves),
+            ["Um... ", "actu", "ally!"]
         );
     }
 

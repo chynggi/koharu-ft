@@ -176,6 +176,20 @@ async fn exchange(
                     page,
                     stage,
                 }),
+                Message::Event {
+                    event:
+                        Event::Failed {
+                            page,
+                            stage,
+                            reason,
+                            ..
+                        },
+                } => events.send(Event::Failed {
+                    run: id,
+                    page,
+                    stage,
+                    reason,
+                }),
             }
         }
         match stream.next().await {

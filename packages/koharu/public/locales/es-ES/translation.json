@@ -265,6 +265,9 @@
     "font": "Fuente",
     "fontSize": "Tamaño de fuente",
     "fontStyles": {
+      "bold": "Negrita",
+      "fauxBold": "Negrita falsa",
+      "fauxItalic": "Cursiva falsa",
       "italic": "Cursiva",
       "oblique": "Oblicua"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2.º contorno",
     "secondBorderColor": "Color del segundo contorno",
     "secondBorderWidth": "Ancho del segundo contorno",
+    "removeRuby": "Quitar ruby",
+    "ruby": "Ruby",
     "selectPage": "Selecciona una página para inspeccionar sus capas.",
     "source": "Texto original",
     "text": "Texto",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "Acerca de",
     "adjustments": "Ajustes",
+    "checkForUpdates": "Buscar actualizaciones",
     "closeProject": "Cerrar proyecto",
     "delete": "Eliminar selección",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "Error de actualización"
     },
     "later": "Más tarde",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> es la versión más reciente",
+      "title": "No hay actualizaciones"
+    },
     "noNotes": "No se proporcionaron notas de versión.",
     "retry": "Reintentar",
     "update": "Actualizar"

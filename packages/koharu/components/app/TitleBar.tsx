@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { AboutDialog } from '@/components/app/AboutDialog'
 import { AdjustDialog, type Adjustment } from '@/components/app/AdjustDialog'
 import { ExportDialog } from '@/components/app/ExportDialog'
+import { checkForUpdates } from '@/components/app/Updater'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { send, useImportPages, usePage, useProject } from '@/lib/queries'
 import { adjustable, adjustColors, deleteSelection } from '@/lib/scene'
@@ -83,6 +84,9 @@ export function TitleBar() {
     cleanup: t('psd.cleanup'),
     outline: t('psd.outline'),
   }
+  const updateCheck = useMutation({ mutationFn: () => checkForUpdates(true) })
+  // The selection keeps a page an undo or an agent took away.
+  const exportable = pages.map(({ id }) => id).filter((id) => selectedPages.includes(id))
 
   /** Sentry's feedback form, in the interface's language; it leaves the page when it closes. */
   const sendFeedback = async () => {
@@ -127,14 +131,12 @@ export function TitleBar() {
           <div className='w-[84px] shrink-0' />
         ) : (
           <div className='relative z-10 flex h-full w-10 shrink-0 items-center justify-center rounded-br-lg'>
-            {/* Its weight is in its top, its feet pale, so centred it reads 2 px above the
-                menus' words; lowered by that to sit on their line. */}
             <Image
-              className='pointer-events-none translate-y-0.5'
+              className='pointer-events-none'
               src='/icon.png'
               alt='Koharu'
-              width={17}
-              height={17}
+              width={16}
+              height={16}
               draggable={false}
               priority
             />
@@ -297,6 +299,9 @@ export function TitleBar() {
                 {t('menu.feedback')}
               </MenubarItem>
               <MenubarSeparator />
+              <MenubarItem disabled={updateCheck.isPending} onClick={() => updateCheck.mutate()}>
+                {t('menu.checkForUpdates')}
+              </MenubarItem>
               <MenubarItem onClick={() => setAboutOpen(true)}>{t('menu.about')}</MenubarItem>
             </MenubarContent>
           </MenubarMenu>
@@ -351,7 +356,7 @@ export function TitleBar() {
         open={exportOpen}
         onOpenChange={setExportOpen}
         pages={pages.map((page) => page.id)}
-        selected={selectedPages}
+        selected={exportable}
         onStart={(chosen, options) => exportProject.mutate({ chosen, options })}
       />
     </>

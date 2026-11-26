@@ -265,6 +265,9 @@
     "font": "Police",
     "fontSize": "Taille de police",
     "fontStyles": {
+      "bold": "Gras",
+      "fauxBold": "Faux gras",
+      "fauxItalic": "Faux italique",
       "italic": "Italique",
       "oblique": "Oblique"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2ᵉ contour",
     "secondBorderColor": "Couleur du second contour",
     "secondBorderWidth": "Épaisseur du second contour",
+    "removeRuby": "Retirer le ruby",
+    "ruby": "Ruby",
     "selectPage": "Sélectionnez une page pour inspecter ses calques.",
     "source": "Texte source",
     "text": "Texte",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "À propos",
     "adjustments": "Réglages",
+    "checkForUpdates": "Rechercher des mises à jour",
     "closeProject": "Fermer le projet",
     "delete": "Supprimer la sélection",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "Échec de la mise à jour"
     },
     "later": "Plus tard",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> est la dernière version",
+      "title": "Aucune mise à jour"
+    },
     "noNotes": "Aucune note de version fournie.",
     "retry": "Réessayer",
     "update": "Mettre à jour"

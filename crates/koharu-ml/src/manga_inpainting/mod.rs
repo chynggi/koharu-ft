@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, ensure};
 use image::{GrayImage, RgbImage, imageops};
-use koharu_runtime::Asset;
+use koharu_runtime::{Asset, Library, Turn};
 use koharu_torch::{Device, Generator, Kind, Tensor};
 
 use self::{erika::Erika, inpaintor::Inpaintor};
@@ -53,9 +53,10 @@ pub struct MangaInpainting {
 
 impl MangaInpainting {
     pub async fn load(device: &crate::Device) -> Result<Self> {
-        let (device, _) = crate::backend::torch(device);
+        let (device, _) = crate::torch::device(device);
         let inpaintor_weights = weights(&INPAINTOR.resolve().await?)?;
         let line_weights = weights(&LINES.resolve().await?)?;
+        let _turn = Turn::take(Library::Torch);
         // IOPaint runs both in float32.
         let mut line_store = nn::VarStore::new(device, Kind::Float);
         let erika = Erika::new(&line_store.root())?;
@@ -79,7 +80,7 @@ impl MangaInpainting {
             image.dimensions() == mask.dimensions(),
             "image and mask dimensions differ"
         );
-        koharu_torch::inference_mode(|| {
+        crate::torch::inference(|| {
             let (width, height) = image.dimensions();
             if width.max(height) <= WHOLE {
                 return self.pad_forward(image, mask);

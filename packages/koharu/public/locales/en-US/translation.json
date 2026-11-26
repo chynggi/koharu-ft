@@ -265,6 +265,9 @@
     "font": "Font",
     "fontSize": "Font size",
     "fontStyles": {
+      "bold": "Bold",
+      "fauxBold": "Faux Bold",
+      "fauxItalic": "Faux Italic",
       "italic": "Italic",
       "oblique": "Oblique"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2nd border",
     "secondBorderColor": "Second border color",
     "secondBorderWidth": "Second border width",
+    "removeRuby": "Remove ruby",
+    "ruby": "Ruby",
     "selectPage": "Select a page to inspect its layers.",
     "source": "Source text",
     "text": "Text",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "About",
     "adjustments": "Adjustments",
+    "checkForUpdates": "Check for Updates",
     "closeProject": "Close Project",
     "delete": "Delete Selected",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "Update failed"
     },
     "later": "Later",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> is the latest version",
+      "title": "You’re up to date"
+    },
     "noNotes": "No release notes provided.",
     "retry": "Retry",
     "update": "Update"

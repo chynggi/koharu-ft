@@ -7,7 +7,7 @@ use std::ops::Range;
 use anyhow::Result;
 use harfrust::Buffer;
 use koharu_scene::Align;
-use kurbo::Rect;
+use kurbo::{Affine, Rect};
 use unicode_bidi::{BidiInfo, Level};
 
 use super::{
@@ -18,6 +18,7 @@ use super::{
     lettering::{LineMap, PlacedGlyph},
     lines,
     room::physical,
+    ruby::{self, ShapedRuby},
     shape::{Glyph, ShapedText, shape_run},
 };
 use crate::fonts::Font;
@@ -25,7 +26,7 @@ use crate::fonts::Font;
 /// A text's glyphs positioned in its own coordinates, with what laying it
 /// out resolved.
 pub(crate) struct TextLayout {
-    /// One for each of `resolved.runs`, in order.
+    /// One for each of `resolved.runs` and then of `resolved.ruby`, in order.
     pub runs: Vec<GlyphRun>,
     /// Where each line's characters lie, for typing into it.
     pub lines: Vec<LineMap>,
@@ -41,6 +42,32 @@ pub(crate) struct GlyphRun {
     /// Its glyphs are turned a quarter clockwise around their origins, as
     /// vertical text sets Latin.
     pub sideways: bool,
+}
+
+impl GlyphRun {
+    /// What each glyph draws through, around its origin with y down: a faux
+    /// italic's lean, and then a sideways glyph's quarter turn clockwise on
+    /// the page, which maps (x, y) to (-y, x).
+    pub(crate) fn turn(&self) -> Option<Affine> {
+        let lean = f64::from(self.font.lean());
+        let skew = (lean != 0.0).then(|| Affine::skew(-lean, 0.0));
+        match self.sideways {
+            true => Some(
+                Affine::new([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]) * skew.unwrap_or(Affine::IDENTITY),
+            ),
+            false => skew,
+        }
+    }
+
+    /// Where its glyphs ink at `size`, each through its turn.
+    fn ink(&self, size: f32) -> impl Iterator<Item = Rect> + '_ {
+        let turn = self.turn().unwrap_or_default();
+        self.glyphs.iter().filter_map(move |glyph| {
+            let ink = self.font.ink(glyph.id, size)?;
+            let at = Affine::translate((f64::from(glyph.x), f64::from(glyph.y)));
+            Some((at * turn).transform_rect_bbox(Rect::new(ink.x0, -ink.y1, ink.x1, -ink.y0)))
+        })
+    }
 }
 
 /// A glyph as positioned: what groups it into a run, its run's span, font,
@@ -67,6 +94,7 @@ pub(super) fn arrange(
     let mut bounds: Option<Rect> = None;
     let mut baseline = None;
     let mut lines = Vec::new();
+    let (mut ruby_runs, mut ruby_text_runs) = (Vec::new(), Vec::new());
     for line in &placed.lines {
         let Some(last) = line.segments.end.checked_sub(1).map(|at| &segments[at]) else {
             continue;
@@ -90,35 +118,52 @@ pub(super) fn arrange(
             (&mut glyphs, &mut clusters),
         );
         baseline = baseline.or(first);
+        let mut boxes = vec![line_box(styled.vertical, line, used)];
+        for (ruby, line) in over(shaped, line, &text, &clusters, scale) {
+            let (glyphs, used) = set(ruby, &mut buffer, &line, scale)?;
+            let (runs, text_runs) = runs(&ruby.text, &glyphs, scale);
+            ruby_runs.extend(runs);
+            ruby_text_runs.extend(text_runs.into_iter().map(|run| TextRun {
+                range: utf16(&styled.text, ruby.ruby.base.start)
+                    ..utf16(&styled.text, ruby.ruby.base.end),
+                ..run
+            }));
+            boxes.push(line_box(styled.vertical, &line, used));
+        }
+        bounds = boxes
+            .into_iter()
+            .chain(bounds)
+            .reduce(|bounds, line| bounds.union(line));
         lines.push(LineMap::new(
             text.clone(),
             visible.end,
             start,
-            (line.top, line.pitch),
+            line.letters(),
             clusters,
         ));
-        let line_box = physical(
-            styled.vertical,
-            f64::from(line.start),
-            f64::from(line.top),
-            f64::from(line.start + line.room.max(used)),
-            f64::from(line.top + line.pitch),
-        );
-        bounds = Some(bounds.map_or(line_box, |b| b.union(line_box)));
     }
 
-    let (runs, text_runs) = runs(shaped, &glyphs, scale);
-    let stroke = styled
-        .spans
-        .iter()
-        .map(|span| {
-            let width = span.stroke.map_or(0.0, |(_, width)| width);
-            let outside = match span.stroke_position {
+    let (mut runs, text_runs) = runs(shaped, &glyphs, scale);
+    runs.extend(ruby_runs);
+    let drawn = || runs.iter().zip(text_runs.iter().chain(&ruby_text_runs));
+    // A faux italic leans past its line's box, and a faux bold and a stroke
+    // grow past both.
+    let bounds = drawn()
+        .filter(|(glyphs, _)| glyphs.font.lean() != 0.0)
+        .flat_map(|(glyphs, run)| glyphs.ink(run.size))
+        .chain(bounds)
+        .reduce(|bounds, ink| bounds.union(ink));
+    let grown = drawn()
+        .map(|(glyphs, run)| {
+            let width = run.stroke.map_or(0.0, |(_, width)| width);
+            let outside = match run.stroke_position {
                 koharu_scene::StrokePosition::Outside => width,
                 koharu_scene::StrokePosition::Center => width / 2.0,
                 koharu_scene::StrokePosition::Inside => 0.0,
             };
-            (outside + span.outer_stroke.map_or(0.0, |(_, width)| width)) * scale
+            glyphs.font.growth(run.size)
+                + outside
+                + run.outer_stroke.map_or(0.0, |(_, width)| width)
         })
         .fold(0.0, f32::max);
     let utf16 = |at: &usize| utf16(&styled.text, *at);
@@ -127,6 +172,7 @@ pub(super) fn arrange(
         lines,
         resolved: ResolvedText {
             runs: text_runs,
+            ruby: ruby_text_runs,
             frame: placed.frame,
             scale,
             hyphens: hyphens.iter().map(utf16).collect(),
@@ -135,11 +181,104 @@ pub(super) fn arrange(
             align: styled.align,
             rtl: shaped.rtl_at(0),
             line_height: styled.line_height,
-            uncovered: shaped.uncovered.clone(),
+            uncovered: uncovered(shaped),
         },
         bounds: bounds
             .unwrap_or(placed.frame)
-            .inflate(f64::from(stroke), f64::from(stroke)),
+            .inflate(f64::from(grown), f64::from(grown)),
+    })
+}
+
+/// The box of a `used` long line, in the text's own coordinates.
+fn line_box(vertical: bool, line: &PlacedLine, used: f32) -> Rect {
+    physical(
+        vertical,
+        f64::from(line.start),
+        f64::from(line.top),
+        f64::from(line.start + line.room.max(used)),
+        f64::from(line.top + line.pitch),
+    )
+}
+
+/// The characters no font of their span has, its ruby's among them, in code
+/// point order.
+fn uncovered(shaped: &ShapedText) -> Vec<char> {
+    let mut uncovered = shaped.uncovered.clone();
+    uncovered.extend(shaped.ruby.iter().flat_map(|ruby| &ruby.text.uncovered));
+    uncovered.sort_unstable();
+    uncovered.dedup();
+    uncovered
+}
+
+/// The ruby of the bases a line's `text` starts, each with a line of its own:
+/// as long as its base's glyphs lie in `clusters`, and its em box on the
+/// base's, as CSS stacks an annotation on its base without space between. A
+/// line break in the text cuts a base, whose ruby goes over its first part.
+fn over<'a>(
+    shaped: &'a ShapedText,
+    line: &PlacedLine,
+    text: &Range<usize>,
+    clusters: &[PlacedGlyph],
+    scale: f32,
+) -> Vec<(&'a ShapedRuby<'a>, PlacedLine)> {
+    let (top, pitch) = line.letters();
+    shaped
+        .ruby
+        .iter()
+        .filter(|shaped| text.contains(&shaped.ruby.base.start))
+        .filter_map(|shaped| {
+            let along = clusters
+                .iter()
+                .filter(|(at, ..)| shaped.ruby.base.contains(at))
+                .map(|(_, along, _)| along.clone())
+                .reduce(|a, b| a.start.min(b.start)..a.end.max(b.end))?;
+            let line = PlacedLine {
+                segments: 0..0,
+                start: along.start,
+                room: along.end - along.start,
+                top: top + pitch * 0.5 - shaped.ruby.rise() * scale,
+                pitch: shaped.ruby.size() * scale,
+                lead: 0.0,
+                last: true,
+            };
+            Some((shaped, line))
+        })
+        .collect()
+}
+
+/// A ruby's glyphs positioned in its `line`, and its length.
+fn set(
+    ruby: &ShapedRuby,
+    buffer: &mut Buffer,
+    line: &PlacedLine,
+    scale: f32,
+) -> Result<(Vec<Positioned>, f32)> {
+    let whole = 0..ruby.text.styled.text.len();
+    let used = ruby::length(&ruby.text, &whole) * scale;
+    let pieces = shown(&ruby.text, buffer, whole.clone())?;
+    let mut glyphs = Vec::new();
+    position(
+        &ruby.text,
+        line,
+        scale,
+        used,
+        whole,
+        pieces,
+        (&mut glyphs, &mut Vec::new()),
+    );
+    Ok((glyphs, used))
+}
+
+/// The runs in `range`, in the order they show.
+fn shown<'a>(
+    shaped: &'a ShapedText,
+    buffer: &mut Buffer,
+    range: Range<usize>,
+) -> Result<Vec<Piece<'a>>> {
+    let pieces = line_runs(shaped, buffer, range)?;
+    Ok(match shaped.styled.vertical {
+        true => pieces,
+        false => visual_order(pieces),
     })
 }
 
@@ -152,10 +291,7 @@ fn pieces<'a>(
     last: &Segment,
     text: Range<usize>,
 ) -> Result<Vec<Piece<'a>>> {
-    let mut pieces = line_runs(shaped, buffer, text)?;
-    if !shaped.styled.vertical {
-        pieces = visual_order(pieces);
-    }
+    let mut pieces = shown(shaped, buffer, text)?;
     if last.after == Break::Hyphen && !line.last {
         let at = last.visible_end.saturating_sub(1);
         if let Some(hyphen) = &shaped.hyphens[shaped.styled.span_at(at)] {
@@ -246,7 +382,8 @@ fn position(
     let (pen, justify) = spacing(shaped, line, &pieces, used - lead, visible);
     let mut pen = pen - lead;
     let start = pen;
-    let block_center = line.top + line.pitch * 0.5;
+    let (top, pitch) = line.letters();
+    let block_center = top + pitch * 0.5;
     let mut first = None;
     for (run, piece) in pieces {
         // A hyphen ending the line is no character of the text's.
@@ -258,8 +395,15 @@ fn position(
             }
         };
         let size = styled.spans[run.span].size * scale;
-        let (ascent, descent) = shaped.font(run).extent(size);
-        let baseline = line.top + (line.pitch - (ascent + descent)) * 0.5 + ascent;
+        let font = shaped.font(run);
+        let (ascent, descent) = font.extent(size);
+        // How far above its baseline an upright glyph's centre is. A faux
+        // italic leans about the baseline, which carries the centre right, so
+        // a column's glyphs are set back as far: they lean about their
+        // centres, as CSS skews vertical text's, and stay on its centre line.
+        let centre = (ascent - descent) * 0.5;
+        let lean = font.lean();
+        let baseline = top + (pitch - (ascent + descent)) * 0.5 + ascent;
         first.get_or_insert(if vertical { -block_center } else { baseline });
         let sideways = run.orientation == Orientation::Sideways;
         let mut push = |x: f32, y: f32, glyph: &Glyph| {
@@ -272,20 +416,22 @@ fn position(
             // across the column.
             let width: f32 = piece.iter().map(|g| g.advance * scale).sum();
             let mut across = -width * 0.5;
-            let cell_baseline = pen + (size - (ascent + descent)) * 0.5 + ascent;
+            let cell_start = pen + run.space.0 * scale;
+            let cell_baseline = cell_start + (size - (ascent + descent)) * 0.5 + ascent;
+            let end = pen + shaped.cell(run) * scale;
             for glyph in &piece {
-                let x = -block_center + across + glyph.x_offset * scale;
+                let x = -block_center + across + glyph.x_offset * scale - centre * lean;
                 push(x, cell_baseline - glyph.y_offset * scale, glyph);
-                placed(glyph.cluster, pen..pen + size);
+                placed(glyph.cluster, pen..end);
                 across += glyph.advance * scale;
             }
-            pen += size;
+            pen = end;
             continue;
         }
         // A sideways run's baseline runs down the column, as far left of its
         // centre line as halfway between the ascent and descent is above the
         // baseline, which centres the run across the column.
-        let sideways_baseline = -block_center - (ascent - descent) * 0.5;
+        let sideways_baseline = -block_center - centre;
         for glyph in &piece {
             if glyph.cluster >= hang {
                 continue;
@@ -296,7 +442,7 @@ fn position(
             // and dashes; its font centres its em box, which a Western `…`
             // or a Chinese `！` inks off the middle of.
             let ink = (vertical && centred(&styled.text, glyph.cluster, styled.chinese))
-                .then(|| shaped.font(run).ink(glyph.id, size))
+                .then(|| font.ink(glyph.id, size))
                 .flatten();
             // Chinese centres a stop along its cell too, which its font's
             // vertical form sets in the corner.
@@ -304,8 +450,9 @@ fn position(
             match (vertical, sideways) {
                 (false, _) => push(pen + x_offset, baseline - y_offset, glyph),
                 (true, false) => {
-                    let x = ink.map_or(-block_center + x_offset, |ink| {
-                        -block_center - ((ink.x0 + ink.x1) * 0.5) as f32
+                    let x = ink.map_or(-block_center + x_offset - centre * lean, |ink| {
+                        let up = ((ink.y0 + ink.y1) * 0.5) as f32;
+                        -block_center - ((ink.x0 + ink.x1) * 0.5) as f32 - up * lean
                     });
                     let y = match ink {
                         Some(ink) if middle => {
@@ -403,6 +550,8 @@ fn runs(shaped: &ShapedText, glyphs: &[Positioned], scale: f32) -> (Vec<GlyphRun
         text_runs.push(TextRun {
             range: utf16(&styled.text, start)..utf16(&styled.text, end),
             post_script_name: font.post_script_name.clone(),
+            faux_bold: font.faux_bold,
+            faux_italic: font.lean() != 0.0,
             size: span.size * scale,
             fill: span.fill,
             stroke: span.stroke.map(|(color, width)| (color, width * scale)),
@@ -559,6 +708,7 @@ mod tests {
             hyphenation: None,
             chinese: false,
             frame: Frame::Point,
+            ruby: Vec::new(),
         }
     }
 
@@ -608,6 +758,7 @@ mod tests {
             room: 200.0,
             top: 0.0,
             pitch: 20.0,
+            lead: 0.0,
             last: true,
         };
         let pieces = line_runs(&shaped, &mut Buffer::new(), english..text.len())?;

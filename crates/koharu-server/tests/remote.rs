@@ -66,7 +66,9 @@ async fn detect(url: Option<String>) -> Vec<Event> {
         .await
         .expect("its history");
     assert!(told.iter().all(|event| match event {
-        Event::Started { page: at, .. } | Event::Finished { page: at, .. } => Some(*at) == page,
+        Event::Started { page: at, .. }
+        | Event::Finished { page: at, .. }
+        | Event::Failed { page: at, .. } => Some(*at) == page,
         _ => true,
     }));
     told
@@ -93,6 +95,7 @@ async fn a_remote_run_tells_what_a_local_one_does() {
                 Event::Queued { steps, .. } => format!("queued {steps}"),
                 Event::Started { stage, .. } => format!("started {stage}"),
                 Event::Finished { stage, .. } => format!("finished {stage}"),
+                Event::Failed { stage, reason, .. } => format!("failed {stage}: {reason}"),
                 Event::Ended { outcome, .. } => format!("ended {outcome:?}"),
             })
             .collect()

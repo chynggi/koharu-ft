@@ -265,6 +265,9 @@
     "font": "フォント",
     "fontSize": "フォントサイズ",
     "fontStyles": {
+      "bold": "太字",
+      "fauxBold": "疑似太字",
+      "fauxItalic": "疑似斜体",
       "italic": "斜体",
       "oblique": "オブリーク"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "2重縁取り",
     "secondBorderColor": "外側の縁取りの色",
     "secondBorderWidth": "外側の縁取り幅",
+    "removeRuby": "ルビを削除",
+    "ruby": "ルビ",
     "selectPage": "ページを選択してレイヤーを確認します。",
     "source": "原文",
     "text": "テキスト",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "Koharuについて",
     "adjustments": "色調補正",
+    "checkForUpdates": "アップデートを確認",
     "closeProject": "プロジェクトを閉じる",
     "delete": "選択項目を削除",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "アップデートに失敗しました"
     },
     "later": "後で",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> は最新バージョンです",
+      "title": "アップデートはありません"
+    },
     "noNotes": "リリースノートはありません。",
     "retry": "再試行",
     "update": "更新"

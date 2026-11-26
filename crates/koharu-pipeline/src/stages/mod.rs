@@ -12,8 +12,9 @@ pub(crate) mod translate;
 use std::{sync::Arc, time::Instant};
 
 use anyhow::anyhow;
-use image::DynamicImage;
-use koharu_scene::{Block, Content, Edit, LayerId, Op, PageId, Project, Session};
+use image::{DynamicImage, GrayImage, Luma};
+use koharu_scene::{Block, Content, Edit, LayerId, Op, PageId, Project, Rect, Session};
+use kurbo::{BezPath, ParamCurve as _};
 use parking_lot::Mutex;
 use petgraph::stable_graph::NodeIndex;
 use serde_json::{Value, json};
@@ -23,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info_span;
 
 use crate::{
-    Error, Event, PipelineConfig, RunId, Stage,
+    Event, PipelineConfig, RunId, Stage,
     event::Events,
     gpu::{Gpu, Key, Models, Turn},
     scheduler::Priority,
@@ -127,6 +128,11 @@ pub(crate) struct Task {
     pub(crate) events: Events,
 }
 
+/// A stage's failure on one page alone, which its run goes past.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub(crate) struct Failed(pub(crate) anyhow::Error);
+
 /// A stage's end once its run stopped, which isn't a failure.
 #[derive(Debug, thiserror::Error)]
 #[error("the run stopped")]
@@ -199,11 +205,10 @@ pub(crate) struct Inputs {
     pub(crate) conversation: Option<OwnedMutexGuard<translate::Conversation>>,
 }
 
-/// Runs `task`'s stage: its failure, if any, as the run reports it.
-pub(crate) async fn run(task: Task, inputs: Inputs) -> Result<(), String> {
-    let stage = task.stage;
+/// Runs `task`'s stage; a stopped run's end isn't a failure.
+pub(crate) async fn run(task: Task, inputs: Inputs) -> anyhow::Result<()> {
     let config = &inputs.config;
-    let result = match stage {
+    let result = match task.stage {
         Stage::Detect => detect::detect(&task, config).await,
         Stage::Recognize => recognize::recognize(&task, config).await,
         Stage::Inpaint => inpaint::inpaint(&task, config, inputs.area).await,
@@ -215,14 +220,8 @@ pub(crate) async fn run(task: Task, inputs: Inputs) -> Result<(), String> {
         }
     };
     match result {
-        Err(error) if !error.is::<Stopped>() => {
-            let error = anyhow::Error::from(Error::Stage {
-                stage,
-                source: error,
-            });
-            Err(format!("{error:#}"))
-        }
-        _ => Ok(()),
+        Err(error) if error.is::<Stopped>() => Ok(()),
+        result => result,
     }
 }
 
@@ -270,4 +269,41 @@ pub(crate) fn action(action: &str, model: &str, parameters: Option<Value>) -> Va
         value["parameters"] = parameters;
     }
     value
+}
+
+/// The pixels of `rect` whose centres `outline` holds, as `Shape::contains`
+/// tells them, a row at a time.
+pub(crate) fn held(outline: &BezPath, rect: Rect) -> GrayImage {
+    let mut lines = BezPath::new();
+    kurbo::flatten(outline, 0.1, |element| lines.push(element));
+    // Where the outline crosses each row's middle, and which way.
+    let mut crossings = vec![Vec::new(); rect.height as usize];
+    let row = |y: f64| (y - f64::from(rect.y) - 0.5).ceil().max(0.0) as usize;
+    for line in lines.segments() {
+        let (start, end) = (line.start(), line.end());
+        let (top, bottom, way) = match start.y < end.y {
+            true => (start, end, 1),
+            false => (end, start, -1),
+        };
+        for at in row(top.y)..row(bottom.y).min(crossings.len()) {
+            let y = f64::from(rect.y) + at as f64 + 0.5;
+            let x = top.x + (bottom.x - top.x) * (y - top.y) / (bottom.y - top.y);
+            crossings[at].push((x - f64::from(rect.x), way));
+        }
+    }
+    let mut pixels = GrayImage::new(rect.width, rect.height);
+    for (y, crossings) in crossings.iter_mut().enumerate() {
+        crossings.sort_by(|(left, _), (right, _)| left.total_cmp(right));
+        let mut winding = 0;
+        for pair in crossings.windows(2) {
+            winding += pair[0].1;
+            if winding != 0 {
+                let column = |x: f64| ((x - 0.5).ceil().max(0.0) as u32).min(rect.width);
+                for x in column(pair[0].0)..column(pair[1].0) {
+                    pixels.put_pixel(x, y as u32, Luma([255]));
+                }
+            }
+        }
+    }
+    pixels
 }

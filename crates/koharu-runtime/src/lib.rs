@@ -7,6 +7,7 @@ mod huggingface;
 mod packages;
 mod store;
 mod transfer;
+mod turn;
 
 use std::{
     io::ErrorKind,
@@ -21,6 +22,7 @@ pub use asset::Asset;
 pub use device::{Backend, Device, Memory};
 pub use huggingface::Repository;
 pub use transfer::{State, Transfer, transfers};
+pub use turn::{Library, Turn};
 
 /// Koharu's root: the folder setup put it in, in Windows release builds, where
 /// this user can write it, which a per-machine install's, under Program Files,
@@ -40,11 +42,12 @@ pub fn root() -> Option<&'static Path> {
     ROOT.as_deref()
 }
 
+static DEVICE: OnceCell<Device> = OnceCell::const_new();
+
 /// Where every model runs: the best GPU, once what it needs is downloaded and
 /// loaded. Every caller shares that start, and a failed one is tried again on
 /// the next call.
 pub async fn device() -> anyhow::Result<&'static Device> {
-    static DEVICE: OnceCell<Device> = OnceCell::const_new();
     DEVICE
         .get_or_try_init(|| async {
             let gpu = hardware::candidates()

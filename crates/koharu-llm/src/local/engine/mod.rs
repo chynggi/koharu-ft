@@ -4,9 +4,10 @@
 //! A sequence keeps what it decoded after its request ends, and a new request
 //! reuses the longest common prefix any sequence holds, as llama-server picks a
 //! slot (`get_available_slot`, tools/server/server-context.cpp at b12143). A
-//! recurrent or hybrid model's state can't be cut back to that prefix, so its
-//! sequences keep a checkpoint of their recurrent state just short of each
-//! prompt's end, and go back to it, as llama-server's context checkpoints do.
+//! recurrent or hybrid model's state can't be cut back to that prefix, nor a
+//! sliding window to one it has moved past, so their sequences keep a checkpoint
+//! of that state just short of each prompt's end, and go back to it, as
+//! llama-server's context checkpoints do.
 
 mod load;
 mod picker;
@@ -27,6 +28,7 @@ use koharu_llama::{
     mtmd::{MtmdBitmap, MtmdContext, MtmdInputChunks, MtmdInputText, mtmd_default_marker},
     token::LlamaToken,
 };
+use koharu_runtime::{Library, Turn};
 use llguidance::ParserFactory;
 use rig_core::error::{ErrorKind, ErrorReport, ProviderError};
 use tokio::sync::mpsc::UnboundedSender;
@@ -59,8 +61,9 @@ pub(super) struct Job {
 #[derive(Clone, Debug)]
 pub(super) enum Step {
     Text(String),
-    /// The reply ended: at an end-of-generation token, or at its token
-    /// limit or the end of its sequence's context.
+    /// The reply ended: at an end-of-generation token, or cut off, at its
+    /// token limit or the end of its sequence's context, or once it kept
+    /// repeating itself.
     End {
         length: bool,
         prompt_tokens: u64,
@@ -97,6 +100,7 @@ pub(super) fn serve(
     ready: SyncSender<Result<Loaded>>,
     queue: Receiver<Job>,
 ) {
+    let turn = Turn::take(Library::Ggml);
     let (model, size) = match load::model(&files, size) {
         Ok(loaded) => loaded,
         Err(error) => return drop(ready.send(Err(error))),
@@ -112,6 +116,7 @@ pub(super) fn serve(
         vision: engine.mtmd.is_some(),
         context: size.context,
     };
+    drop(turn);
     if ready.send(Ok(loaded)).is_ok() {
         engine.run(&queue);
     }
@@ -130,7 +135,10 @@ struct Engine<'m> {
     held: Vec<Vec<LlamaToken>>,
     /// Whether the model's state is recurrent, in whole or in part.
     recurrent: bool,
-    /// Each sequence's recurrent state after its first `at` held tokens.
+    /// How many positions the model's sliding window sees; 0 without one.
+    window: i32,
+    /// Each sequence's recurrent state and sliding window after its first `at`
+    /// held tokens.
     checkpoints: Vec<Option<Checkpoint>>,
 }
 
@@ -143,7 +151,8 @@ struct Sequence {
     position: i32,
     max_tokens: Option<u64>,
     prompt_tokens: u64,
-    output_tokens: u64,
+    /// The tokens sampled so far.
+    reply: Vec<LlamaToken>,
     /// The bytes of a character whose last token hasn't come yet.
     pending: Vec<u8>,
     /// Whether `held` records this sequence's tokens: not past an image.
@@ -151,11 +160,20 @@ struct Sequence {
 }
 
 impl Sequence {
+    /// Whether the reply is cut off here: at its token limit, at the end of
+    /// its `context`, or repeating itself.
+    fn cut_off(&self, context: u32) -> bool {
+        let limit = self
+            .max_tokens
+            .is_some_and(|max| self.reply.len() as u64 >= max);
+        limit || self.position >= context as i32 || repeats(&self.reply)
+    }
+
     fn end(&self, length: bool) -> Step {
         Step::End {
             length,
             prompt_tokens: self.prompt_tokens,
-            output_tokens: self.output_tokens,
+            output_tokens: self.reply.len() as u64,
         }
     }
 }
@@ -178,6 +196,7 @@ impl<'m> Engine<'m> {
             grammars: None,
             held: vec![Vec::new(); size.sequences as usize],
             recurrent: model.is_recurrent() || model.is_hybrid(),
+            window: model.n_swa(),
             checkpoints: (0..size.sequences).map(|_| None).collect(),
         })
     }
@@ -186,13 +205,16 @@ impl<'m> Engine<'m> {
         let mut waiting = VecDeque::new();
         let mut running: Vec<Sequence> = Vec::new();
         let mut free: Vec<i32> = (0..self.size.sequences as i32).rev().collect();
+        let mut turn = None;
         loop {
             if running.is_empty() && waiting.is_empty() {
+                turn = None;
                 match queue.recv() {
                     Ok(job) => waiting.push_back(job),
                     Err(_) => return,
                 }
             }
+            turn.get_or_insert_with(|| Turn::take(Library::Ggml)).pass();
             waiting.extend(queue.try_iter());
             while !free.is_empty()
                 && let Some(job) = waiting.pop_front()
@@ -316,7 +338,7 @@ impl<'m> Engine<'m> {
             position,
             max_tokens: job.sampling.max_tokens,
             prompt_tokens: prompt_tokens as u64,
-            output_tokens: 0,
+            reply: Vec::new(),
             pending: Vec::new(),
             tracked: chunks.is_none(),
         };
@@ -385,7 +407,7 @@ impl<'m> Engine<'m> {
             let _ = sequence.frames.send(Ok(sequence.end(false)));
             return Ok(false);
         }
-        sequence.output_tokens += 1;
+        sequence.reply.push(token);
         sequence
             .pending
             .extend(vocab.token_to_piece(token, true, None));
@@ -401,10 +423,7 @@ impl<'m> Engine<'m> {
                 return Ok(false);
             }
         }
-        let limit = sequence
-            .max_tokens
-            .is_some_and(|max| sequence.output_tokens >= max);
-        if limit || sequence.position >= self.size.context as i32 {
+        if sequence.cut_off(self.size.context) {
             let _ = sequence.frames.send(Ok(sequence.end(true)));
             return Ok(false);
         }
@@ -440,6 +459,20 @@ impl<'m> Engine<'m> {
         }
         Ok(true)
     }
+}
+
+/// Whether `reply` ends in one pattern over and over, as vLLM finds one
+/// (`check_sequence_repetition`, vllm/v1/core/sched/utils.py at 85a084c),
+/// which leaves the sizes to its caller. A scream or a row of dots repeats
+/// too, but not for 128 tokens.
+fn repeats(reply: &[LlamaToken]) -> bool {
+    (1..=128).any(|pattern| {
+        let length = 128.max(4 * pattern);
+        reply
+            .len()
+            .checked_sub(length)
+            .is_some_and(|start| reply[start + pattern..] == reply[start..reply.len() - pattern])
+    })
 }
 
 fn text_tokens(chunks: &MtmdInputChunks) -> Vec<LlamaToken> {

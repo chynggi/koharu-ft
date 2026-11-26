@@ -59,20 +59,42 @@ more. Only a stage knows its models.
 
 Every stage also records its C2PA action on the layers it wrote, and detection
 its scores in its own namespace. Detection records each source's size, line
-width, ink as its fill, and outline as its stroke.
+width, ink as its fill, and outline as its stroke. Lettering over art is
+outlined, such as in white around black, and the outline, the tone that lies
+all around what it encloses, isn't its ink: on 28 pages of four works, at most
+half of plain lettering's ink lies so around its counters.
 
 There's no typesetting stage. Placement puts a translation in its room in its
 balloon, or in its source's frame when it's free or a sound effect, and fits it
 `best`, so resizing a balloon reflows the text.
 
-- **Size.** A new translation starts at the page's lettering size, the median
-  of its sources', as a letterer keeps one size for a page's dialogue [Manga
-  balloon basics], with its lines centred, or in Japanese and Chinese
-  started together at the top or the left, as JLREQ aligns a line to its head
-  [JLREQ], and with its source's fill and stroke. A
-  sound effect whose source has no outline gets a stroke a sixteenth of its
-  size, black around a light fill and white around any other, which keeps it
-  legible over art.
+- **Size.** A letterer keeps one size for a page's dialogue [Manga balloon
+  basics]. A page's is the median of the largest its texts' rooms hold in whole
+  words, measured with the renderer, whatever its sources' own. A text that
+  would draw smaller is brought up to it as far as its room allows, and one that
+  fits larger stays so: small text can't be read, and a large line in a large
+  balloon is a shout. A run on some blocks measures the page's other
+  translations too.
+- **Margin.** A balloon's text has a letter's width of air [Comicraft glossary].
+  One under the page's size has as much of it as holds that size, down to half:
+  half holds it 15 to 17% larger, where a line height of 1 rather than 1.2 gives
+  2%.
+- **Free text.** A vertical source's column holds a word or two of a horizontal
+  translation, so its frame widens until it holds the page's size, or a sound
+  effect's its source's when that's smaller: along the lines to two and a half
+  times its width but not past its longer side, then across them to three lines,
+  in its panel and off the page's other texts and balloons. Without that limit a
+  text covered a face beside it. A margin narrows and a frame widens as far as
+  they may before a word is hyphenated to reach the size.
+- **Lines** are centred, or in Japanese and Chinese started together at the top
+  or the left, as JLREQ aligns a line to its head [JLREQ].
+- **Fill and stroke** are its source's, the stroke's width in proportion to its
+  size. One that lies on art and whose source has no outline gets a stroke,
+  black around a light fill and white around any other, which keeps it legible:
+  a sound effect a sixteenth of its size, and a text outside a balloon an
+  eighth. On paper of the stroke's colour it can't be seen, and looking for low
+  contrast under the text missed one over foliage and those crossing a panel's
+  border.
 - **Direction.** It's vertical only when its source is and the target is
   Japanese or Chinese; any other language runs horizontally, turned by its
   source's tilt.
@@ -81,7 +103,9 @@ balloon, or in its source's frame when it's free or a sound effect, and fits it
 
 A block's mask reaches 3 pixels past its glyphs, or slivers of letter outlines
 stay outside it, but never into another lettering's box, where its clean-up
-would cover the neighbour's translation.
+would cover the neighbour's translation. A glyph two masks take in is the one's
+whose box is nearer it, and the smaller box's inside both, or it would be in
+neither.
 
 Most lettering sits on plain paper or a gradient, which a fill rebuilds
 exactly without a model call, so the model comes last. Each lettering's
@@ -121,18 +145,25 @@ order, and translating blocks is a turn of the same conversation. Changing the
 model, the target, or the instructions starts a new one.
 
 - **A page** is its unlocked texts as a JSON object keyed by reading order, and
-  the answer must keep the keys. A broken answer or a missing key is asked for
-  once more; a second one, or a blank translation, fails the page, which never
-  enters the history.
-- **An answer copying the page before's** for different texts is asked again
-  without the history it copied.
+  the answer must keep the keys. One still without an answer after it's asked
+  again, or with a blank translation, fails and never enters the history.
+- **A page that got no answer** is asked again by why:
+
+  | Why | Asked again |
+  |---|---|
+  | its answer is broken or misses a key | once, told what's wrong |
+  | its answer copies the page before's for different texts | once, without the history it copied |
+  | its provider blocked it, or its answer, for its content | once, without the history, which may be what's blocked |
+  | it doesn't fit the model's window, or a model that doesn't say its window cut its answer off | once, with the older half of the history dropped |
+  | a local model's answer was cut off, as one that repeats itself is | twice, at 0.4 and 0.8, as Whisper falls back [Whisper]: greedy, it would come out the same |
 - **A text given back unchanged**, such as a copyright line, keeps its own
   lettering: its clean-up is hidden and it gets no translation.
 - **Vision** shows the model the scan, 1,280 pixels on its longer side, ahead
-  of the texts. **Reasoning** lets it think first, and the answer is held to the
-  schema once the thinking ends, at the model's own level unless set, or off.
-  On 16 pages with Index-Translate 9B, neither read better and both cost time,
-  so vision is off and reasoning the model's own unless set.
+  of the texts; a model that reads no images goes without it. **Reasoning** lets
+  it think first, and the answer is held to the schema once the thinking ends,
+  at the model's own level unless set, or off. On 16 pages with Index-Translate
+  9B, neither read better and both cost time, so vision is off and reasoning the
+  model's own unless set.
 - **The history** keeps each page's texts and answer, not its image or the
   model's reasoning, so it grows as it does without them, and a local model
   reuses it from turn to turn.
@@ -156,7 +187,8 @@ model, the target, or the instructions starts a new one.
   again.
 - **One call at a time** on that thread, so peak memory is every loaded model
   plus the largest working set, and running out never depends on timing. A
-  local language model decodes on its own thread beside it.
+  local language model decodes on its own thread beside it, taking turns on the
+  GPU with stable-diffusion.cpp's models on CUDA, and with every model on ROCm.
 - **Pages in flight.** Up to three: one reading its input, one on the model,
   and one writing its result.
 - **Order.** A run is a graph of its pages' stages: detection before a page's
@@ -165,10 +197,12 @@ model, the target, or the instructions starts a new one.
   pages in the order they came, so an interactive run goes ahead at its next
   model call. Recognition takes up to eight pages waiting for the same model at
   once.
-- **Failure.** The first failure ends its run, naming the page, the stage, and
-  the reason, a panic included. What it finished stays. Stopping is the same
-  without the error, for every run, and cuts short a diffusion model's redraw
-  under way.
+- **Failure.** A page the translation model blocks, can't fit, or answers with
+  nothing it can take, fails alone: it's named with the reason, and the run goes
+  on. Any other
+  failure would come again with the next page, so it ends its run, a panic
+  included. What it finished stays. Stopping is the same without the error, for
+  every run, and cuts short a diffusion model's redraw under way.
 
 ## 6. Settings
 
@@ -200,8 +234,8 @@ Read in November 2026.
 - Adobe: [Photoshop Content-Aware Fill], [Photoshop Generative Fill],
   [Photoshop combine variations]
 - Editing models: [FLUX.3 Klein], [Qwen-Image 2.1]
-- [ComfyUI routes], [Ollama keep_alive], [OpenCV inpaint], [CLDR], [Index-Translate], [JLREQ]
-- Lettering: [Manga balloon basics]
+- [ComfyUI routes], [Ollama keep_alive], [OpenCV inpaint], [CLDR], [Index-Translate], [JLREQ], [Whisper]
+- Lettering: [Manga balloon basics], [Comicraft glossary]
 
 [Photoshop Content-Aware Fill]: https://helpx.adobe.com/photoshop/desktop/repair-retouch/remove-objects-fill-space/adjust-content-aware-fill-settings.html
 [Photoshop Generative Fill]: https://helpx.adobe.com/photoshop/desktop/create-open-import-images/create-images/edit-images-with-generative-fill.html
@@ -214,4 +248,6 @@ Read in November 2026.
 [CLDR]: https://cldr.unicode.org/
 [Index-Translate]: https://huggingface.co/IndexTeam/Index-Translate-9B
 [Manga balloon basics]: https://www.linkedin.com/pulse/manga-lettering-balloon-basics-phil-christie
+[Comicraft glossary]: https://balloontales.com/?p=418
 [JLREQ]: https://www.w3.org/TR/jlreq/
+[Whisper]: https://github.com/openai/whisper/blob/86098128c0b4f24f0e2aa2994de830614b474227/whisper/transcribe.py#L184-L224

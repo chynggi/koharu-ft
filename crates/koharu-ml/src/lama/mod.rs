@@ -11,7 +11,7 @@ mod processor;
 
 use anyhow::{Context, Result, ensure};
 use image::{DynamicImage, GrayImage, RgbImage};
-use koharu_runtime::Repository;
+use koharu_runtime::{Library, Repository, Turn};
 use koharu_torch::{Device, Kind, Tensor};
 
 pub(crate) use self::processor::{boxes_from_mask, crop_box};
@@ -34,12 +34,13 @@ pub struct Lama {
 
 impl Lama {
     pub async fn load(device: &crate::Device) -> Result<Self> {
-        let (device, kind) = crate::backend::torch(device);
+        let (device, kind) = crate::torch::device(device);
         let [weights] = REPOSITORY
             .resolve(["lama-manga.safetensors"])
             .await
             .context("failed to resolve LaMa's files")?;
 
+        let _turn = Turn::take(Library::Torch);
         let mut model = Model::new(&FFCResNetGeneratorConfig::default(), device, kind)?;
         model.load(&weights)?;
         Ok(Self { device, model })
@@ -62,7 +63,7 @@ impl Lama {
             image.width() > 0 && image.height() > 0,
             "image dimensions must be non-zero"
         );
-        koharu_torch::inference_mode(|| {
+        crate::torch::inference(|| {
             if image.width().max(image.height()) <= WHOLE {
                 return self.pad_forward(&image, mask);
             }

@@ -265,6 +265,9 @@
     "font": "الخط",
     "fontSize": "حجم الخط",
     "fontStyles": {
+      "bold": "عريض",
+      "fauxBold": "عريض زائف",
+      "fauxItalic": "مائل زائف",
       "italic": "مائل",
       "oblique": "منحرف"
     },
@@ -283,6 +286,8 @@
     "secondBorder": "الحدود 2",
     "secondBorderColor": "لون الحدود الثانية",
     "secondBorderWidth": "عرض الحدود الثانية",
+    "removeRuby": "إزالة شرح روبي",
+    "ruby": "شرح روبي",
     "selectPage": "اختر صفحة لعرض طبقاتها.",
     "source": "النص المصدر",
     "text": "نص",
@@ -329,6 +334,7 @@
   "menu": {
     "about": "عن البرنامج",
     "adjustments": "تعديلات",
+    "checkForUpdates": "التحقق من وجود تحديثات",
     "closeProject": "إغلاق المشروع",
     "delete": "حذف المحدّد",
     "discord": "Discord",
@@ -676,6 +682,10 @@
       "title": "فشل التحديث"
     },
     "later": "لاحقًا",
+    "latest": {
+      "description": "Koharu <strong>{{version}}</strong> هو أحدث إصدار",
+      "title": "لا توجد تحديثات"
+    },
     "noNotes": "لا توجد ملاحظات إصدار.",
     "retry": "إعادة المحاولة",
     "update": "تحديث"

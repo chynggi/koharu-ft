@@ -13,7 +13,8 @@ use image::{
 };
 use koharu_pipeline::{Event, Pipeline, Request, RunId, Stage, Target};
 use koharu_renderer::Renderer;
-use koharu_scene::{Answer, Bounds, Change, LayerId, Op, PageId, Query, Session};
+use koharu_scene::{Bounds, Change, LayerId, Op, PageId, Query, Session, Transform};
+use kurbo::{BezPath, Shape as _};
 use parking_lot::Mutex;
 use rig_agent::tool::ToolSet;
 use rig_core::{
@@ -25,7 +26,7 @@ use rig_core::{
 };
 use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// How long `wait` waits for a run to end, so an agent following a run
 /// doesn't spend a turn on every look, as Codex waits on a long command for
@@ -77,7 +78,9 @@ impl Tools {
     /// The project's outline, which goes with each of the agent's requests.
     pub fn context(&self) -> anyhow::Result<Value> {
         let answer = self.session.lock().query(Query::GetProject)?;
-        Ok(serde_json::to_value(answer)?)
+        let mut project = serde_json::to_value(answer)?;
+        outline(&mut project);
+        Ok(project)
     }
 }
 
@@ -137,8 +140,11 @@ struct ViewArgs {
     region: Option<Bounds>,
 }
 
+// schemars leaves `properties` out of a struct without fields, and LM Studio
+// refuses a request when one of its tools has none.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("properties" = {}))]
 struct NoArgs {}
 
 struct GetProject;
@@ -146,11 +152,12 @@ struct GetProject;
 impl Tool for GetProject {
     const NAME: &'static str = "get_project";
     type Args = NoArgs;
-    type Output = Answer;
+    type Output = Value;
     type Error = ToolExecutionError;
 
     fn description(&self) -> String {
-        "The project's pages in order, each with its size, its scan, and how many of its blocks are translated.".to_owned()
+        "The project's pages in order, each with how many blocks it has and how many are translated."
+            .to_owned()
     }
 
     fn parameters(&self) -> Value {
@@ -161,8 +168,8 @@ impl Tool for GetProject {
         ToolAnnotations::default().with_read_only(true)
     }
 
-    async fn call(&self, context: &mut ToolContext, _: NoArgs) -> Result<Answer, Self::Error> {
-        query(context, Query::GetProject).await
+    async fn call(&self, context: &mut ToolContext, _: NoArgs) -> Result<Value, Self::Error> {
+        query(context, Query::GetProject, outline).await
     }
 }
 
@@ -171,12 +178,13 @@ struct GetPage;
 impl Tool for GetPage {
     const NAME: &'static str = "get_page";
     type Args = PageArgs;
-    type Output = Answer;
+    type Output = Value;
     type Error = ToolExecutionError;
 
     fn description(&self) -> String {
-        "A page with its layers nested in reading order: panels, balloons, and blocks, each \
-         block with its source and translation."
+        "A page with its size, its scan, and its layers nested in reading order: panels, \
+         balloons, and blocks, each block with its source and translation. A path is shown by \
+         its bounds; get_layer has it, with a layer's attributes, its mask, and its clean-up."
             .to_owned()
     }
 
@@ -188,8 +196,9 @@ impl Tool for GetPage {
         ToolAnnotations::default().with_read_only(true)
     }
 
-    async fn call(&self, context: &mut ToolContext, args: PageArgs) -> Result<Answer, Self::Error> {
-        query(context, Query::GetPage { page: args.page }).await
+    async fn call(&self, context: &mut ToolContext, args: PageArgs) -> Result<Value, Self::Error> {
+        let page = Query::GetPage { page: args.page };
+        query(context, page, |page| sparse(&mut page["layers"])).await
     }
 }
 
@@ -198,11 +207,11 @@ struct GetLayer;
 impl Tool for GetLayer {
     const NAME: &'static str = "get_layer";
     type Args = LayerArgs;
-    type Output = Answer;
+    type Output = Value;
     type Error = ToolExecutionError;
 
     fn description(&self) -> String {
-        "One layer with everything inside it.".to_owned()
+        "One layer with all its values, and what's inside it as get_page shows it.".to_owned()
     }
 
     fn parameters(&self) -> Value {
@@ -213,12 +222,9 @@ impl Tool for GetLayer {
         ToolAnnotations::default().with_read_only(true)
     }
 
-    async fn call(
-        &self,
-        context: &mut ToolContext,
-        args: LayerArgs,
-    ) -> Result<Answer, Self::Error> {
-        query(context, Query::GetLayer { layer: args.layer }).await
+    async fn call(&self, context: &mut ToolContext, args: LayerArgs) -> Result<Value, Self::Error> {
+        let layer = Query::GetLayer { layer: args.layer };
+        query(context, layer, |layer| sparse(&mut layer["children"])).await
     }
 }
 
@@ -320,8 +326,9 @@ impl Tool for Wait {
 
     fn description(&self) -> String {
         "Wait up to 30 seconds for a run to end, then answer what it told so far, in order: how \
-         many page stages it does, each page's stages as they started and finished, and last, \
-         once it ended, how: done, failed with its reason, or stopped."
+         many page stages it does, each page's stages as they started and finished, or failed \
+         on that page alone, and last, once it ended, how: done, failed with its reason, or \
+         stopped."
             .to_owned()
     }
 
@@ -409,12 +416,64 @@ fn project(context: &ToolContext) -> Result<Arc<Tools>, ToolExecutionError> {
         .ok_or_else(|| ToolExecutionError::other("no project is open"))
 }
 
-/// `query`'s answer, the project's own values.
-async fn query(context: &ToolContext, query: Query) -> Result<Answer, ToolExecutionError> {
+/// `query`'s answer, the project's own values, cut by `cut` to what a model
+/// reads them for.
+async fn query(
+    context: &ToolContext,
+    query: Query,
+    cut: fn(&mut Value),
+) -> Result<Value, ToolExecutionError> {
     let tools = project(context)?;
-    tokio::task::spawn_blocking(move || tools.session.lock().query(query).map_err(failed))
-        .await
-        .map_err(failed)?
+    tokio::task::spawn_blocking(move || {
+        let answer = tools.session.lock().query(query).map_err(failed)?;
+        let mut answer = serde_json::to_value(answer).map_err(failed)?;
+        cut(&mut answer);
+        Ok(answer)
+    })
+    .await
+    .map_err(failed)?
+}
+
+/// Takes each page's size and scan out of a project, which the page's own
+/// answer has: a scan's hash is half of what a page takes in every request.
+fn outline(project: &mut Value) {
+    for page in project["pages"].as_array_mut().into_iter().flatten() {
+        if let Value::Object(page) = page {
+            page.retain(|key, _| !matches!(key.as_str(), "size" | "background"));
+        }
+    }
+}
+
+/// Cuts layers to what each is, where it is, and what it says, as Figma's
+/// `get_metadata` answers a layer tree: whole, one page's can take more than a
+/// small model's context.
+fn sparse(value: &mut Value) {
+    match value {
+        Value::Object(fields) => {
+            for key in ["outline", "path"] {
+                let path = fields.get(key).and_then(Value::as_str);
+                if let Some(Ok(path)) = path.map(BezPath::from_svg) {
+                    let bounds = path.bounding_box().expand();
+                    let bounds = json!({
+                        "x": bounds.x0, "y": bounds.y0,
+                        "width": bounds.width(), "height": bounds.height(),
+                    });
+                    fields.remove(key);
+                    fields.insert("bounds".to_owned(), bounds);
+                }
+            }
+            // A span's attributes are its marks, so only a layer's go.
+            let layer = fields.contains_key("kind");
+            fields.retain(|key, value| match key.as_str() {
+                "attributes" | "mask" | "cleanup" if layer => false,
+                "transform" => *value != json!(Transform::default()),
+                _ => !value.is_null(),
+            });
+            fields.values_mut().for_each(sparse);
+        }
+        Value::Array(values) => values.iter_mut().for_each(sparse),
+        _ => {}
+    }
 }
 
 /// `error` as the model sees it, word for word: rig shows a model only the
@@ -510,20 +569,115 @@ mod tests {
     fn every_tool_schema_is_inlined() {
         for definition in Tools::toolset().tool_definitions() {
             let schema = definition.parameters.to_string();
-            assert!(!schema.contains("$ref"), "{}", definition.name.as_str());
+            assert!(
+                !schema.contains(r#""$ref":"#),
+                "{}",
+                definition.name.as_str()
+            );
         }
+    }
+
+    /// They go with every request, and with a layer's types inlined they took
+    /// more than a local model's whole context.
+    #[test]
+    fn the_tools_leave_a_small_context_room() {
+        let definitions = Tools::toolset().tool_definitions();
+        let taken: usize = definitions
+            .iter()
+            .map(|tool| tool.description.len() + tool.parameters.to_string().len())
+            .sum();
+        assert!(taken < 32_000, "{taken} characters");
     }
 
     /// What agents never send is skipped by schemars attributes on `Op`.
     #[test]
     fn edit_offers_the_ops_agents_send() {
         let schema = Edit.parameters().to_string();
-        for op in ["update_layer", "set_text", "set_attribute", "translation"] {
+        for op in [
+            "update_layer",
+            "set_rich_text",
+            "set_attribute",
+            "translation",
+        ] {
             assert!(schema.contains(op), "{op}");
         }
-        for op in ["add_file", "write_pixels", "set_rich_text", "\"add_page\""] {
+        for op in ["add_file", "write_pixels", "\"add_page\""] {
             assert!(!schema.contains(op), "{op}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_page_is_read_without_the_paths_its_layers_are_read_with() {
+        let (_dir, tools) = open();
+        let page = add_page(&tools, 100, 100);
+        let block = json!({"kind": "block", "source": {
+            "content": [{"insert": "a", "attributes": {"stroke_width": 8.0}}],
+        }});
+        let ops = json!([
+            {"op": "add_layer", "id": "$balloon", "page": page, "index": 0,
+             "layer": {"kind": "balloon", "outline": "M10 20 H50 V40 H10 Z"}},
+            {"op": "add_layer", "page": page, "parent": "$balloon", "index": 0, "layer": block},
+        ]);
+        let change = tools
+            .session
+            .lock()
+            .apply(koharu_scene::Edit {
+                label: "test".to_owned(),
+                ops: serde_json::from_value(ops).expect("ops"),
+            })
+            .expect("a balloon and its block");
+        let Some(Created::Layer { id: layer, .. }) = change.created.first() else {
+            panic!("{change:?}");
+        };
+
+        let mut context = tools.tool_context();
+        let read = GetPage
+            .call(&mut context, PageArgs { page })
+            .await
+            .expect("the page");
+        let balloon = &read["layers"][0];
+        let bounds = json!({"x": 10.0, "y": 20.0, "width": 40.0, "height": 20.0});
+        assert_eq!(balloon["bounds"], bounds);
+        assert!(balloon.get("outline").is_none(), "{balloon}");
+        let inside = &balloon["children"][0];
+        assert!(inside.get("attributes").is_none(), "{inside}");
+        // A span's marks share their name with a layer's attributes.
+        let marks = &inside["source"]["content"][0]["attributes"];
+        assert_eq!(*marks, json!({"stroke_width": 8.0}));
+
+        let whole = GetLayer
+            .call(&mut context, LayerArgs { layer: *layer })
+            .await
+            .expect("the balloon");
+        assert_eq!(whole["outline"], "M10 20 H50 V40 H10 Z");
+        assert_eq!(whole["children"][0], *inside);
+    }
+
+    #[tokio::test]
+    async fn rich_text_is_written_as_the_schema_offers_it_and_read_back() {
+        let (_dir, tools) = open();
+        let page = add_page(&tools, 100, 100);
+        let spans = json!([
+            {"insert": "The "},
+            {"insert": "Holy Sword", "ruby": "Excalibur", "attributes": {"weight": 700}},
+            {"insert": " rises"},
+        ]);
+        let args = json!({"label": "Letter", "ops": [
+            {"op": "add_layer", "id": "$block", "page": page, "index": 0,
+             "layer": {"kind": "block", "source": {}}},
+            {"op": "set_rich_text", "layer": "$block", "spans": spans},
+        ]});
+        assert_eq!(refusal(&Edit.parameters(), &args), None);
+        let mut context = tools.tool_context();
+        Edit.call(&mut context, serde_json::from_value(args).expect("an edit"))
+            .await
+            .expect("the block is lettered");
+        let read = GetPage
+            .call(&mut context, PageArgs { page })
+            .await
+            .expect("the page");
+        let content = &read["layers"][0]["translation"]["content"];
+        assert_eq!(*content, spans, "{read}");
     }
 
     #[tokio::test]

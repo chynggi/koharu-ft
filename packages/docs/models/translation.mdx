@@ -1,7 +1,6 @@
 ---
 title: 'Configure translation'
 description: 'Set the model, target language, instructions, reasoning, and image input.'
-icon: 'language'
 ---
 
 Choose translation settings in the **Translator** section of **Settings → Pipeline**; the processing selector also sets the model and the target language. They are saved with Koharu's settings and apply to every project. Provider connections and credentials are read for each request.
@@ -14,9 +13,19 @@ LFM3 1.7B is made for a limited set of target languages. Other local and hosted 
 
 ## How pages are translated
 
-Translation is one conversation per open project: one turn per page, in page order, so each page sees the pages translated before it. Translating selected text blocks is a turn of the same conversation. Changing the model, the target language, or the instructions starts a new one.
+Translation is one conversation per open project: one turn per page, in page order, so each page sees the pages translated before it. See [translation](/how-it-works/translation) for what the model receives. Translating selected text blocks is a turn of the same conversation. Changing the model, the target language, or the instructions starts a new one.
 
-Each page is sent as its texts in reading order, and the answer must return every one. A malformed answer or a missing text is asked for once more. If that answer falls short too, or a translation is blank, the page fails. A text the model gives back unchanged, such as a copyright line, keeps its original lettering: its clean-up is hidden and it gets no translation.
+Each page is sent as its texts in reading order, and the answer must return every one. A text the model gives back unchanged, such as a copyright line, keeps its original lettering: its clean-up is hidden and it gets no translation.
+
+Koharu retries a page's translation when:
+
+- The answer is malformed or misses a text: once.
+- The answer copies the page before's: once, without the earlier pages.
+- The provider blocks the page or its answer for its content: once, without the earlier pages, which may be what it blocked.
+- The page doesn't fit the model's context window, or fills it: once, without the older half of the earlier pages.
+- A local model's answer is cut off, as when it keeps repeating itself: up to twice, with more randomness, since it would otherwise answer the same way.
+
+A page that still fails, or whose translation is blank, is left untranslated, and [the run goes on](/guides/processing#follow-progress-and-stop-work). With a hosted model, each retry is another request. When a provider is overloaded or limits your rate, Koharu sends the request again up to nine times, for about two and a half minutes or as long as the provider asks, before the run ends.
 
 ## Options
 
@@ -25,7 +34,7 @@ Each page is sent as its texts in reading order, and the answer must return ever
 | Vision    | Sends the page image, 1,280 pixels on its longer side, ahead of the texts; off by default                                                    |
 | Reasoning | Lets the model reason before it answers, at the level you choose; **Provider default** uses the model's own, and **Off** turns reasoning off |
 
-A model that can't take the reasoning level you choose, such as **Off** on a model that always reasons, stops the run and names the setting. Vision works only with a model that reads images; with any other model the run fails and asks you to turn **Vision** off. Both options add time, and on Koharu's own tests with Index-Translate 9B neither read better, so try them on a few pages before keeping them.
+A model that can't take the reasoning level you choose, such as **Off** on a model that always reasons, stops the run and names the setting. Vision works only with a model that reads images; any other model translates without the page image. Both options add time, and on Koharu's own tests with Index-Translate 9B neither read better, so try them on a few pages before keeping them.
 
 ## Local quantization
 

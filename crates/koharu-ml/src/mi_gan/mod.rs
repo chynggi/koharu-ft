@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result, bail, ensure};
 use fast_image_resize::{FilterType, ResizeAlg};
 use image::{GrayImage, RgbImage, imageops};
-use koharu_runtime::Repository;
+use koharu_runtime::{Library, Repository, Turn};
 use koharu_torch::{Device, Kind, Tensor};
 use safetensors::{SafeTensors, tensor::TensorView};
 
@@ -46,13 +46,15 @@ pub struct MiGan {
 
 impl MiGan {
     pub async fn load(device: &crate::Device) -> Result<Self> {
-        let (device, _) = crate::backend::torch(device);
+        let (device, _) = crate::torch::device(device);
         let [weights] = REPOSITORY
             .resolve(["model.safetensors"])
             .await
             .context("failed to resolve MI-GAN's files")?;
+        let weights = channels_first(&weights)?;
+        let _turn = Turn::take(Library::Torch);
         let mut model = Model::new(device)?;
-        model.load(channels_first(&weights)?)?;
+        model.load(weights)?;
         Ok(Self { device, model })
     }
 
@@ -65,7 +67,7 @@ impl MiGan {
             "image and mask dimensions differ"
         );
         let side = RESOLUTION as u32;
-        koharu_torch::inference_mode(|| {
+        crate::torch::inference(|| {
             if image.dimensions() == (side, side) {
                 return self.pad_forward(image, mask);
             }

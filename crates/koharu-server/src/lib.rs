@@ -98,6 +98,7 @@ async fn run(State(server): State<Arc<Server>>, headers: HeaderMap, body: Bytes)
             let (Event::Queued { run, .. }
             | Event::Started { run, .. }
             | Event::Finished { run, .. }
+            | Event::Failed { run, .. }
             | Event::Ended { run, .. }) = &event;
             if *run != id {
                 continue;

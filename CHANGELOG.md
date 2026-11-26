@@ -1,3 +1,89 @@
+## [0.99.0](https://github.com/koharu-rs/koharu/compare/0.98.1..0.99.0) - 2026-11-25
+
+### ⛰️  Features
+
+- *(ui)* Check for updates from Help, answered in the update dialog, which is more compact and no longer focuses a link in its notes - ([f723e79](https://github.com/koharu-rs/koharu/commit/f723e7988ddc47c47906e72f536a62831859c0a1))
+
+### 🐛 Bug Fixes
+
+- *(pipeline,llm)* Log why a run or page fails, drop the older half of a full history, ask an overloaded provider up to nine times, and leave the page image out for a model that reads none - ([eef34b0](https://github.com/koharu-rs/koharu/commit/eef34b092cba12e1cc15e410f12e6d376d2c9c1a))
+- *(runtime)* Download a Hugging Face file again when it breaks off, and wait longer before hf-hub gives up on a request - ([10e7a08](https://github.com/koharu-rs/koharu/commit/10e7a08e4fb46e3bbb355fcd3fd4cff62821d824))
+- *(ui)* Center the title bar's logo on the menus' words - ([7b47f92](https://github.com/koharu-rs/koharu/commit/7b47f92beae55f3b50fa329477bc739053c604c9))
+
+## [0.98.1](https://github.com/koharu-rs/koharu/compare/0.98.0..0.98.1) - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- *(agent)* Run without a limit on model calls, fix corrections at two, and send a call to an unknown tool back to the model - ([8d5b7cb](https://github.com/koharu-rs/koharu/commit/8d5b7cbe07aaead7ec96c5ac00c216be72a57f0c))
+- *(pipeline,llm)* Go past a page whose translation fails, which ended the whole run, and first ask again for one whose answer repeats itself or is blocked - ([3cf6b96](https://github.com/koharu-rs/koharu/commit/3cf6b9646035d8a778bc89f8e4991382fe3ab221))
+
+### ⚙️ Miscellaneous Tasks
+
+- Install LLVM for Windows bindings with the action rust-bindgen's CI uses, since choco passed without installing it while its feed was down - ([58af0aa](https://github.com/koharu-rs/koharu/commit/58af0aaa564f864a2357e4a38069306cbf86180e))
+
+## [0.98.0](https://github.com/koharu-rs/koharu/compare/0.97.0..0.98.0) - 2026-11-25
+
+### ⛰️  Features
+
+- Set bold and italic in any font, faking a face it lacks, from the type bar and its shortcuts and into PSD - ([e924354](https://github.com/koharu-rs/koharu/commit/e92435418bfd1a7187ffe134684c3c585817bb77))
+
+## [0.97.0](https://github.com/koharu-rs/koharu/compare/0.96.2..0.97.0) - 2026-11-25
+
+### ⛰️  Features
+
+- *(ui)* Keep the type bar on one row, running past the canvas when the canvas is narrower - ([64621ea](https://github.com/koharu-rs/koharu/commit/64621ea5eadbf77070f255d840a18ba73863e014))
+- Set ruby over part of a text, and let the agent style and annotate parts of one, in project format 1.1.0 - ([62d0ac2](https://github.com/koharu-rs/koharu/commit/62d0ac2571d16ec2c900c71f407637d0dca362ac))
+
+### 📚 Documentation
+
+- Give the MCP address in the agent setup page, which the Agent panel no longer shows - ([f67226a](https://github.com/koharu-rs/koharu/commit/f67226aab971935ae6fb435aaa93552ca4fed5c7))
+
+## [0.96.2](https://github.com/koharu-rs/koharu/compare/0.96.1..0.96.2) - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- *(desktop)* Release winit's window state before calling Windows' input method, where a message it caused hung the app as its window first took focus ([#1542](https://github.com/koharu-rs/koharu/issues/1542)) - ([e1d7fbd](https://github.com/koharu-rs/koharu/commit/e1d7fbd19e5546417f90b9ece998df669a5ad928))
+
+## [0.96.1](https://github.com/koharu-rs/koharu/compare/0.96.0..0.96.1) - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- *(llm)* Wait for a provider's reply as long as it takes, which rig failed after five minutes of silence, as while a slow server read the agent's prompt - ([78c7151](https://github.com/koharu-rs/koharu/commit/78c71514a28b5fb294d4593729cb4fb2bc0af1f7))
+- *(pipeline)* Stop a translation while it summarizes its conversation - ([b99856a](https://github.com/koharu-rs/koharu/commit/b99856a9242646549079c22f6ef3b9b7522d149a))
+
+### 🧪 Testing
+
+- *(renderer)* Size the long word's boxes by its own width, which a fixed 300 px is under three quarters of in CI's wider font for Arial, so it hyphenated - ([2018db4](https://github.com/koharu-rs/koharu/commit/2018db4165991d6489707c81b80bb875c7123262))
+
+## [0.96.0](https://github.com/koharu-rs/koharu/compare/0.95.4..0.96.0) - 2026-11-25
+
+### ⛰️  Features
+
+- *(pipeline)* Bring a translation smaller than its page's up to it, by its balloon's margin or a wider frame outside one, outline text outside balloons, and hyphenate a long word where that keeps it a good deal larger ([#465](https://github.com/koharu-rs/koharu/issues/465)) - ([6140809](https://github.com/koharu-rs/koharu/commit/6140809dc75680c7858925afee4959384889deb5))
+
+### 🐛 Bug Fixes
+
+- *(agent)* Keep a local model's first request inside its context, with a layer's schema naming each type once, a project outline and get_page without what get_layer has, and Gemma's sliding window kept at its own length, where it was cached as long as the whole context - ([4b55dff](https://github.com/koharu-rs/koharu/commit/4b55dffaf97169bcf314516cbde4c4c201cad2cf))
+- *(desktop)* Let an idle app rest on Linux, where a GLib source CEF's pump leaves behind kept the main thread at a whole CPU core - ([3210ba9](https://github.com/koharu-rs/koharu/commit/3210ba9d564dd4011aca8526682df867c8b0fe0f))
+- *(ml)* Measure outlined lettering by its glyphs, whose outline was taken for the ink over dark art, inverting a translation's colours, and the art's dots for glyphs on a screentone, greying it - ([14b750d](https://github.com/koharu-rs/koharu/commit/14b750d417ee486869666f2bce95da8cac5c2ba5))
+- *(ml)* Give a glyph two masks take in to the lettering whose box is nearer it, as clean-up left the last glyphs of a conjoined balloon's text, which were in neither mask - ([2cac72f](https://github.com/koharu-rs/koharu/commit/2cac72fa033bfe964c92c74da249781a794c518d))
+- *(pipeline)* Letter a page at what its texts' rooms hold, even past its sources' size, which kept small text smaller ([#465](https://github.com/koharu-rs/koharu/issues/465)) - ([50bbb5a](https://github.com/koharu-rs/koharu/commit/50bbb5a277dbc21a77a57197de983e3205de8f72))
+- *(pipeline)* Widen a small sound effect's frame to its source's size, and try every margin and frame in whole words before hyphenating ([#465](https://github.com/koharu-rs/koharu/issues/465)) - ([ec73a05](https://github.com/koharu-rs/koharu/commit/ec73a058969a9ead0ed2f1cb16f842b3042ab3f6))
+
+## [0.95.4](https://github.com/koharu-rs/koharu/compare/0.95.3..0.95.4) - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- *(ml)* Split a balloon moved or resized off whole pixels by its exact hull, where imageproc's cut the coordinates and could panic - ([67c01d6](https://github.com/koharu-rs/koharu/commit/67c01d6d55dddfabb9246d9bd280e033948de8d5))
+- *(pipeline)* Frame a balloon's translation in the few smooth anchors that keep its shape, where its traced outline had one every few pixels - ([fd0544b](https://github.com/koharu-rs/koharu/commit/fd0544bba64ccbfe75a9c93b526d229947033547))
+- *(runtime)* Run llama.cpp and stable-diffusion.cpp in turns on CUDA, and libtorch too on ROCm, where one spoiled the other's graph capture and ggml aborted the app - ([83af5a2](https://github.com/koharu-rs/koharu/commit/83af5a28b87408e79fc37e0e05f33074e8b7231d))
+
+## [0.95.3](https://github.com/koharu-rs/koharu/compare/0.95.2..0.95.3) - 2026-11-25
+
+### 🐛 Bug Fixes
+
+- *(agent)* Send an empty properties object for tools without arguments, which LM Studio refuses a request without - ([432fbb9](https://github.com/koharu-rs/koharu/commit/432fbb981af921c348f68e70d36b37a0b9045965))
+
 ## [0.95.2](https://github.com/koharu-rs/koharu/compare/0.95.1..0.95.2) - 2026-11-25
 
 ### 🐛 Bug Fixes
