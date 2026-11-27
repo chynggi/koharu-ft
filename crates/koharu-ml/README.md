@@ -27,6 +27,7 @@ to the code that makes it.
 | Seamless Manga Inpainting, with MangaLineExtraction | inpainting | libtorch | [Manga Inpainting], [MangaLineExtraction], as [IOPaint] runs them |
 | MI-GAN, 512 Places2 | inpainting | libtorch | [MI-GAN], as [IOPaint] runs it |
 | PowerPaint v1 | inpainting | stable-diffusion.cpp | [PowerPaint], as [IOPaint] runs it |
+| YuzuMarker.FontDetection, a ResNet-50 | the broad style, or kernel, of a crop's font | libtorch | [YuzuMarker] |
 | FLUX.3 Image Klein | generation and editing | stable-diffusion.cpp | [FLUX.3 Klein] |
 | Qwen-Image 2.1 Turbo, with Qwen3-VL 8B | generation and editing | stable-diffusion.cpp | [Qwen-Image] |
 
@@ -57,6 +58,9 @@ page's pixels can run off the device's thread.
   divided among the groups of text in it, one room each, where translations go.
   Each class has its own confidence threshold.
 - **OCR** returns each crop's text.
+- **Font detection** returns each crop's kernels, such as antique, gothic, or
+  rounded, with their probabilities: the network's 6,150 fonts summed by the
+  kernel table published beside its weights.
 - **Inpainting** returns the image redrawn under its mask.
 - **Generation** returns images of a prompt, and edits the images it's given.
 
@@ -71,6 +75,7 @@ Read in November 2026.
 
 - Layout: [RF-DETR], [Koharu Layout]
 - OCR: [manga-ocr-ar], [Manga OCR CPT-flex], [Baberu OCR], [Hayai OCR]
+- Font detection: [YuzuMarker]
 - Inpainting, generation, and editing: [LaMa], [IOPaint], [Manga Inpainting],
   [MangaLineExtraction], [MI-GAN], [PowerPaint], [FLUX.3 Klein], [Qwen-Image]
 
@@ -80,6 +85,7 @@ Read in November 2026.
 [Manga OCR CPT-flex]: https://huggingface.co/muscgab/manga-ocr-base-CPT-flex/tree/9cc15742f8dc37cb5222a6569839bc774dfc0392
 [Baberu OCR]: https://huggingface.co/genshiai-daichi/baberu-ocr
 [Hayai OCR]: https://huggingface.co/JustANormalTinkerer/hayai-ocr-v2.7-supernova
+[YuzuMarker]: https://github.com/JeffersonQin/YuzuMarker.FontDetection/tree/0a94e165fe2b08d2800b723290eabd120b2d3d58
 [LaMa]: https://github.com/advimman/lama/tree/786f5936b27fb3dacd2b1ad799e4de968ea697e7
 [IOPaint]: https://github.com/Sanster/IOPaint/tree/61a759fb3f332bacdce8b2813f4837495c9b86e0
 [Manga Inpainting]: https://github.com/msxie92/MangaInpainting/tree/02b749406e9a88dcea1b98599ce33d6b075a432e

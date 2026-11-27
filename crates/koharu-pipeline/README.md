@@ -52,7 +52,7 @@ more. Only a stage knows its models.
 
 | Stage | Default model | Reads | Writes |
 |---|---|---|---|
-| detect | Koharu Layout HighRes | the scan | panels, balloons with outlines, and blocks in reading order, in place of the ones there; each block's source frame, tilt, direction, and mask |
+| detect | Koharu Layout HighRes, with YuzuMarker.FontDetection | the scan | panels, balloons with outlines, and blocks in reading order, in place of the ones there; each block's source frame, tilt, direction, and mask, and the kind of face its text is lettered in |
 | recognize | Manga OCR AR | the scan inside each block's source frame, with other blocks' glyphs blanked | the source's wording and its language |
 | inpaint | LaMa | the scan, each block's mask, its balloon, and its panel; for an area, the page as drawn without its lettering | the block's clean-up under its mask; for an area, that part of the raster or the clean-up it names, whose mask opens there, or a new raster limited to it by a layer mask |
 | translate | Index-Translate 9B | the page's sources in reading order, and with vision the scan | each block's translation: wording, language, and placement |
@@ -64,20 +64,93 @@ outlined, such as in white around black, and the outline, the tone that lies
 all around what it encloses, isn't its ink: on 28 pages of four works, at most
 half of plain lettering's ink lies so around its counters.
 
+Detection also reads each text's and sound effect's face: how likely each
+kernel of CJK font is,
+such as antique, gothic, rounded, or mincho, the probabilities of
+YuzuMarker.FontDetection's 6,150 fonts summed by the kernel table published
+beside its weights, and its glyph stroke over its size, both in its own
+namespace. On 318 crops of Manga109 the port's kernels came within 0.001 of
+PyTorch's in BF16, median, and the likeliest agreed on 314. It reads each
+lettering in five crops, its box with 0, 3, 7, 12, and 20% more on each side,
+and keeps their mean: YuzuMarker trains on 7%, and its reading moves with the
+margin. On Manga109, moving one crop's 7% to 3% or 12% changed the style
+placed for 8% of balloon texts, 17% of free texts, and 18% of sound effects,
+and the mean of five for 1%, 4%, and 2%.
+
 There's no typesetting stage. Placement puts a translation in its room in its
 balloon, or in its source's frame when it's free or a sound effect, and fits it
-`best`, so resizing a balloon reflows the text.
+`best`, so resizing a balloon reflows the text. A balloon text's room reaches
+half the page's size past the lines splitting the balloon among its texts,
+which aren't drawn, so within a three-quarter margin its letters keep a quarter
+of their size off them: a short text whose share narrowed away from the
+balloon's side fitted only at its wide end. It gives the translation its
+source's kernel, as Japanese editors letter each kind of line in its own kind
+of face [Manga font kinds], whose style Settings or the project sets, and
+nothing else of its font:
+
+- A balloon is a box when four-fifths or more of its outline, simplified to
+  within a fiftieth of its diagonal, runs within 10° of horizontal or
+  vertical. Narration and monologue sit in boxes, one or two run together,
+  often in a face of their own, where speech balloons curve and a shout's
+  spikes run diagonal. In chapter 119 of Tensei Goblin, 22 of the 28 balloon
+  texts read as mincho, its narration, sat in boxes, against 1 of the 36 read
+  as antique and none of the 10 gothic shouts.
+- A source's reading is first multiplied by the square root of the mean of
+  the project's other readings of its kind: texts in speech balloons, texts
+  in boxes, texts outside both, or sound effects. A reading the crop swings
+  then doesn't stand alone.
+- A text or a sound effect takes the likeliest kernel of its likeliest group,
+  the scene's, when that group's kernels sum to 0.6 or more, as detection
+  splits a face among the kernels of its look; else, or with none read,
+  antique.
+- A text in a speech balloon that this places as antique or mincho takes the
+  project's dialogue face of the two instead, as a book keeps one face from
+  balloon to balloon. The font network knows 21 antique fonts against 1,189
+  mincho ones and reads antique's kana as mincho, so one book's dialogue would
+  otherwise change face from line to line: in Dorohedoro's first volume, 117
+  of 150 pages mixed the two in their balloons. The face is mincho when five
+  or more of the dialogue's kanji-heavy texts, those whose Han is 40% or more
+  of their Han and kana, read as the mincho kernels at 0.7 on average.
+  Antique sets its kanji in gothic, so on Manga109 the books in mincho read
+  0.92 and 1.00 and those in antique 0.26 at most; otherwise it's antique. A
+  text placed in any other face, such as a gothic shout or a rounded thought,
+  and a box's or a free text, keeps its own.
+- The mincho group takes 0.995: antique kana with gothic kanji, the commonest
+  dialogue face, often reads as it past 0.9, as the font network knows few
+  antique fonts. On Manga109 that letters 87 of 91 mincho texts as mincho and
+  27 of 48 antique ones, where 0.9 lettered all of both. Kana alone can't tell
+  mincho, fangsong, kaisho, or textbook from antique, so a source with no Han
+  character counts them as antique.
+- A source whose stroke is 1.3 times the median of the dialogue's or more is
+  set at weight 700, as a shout's heavy face is. The dialogue is the texts in
+  speech balloons read as antique or mincho, or every text outside them when
+  none is in one:
+  the project's, not a page's, as a page of mostly monologue would weigh
+  rounded gothic as its dialogue.
 
 - **Size.** A letterer keeps one size for a page's dialogue [Manga balloon
   basics]. A page's is the median of the largest its texts' rooms hold in whole
-  words, measured with the renderer, whatever its sources' own. A text that
+  words, measured with the renderer, whatever its sources' own: its texts in
+  balloons, or every text when none is in one, as a running head's or a title's
+  widened frame holds far more than a balloon: two had set a page's one
+  balloon text past it at nearly three times its source's size. A text that
   would draw smaller is brought up to it as far as its room allows, and one that
   fits larger stays so: small text can't be read, and a large line in a large
-  balloon is a shout. A run on some blocks measures the page's other
-  translations too.
+  balloon is a shout. One whose lines would span under half its room across
+  them at that size grows toward its source's size, as large as the balloon
+  holds up to it within an eighth of an em of its border, and when its lines
+  still span under half the balloon, past the border until they span half or
+  reach the source's size: a word as wide as a narrow balloon left it mostly
+  empty, where the original shouted, and its source's size whole overfilled
+  tall balloons whose lines it multiplied. Of a chapter's 92 balloon
+  texts, those that looked empty spanned at most 0.38 of their rooms, the rest
+  0.59 or more. A run on some blocks measures the page's other translations
+  too.
 - **Margin.** A balloon's text has a letter's width of air [Comicraft glossary].
-  One under the page's size has as much of it as holds that size, down to half:
-  half holds it 15 to 17% larger, where a line height of 1 rather than 1.2 gives
+  One under the page's size has as much of it as holds that size, down to three
+  quarters, and one its balloon holds at only about the page's size narrows it
+  the same way until it draws 15% larger: half held text 15 to 17% larger but
+  set letters against the border, where a line height of 1 rather than 1.2 gives
   2%.
 - **Free text.** A vertical source's column holds a word or two of a horizontal
   translation, so its frame widens until it holds the page's size, or a sound
@@ -86,15 +159,38 @@ balloon, or in its source's frame when it's free or a sound effect, and fits it
   in its panel and off the page's other texts and balloons. Without that limit a
   text covered a face beside it. A margin narrows and a frame widens as far as
   they may before a word is hyphenated to reach the size.
+- **Overflow.** A balloon's text its room still holds under nine tenths of the
+  page's size, as a word wider than a narrow balloon leaves it, keeps the size
+  and runs past the balloon, above and below it rather than past its sides,
+  centred, hyphenated as far as that keeps it nearer, and outlined as text on
+  art is: smaller text stands out among its page's more than text past a
+  balloon's edge. It stays on the page and out of other balloons. A free text
+  doesn't run past its frame, as one still small in its widest, such as a
+  chapter's subtitle under its title, is a smaller text.
+- **Clear of each other.** Last, a free text, a sound effect, or a balloon's
+  text running past it or lifted to its source's size shrinks as far as keeps
+  its lines, grown by an eighth of its size, off the other texts' lines and
+  sources, whose clean-up, drawn over an earlier layer, hid an overflowing
+  letter. Sound effects move first and then free texts, each the largest
+  first, so a balloon's text keeps its size. A free text or sound effect
+  shrinks to half at most, as a quarter drew some at 2 to 4 pixels; a sound
+  effect no size clears takes the size covering least dialogue; a balloon's
+  text shrinks back to what its room holds or the page's size at most. Sound
+  effects filling widened frames had covered balloons' texts and each other. A
+  remark written across the edge of a balloon holding other texts is a free
+  text, as its share of the balloon would be its narrow source box.
 - **Lines** are centred, or in Japanese and Chinese started together at the top
   or the left, as JLREQ aligns a line to its head [JLREQ].
 - **Fill and stroke** are its source's, the stroke's width in proportion to its
-  size. One that lies on art and whose source has no outline gets a stroke,
-  black around a light fill and white around any other, which keeps it legible:
-  a sound effect a sixteenth of its size, and a text outside a balloon an
-  eighth. On paper of the stroke's colour it can't be seen, and looking for low
-  contrast under the text missed one over foliage and those crossing a panel's
-  border.
+  size, at most an eighth of it, as a sound effect's measured outline scaled to
+  a size read small from its source had come to a third. One whose source has no
+  outline gets a stroke, black around a light fill and white around any other,
+  which keeps it legible on art, tone, or a balloon's border: a sound effect a
+  sixteenth of its size, and a text an eighth, in a balloon too, where lifted
+  and overflowing texts had lost their letters on tone. On paper of the stroke's
+  colour it can't be seen, and looking for low contrast under the text missed
+  one over foliage and those crossing a panel's border; placement doesn't read
+  the page's pixels.
 - **Direction.** It's vertical only when its source is and the target is
   Japanese or Chinese; any other language runs horizontally, turned by its
   source's tilt.
@@ -235,7 +331,7 @@ Read in November 2026.
   [Photoshop combine variations]
 - Editing models: [FLUX.3 Klein], [Qwen-Image 2.1]
 - [ComfyUI routes], [Ollama keep_alive], [OpenCV inpaint], [CLDR], [Index-Translate], [JLREQ], [Whisper]
-- Lettering: [Manga balloon basics], [Comicraft glossary]
+- Lettering: [Manga balloon basics], [Comicraft glossary], [Manga font kinds]
 
 [Photoshop Content-Aware Fill]: https://helpx.adobe.com/photoshop/desktop/repair-retouch/remove-objects-fill-space/adjust-content-aware-fill-settings.html
 [Photoshop Generative Fill]: https://helpx.adobe.com/photoshop/desktop/create-open-import-images/create-images/edit-images-with-generative-fill.html
@@ -248,6 +344,7 @@ Read in November 2026.
 [CLDR]: https://cldr.unicode.org/
 [Index-Translate]: https://huggingface.co/IndexTeam/Index-Translate-9B
 [Manga balloon basics]: https://www.linkedin.com/pulse/manga-lettering-balloon-basics-phil-christie
+[Manga font kinds]: https://manga.jp.net/knowhow/150924font/
 [Comicraft glossary]: https://balloontales.com/?p=418
 [JLREQ]: https://www.w3.org/TR/jlreq/
 [Whisper]: https://github.com/openai/whisper/blob/86098128c0b4f24f0e2aa2994de830614b474227/whisper/transcribe.py#L184-L224

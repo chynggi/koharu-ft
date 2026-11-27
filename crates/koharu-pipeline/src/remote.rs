@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use futures::StreamExt as _;
-use koharu_scene::{Applied, PageId, Session};
+use koharu_scene::{Applied, Meta, PageId, Session};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -29,10 +29,11 @@ pub struct RemoteConfig {
     pub url: String,
 }
 
-/// What a run sends: its pages as snapshots, in project order, and the
-/// request, its settings included.
+/// What a run sends: its project's metadata, its pages as snapshots in
+/// project order, and the request, its settings included.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteRun {
+    pub meta: Meta,
     pub pages: Vec<Applied>,
     pub request: Request,
 }
@@ -115,7 +116,15 @@ async fn exchange(
                 .enumerate()
                 .map(|(index, page)| session.snapshot(*page, index))
                 .collect::<koharu_scene::Result<Vec<_>>>()?;
-            Ok((token, encode(&RemoteRun { pages, request })?))
+            let meta = session.project().meta().clone();
+            Ok((
+                token,
+                encode(&RemoteRun {
+                    meta,
+                    pages,
+                    request,
+                })?,
+            ))
         })
         .await??
     };

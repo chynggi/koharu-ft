@@ -130,7 +130,7 @@ fn tiles_cover_what_was_painted() {
 #[test]
 fn a_page_made_from_a_file_takes_its_size() {
     let (_dir, path) = path();
-    let mut session = Session::create(&path).expect("a project");
+    let mut session = Session::create(&path, koharu_scene::Meta::default()).expect("a project");
     let file = add_file(&mut session, png(40, 30));
     let page: PageId = apply(
         &mut session,
@@ -174,7 +174,12 @@ fn a_page_made_from_a_file_takes_its_size() {
     );
     let before = session.project();
     drop(session);
-    assert_eq!(Session::open(&path).expect("it opens").project(), before);
+    assert_eq!(
+        Session::open(&path, koharu_scene::Meta::default())
+            .expect("it opens")
+            .project(),
+        before
+    );
 }
 
 #[test]
@@ -280,7 +285,7 @@ fn removing_a_block_takes_its_cleanup_and_removing_its_translation_keeps_it() {
 #[test]
 fn undoing_a_removal_restores_its_pixels() {
     let (_dir, path) = path();
-    let mut session = Session::create(&path).expect("a project");
+    let mut session = Session::create(&path, koharu_scene::Meta::default()).expect("a project");
     let page: PageId = apply(
         &mut session,
         vec![json!({"op": "add_page", "index": 0, "size": {"width": 200, "height": 200}})],
@@ -320,7 +325,7 @@ fn undoing_a_removal_restores_its_pixels() {
     };
     assert_eq!(read(&session), painted);
     drop(session);
-    let session = Session::open(&path).expect("it opens");
+    let session = Session::open(&path, koharu_scene::Meta::default()).expect("it opens");
     assert_eq!(read(&session), painted);
 }
 

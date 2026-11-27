@@ -183,6 +183,15 @@ pub enum Op {
     AddFile { bytes: Vec<u8> },
     /// Adjust the colours of a raster's or a block's `cleanup` pixels.
     AdjustColors { layer: Ref, adjust: ColorAdjust },
+    /// Change what the project holds beyond its pages with a JSON Merge
+    /// Patch (RFC 7396), as `update_layer` changes a layer, such as
+    /// `{"styles": {"rounded": {"Latn": {"italic": true}}}}` for the face a
+    /// kernel's style has in a script, an ISO 15924 code, which every text of
+    /// that style takes; `null` in its place clears it.
+    UpdateMeta {
+        #[schemars(with = "Map<String, Value>")]
+        patch: Value,
+    },
 }
 
 /// An edit as it was applied, with the ids it made, in the order it made
@@ -483,6 +492,13 @@ impl Run<'_, '_> {
             } => self.write_pixels(index, layer, *rect, pixels),
             Op::AddFile { bytes } => self.add_file(bytes),
             Op::AdjustColors { layer, adjust } => self.adjust_colors(index, layer, *adjust),
+            Op::UpdateMeta { patch } => {
+                let mut meta = serde_json::to_value(&self.project.meta).expect("meta serializes");
+                json_patch::merge(&mut meta, patch);
+                self.project.meta = serde_json::from_value(meta)
+                    .map_err(|error| Error::invalid(index, error.to_string()))?;
+                Ok(())
+            }
         }
     }
 }

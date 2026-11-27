@@ -14,6 +14,7 @@ pub mod manga_ocr_cpt;
 pub mod mi_gan;
 pub mod powerpaint;
 pub mod qwen_image;
+pub mod yuzumarker_font_detection;
 
 pub use koharu_diffusion::Canceller;
 pub use koharu_runtime::Device;

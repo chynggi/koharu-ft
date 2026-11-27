@@ -16,11 +16,17 @@ fn pages(session: &Session) -> Vec<Page> {
 fn a_replayed_edit_makes_the_same_ids_and_pixels() {
     let (_here, mut here) = {
         let (dir, path) = path();
-        (dir, Session::create(path).expect("a project"))
+        (
+            dir,
+            Session::create(path, koharu_scene::Meta::default()).expect("a project"),
+        )
     };
     let (_there, mut there) = {
         let (dir, path) = path();
-        (dir, Session::create(path).expect("a project"))
+        (
+            dir,
+            Session::create(path, koharu_scene::Meta::default()).expect("a project"),
+        )
     };
     there.record();
     // Every way an edit makes an id: a page and layers with none given, a
@@ -81,7 +87,10 @@ fn a_replayed_edit_makes_the_same_ids_and_pixels() {
 fn a_replay_uses_exactly_the_ids_it_was_given() {
     let (_dir, mut session) = {
         let (dir, path) = path();
-        (dir, Session::create(path).expect("a project"))
+        (
+            dir,
+            Session::create(path, koharu_scene::Meta::default()).expect("a project"),
+        )
     };
     session.record();
     apply(
@@ -122,7 +131,10 @@ fn a_replay_uses_exactly_the_ids_it_was_given() {
 fn a_page_snapshot_replays_as_the_same_page() {
     let (_there, mut there) = {
         let (dir, path) = path();
-        (dir, Session::create(path).expect("a project"))
+        (
+            dir,
+            Session::create(path, koharu_scene::Meta::default()).expect("a project"),
+        )
     };
     let mut png = Vec::new();
     image::RgbaImage::from_pixel(64, 64, image::Rgba([1, 2, 3, 255]))
@@ -156,7 +168,10 @@ fn a_page_snapshot_replays_as_the_same_page() {
 
     let (_here, mut here) = {
         let (dir, path) = path();
-        (dir, Session::create(path).expect("a project"))
+        (
+            dir,
+            Session::create(path, koharu_scene::Meta::default()).expect("a project"),
+        )
     };
     here.replay(snapshot).expect("the replay");
     assert_eq!(pages(&here), pages(&there));

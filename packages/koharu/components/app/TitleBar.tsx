@@ -14,9 +14,16 @@ import { AdjustDialog, type Adjustment } from '@/components/app/AdjustDialog'
 import { ExportDialog } from '@/components/app/ExportDialog'
 import { checkForUpdates } from '@/components/app/Updater'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
-import { send, useImportPages, usePage, useProject } from '@/lib/queries'
-import { adjustable, adjustColors, deleteSelection } from '@/lib/scene'
-import { shortcutLabel, shortcuts } from '@/lib/shortcuts'
+import {
+  send,
+  useImportPages,
+  usePage,
+  usePreferences,
+  useProject,
+  useSavePreferences,
+} from '@/lib/queries'
+import { adjustable, adjustColors, applyDefaultStyles, deleteSelection } from '@/lib/scene'
+import { shortcutLabel, shortcuts, useKeyboard } from '@/lib/shortcuts'
 import { useKoharuStore } from '@/lib/store'
 import {
   commands,
@@ -47,6 +54,8 @@ export function TitleBar() {
   const [adjusting, setAdjusting] = useState<Adjustment | null>(null)
   const macOS = useMacOS()
   const project = useProject().data
+  const preferences = usePreferences().data
+  const savePreferences = useSavePreferences()
   const pageQuery = usePage(Boolean(project))
   const pages = project?.pages ?? []
   const page = project ? (pageQuery.data ?? null) : null
@@ -173,6 +182,30 @@ export function TitleBar() {
                 {t('menu.export')}…
               </MenubarItem>
               <MenubarSeparator />
+              {/* Google Docs' Use my default styles and Save as my default styles: a project keeps
+                its own styles, which Preferences' only start. */}
+              <MenubarItem
+                disabled={!project || !preferences}
+                onClick={() =>
+                  preferences && send(applyDefaultStyles, preferences.renderer.styles ?? {})
+                }
+              >
+                {t('menu.useDefaultStyles')}
+              </MenubarItem>
+              <MenubarItem
+                disabled={!project || !preferences}
+                onClick={() =>
+                  project &&
+                  preferences &&
+                  savePreferences.mutate({
+                    ...preferences,
+                    renderer: { ...preferences.renderer, styles: project.meta.styles ?? {} },
+                  })
+                }
+              >
+                {t('menu.saveDefaultStyles')}
+              </MenubarItem>
+              <MenubarSeparator />
               <MenubarItem disabled={!project} onClick={() => send(commands.close)}>
                 {t('menu.closeProject')}
               </MenubarItem>
@@ -259,7 +292,7 @@ export function TitleBar() {
                 closeOnClick
               >
                 {t('menu.original')}
-                <MenubarShortcut>{shortcutLabel(shortcuts.original)}</MenubarShortcut>
+                <KeyShortcut code={shortcuts.original} />
               </MenubarCheckboxItem>
               <MenubarCheckboxItem
                 disabled={!page}
@@ -361,6 +394,12 @@ export function TitleBar() {
       />
     </>
   )
+}
+
+/** A shortcut on a punctuation key, named by what the user's layout types on the key standing for
+ * it; the menu mounts it as it opens, which reads the layout again. */
+function KeyShortcut({ code }: { code: string }) {
+  return <MenubarShortcut>{useKeyboard().label(code)}</MenubarShortcut>
 }
 
 function MenubarTrigger({ className, ...props }: ComponentProps<typeof UiMenubarTrigger>) {

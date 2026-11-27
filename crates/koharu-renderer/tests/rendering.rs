@@ -4,15 +4,13 @@
 
 use std::io::Cursor;
 
-use koharu_renderer::{Frame, Gpu, Raster, Renderer, RendererConfig, ResolvedText};
+use koharu_renderer::{Frame, Gpu, Raster, Renderer, ResolvedText};
 use koharu_scene::{Change, Created, Edit, Hash, LayerId, Op, PageId, Session};
 use serde_json::{Value, json};
 
 /// A renderer that sets text in installed fonts, so no test downloads one.
 fn renderer() -> Renderer {
-    Renderer::new(RendererConfig {
-        font_families: Vec::new(),
-    })
+    Renderer::new()
 }
 
 fn apply(session: &mut Session, ops: Vec<Value>) -> Change {
@@ -44,7 +42,8 @@ fn page(
     layers: Vec<Value>,
 ) -> (tempfile::TempDir, Session, PageId, Change) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+    let mut session = Session::create(dir.path().join("test.khr"), koharu_scene::Meta::default())
+        .expect("a project");
     let mut ops = vec![
         json!({"op": "add_page", "id": "$page", "index": 0, "size": {"width": width, "height": height}}),
     ];
@@ -65,7 +64,8 @@ fn png(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
 /// A project with one page made from a `color` scan, holding `layers`.
 fn scanned(color: [u8; 4], layers: Vec<Value>) -> (tempfile::TempDir, Session, PageId, Change) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+    let mut session = Session::create(dir.path().join("test.khr"), koharu_scene::Meta::default())
+        .expect("a project");
     let scan = png(64, 64, color);
     let file = Hash::of(&scan);
     let mut ops = vec![
@@ -130,11 +130,11 @@ fn a_long_word_shrinks_before_it_hyphenates_and_never_breaks_between_letters() {
     // With room, the word sets at its size.
     assert_eq!(word_in_box(2.0, "en").scale, 1.0);
 
-    // A box a little narrower than the word: it shrinks and stays whole,
-    // whether its language hyphenates or not.
+    // A box a little narrower than the word: it shrinks, by less than a
+    // tenth, and stays whole, whether its language hyphenates or not.
     for language in ["en", "und"] {
-        let shrunk = word_in_box(0.9, language);
-        assert!(shrunk.scale < 1.0 && shrunk.scale >= 0.5, "{shrunk:?}");
+        let shrunk = word_in_box(0.95, language);
+        assert!(shrunk.scale < 1.0 && shrunk.scale >= 0.9, "{shrunk:?}");
         assert!(shrunk.hyphens.is_empty() && !shrunk.overflowed);
     }
 
@@ -217,7 +217,7 @@ fn a_balloon_merely_full_shrinks_without_hyphens() {
                 "kind": "text",
                 "content": "I can't believe it's already over.",
                 "language": "en",
-                "style": {"chars": {"family": "Arial", "size": 34.0}, "align": "center"},
+                "style": {"chars": {"family": "Arial", "size": 38.0}, "align": "center"},
                 "frame": {"path": {"path": "M380 200 A180 115 0 1 0 740 200 A180 115 0 1 0 380 200 Z", "anchor": "center"}},
             },
         })],
@@ -618,4 +618,63 @@ fn a_panel_draws_its_children_past_its_outline() {
         (pixels.get_pixel(16, 32)[3], pixels.get_pixel(48, 32)[3]),
         (255, 255)
     );
+}
+
+#[test]
+fn a_kernel_style_sets_what_a_text_leaves_out_and_redefining_it_changes_its_texts() {
+    let renderer = renderer();
+    let added = |style: Value| {
+        json!({"op": "add_layer", "id": "$text", "page": "$page", "index": 0, "layer": {
+            "kind": "text", "content": "Hello", "language": "en", "style": style,
+        }})
+    };
+    // An installed sans-serif, as the unit tests take one: the one a text set
+    // in it draws with, by its PostScript name.
+    let family = [
+        "Arial",
+        "Segoe UI",
+        "Noto Sans",
+        "DejaVu Sans",
+        "Liberation Sans",
+    ]
+    .into_iter()
+    .find(|family| {
+        let style = json!({"chars": {"family": family, "size": 30.0}});
+        let (_dir, session, page, change) = page(400, 200, vec![added(style)]);
+        let frame = renderer.render(&session, page).expect("a frame");
+        let drawn = &text(&frame, &change, "text").runs[0].post_script_name;
+        drawn.starts_with(&family.replace(' ', ""))
+    })
+    .expect("an installed sans-serif");
+    // The project's antique family is it in Latin, and its rounded only leans.
+    let styles = json!({"op": "update_meta", "patch": {"styles": {
+        "antique": {"Latn": {"family": family}},
+        "rounded": {"Latn": {"italic": true}},
+    }}});
+    let face = |style: Value, redefined: Option<Value>| {
+        let (_dir, mut session, page, change) = page(400, 200, vec![styles.clone(), added(style)]);
+        if let Some(face) = redefined {
+            let patch = json!({"styles": {"rounded": {"Latn": face}}});
+            apply(
+                &mut session,
+                vec![json!({"op": "update_meta", "patch": patch})],
+            );
+        }
+        let frame = renderer.render(&session, page).expect("a frame");
+        let run = text(&frame, &change, "text").runs[0].clone();
+        // DejaVu names its slanted faces Oblique.
+        let name = &run.post_script_name;
+        let italic = name.contains("Italic") || name.contains("Oblique") || run.faux_italic;
+        let bold = name.contains("Bold") || run.faux_bold;
+        (name.starts_with(&family.replace(' ', "")), italic, bold)
+    };
+    let rounded = json!({"kernel": "rounded", "chars": {"size": 30.0}});
+    // The kernel's italic, in antique's family.
+    assert_eq!(face(rounded.clone(), None), (true, true, false));
+    // The text's own value wins.
+    let upright = json!({"kernel": "rounded", "chars": {"size": 30.0, "italic": false}});
+    assert!(!face(upright, None).1);
+    // Redefining the style changes its text: bold, and no longer italic.
+    let redefined = json!({"weight": 700, "italic": false});
+    assert_eq!(face(rounded, Some(redefined)), (true, false, true));
 }

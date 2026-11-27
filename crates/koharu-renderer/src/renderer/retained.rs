@@ -7,7 +7,7 @@ use std::{io::Cursor, sync::Arc};
 use anyhow::{Context as _, Result, anyhow};
 use image::{ImageReader, RgbaImage};
 use koharu_scene::{
-    FillRule, Gradient, GradientKind, Hash, LayerId, Offset, PaintExtend, Session, Shape,
+    FillRule, Gradient, GradientKind, Hash, LayerId, Offset, PaintExtend, Project, Session, Shape,
     ShapeFill, Text,
 };
 use kurbo::{Affine, BezPath, Cap, Join, Point, Rect, Shape as _, Stroke};
@@ -161,9 +161,16 @@ impl Renderer {
         Ok(retained)
     }
 
-    /// Text layer `id`'s text laid out with the renderer's families, retained;
-    /// `None` when it has no characters.
-    pub(super) fn text(&self, id: LayerId, layer: &Text) -> Result<Option<Content>> {
+    /// Text layer `id`'s text laid out in its kernel's face, as `project`
+    /// sets it, retained; `None` when it has no
+    /// characters.
+    pub(super) fn text(
+        &self,
+        project: &Project,
+        id: LayerId,
+        layer: &Text,
+    ) -> Result<Option<Content>> {
+        let (layer, families) = super::lettered(project, layer);
         // The transform places the layout when it's drawn, so moving a text
         // keeps its layout. Naming every field fails to build when one is
         // added, until the key says whether it counts.
@@ -174,11 +181,10 @@ impl Renderer {
             direction,
             language,
             transform: _,
-        } = layer;
-        let families = self.0.config.read().font_families.clone();
+        } = &*layer;
         let key = canonical(&(content, style, frame, direction, language, &families))?;
         self.retain(key, || {
-            let layout = laid(id, layer, &families)?;
+            let layout = laid(id, &layer, &families)?;
             Ok(layout.map(|layout| Content::Text(Arc::new(layout))))
         })
     }

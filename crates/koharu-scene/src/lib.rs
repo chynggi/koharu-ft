@@ -21,13 +21,15 @@ pub use change::{Change, Created, History, PageChanges};
 pub use color::{Color, Rgba};
 pub use edit::{Applied, ColorAdjust, Edit, Op};
 pub use error::{Error, Result};
-pub use icu_locale_core::LanguageIdentifier;
+pub use icu_locale_core::{LanguageIdentifier, subtags::Script};
 pub use ids::{Hash, LayerId, PageId, ProjectId, Ref, Revision, Uuid};
 pub use kinds::*;
 pub use layer::{Attributes, Layer, NewLayer, PixelFormat};
-pub use project::{Background, Page, Project, locked_inside};
+pub use project::{Background, Meta, Page, Project, locked_inside};
 pub use query::{Answer, PageSummary, ProjectAnswer, Query, TextMatch};
 pub use session::{EXTENSION, Session};
-pub use text::{CharStyle, RichText, Span, StrokeJoin, StrokePosition, Text, TextStyle};
+pub use text::{
+    CharStyle, Face, Kernel, RichText, Span, StrokeJoin, StrokePosition, Text, TextStyle,
+};
 pub use tiles::{Tile, Tiles};
 pub use values::*;

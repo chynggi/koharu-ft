@@ -131,9 +131,13 @@ async fn run(State(server): State<Arc<Server>>, headers: HeaderMap, body: Bytes)
 /// A run's pages in a new project in its own folder, recording from then on,
 /// and its request to run there.
 fn prepare(body: &[u8]) -> anyhow::Result<(tempfile::TempDir, Session, koharu_pipeline::Request)> {
-    let RemoteRun { pages, mut request } = remote::decode(body)?;
+    let RemoteRun {
+        meta,
+        pages,
+        mut request,
+    } = remote::decode(body)?;
     let folder = tempfile::tempdir()?;
-    let mut session = Session::create(folder.path().join("run.khr"))?;
+    let mut session = Session::create(folder.path().join("run.khr"), meta)?;
     for page in pages {
         session.replay(page)?;
     }

@@ -20,6 +20,7 @@ use super::{
     room::physical,
     ruby::{self, ShapedRuby},
     shape::{Glyph, ShapedText, shape_run},
+    style::Styled,
 };
 use crate::fonts::Font;
 
@@ -94,6 +95,7 @@ pub(super) fn arrange(
     let mut bounds: Option<Rect> = None;
     let mut baseline = None;
     let mut lines = Vec::new();
+    let mut line_boxes = Vec::new();
     let (mut ruby_runs, mut ruby_text_runs) = (Vec::new(), Vec::new());
     for line in &placed.lines {
         let Some(last) = line.segments.end.checked_sub(1).map(|at| &segments[at]) else {
@@ -118,7 +120,14 @@ pub(super) fn arrange(
             (&mut glyphs, &mut clusters),
         );
         baseline = baseline.or(first);
-        let mut boxes = vec![line_box(styled.vertical, line, used)];
+        line_boxes.push(physical(
+            styled.vertical,
+            f64::from(start),
+            f64::from(line.top),
+            f64::from(start + used),
+            f64::from(line.top + line.pitch),
+        ));
+        let mut boxes = vec![line_box(styled, line, used)];
         for (ruby, line) in over(shaped, line, &text, &clusters, scale) {
             let (glyphs, used) = set(ruby, &mut buffer, &line, scale)?;
             let (runs, text_runs) = runs(&ruby.text, &glyphs, scale);
@@ -128,7 +137,7 @@ pub(super) fn arrange(
                     ..utf16(&styled.text, ruby.ruby.base.end),
                 ..run
             }));
-            boxes.push(line_box(styled.vertical, &line, used));
+            boxes.push(line_box(styled, &line, used));
         }
         bounds = boxes
             .into_iter()
@@ -175,6 +184,10 @@ pub(super) fn arrange(
             ruby: ruby_text_runs,
             frame: placed.frame,
             scale,
+            lines: line_boxes
+                .into_iter()
+                .map(|line| line.inflate(f64::from(grown), f64::from(grown)))
+                .collect(),
             hyphens: hyphens.iter().map(utf16).collect(),
             overflowed: placed.overflowed,
             baseline: baseline.unwrap_or_default(),
@@ -189,13 +202,19 @@ pub(super) fn arrange(
     })
 }
 
-/// The box of a `used` long line, in the text's own coordinates.
-fn line_box(vertical: bool, line: &PlacedLine, used: f32) -> Rect {
+/// The box of a `used` long line, in the text's own coordinates: its room,
+/// and what runs past it, on both sides when it's centred.
+fn line_box(styled: &Styled, line: &PlacedLine, used: f32) -> Rect {
+    let over = (used - line.room).max(0.0);
+    let start = match styled.align {
+        Align::Center => line.start - over * 0.5,
+        _ => line.start,
+    };
     physical(
-        vertical,
-        f64::from(line.start),
+        styled.vertical,
+        f64::from(start),
         f64::from(line.top),
-        f64::from(line.start + line.room.max(used)),
+        f64::from(start + line.room + over),
         f64::from(line.top + line.pitch),
     )
 }
@@ -494,10 +513,13 @@ fn spacing(
     visible: Range<usize>,
 ) -> (f32, Option<(bool, f32)>) {
     let align = shaped.styled.align;
-    let free = (line.room - used).max(0.0);
+    // A centred line longer than its room runs past it on both sides alike,
+    // as the fitter centres a text that overflows; any other past its end.
+    let over = line.room - used;
+    let free = over.max(0.0);
     let justify = align == Align::Justify && !line.last;
     let offset = match (align, shaped.rtl_at(visible.start)) {
-        (Align::Center, _) => free * 0.5,
+        (Align::Center, _) => over * 0.5,
         (Align::Start | Align::Justify, false) | (Align::End, true) => 0.0,
         (Align::End, false) | (Align::Start | Align::Justify, true) => {
             if justify {
@@ -574,7 +596,9 @@ fn runs(shaped: &ShapedText, glyphs: &[Positioned], scale: f32) -> (Vec<GlyphRun
 /// line, as JLREQ's hyphens (cl-03), dividing punctuation (cl-04), middle
 /// dots (cl-05), and inseparable characters (cl-08) do, and as CLREQ sets
 /// Chinese's interpunct, midline ellipsis, and connector; in `chinese`, its
-/// stops too.
+/// stops too; and a run of full stops, an ellipsis typed as periods, which
+/// translations and OCR give and a sideways run had set on its baseline, left
+/// of the centre line.
 ///
 /// Deliberately left out: cl-08's vertical kana repeat marks, whose halves
 /// join only as their font draws them; ASCII `:`, `;`, and `~`, which JLREQ
@@ -583,7 +607,10 @@ fn runs(shaped: &ShapedText, glyphs: &[Positioned], scale: f32) -> (Vec<GlyphRun
 /// fonts' vertical forms in the column's top right corner. ASCII `!` and `?`
 /// count as cl-04, since vertical text sets them upright and full width.
 fn centred(text: &str, offset: usize, chinese: bool) -> bool {
+    let periods = text[offset..].starts_with('.')
+        && (text[offset + 1..].starts_with('.') || text[..offset].ends_with('.'));
     (chinese && stop(text, offset))
+        || periods
         || text[offset..].chars().next().is_some_and(|ch| {
             matches!(
                 ch,
@@ -804,11 +831,11 @@ mod tests {
         Ok(())
     }
 
-    /// Where each glyph of `content` in `language`, set vertically in the
-    /// renderer's default fonts, inks on the page, from the top; and the
+    /// Where each glyph of `content` in `language`, set vertically in CC
+    /// Wild Words and Adobe 黑体 Std, inks on the page, from the top; and the
     /// layout.
     fn inks(content: &str, language: &str) -> Result<(Vec<Rect>, TextLayout)> {
-        let families = crate::RendererConfig::default().font_families;
+        let families = ["CCWildWords", "Adobe 黑体 Std"].map(String::from);
         let text = koharu_scene::Text {
             content: content.into(),
             direction: koharu_scene::Direction::Vertical,

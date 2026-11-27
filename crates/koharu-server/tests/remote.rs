@@ -27,7 +27,8 @@ async fn serve(token: Option<&str>) -> String {
 /// A project of one blank page, with no scan, so detection loads no model.
 fn project() -> (tempfile::TempDir, Arc<Mutex<Session>>) {
     let dir = tempfile::tempdir().expect("a folder");
-    let mut session = Session::create(dir.path().join("test.khr")).expect("a project");
+    let mut session = Session::create(dir.path().join("test.khr"), koharu_scene::Meta::default())
+        .expect("a project");
     session
         .apply(Edit {
             label: "test".to_owned(),
