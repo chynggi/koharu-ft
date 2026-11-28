@@ -79,9 +79,11 @@
   },
   "export": {
     "cancel": "取消",
-    "cbzHint": "拿所有 PNG 页面打包成一个压缩包，文件名用项目名称。",
+    "cbzHint": "拿所有页面按选定个图片格式打包成一个压缩包，文件名用项目名称。",
     "description": "拿页面渲染成图像文件。",
     "formats": "格式",
+    "imageFormat": "图片格式",
+    "images": "图片",
     "pattern": "文件名模式",
     "patternError": {
       "separator": "模式里向勿好包含路径分隔符或者 '..'。",
@@ -89,6 +91,7 @@
       "unclosed": "模式里向有勿配对个花括号。",
       "width": "位数一定要是数字。"
     },
+    "quality": "质量",
     "scope": "页面",
     "scopeAll": "全部页面（{{count}}）",
     "scopeSelected": "所选页面（{{count}}）",
@@ -264,6 +267,20 @@
     "chooseBorderWidth": "选描边宽度",
     "chooseFontSize": "选字体大小",
     "decreaseSecondBorderWidth": "拿第二道描边调细点",
+    "emphasis": "着重号",
+    "emphasisMarks": {
+      "circle": "实心圆",
+      "dot": "实心点",
+      "double_circle": "实心双圆",
+      "none": "呒没",
+      "open_circle": "空心圆",
+      "open_dot": "空心点",
+      "open_double_circle": "空心双圆",
+      "open_sesame": "空心芝麻点",
+      "open_triangle": "空心三角",
+      "sesame": "实心芝麻点",
+      "triangle": "实心三角"
+    },
     "font": "字体",
     "fontSize": "字体大小",
     "fontStyles": {
@@ -288,6 +305,12 @@
     "secondBorder": "第二道描边",
     "secondBorderColor": "第二道描边颜色",
     "secondBorderWidth": "第二道描边宽度",
+    "orientation": "字符朝向",
+    "orientations": {
+      "sideways": "旋转",
+      "tate_chu_yoko": "直排内横排",
+      "upright": "直立"
+    },
     "removeRuby": "删脱注音",
     "ruby": "注音",
     "selectPage": "先选一页，再看箇页个图层。",

@@ -79,9 +79,11 @@
   },
   "export": {
     "cancel": "İptal",
-    "cbzHint": "PNG sayfalarını tek bir arşivde toplar; dosya adı proje adıdır.",
+    "cbzHint": "Sayfaları seçilen görsel biçiminde tek bir arşivde toplar; dosya adı proje adıdır.",
     "description": "Sayfaları görüntü dosyaları olarak işler.",
     "formats": "Biçimler",
+    "imageFormat": "Görüntü biçimi",
+    "images": "Görseller",
     "pattern": "Dosya adı deseni",
     "patternError": {
       "separator": "Desen yol ayırıcısı veya '..' içeremez.",
@@ -89,6 +91,7 @@
       "unclosed": "Desende eşleşmeyen süslü parantez.",
       "width": "Basamak sayısı bir sayı olmalı."
     },
+    "quality": "Kalite",
     "scope": "Sayfalar",
     "scopeAll": "Tüm sayfalar ({{count}})",
     "scopeSelected": "Seçili ({{count}})",
@@ -264,6 +267,20 @@
     "chooseBorderWidth": "Kenarlık genişliğini seç",
     "chooseFontSize": "Yazı tipi boyutunu seç",
     "decreaseSecondBorderWidth": "İkinci kenarlık genişliğini azalt",
+    "emphasis": "Vurgu işaretleri",
+    "emphasisMarks": {
+      "circle": "Daire",
+      "dot": "Nokta",
+      "double_circle": "Çift daire",
+      "none": "Yok",
+      "open_circle": "Boş daire",
+      "open_dot": "Boş nokta",
+      "open_double_circle": "Boş çift daire",
+      "open_sesame": "Boş susam",
+      "open_triangle": "Boş üçgen",
+      "sesame": "Susam",
+      "triangle": "Üçgen"
+    },
     "font": "Yazı tipi",
     "fontSize": "Yazı tipi boyutu",
     "fontStyles": {
@@ -288,6 +305,12 @@
     "secondBorder": "2. kenarlık",
     "secondBorderColor": "İkinci kenarlık rengi",
     "secondBorderWidth": "İkinci kenarlık genişliği",
+    "orientation": "Karakter yönü",
+    "orientations": {
+      "sideways": "Yan",
+      "tate_chu_yoko": "Tate-chu-yoko",
+      "upright": "Dik"
+    },
     "removeRuby": "Ruby kaldır",
     "ruby": "Ruby",
     "selectPage": "Katmanlarını incelemek için bir sayfa seçin.",

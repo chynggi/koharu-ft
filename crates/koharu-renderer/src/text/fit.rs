@@ -67,16 +67,21 @@ pub(super) struct PlacedLine {
     /// The line box along the block axis.
     pub top: f32,
     pub pitch: f32,
-    /// How much of the box, at its top, is leading its ruby added.
+    /// How much of the box, at its top, is leading its ruby and emphasis
+    /// marks added.
     pub lead: f32,
+    /// How much of the box, at its foot, is leading emphasis marks under it
+    /// added.
+    pub trail: f32,
     /// The paragraph ends with this line.
     pub last: bool,
 }
 
 impl PlacedLine {
-    /// Its box without the leading its ruby added: its top and pitch.
+    /// Its box without the leading its ruby and emphasis marks added: its
+    /// top and pitch.
     pub(super) fn letters(&self) -> (f32, f32) {
-        (self.top + self.lead, self.pitch - self.lead)
+        (self.top + self.lead, self.pitch - self.lead - self.trail)
     }
 }
 
@@ -378,19 +383,24 @@ fn place(styled: &Styled, room: &Room, segments: &[Segment], scale: f32) -> Plac
     }
 }
 
-/// A line's pitch, and how much of it is leading its ruby added: its largest
-/// size, scaled, times the line height, and as CSS adds leading to a line with
-/// ruby, enough that its ruby would clear the letters of a line of the same
-/// above it.
-fn pitch(segments: &[Segment], scale: f32, line_height: f32) -> (f32, f32) {
+/// A line's pitch, and how much of it is leading its ruby and emphasis
+/// marks added before and after its letters: its largest size, scaled, times
+/// the line height, and as CSS adds leading to a line with ruby, and so with
+/// emphasis marks, enough that what reaches past its letters would clear
+/// those of a line of the same beside it.
+fn pitch(segments: &[Segment], scale: f32, line_height: f32) -> (f32, f32, f32) {
     let largest = |of: fn(&Segment) -> f32| segments.iter().map(of).fold(0.0, f32::max);
     let size = largest(|segment| segment.size);
     let set = size * line_height;
-    let lead = match largest(|segment| segment.ruby) {
+    let leading = |reach: f32| match reach {
         0.0 => 0.0,
-        rise => (rise + size * 0.5 - set).max(0.0),
+        reach => (reach + size * 0.5 - set).max(0.0),
     };
-    ((set + lead) * scale, lead * scale)
+    let (lead, trail) = (
+        leading(largest(|segment| segment.rise)),
+        leading(largest(|segment| segment.sink)),
+    );
+    ((set + lead + trail) * scale, lead * scale, trail * scale)
 }
 
 /// Point text: each paragraph on one line, as long as the longest, lines
@@ -505,7 +515,7 @@ fn line(
     start: f32,
     room: f32,
     top: f32,
-    (pitch, lead): (f32, f32),
+    (pitch, lead, trail): (f32, f32, f32),
 ) -> PlacedLine {
     let last = range
         .end
@@ -518,6 +528,7 @@ fn line(
         top,
         pitch,
         lead,
+        trail,
         last,
     }
 }
@@ -537,6 +548,7 @@ struct InPath<'a> {
     vertical: bool,
     pitch: f32,
     lead: f32,
+    trail: f32,
     /// The letters' em across a line, which keeps the air from the outline:
     /// with the pitch's leading too, a column kept a sixth of an em more.
     em: f32,
@@ -600,7 +612,7 @@ fn in_path<'a>(
     // does by its first paragraph's direction.
     let rtl = !styled.vertical
         && unicode_bidi::get_base_direction(styled.text.as_str()) == unicode_bidi::Direction::Rtl;
-    let (pitch, lead) = pitch(segments, scale, styled.line_height);
+    let (pitch, lead, trail) = pitch(segments, scale, styled.line_height);
     InPath {
         segments,
         scale,
@@ -614,6 +626,7 @@ fn in_path<'a>(
         vertical: styled.vertical,
         pitch: pitch.max(0.01),
         lead,
+        trail,
         em: size * scale,
         air: size * scale * inset,
         frame: physical(
@@ -724,6 +737,13 @@ impl InPath<'_> {
             .iter()
             .map(|range| lines::length(self.segments, range.clone(), self.scale))
             .collect();
+        // What the lines' breaks inside words cost, each half a line left
+        // empty, as `line_cost` weighs one, so a count that keeps its words
+        // whole can win over one that splits them.
+        let inside_words = (lines.lines.iter())
+            .filter(|range| self.segments[range.end - 1].inside_word)
+            .count() as f32
+            * 0.25;
         // The lines' unfilled shares squared, and far more for one longer
         // than its room, to compare line counts.
         let cost = used
@@ -740,7 +760,8 @@ impl InPath<'_> {
                     0.0
                 }
             })
-            .sum();
+            .sum::<f32>()
+            + inside_words;
         // Where a block sharing an edge starts: centred, unless that takes
         // it past the shared edge or a line past its span's far end.
         let middle = match self.vertical {
@@ -778,7 +799,7 @@ impl InPath<'_> {
                     start,
                     room,
                     top + pitch * at as f32,
-                    (pitch, self.lead),
+                    (pitch, self.lead, self.trail),
                 )
             })
             .collect();
@@ -801,9 +822,9 @@ impl InPath<'_> {
         let (pitch, air) = (self.pitch, self.air);
         let bands: Vec<Spans> = (0..count)
             .map(|line| {
-                // The letters' em, in the middle of the line's box below its
-                // ruby's leading.
-                let middle = top + pitch * line as f32 + (self.lead + pitch) * 0.5;
+                // The letters' em, in the middle of the line's box between its
+                // ruby's and emphasis marks' leading.
+                let middle = top + pitch * line as f32 + (self.lead - self.trail + pitch) * 0.5;
                 let (v0, v1) = (middle - self.em * 0.5, middle + self.em * 0.5);
                 self.outline
                     .padded(f64::from(v0), f64::from(v1), f64::from(air))
@@ -829,7 +850,7 @@ impl InPath<'_> {
     /// the air leaves only the wide end of a tapering room, and a room's
     /// rounded foot ended a column's span sooner than the air its head kept.
     fn middle(&self, top: f32, count: usize, axis: f64) -> Option<f32> {
-        let across = top + (self.pitch * count as f32 + self.lead) * 0.5;
+        let across = top + (self.pitch * count as f32 + self.lead - self.trail) * 0.5;
         let band = self.outline.band(
             f64::from(across - self.em * 0.5),
             f64::from(across + self.em * 0.5),
@@ -877,9 +898,10 @@ impl InPath<'_> {
             return anchored;
         }
         // The air is kept from the letters' em, short of their boxes' ends.
+        let shift = self.lead - self.trail;
         let (head, foot) = (
-            (self.lead + pitch - self.em) * 0.5,
-            (pitch - self.lead - self.em) * 0.5,
+            (shift + pitch - self.em) * 0.5,
+            (pitch - shift - self.em) * 0.5,
         );
         let (low, high) = (
             bounds.y0 as f32 + air - head,
@@ -959,7 +981,7 @@ impl InPath<'_> {
                         start,
                         room,
                         top + pitch * at as f32,
-                        (pitch, self.lead),
+                        (pitch, self.lead, self.trail),
                     )
                 })
                 .collect(),
@@ -989,8 +1011,10 @@ mod tests {
             hyphen: 5.0,
             after,
             punctuation: false,
+            inside_word: false,
             size: 10.0,
-            ruby: 0.0,
+            rise: 0.0,
+            sink: 0.0,
         }
     }
 
@@ -1009,8 +1033,10 @@ mod tests {
                 line_height: 1.2,
                 hyphenation: Some(Lang::English),
                 chinese: false,
+                vietnamese: false,
                 frame,
                 ruby: Vec::new(),
+                marks: Vec::new(),
             },
             room,
         ))
@@ -1065,6 +1091,66 @@ mod tests {
         Ok(())
     }
 
+    /// The lines centred `words` take at their set size in a balloon `path`
+    /// outlines, with no margin.
+    fn balloon_lines(path: &str, words: Vec<Segment>) -> Result<Vec<Range<usize>>> {
+        let (mut styled, _) = in_box(0.0, 0.0, "none")?;
+        styled.align = Align::Center;
+        styled.frame = serde_json::from_value(serde_json::json!({
+            "path": {"path": path, "fit": "none", "anchor": "center", "inset": 0}
+        }))?;
+        let (_, placed) = fit(&styled, &Room::new(&styled.frame, false), |_| words.clone());
+        assert!(!placed.overflowed);
+        Ok(placed.lines.into_iter().map(|line| line.segments).collect())
+    }
+
+    #[test]
+    fn a_balloon_keeps_a_word_whole_when_both_layouts_fit() -> Result<()> {
+        // The word of the second and third takes 50 pixels including its
+        // space. At 51 both layouts fit; at 49 it must split to fit on two
+        // lines.
+        let lines = |width: u32, inside_word| {
+            let words = vec![
+                word(18.0, Break::Normal),
+                Segment {
+                    inside_word,
+                    ..word(20.0, Break::Normal)
+                },
+                word(29.0, Break::End),
+            ];
+            balloon_lines(&format!("M0 0 H{width} V25 H0 Z"), words)
+        };
+        assert_eq!(lines(51, false)?, [0..2, 2..3]);
+        assert_eq!(lines(51, true)?, [0..1, 1..3]);
+        assert_eq!(lines(49, true)?, [0..2, 2..3]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_balloon_takes_another_line_count_to_keep_a_word_whole() -> Result<()> {
+        // A balloon 50 wide but where two lines' letters fall, from 7 to 17
+        // and from 19 to 29 down, `wide` across. Six words 22 long fill
+        // three lines of 50 two to a line, or two of 100 three to a line,
+        // which leave more room unfilled; the second and third words make one,
+        // which a line of the three splits.
+        let lines = |wide: f64, inside_word| {
+            let (left, right) = (50.0 - wide / 2.0, 50.0 + wide / 2.0);
+            let path = format!(
+                "M25 0 H75 V7 H{right} V17 H75 V19 H{right} V29 H75 V36 H25 V29 H{left} V19 \
+                 H25 V17 H{left} V7 H25 Z"
+            );
+            let mut words = vec![word(22.0, Break::Normal); 6];
+            words[1].inside_word = inside_word;
+            words[5].after = Break::End;
+            balloon_lines(&path, words)
+        };
+        assert_eq!(lines(100.0, false)?, [0..2, 2..4, 4..6]);
+        assert_eq!(lines(100.0, true)?, [0..3, 3..6]);
+        // Where two lines can't hold three words, the word splits.
+        assert_eq!(lines(60.0, true)?, [0..2, 2..4, 4..6]);
+        Ok(())
+    }
+
     #[test]
     fn a_balloon_s_text_too_long_for_it_runs_past_its_top_and_foot_not_its_sides() -> Result<()> {
         // Eight words 25 long at their set size in a balloon 60 wide and 40
@@ -1080,8 +1166,10 @@ mod tests {
             line_height: 1.2,
             hyphenation: None,
             chinese: false,
+            vietnamese: false,
             frame: frame.clone(),
             ruby: Vec::new(),
+            marks: Vec::new(),
         };
         let mut words = vec![word(25.0, Break::Normal); 7];
         words.push(word(25.0, Break::End));
@@ -1113,8 +1201,10 @@ mod tests {
             line_height: 1.2,
             hyphenation: None,
             chinese: false,
+            vietnamese: false,
             frame: frame.clone(),
             ruby: Vec::new(),
+            marks: Vec::new(),
         };
         let mut words = vec![word(30.0, Break::Normal); 11];
         words.push(word(30.0, Break::End));
@@ -1157,8 +1247,10 @@ mod tests {
             line_height: 1.2,
             hyphenation: None,
             chinese: true,
+            vietnamese: false,
             frame: frame.clone(),
             ruby: Vec::new(),
+            marks: Vec::new(),
         };
         let character = |after| Segment {
             range: 0..0,
@@ -1168,8 +1260,10 @@ mod tests {
             hyphen: 0.0,
             after,
             punctuation: false,
+            inside_word: false,
             size: 21.0,
-            ruby: 0.0,
+            rise: 0.0,
+            sink: 0.0,
         };
         let mut characters = vec![character(Break::Normal); 9];
         characters.push(character(Break::End));

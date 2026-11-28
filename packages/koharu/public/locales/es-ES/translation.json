@@ -79,9 +79,11 @@
   },
   "export": {
     "cancel": "Cancelar",
-    "cbzHint": "Un solo archivo con las páginas PNG, con el nombre del proyecto.",
+    "cbzHint": "Un solo archivo con las páginas en el formato de imagen, con el nombre del proyecto.",
     "description": "Renderiza las páginas como archivos de imagen.",
     "formats": "Formatos",
+    "imageFormat": "Formato de imagen",
+    "images": "Imágenes",
     "pattern": "Patrón de nombre",
     "patternError": {
       "separator": "El patrón no puede contener un separador de ruta ni '..'.",
@@ -89,6 +91,7 @@
       "unclosed": "Llave sin cerrar en el patrón.",
       "width": "El número de dígitos tiene que ser un número."
     },
+    "quality": "Calidad",
     "scope": "Páginas",
     "scopeAll": "Todas las páginas ({{count}})",
     "scopeSelected": "Seleccionadas ({{count}})",
@@ -264,6 +267,20 @@
     "chooseBorderWidth": "Elegir ancho del contorno",
     "chooseFontSize": "Elegir tamaño de fuente",
     "decreaseSecondBorderWidth": "Reducir ancho del segundo contorno",
+    "emphasis": "Marcas de énfasis",
+    "emphasisMarks": {
+      "circle": "Círculo",
+      "dot": "Punto",
+      "double_circle": "Doble círculo",
+      "none": "Ninguna",
+      "open_circle": "Círculo hueco",
+      "open_dot": "Punto hueco",
+      "open_double_circle": "Doble círculo hueco",
+      "open_sesame": "Sésamo hueco",
+      "open_triangle": "Triángulo hueco",
+      "sesame": "Sésamo",
+      "triangle": "Triángulo"
+    },
     "font": "Fuente",
     "fontSize": "Tamaño de fuente",
     "fontStyles": {
@@ -288,6 +305,12 @@
     "secondBorder": "2.º contorno",
     "secondBorderColor": "Color del segundo contorno",
     "secondBorderWidth": "Ancho del segundo contorno",
+    "orientation": "Orientación de los caracteres",
+    "orientations": {
+      "sideways": "De lado",
+      "tate_chu_yoko": "Tate-chu-yoko",
+      "upright": "Erguidos"
+    },
     "removeRuby": "Quitar ruby",
     "ruby": "Ruby",
     "selectPage": "Selecciona una página para inspeccionar sus capas.",

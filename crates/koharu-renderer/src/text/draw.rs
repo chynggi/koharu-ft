@@ -22,7 +22,10 @@ pub(crate) fn draw(
     drawing.scene.set_transform(transform);
     let passes: &[u8] = if strokes { &[0, 1, 2] } else { &[2] };
     for &pass in passes {
-        let runs = layout.resolved.runs.iter().chain(&layout.resolved.ruby);
+        let resolved = &layout.resolved;
+        let runs = (resolved.runs.iter())
+            .chain(&resolved.ruby)
+            .chain(&resolved.emphasis);
         for (glyphs, run) in layout.runs.iter().zip(runs) {
             let width = run.stroke.map_or(0.0, |(_, width)| f64::from(width));
             let outside = match run.stroke_position {

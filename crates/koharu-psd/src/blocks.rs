@@ -218,7 +218,9 @@ const LF: u16 = b'\n' as u16;
 /// round-cornered stroke and none has a second one, a stroke effect (`lfx2`
 /// with `FrFX`) at the same position, how Photoshop strokes type as the
 /// renderer does. Photoshop's effect has one stroke and only round corners,
-/// so other strokes, strokes that differ by span, and ruby stay in the pixels.
+/// so other strokes, strokes that differ by span, ruby and emphasis marks,
+/// which Photoshop's type doesn't have, and how a column's characters stand,
+/// whose `BaselineDirection` values aren't known, stay in the pixels only.
 pub(crate) fn type_layer(layer: &Text, text: &ResolvedText, index: i32) -> Vec<TaggedBlock> {
     let vertical = layer.direction == Direction::Vertical;
     let frame = text.frame;

@@ -192,7 +192,16 @@ export type ChapterLink = {
 }
 
 /**  One of the values a character's style holds. */
-export type CharKey = 'family' | 'weight' | 'italic' | 'size' | 'fill' | 'stroke' | 'stroke_width'
+export type CharKey =
+  | 'family'
+  | 'weight'
+  | 'italic'
+  | 'size'
+  | 'fill'
+  | 'stroke'
+  | 'stroke_width'
+  | 'orientation'
+  | 'emphasis'
 
 /**
  *  Character values; each is also a mark key on a span, and a mark wins for
@@ -210,6 +219,10 @@ export type CharStyle = {
   stroke_join?: StrokeJoin | null
   outer_stroke?: Rgba | null
   outer_stroke_width?: number | null
+  /**  How the characters stand in a vertical column. */
+  orientation?: Orientation | null
+  /**  The mark set beside each character. */
+  emphasis?: Emphasis | null
 }
 
 /**
@@ -302,6 +315,20 @@ export type Edit = {
   ops: Op[]
 }
 
+/**  An emphasis mark. */
+export type Emphasis =
+  | 'none'
+  | 'dot'
+  | 'open_dot'
+  | 'circle'
+  | 'open_circle'
+  | 'double_circle'
+  | 'open_double_circle'
+  | 'triangle'
+  | 'open_triangle'
+  | 'sesame'
+  | 'open_sesame'
+
 /**
  *  A vendor's server: where rig, or Koharu for LM Studio, puts it while
  *  `base_url` is unset, as in an empty table.
@@ -328,16 +355,24 @@ export type Event =
   | { type: 'tool_started'; tool: string; arguments: Value }
   | { type: 'tool_finished'; tool: string; error: string | null }
 
-export type ExportFormat = 'png' | 'psd' | 'cbz' | 'pdf'
+export type ExportFormat =
+  /**  Each page as an image in the export's `ImageFormat`. */
+  | 'images'
+  | 'psd'
+  /**  The pages' images in the export's `ImageFormat`, in one archive. */
+  | 'cbz'
+  | 'pdf'
 
 export type ExportOptions = {
   formats: ExportFormat[]
+  /**  How the page images and a CBZ's entries are written. */
+  image: ImageFormat
   /**
    *  A file's name without its extension: `{index}`, `{index:04}`, and
    *  `{label}`, the page's name, between literal text.
    */
   pattern: string
-  /**  PNG and PSD files each in a folder of their own. */
+  /**  Image and PSD files each in a folder of their own. */
   subfolders: boolean
 }
 
@@ -494,6 +529,23 @@ export type Image = {
   file: Hash
   transform?: Transform
 }
+
+/**
+ *  How a flattened page is written: PNG's without loss, JPEG's and WebP's at
+ *  a quality from 1 to 100.
+ */
+export type ImageFormat =
+  | 'png'
+  | ({
+      jpeg: {
+        quality: number
+      }
+    } & { webp?: never })
+  | ({
+      webp: {
+        quality: number
+      }
+    } & { jpeg?: never })
 
 export type ImportSource =
   | 'files'
@@ -848,6 +900,9 @@ export type Opened = {
   url: string
   series: Series
 }
+
+/**  How characters stand in a vertical column. */
+export type Orientation = 'mixed' | 'upright' | 'sideways' | 'tate_chu_yoko'
 
 export type Outcome =
   | { kind: 'done' }

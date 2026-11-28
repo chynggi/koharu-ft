@@ -14,6 +14,7 @@ use skrifa::{
     GlyphId, MetadataProvider,
     instance::{LocationRef, NormalizedCoord, Size},
     outline::{DrawSettings, OutlinePen},
+    raw::TableProvider,
     string::StringId,
 };
 use smallvec::SmallVec;
@@ -47,6 +48,11 @@ pub(crate) struct Font {
     /// instance.
     ascent: f32,
     descent: f32,
+    /// How far above the baseline the centre of the ideographic em box is,
+    /// in font units: OpenType has a CJK face for vertical text set the box
+    /// as its typo ascender and descender, which a face's ascent and descent,
+    /// spaced for lines, can lie far outside.
+    em_centre: f32,
 }
 
 /// What HarfRust's `ShapePlanKey::matches` compares but the font's own
@@ -144,6 +150,15 @@ impl Font {
         let metrics = face.metrics(Size::unscaled(), &location);
         ensure!(metrics.units_per_em > 0, "the font has no units per em");
         let post_script_name = post_script_name(&face).unwrap_or_else(|| family_name.clone());
+        let em_centre = face
+            .os2()
+            .ok()
+            .map(|os2| (os2.s_typo_ascender(), os2.s_typo_descender()))
+            .filter(|&typo| typo != (0, 0))
+            .map_or(metrics.ascent + metrics.descent, |(ascent, descent)| {
+                f32::from(ascent) + f32::from(descent)
+            })
+            * 0.5;
         Ok(Self {
             data: FontData::new(found.blob, found.index),
             family_name,
@@ -162,6 +177,7 @@ impl Font {
             units_per_em: f32::from(metrics.units_per_em),
             ascent: metrics.ascent,
             descent: -metrics.descent,
+            em_centre,
         })
     }
 
@@ -174,6 +190,12 @@ impl Font {
     pub(crate) fn extent(&self, size: f32) -> (f32, f32) {
         let scale = self.scale(size);
         (self.ascent * scale, self.descent * scale)
+    }
+
+    /// How far above the baseline the centre of the ideographic em box is
+    /// at `size`.
+    pub(crate) fn em_centre(&self, size: f32) -> f32 {
+        self.em_centre * self.scale(size)
     }
 
     /// How far a faux bold grows each side of a glyph at `size`: CC Wild
@@ -226,7 +248,7 @@ impl Font {
     }
 
     /// Whether the face sets `ch` in vertical text in a form of its own: its
-    /// `vert` or `vrt2` features, or Unicode's vertical presentation forms
+    /// `vert` feature, or Unicode's vertical presentation forms
     /// without them, substitute another glyph for it, one that draws: a
     /// Chinese face draws `︽` and `︾` as nothing.
     pub(crate) fn has_vertical_form(&self, ch: char) -> bool {
@@ -237,10 +259,7 @@ impl Font {
             .charmap
             .charmap(self.data.data.as_ref())
             .and_then(|charmap| charmap.map(ch));
-        let features = [
-            Feature::new(Tag::new(b"vert"), 1, ..),
-            Feature::new(Tag::new(b"vrt2"), 1, ..),
-        ];
+        let features = [Feature::new(Tag::new(b"vert"), 1, ..)];
         let mut buffer = Buffer::new();
         buffer.push_str(ch.encode_utf8(&mut [0; 4]));
         buffer.guess_segment_properties();

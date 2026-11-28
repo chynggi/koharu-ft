@@ -29,7 +29,8 @@ pub use project::{Background, Meta, Page, Project, locked_inside};
 pub use query::{Answer, PageSummary, ProjectAnswer, Query, TextMatch};
 pub use session::{EXTENSION, Session};
 pub use text::{
-    CharStyle, Face, Kernel, RichText, Span, StrokeJoin, StrokePosition, Text, TextStyle,
+    CharStyle, Emphasis, Face, Kernel, Orientation, RichText, Span, StrokeJoin, StrokePosition,
+    Text, TextStyle,
 };
 pub use tiles::{Tile, Tiles};
 pub use values::*;

@@ -79,9 +79,11 @@
   },
   "export": {
     "cancel": "إلغاء",
-    "cbzHint": "أرشيف واحد لصفحات PNG يحمل اسم المشروع.",
+    "cbzHint": "أرشيف واحد للصفحات بتنسيق الصور المختار يحمل اسم المشروع.",
     "description": "تصيير الصفحات إلى ملفات صور.",
     "formats": "التنسيقات",
+    "imageFormat": "تنسيق الصورة",
+    "images": "صور",
     "pattern": "نمط اسم الملف",
     "patternError": {
       "separator": "لا يمكن أن يحتوي النمط على فاصل مسار أو '..'.",
@@ -89,6 +91,7 @@
       "unclosed": "قوس غير مغلق في النمط.",
       "width": "يجب أن يكون عدد الخانات رقمًا."
     },
+    "quality": "الجودة",
     "scope": "الصفحات",
     "scopeAll": "كل الصفحات ({{count}})",
     "scopeSelected": "المحدد ({{count}})",
@@ -264,6 +267,20 @@
     "chooseBorderWidth": "اختر عرض الحدود",
     "chooseFontSize": "اختر حجم الخط",
     "decreaseSecondBorderWidth": "تقليل عرض الحدود الثانية",
+    "emphasis": "علامات التوكيد",
+    "emphasisMarks": {
+      "circle": "دائرة",
+      "dot": "نقطة",
+      "double_circle": "دائرة مزدوجة",
+      "none": "بلا",
+      "open_circle": "دائرة مفرغة",
+      "open_dot": "نقطة مفرغة",
+      "open_double_circle": "دائرة مزدوجة مفرغة",
+      "open_sesame": "سمسم مفرغ",
+      "open_triangle": "مثلث مفرغ",
+      "sesame": "سمسم",
+      "triangle": "مثلث"
+    },
     "font": "الخط",
     "fontSize": "حجم الخط",
     "fontStyles": {
@@ -288,6 +305,12 @@
     "secondBorder": "الحدود 2",
     "secondBorderColor": "لون الحدود الثانية",
     "secondBorderWidth": "عرض الحدود الثانية",
+    "orientation": "اتجاه الأحرف",
+    "orientations": {
+      "sideways": "جانبية",
+      "tate_chu_yoko": "تاتي-تشو-يوكو",
+      "upright": "قائمة"
+    },
     "removeRuby": "إزالة شرح روبي",
     "ruby": "شرح روبي",
     "selectPage": "اختر صفحة لعرض طبقاتها.",

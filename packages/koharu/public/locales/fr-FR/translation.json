@@ -79,9 +79,11 @@
   },
   "export": {
     "cancel": "Annuler",
-    "cbzHint": "Une archive des pages PNG, nommée d'après le projet.",
+    "cbzHint": "Une archive des pages au format d'image choisi, nommée d'après le projet.",
     "description": "Rendre les pages en fichiers image.",
     "formats": "Formats",
+    "imageFormat": "Format d’image",
+    "images": "Images",
     "pattern": "Modèle de nom de fichier",
     "patternError": {
       "separator": "Le modèle ne peut pas contenir de séparateur de chemin ni '..'.",
@@ -89,6 +91,7 @@
       "unclosed": "Accolade non fermée dans le modèle.",
       "width": "Le nombre de chiffres doit être un nombre."
     },
+    "quality": "Qualité",
     "scope": "Pages",
     "scopeAll": "Toutes les pages ({{count}})",
     "scopeSelected": "Sélection ({{count}})",
@@ -264,6 +267,20 @@
     "chooseBorderWidth": "Choisir l’épaisseur du contour",
     "chooseFontSize": "Choisir la taille de police",
     "decreaseSecondBorderWidth": "Réduire l’épaisseur du second contour",
+    "emphasis": "Marques d'emphase",
+    "emphasisMarks": {
+      "circle": "Cercle",
+      "dot": "Point",
+      "double_circle": "Double cercle",
+      "none": "Aucune",
+      "open_circle": "Cercle creux",
+      "open_dot": "Point creux",
+      "open_double_circle": "Double cercle creux",
+      "open_sesame": "Sésame creux",
+      "open_triangle": "Triangle creux",
+      "sesame": "Sésame",
+      "triangle": "Triangle"
+    },
     "font": "Police",
     "fontSize": "Taille de police",
     "fontStyles": {
@@ -288,6 +305,12 @@
     "secondBorder": "2ᵉ contour",
     "secondBorderColor": "Couleur du second contour",
     "secondBorderWidth": "Épaisseur du second contour",
+    "orientation": "Orientation des caractères",
+    "orientations": {
+      "sideways": "Couchés",
+      "tate_chu_yoko": "Tate-chu-yoko",
+      "upright": "Debout"
+    },
     "removeRuby": "Retirer le ruby",
     "ruby": "Ruby",
     "selectPage": "Sélectionnez une page pour inspecter ses calques.",

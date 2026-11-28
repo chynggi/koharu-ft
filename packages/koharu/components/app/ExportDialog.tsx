@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { PageId, ExportFormat, ExportOptions } from '@koharu/ipc/protocol'
+import { Choice } from '@/components/controls/Choice'
+import type { PageId, ExportFormat, ExportOptions, ImageFormat } from '@koharu/ipc/protocol'
 import { Button } from '@koharu/ui/components/button'
 import { Checkbox } from '@koharu/ui/components/checkbox'
 import {
@@ -17,8 +18,12 @@ import {
 import { Input } from '@koharu/ui/components/input'
 import { Label } from '@koharu/ui/components/label'
 import { RadioGroup, RadioGroupItem } from '@koharu/ui/components/radio-group'
+import { Slider } from '@koharu/ui/components/slider'
 
 const DEFAULT_PATTERN = '{index:04}_{label}'
+
+const imageNames = { png: 'PNG', jpeg: 'JPEG', webp: 'WebP' } as const
+const extensions = { png: 'png', jpeg: 'jpg', webp: 'webp' } as const
 
 /**
  * `naming::Template::parse`의 클라이언트 쪽 짝.
@@ -69,7 +74,9 @@ export function ExportDialog({
   onStart: (pages: PageId[], options: ExportOptions) => void
 }) {
   const { t } = useTranslation()
-  const [png, setPng] = useState(true)
+  const [images, setImages] = useState(true)
+  const [imageKind, setImageKind] = useState<keyof typeof imageNames>('png')
+  const [quality, setQuality] = useState(90)
   const [psd, setPsd] = useState(false)
   const [cbz, setCbz] = useState(false)
   const [pdf, setPdf] = useState(false)
@@ -79,28 +86,35 @@ export function ExportDialog({
 
   const formats = useMemo(() => {
     const chosen: ExportFormat[] = []
-    if (png) chosen.push('png')
+    if (images) chosen.push('images')
     if (psd) chosen.push('psd')
     if (cbz) chosen.push('cbz')
     if (pdf) chosen.push('pdf')
     return chosen
-  }, [png, psd, cbz, pdf])
+  }, [images, psd, cbz, pdf])
+  const image: ImageFormat =
+    imageKind === 'png'
+      ? 'png'
+      : imageKind === 'jpeg'
+        ? { jpeg: { quality } }
+        : { webp: { quality } }
 
   const preview = useMemo(() => previewPattern(pattern), [pattern])
   // 하위 폴더는 페이지마다 파일을 쓰는 형식이 둘일 때만 뜻이 있다. 아카이브는
   // 대상 폴더 바로 아래에 하나만 놓이므로 세지 않는다.
-  const pageFormatCount = (png ? 1 : 0) + (psd ? 1 : 0)
+  const pageFormatCount = (images ? 1 : 0) + (psd ? 1 : 0)
   const bothFormats = pageFormatCount === 2
   const invalid = 'error' in preview
   const canStart =
     formats.length > 0 && !invalid && pages.length > 0 && (scope === 'all' || selected.length > 0)
-  // 아카이브 항목은 언제나 PNG다. 페이지 파일 형식이 하나도 없으면 미리보기도
-  // 항목 이름을 보여줘야 하므로 png로 떨어진다.
-  const previewExtension = psd && !png ? 'psd' : 'png'
+  // 아카이브 항목도 이미지 형식을 따른다. 페이지 파일 형식이 하나도 없으면
+  // 미리보기도 항목 이름을 보여줘야 하므로 이미지 확장자로 떨어진다.
+  const previewExtension = psd && !images ? 'psd' : extensions[imageKind]
 
   const start = () => {
     onStart(scope === 'selected' ? selected : pages, {
       formats,
+      image,
       pattern,
       // 하위 폴더 체크박스가 비활성일 때는 체크 상태와 무관하게 false다.
       subfolders: bothFormats && subfolders,
@@ -145,8 +159,12 @@ export function ExportDialog({
           <fieldset className='space-y-2'>
             <legend className='text-xs font-medium'>{t('export.formats')}</legend>
             <div className='flex items-center gap-2'>
-              <Checkbox id='export-png' checked={png} onCheckedChange={(v) => setPng(v === true)} />
-              <Label htmlFor='export-png'>PNG</Label>
+              <Checkbox
+                id='export-images'
+                checked={images}
+                onCheckedChange={(v) => setImages(v === true)}
+              />
+              <Label htmlFor='export-images'>{t('export.images')}</Label>
             </div>
             <div className='flex items-center gap-2'>
               <Checkbox id='export-psd' checked={psd} onCheckedChange={(v) => setPsd(v === true)} />
@@ -162,6 +180,35 @@ export function ExportDialog({
             </div>
             <p className='text-[11px] text-muted-foreground'>{t('export.cbzHint')}</p>
           </fieldset>
+
+          {/* 이미지 파일과 CBZ 항목이 함께 쓰는 형식, 그리고 JPEG·WebP의 품질. */}
+          <div className='grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-[12px]'>
+            <span className='text-muted-foreground'>{t('export.imageFormat')}</span>
+            <Choice
+              value={imageKind}
+              choices={imageNames}
+              label={t('export.imageFormat')}
+              disabled={!images && !cbz}
+              onChange={setImageKind}
+            />
+            {imageKind !== 'png' && (
+              <>
+                <span className='text-muted-foreground'>{t('export.quality')}</span>
+                <div className='flex min-w-0 items-center gap-3'>
+                  <Slider
+                    aria-label={t('export.quality')}
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={quality}
+                    disabled={!images && !cbz}
+                    onValueChange={setQuality}
+                  />
+                  <span className='w-6 shrink-0 text-right tabular-nums'>{quality}</span>
+                </div>
+              </>
+            )}
+          </div>
 
           <div className='space-y-1'>
             <Label htmlFor='export-pattern'>{t('export.pattern')}</Label>

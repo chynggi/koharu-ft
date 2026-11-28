@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use anyhow::Result;
 use icu_properties::{CodePointMapData, props::EastAsianWidth};
-use koharu_scene::{Align, Frame, RichText};
+use koharu_scene::{Align, Frame, Orientation as Set, RichText};
 
 use super::{
     itemize::{Orientation, Run},
@@ -65,6 +65,11 @@ pub(super) fn style(content: &RichText, styled: &Styled) -> Vec<Ruby> {
                 stroke_position: first.stroke_position,
                 stroke_join: first.stroke_join,
                 outer_stroke: first.outer_stroke,
+                // A ruby stands as its base does, but never as one cell.
+                orientation: match first.orientation {
+                    Set::TateChuYoko => Set::Mixed,
+                    orientation => orientation,
+                },
             };
             let text = Styled {
                 text: ruby.to_owned(),
@@ -74,8 +79,10 @@ pub(super) fn style(content: &RichText, styled: &Styled) -> Vec<Ruby> {
                 line_height: 1.0,
                 hyphenation: None,
                 chinese: styled.chinese,
+                vietnamese: false,
                 frame: Frame::Point,
                 ruby: Vec::new(),
+                marks: Vec::new(),
             };
             Some(Ruby { base, text })
         })

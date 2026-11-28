@@ -575,7 +575,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot 0.12.5",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
  "x11rb 0.13.2",
 ]
 
@@ -1041,7 +1041,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.3",
  "shlex",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -1833,7 +1833,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2094,6 +2094,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cqdb"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0bf51033d1eb0a901602e9b5ff8bff233ef48a32bd339cbce458b2f6e4c4bf4"
+dependencies = [
+ "bitflags 2.13.2",
+ "bstr",
+]
+
+[[package]]
 name = "crash-context"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2134,6 +2144,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b929dd2a135771f40afabd1073f85eed59c800b7c61901e5c254270497dad64"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crfs"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b32234f40bc03a82d1955510f53053723d0e636bc13a4c99a07de2e491dad656"
+dependencies = [
+ "anyhow",
+ "bitflags 2.13.2",
+ "bstr",
+ "cqdb",
+ "liblbfgs",
+ "rand 0.9.5",
 ]
 
 [[package]]
@@ -2305,7 +2329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -2956,7 +2980,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3768,7 +3792,7 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5661,7 +5685,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "koharu"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "clap",
  "indoc",
@@ -5685,7 +5709,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-agent"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -5719,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-bindgen"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "bindgen",
  "fs-err",
@@ -5731,7 +5755,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-canvas"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -5762,7 +5786,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-config"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "age",
  "atomicwrites",
@@ -5783,7 +5807,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-desktop"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "alphanumeric-sort",
  "anyhow",
@@ -5850,7 +5874,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-diffusion"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "image",
  "koharu-diffusion-sys",
@@ -5861,7 +5885,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-diffusion-sys"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -5893,7 +5917,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-leptonica"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "image",
  "thiserror 2.0.21",
@@ -5901,7 +5925,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llama"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "encoding_rs",
  "enumflags2",
@@ -5917,7 +5941,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llama-sys"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -5925,7 +5949,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-llm"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -5961,7 +5985,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-ml"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -5991,7 +6015,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-pipeline"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -6035,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-psd"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -6053,7 +6077,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-renderer"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "fontique",
@@ -6063,6 +6087,7 @@ dependencies = [
  "hypher",
  "icu_locale",
  "icu_locale_core",
+ "icu_normalizer",
  "icu_properties",
  "icu_segmenter",
  "image",
@@ -6073,6 +6098,7 @@ dependencies = [
  "kurbo",
  "parking_lot 0.13.0",
  "pollster",
+ "pyvi",
  "quick_cache",
  "rayon",
  "serde",
@@ -6094,7 +6120,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-runtime"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -6124,7 +6150,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-scene"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "blake3",
  "color",
@@ -6159,7 +6185,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-sentry"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "sentry",
  "serde",
@@ -6170,7 +6196,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-server"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -6189,7 +6215,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-torch"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "fs-err",
  "half",
@@ -6203,7 +6229,7 @@ dependencies = [
 
 [[package]]
 name = "koharu-torch-sys"
-version = "0.100.3-ft.1"
+version = "0.102.2-ft.1"
 dependencies = [
  "koharu-bindgen",
  "libloading 0.9.1",
@@ -6436,6 +6462,16 @@ checksum = "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2"
 dependencies = [
  "arbitrary",
  "cc",
+]
+
+[[package]]
+name = "liblbfgs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f1c009b0026557d64756b39f531841781d2f5a72d90e923858d94278ef12fdd"
+dependencies = [
+ "anyhow",
+ "log",
 ]
 
 [[package]]
@@ -8849,6 +8885,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "pyvi"
+version = "0.1.0"
+source = "git+https://github.com/koharu-rs/pyvi?rev=37f5c15eb69f14ddae55378278b53b31bbe93ebc#37f5c15eb69f14ddae55378278b53b31bbe93ebc"
+dependencies = [
+ "crfs",
+ "icu_normalizer",
+ "icu_properties",
+ "regex",
+]
+
+[[package]]
 name = "qoi"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8947,7 +8994,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9846,7 +9893,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9905,7 +9952,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11765,10 +11812,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13397,7 +13444,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

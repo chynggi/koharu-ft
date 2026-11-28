@@ -5,9 +5,12 @@ use std::ops::Range;
 
 use anyhow::Result;
 use hypher::Lang;
-use koharu_scene::{Align, CharStyle, Color, Direction, Frame, Text};
+use koharu_scene::{Align, CharStyle, Color, Direction, Emphasis, Frame, Orientation, Text};
 
-use super::ruby::{self, Ruby};
+use super::{
+    emphasis::Mark,
+    ruby::{self, Ruby},
+};
 use crate::fonts::Font;
 
 pub(super) struct Styled {
@@ -23,10 +26,15 @@ pub(super) struct Styled {
     /// Its language is Chinese, whose vertical stop marks sit in the middle
     /// of their cells.
     pub chinese: bool,
+    /// Its language is Vietnamese, whose words its lines keep whole where
+    /// they can.
+    pub vietnamese: bool,
     /// Where the text sets, in its own coordinates.
     pub frame: Frame,
     /// In text order.
     pub ruby: Vec<Ruby>,
+    /// The emphasis marks its spans set, in span order.
+    pub marks: Vec<Mark>,
 }
 
 pub(super) struct Span {
@@ -40,29 +48,37 @@ pub(super) struct Span {
     pub stroke_position: koharu_scene::StrokePosition,
     pub stroke_join: koharu_scene::StrokeJoin,
     pub outer_stroke: Option<(Color, f32)>,
+    /// How it stands in a column.
+    pub orientation: Orientation,
 }
 
 impl Styled {
     /// `text` with each span's style over the text's, set in the chain
-    /// `fonts` gives for that style and the span's characters, its ruby's
-    /// among them.
+    /// `fonts` gives for that style and the span's characters, its ruby's and
+    /// its emphasis mark among them.
     pub(super) fn new(
         text: &Text,
         mut fonts: impl FnMut(&CharStyle, &str) -> Result<Vec<Font>>,
     ) -> Result<Self> {
         let mut plain = String::new();
         let mut spans = Vec::new();
+        let mut marked = Vec::new();
         for span in &text.content.0 {
             if span.insert.is_empty() {
                 continue;
             }
             let style = span.attributes.or(&text.style.chars);
             let ruby = span.ruby.as_deref().unwrap_or_default();
+            let mark = style.emphasis.and_then(Emphasis::mark);
+            if let Some(mark) = mark {
+                marked.push((spans.len(), mark));
+            }
             let start = plain.len();
             plain.push_str(&span.insert);
+            let mark = mark.map(String::from).unwrap_or_default();
             spans.push(Span {
                 range: start..plain.len(),
-                fonts: fonts(&style, &[&span.insert, ruby].concat())?,
+                fonts: fonts(&style, &[&span.insert, ruby, &mark].concat())?,
                 size: style.size.unwrap_or(24.0) as f32,
                 fill: style.fill.map_or(Color::BLACK, Color::from),
                 stroke_position: style.stroke_position.unwrap_or_default(),
@@ -79,6 +95,7 @@ impl Styled {
                     }
                     _ => None,
                 },
+                orientation: style.orientation.unwrap_or_default(),
             });
         }
         let mut styled = Self {
@@ -97,10 +114,16 @@ impl Styled {
                 .ok()
                 .and_then(Lang::from_iso),
             chinese: text.language.language.as_str() == "zh",
+            vietnamese: text.language.language.as_str() == "vi",
             frame: text.frame.clone(),
             ruby: Vec::new(),
+            marks: Vec::new(),
         };
         styled.ruby = ruby::style(&text.content, &styled);
+        styled.marks = marked
+            .into_iter()
+            .map(|(span, mark)| Mark::new(&styled, span, mark))
+            .collect();
         Ok(styled)
     }
 

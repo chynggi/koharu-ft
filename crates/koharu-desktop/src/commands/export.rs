@@ -1,9 +1,9 @@
-//! Export: pages as PNG or PSD files in a folder, and as a CBZ of PNGs or a
-//! PDF there, named by a filename pattern.
+//! Export: pages as PNG, JPEG, WebP, or PSD files in a folder, and as a CBZ
+//! of those images or a PDF there, named by a filename pattern.
 
 use std::{
     collections::HashSet,
-    io::{Cursor, Write as _},
+    io::Write as _,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -11,9 +11,16 @@ use std::{
     },
 };
 
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow, ensure};
 use fs_err::File;
-use image::{ImageFormat, RgbaImage};
+use image::{
+    DynamicImage, Rgba, RgbaImage,
+    codecs::{
+        jpeg::JpegEncoder,
+        png::{CompressionType, FilterType, PngEncoder},
+    },
+    imageops,
+};
 use koharu_psd::Labels;
 use koharu_scene::{PageId, Session};
 use krilla::{Document, geom::Size, image::Image, page::PageSettings};
@@ -32,8 +39,10 @@ mod naming;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
-    Png,
+    /// Each page as an image in the export's `ImageFormat`.
+    Images,
     Psd,
+    /// The pages' images in the export's `ImageFormat`, in one archive.
     Cbz,
     Pdf,
 }
@@ -41,11 +50,89 @@ pub enum ExportFormat {
 #[derive(Clone, Debug, Deserialize, Type)]
 pub struct ExportOptions {
     pub formats: Vec<ExportFormat>,
+    /// How the page images and a CBZ's entries are written.
+    pub image: ImageFormat,
     /// A file's name without its extension: `{index}`, `{index:04}`, and
     /// `{label}`, the page's name, between literal text.
     pub pattern: String,
-    /// PNG and PSD files each in a folder of their own.
+    /// Image and PSD files each in a folder of their own.
     pub subfolders: bool,
+}
+
+/// How a flattened page is written: PNG's without loss, JPEG's and WebP's at
+/// a quality from 1 to 100.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFormat {
+    Png,
+    Jpeg { quality: u8 },
+    Webp { quality: u8 },
+}
+
+impl ImageFormat {
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg { .. } => "jpg",
+            Self::Webp { .. } => "webp",
+        }
+    }
+
+    fn encode(self, image: RgbaImage) -> anyhow::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        match self {
+            // The png crate's own default compression: image's, the fastest,
+            // leaves a page in near-grays twice the size.
+            Self::Png => {
+                let encoder = PngEncoder::new_with_quality(
+                    &mut bytes,
+                    CompressionType::Default,
+                    FilterType::Adaptive,
+                );
+                if image.pixels().all(|pixel| pixel[3] == u8::MAX) {
+                    opaque(image).write_with_encoder(encoder)?
+                } else {
+                    image.write_with_encoder(encoder)?
+                }
+            }
+            // JPEG has no transparency, so the page is drawn over white, as
+            // Photoshop's JPEG export does. Overlay's rounding can leave that
+            // white's alpha at 254.
+            Self::Jpeg { quality } => {
+                let mut white =
+                    RgbaImage::from_pixel(image.width(), image.height(), Rgba([255; 4]));
+                imageops::overlay(&mut white, &image, 0, 0);
+                opaque(white)
+                    .write_with_encoder(JpegEncoder::new_with_quality(&mut bytes, quality))?
+            }
+            // libwebp leaves out the alpha of a page with no transparency.
+            Self::Webp { quality } => {
+                let (width, height) = image.dimensions();
+                // libwebp's `WEBP_MAX_DIMENSION`.
+                ensure!(
+                    width.max(height) <= 16383,
+                    "a WebP image is at most 16383 pixels a side, and the page is {width}×{height}"
+                );
+                bytes = webp::Encoder::from_rgba(image.as_raw(), width, height)
+                    .encode_simple(false, quality.into())
+                    .map_err(|error| anyhow!("libwebp failed with {error:?}"))?
+                    .to_vec();
+            }
+        }
+        Ok(bytes)
+    }
+}
+
+/// An opaque `image`, its alpha dropped unread, in the fewest channels that
+/// hold it exactly: gray when every pixel is a gray, RGB otherwise.
+fn opaque(image: RgbaImage) -> DynamicImage {
+    let gray = image.pixels().all(|Rgba([r, g, b, _])| r == g && g == b);
+    let image = DynamicImage::ImageRgba8(image);
+    if gray {
+        DynamicImage::ImageLuma8(image.to_luma8())
+    } else {
+        DynamicImage::ImageRgb8(image.to_rgb8())
+    }
 }
 
 /// How many of an export's pages are written.
@@ -152,17 +239,19 @@ impl Job<'_> {
                 .collect()
         };
         let formats = &self.options.formats;
-        let png_files = formats.contains(&ExportFormat::Png);
+        let image_format = self.options.image;
+        let extension = image_format.extension();
+        let image_files = formats.contains(&ExportFormat::Images);
         let psd_files = formats.contains(&ExportFormat::Psd);
         let directory = |extension: &str| -> anyhow::Result<PathBuf> {
-            let directory = match self.options.subfolders && png_files && psd_files {
+            let directory = match self.options.subfolders && image_files && psd_files {
                 true => folder.join(extension),
                 false => folder.to_owned(),
             };
             fs_err::create_dir_all(&directory)?;
             Ok(directory)
         };
-        let png_folder = png_files.then(|| directory("png")).transpose()?;
+        let image_folder = image_files.then(|| directory(extension)).transpose()?;
         let psd_folder = psd_files.then(|| directory("psd")).transpose()?;
         let project_file = |extension: &str| {
             folder.join(match sanitize_filename::sanitize(name.trim()) {
@@ -187,7 +276,7 @@ impl Job<'_> {
             total,
         });
         // Names repeat across folders and the archive, but never within one.
-        let (mut png_names, mut psd_names, mut entry_names) =
+        let (mut image_names, mut psd_names, mut entry_names) =
             (Names::default(), Names::default(), Names::default());
         for (completed, (index, page, label)) in (1u32..).zip(pages) {
             if self.stop.load(Ordering::Relaxed) {
@@ -198,24 +287,24 @@ impl Job<'_> {
                 return Ok(());
             }
             let stem = self.template.render(index, &label)?;
-            if png_folder.is_some() || archive.is_some() || pdf_document.is_some() {
+            if image_folder.is_some() || archive.is_some() || pdf_document.is_some() {
                 let frame = self.app.renderer.render(&self.session.lock(), page)?;
                 let image = frame.rasterize()?.image;
-                if png_folder.is_some() || archive.is_some() {
-                    let png = png(&image)?;
-                    if let Some(directory) = &png_folder {
-                        let file = format!("{}.png", png_names.unique(stem.clone()));
-                        fs_err::write(directory.join(file), &png)?;
+                if image_folder.is_some() || archive.is_some() {
+                    let encoded = image_format.encode(image.clone())?;
+                    if let Some(directory) = &image_folder {
+                        let file = format!("{}.{extension}", image_names.unique(stem.clone()));
+                        fs_err::write(directory.join(file), &encoded)?;
                     }
                     if let Some(archive) = &mut archive {
-                        // Already-compressed PNGs gain nothing from deflate.
+                        // Already-compressed images gain nothing from deflate.
                         let options = ::zip::write::SimpleFileOptions::default()
                             .compression_method(::zip::CompressionMethod::Stored);
                         archive.start_file(
-                            format!("{}.png", entry_names.unique(stem.clone())),
+                            format!("{}.{extension}", entry_names.unique(stem.clone())),
                             options,
                         )?;
-                        archive.write_all(&png)?;
+                        archive.write_all(&encoded)?;
                     }
                 }
                 if let Some(pdf) = &mut pdf_document {
@@ -248,10 +337,4 @@ impl Job<'_> {
         }
         Ok(())
     }
-}
-
-fn png(image: &RgbaImage) -> anyhow::Result<Vec<u8>> {
-    let mut png = Cursor::new(Vec::new());
-    image.write_to(&mut png, ImageFormat::Png)?;
-    Ok(png.into_inner())
 }
