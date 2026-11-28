@@ -36,7 +36,9 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
             .context("the user's local data folder is unknown")?
             .join(&context.config().identifier),
     };
-    let library = Library::new(data.join("projects"))?;
+    // Koharu 0.83 and NeKoharu kept their projects in Documents\Koharu.
+    let old = dirs::document_dir().map(|documents| documents.join("Koharu"));
+    let library = Library::new(data.join("projects"), old)?;
 
     // The process's, which the pipeline draws a painted area's page with.
     let renderer = Renderer::get().clone();

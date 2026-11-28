@@ -65,6 +65,7 @@ tauri-winit = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+trash = { workspace = true }
 ui-events = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }

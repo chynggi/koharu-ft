@@ -1,8 +1,12 @@
 //! The projects the start view lists: `.khr` files in one folder, and the
-//! `.khrproj` folders of older releases there, which become `.khr` files
-//! when opened.
+//! `.khrproj` folders Koharu 0.83 and NeKoharu up to 0.85.3-N kept in
+//! Documents\Koharu, each of which becomes a `.khr` file here when opened.
 
-use std::{path::PathBuf, time::SystemTime};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use anyhow::{Context as _, Result, bail, ensure};
 use koharu_renderer::RendererConfig;
@@ -11,42 +15,35 @@ use sanitize_filename::OptionsForCheck;
 
 mod khrproj;
 
-/// The project folders of Koharu 0.83 and NeKoharu up to 0.85.3-N.
 const OLD_EXTENSION: &str = "khrproj";
 
 /// The projects folder.
 pub struct Library {
     root: PathBuf,
+    /// Where the old releases kept their project folders; only read, and a
+    /// folder there moves to the trash when its project is deleted.
+    old: Option<PathBuf>,
 }
 
 impl Library {
-    pub fn new(root: PathBuf) -> Result<Self> {
+    pub fn new(root: PathBuf, old: Option<PathBuf>) -> Result<Self> {
         fs_err::create_dir_all(&root)?;
-        Ok(Self { root })
+        Ok(Self { root, old })
     }
 
     /// The projects' names, the last changed first; two changed at once in
-    /// name order, numbers by value. An old folder with no file of its name
-    /// is listed too.
+    /// name order, numbers by value. An old folder whose name no file here
+    /// has is listed too.
     pub fn list(&self) -> Result<Vec<String>> {
-        let mut projects: Vec<(Option<SystemTime>, String)> = fs_err::read_dir(&self.root)?
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let path = entry.path();
-                let file = entry.file_type().is_ok_and(|kind| kind.is_file());
-                let extension = if file { EXTENSION } else { OLD_EXTENSION };
-                let name = path
-                    .extension()
-                    .is_some_and(|each| each.eq_ignore_ascii_case(extension))
-                    .then(|| Some(path.file_stem()?.to_str()?.to_owned()))
-                    .flatten()?;
-                if !file && path.with_extension(EXTENSION).exists() {
-                    return None;
-                }
-                let changed = entry.metadata().and_then(|metadata| metadata.modified());
-                Some((changed.ok(), name))
-            })
-            .collect();
+        let mut projects = entries(&self.root, EXTENSION, true)?;
+        let names: HashSet<String> = projects.iter().map(|(_, name)| name.clone()).collect();
+        if let Some(old) = self.old.as_deref().filter(|old| old.is_dir()) {
+            projects.extend(
+                entries(old, OLD_EXTENSION, false)?
+                    .into_iter()
+                    .filter(|(_, name)| !names.contains(name)),
+            );
+        }
         projects.sort_by(|(a_changed, a), (b_changed, b)| {
             b_changed
                 .cmp(a_changed)
@@ -57,19 +54,20 @@ impl Library {
 
     pub fn create(&self, name: &str) -> Result<Session> {
         let path = self.path(name)?;
-        if path.exists() || path.with_extension(OLD_EXTENSION).exists() {
+        if path.exists() || self.old_folder(name).is_some() {
             bail!("a project named {name:?} already exists");
         }
         Session::create(&path, preferred()?)
             .with_context(|| format!("failed to create {}", path.display()))
     }
 
-    /// The project `name`. An old folder of that name with no file becomes
-    /// one first; the folder stays as it was.
+    /// The project `name`. An old folder of that name with no file here
+    /// becomes one first; the folder stays as it was.
     pub fn open(&self, name: &str) -> Result<Session> {
         let path = self.path(name)?;
-        let old = path.with_extension(OLD_EXTENSION);
-        if !path.exists() && old.is_dir() {
+        if !path.exists()
+            && let Some(old) = self.old_folder(name)
+        {
             khrproj::migrate(&old, &path, preferred()?)
                 .with_context(|| format!("failed to upgrade {}", old.display()))?;
         }
@@ -79,25 +77,23 @@ impl Library {
 
     /// The project `name`, created when there's none.
     pub fn open_or_create(&self, name: &str) -> Result<Session> {
-        let path = self.path(name)?;
-        if path.exists() || path.with_extension(OLD_EXTENSION).is_dir() {
+        if self.path(name)?.exists() || self.old_folder(name).is_some() {
             self.open(name)
         } else {
             self.create(name)
         }
     }
 
-    /// Deletes the project `name`, its old folder too, which would otherwise
-    /// list it again.
+    /// Deletes the project `name`. Its old folder, which would list it again,
+    /// goes to the trash, since an old release may still open it.
     pub fn delete(&self, name: &str) -> Result<()> {
         let path = self.path(name)?;
-        let old = path.with_extension(OLD_EXTENSION);
         if path.exists() {
             Session::remove(&path)
                 .with_context(|| format!("failed to delete {}", path.display()))?;
         }
-        if old.is_dir() {
-            fs_err::remove_dir_all(&old)?;
+        if let Some(old) = self.old_folder(name) {
+            trash::delete(&old).with_context(|| format!("failed to trash {}", old.display()))?;
         }
         Ok(())
     }
@@ -115,6 +111,39 @@ impl Library {
         );
         Ok(self.root.join(format!("{name}.{EXTENSION}")))
     }
+
+    /// The old release's folder of the project `name`, if there is one.
+    fn old_folder(&self, name: &str) -> Option<PathBuf> {
+        let folder = self.old.as_ref()?.join(format!("{name}.{OLD_EXTENSION}"));
+        folder.is_dir().then_some(folder)
+    }
+}
+
+/// The names in `folder` with `extension`, files or folders, and when each
+/// last changed.
+fn entries(
+    folder: &Path,
+    extension: &str,
+    files: bool,
+) -> Result<Vec<(Option<SystemTime>, String)>> {
+    Ok(fs_err::read_dir(folder)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_type()
+                .is_ok_and(|kind| if files { kind.is_file() } else { kind.is_dir() })
+        })
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path
+                .extension()
+                .is_some_and(|each| each.eq_ignore_ascii_case(extension))
+                .then(|| Some(path.file_stem()?.to_str()?.to_owned()))
+                .flatten()?;
+            let changed = entry.metadata().and_then(|metadata| metadata.modified());
+            Some((changed.ok(), name))
+        })
+        .collect())
 }
 
 /// What a new project holds, and a file from before projects held their own
