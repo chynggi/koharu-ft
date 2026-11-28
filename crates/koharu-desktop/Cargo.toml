@@ -15,6 +15,7 @@ publish.workspace = true
 alphanumeric-sort = { workspace = true }
 anyhow = { workspace = true }
 arboard = { workspace = true }
+blake3 = { workspace = true }
 cef = { workspace = true }
 dirs = { workspace = true }
 fs-err = { workspace = true }
@@ -22,6 +23,7 @@ futures = { workspace = true }
 globset = { workspace = true }
 hayro = { workspace = true }
 heck = { workspace = true }
+icu_properties = { workspace = true }
 image = { workspace = true }
 indoc = { workspace = true }
 koharu-agent = { workspace = true }
@@ -40,6 +42,7 @@ kurbo = { workspace = true }
 parking_lot = { workspace = true }
 rars = { workspace = true }
 rayon = { workspace = true }
+revision = { workspace = true }
 rfd = { workspace = true }
 reqwest = { workspace = true }
 sanitize-filename = { workspace = true }
@@ -64,6 +67,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 ui-events = { workspace = true }
 url = { workspace = true }
+uuid = { workspace = true }
 webp = { workspace = true }
 wgpu = { workspace = true }
 zip = { workspace = true }

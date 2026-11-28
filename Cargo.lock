@@ -5812,6 +5812,7 @@ dependencies = [
  "alphanumeric-sort",
  "anyhow",
  "arboard",
+ "blake3",
  "block2 0.6.2",
  "cef",
  "dirs 7.0.0",
@@ -5820,6 +5821,7 @@ dependencies = [
  "globset",
  "hayro",
  "heck",
+ "icu_properties",
  "image",
  "indoc",
  "koharu-agent",
@@ -5841,6 +5843,7 @@ dependencies = [
  "rars",
  "rayon",
  "reqwest",
+ "revision",
  "rfd",
  "sanitize-filename",
  "sentry",
@@ -5864,6 +5867,7 @@ dependencies = [
  "tracing",
  "ui-events",
  "url",
+ "uuid",
  "webp",
  "wgpu",
  "windows",
@@ -9563,6 +9567,27 @@ dependencies = [
  "reqwest",
  "thiserror 2.0.21",
  "tower-service",
+]
+
+[[package]]
+name = "revision"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13b48b66c1cd4bf814516ea48f727d4b3697e3fa8841be99a7d9cbb8c9ac1666"
+dependencies = [
+ "revision-derive",
+ "uuid",
+]
+
+[[package]]
+name = "revision-derive"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d266d798eaaa2921e14188dfe998bb7cc0528ec26e894b4be0e35fe2b19c89d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
